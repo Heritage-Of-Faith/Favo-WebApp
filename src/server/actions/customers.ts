@@ -3,7 +3,7 @@
 import { or, ilike, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customers } from "@db/schema";
-import { requireRole } from "@/lib/auth/session";
+import { authorize } from "@/server/auth/guard";
 import type { ActionResult, Customer } from "@/lib/types";
 
 // Docs: docs/API.md → searchCustomer · ILIKE on name + exact phone match.
@@ -14,7 +14,8 @@ const MAX_RESULTS = 10;
 export async function searchCustomer(
   query: string
 ): Promise<ActionResult<Customer[]>> {
-  await requireRole("barista", "manager", "admin", "owner");
+  const auth = await authorize("barista", "manager", "admin", "owner");
+  if (!auth.ok) return auth;
 
   const q = query.trim();
   if (q.length < 2) {

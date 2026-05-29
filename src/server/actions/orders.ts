@@ -13,7 +13,7 @@ import {
   staffEntitlementLog,
 } from "@db/schema";
 import { writeAudit } from "@/server/audit";
-import { requireRole } from "@/lib/auth/session";
+import { authorize } from "@/server/auth/guard";
 import { revenueDay } from "@/lib/format";
 import { canTransition } from "@/server/orders/state-machine";
 import {
@@ -57,7 +57,9 @@ const createOrderSchema = z.object({
 export async function createOrder(
   input: CreateOrderInput
 ): Promise<ActionResult<{ orderId: string; yocoClientSecret: string }>> {
-  const session = await requireRole(...POS_ROLES);
+  const auth = await authorize(...POS_ROLES);
+  if (!auth.ok) return auth;
+  const session = auth.session;
 
   const parsed = createOrderSchema.safeParse(input);
   if (!parsed.success) {
@@ -154,7 +156,9 @@ export async function transitionOrder(
   orderId: string,
   toState: OrderState
 ): Promise<ActionResult<Order>> {
-  const session = await requireRole(...POS_ROLES);
+  const auth = await authorize(...POS_ROLES);
+  if (!auth.ok) return auth;
+  const session = auth.session;
 
   const [current] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!current) {
@@ -212,7 +216,9 @@ export async function cancelOrder(
   orderId: string,
   reason: string
 ): Promise<ActionResult> {
-  const session = await requireRole(...POS_ROLES);
+  const auth = await authorize(...POS_ROLES);
+  if (!auth.ok) return auth;
+  const session = auth.session;
 
   const [current] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!current) {
@@ -249,7 +255,9 @@ export async function applyStaffDiscount(
   orderId: string,
   beneficiaryStaffId: string
 ): Promise<ActionResult> {
-  const session = await requireRole(...POS_ROLES);
+  const auth = await authorize(...POS_ROLES);
+  if (!auth.ok) return auth;
+  const session = auth.session;
 
   const [current] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!current) {
