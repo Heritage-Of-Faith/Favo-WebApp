@@ -1,0 +1,8 @@
+[install]
+optional = true
+dev = true
+peer = true
+frozenLockfile = false
+
+[test]
+preload = ["./tests/setup.ts"]

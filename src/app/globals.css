@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+/* ─── FAVO Café Design Tokens (Tailwind v4 CSS-first) ─────────────────────── */
+/* Owner: Nikao (task N1). Extend these tokens, do not hardcode colour values. */
+
+@theme {
+  /* Brand palette */
+  --color-espresso: #1a0a00;
+  --color-cream: #fdf8f2;
+  --color-copper: #c97435;
+  --color-oat: #f5efe6;
+  --color-charcoal: #2d2d2d;
+
+  /* Semantic surface tokens */
+  --color-surface: var(--color-cream);
+  --color-elevated: #ffffff;
+  --color-text-strong: var(--color-espresso);
+  --color-text-muted: #6b6056;
+  --color-border-subtle: #e8ddd0;
+
+  /* Status tokens */
+  --color-success: #2d7a3a;
+  --color-warning: #b87a00;
+  --color-error: #c0392b;
+  --color-info: #1a5fa8;
+
+  /* Type scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-display: 3rem;
+
+  /* Font */
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Inter", system-ui, sans-serif;
+}
+
+/* Base styles */
+body {
+  background-color: var(--color-cream);
+  color: var(--color-charcoal);
+  font-family: var(--font-sans);
+}

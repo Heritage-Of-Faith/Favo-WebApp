@@ -1,0 +1,112 @@
+# Planning
+
+## Phase overview
+
+| Phase | Dates | Scope |
+|---|---|---|
+| P1 — POS Core + Auth + Payment | Thu 28 – Fri 29 May | Schema (24 tables), seed, PIN + SSO, customer lookup, order flow, Yoco, state machine, ready→push, SSE queue, staff discount, audit on all mutations |
+| P2 — Inventory + Live COGS | Sat 30 – Sun 31 May | Recipe deduction on transition, lots + origin, waste log, stock takes, low-stock push, live COGS dashboard, weekly archival, monthly dual-sign |
+| P3 — Customer PWA + Loyalty + Offline | Mon 1 – Tue 2 Jun | Magic link, customer dashboard, loyalty earn/redeem, hours display, Service Worker offline, wallet + packs, exports |
+| P4 — QA + Deploy | Wed 3 Jun | E2E suite, smoke, deploy to favo.hofmi.org |
+
+## Phase 1 acceptance test
+Barista PIN login → search "Louis" → place Cappuccino + Extra Shot → Yoco test card → Done → customer device receives push within 10 s → audit log row created.
+
+## Branching
+`feat/<initial>-<task-id>-<kebab-name>` · squash-merge with WI key `[HOFMI-FAVO-P1] {ID} — {title}`.
+
+---
+
+## Foundation (must merge to `main` first)
+
+| ID | Title | Owner |
+|---|---|---|
+| G1 | DB schema (24 tables) | Gian |
+| G2 | Audit triggers + RLS policies | Gian |
+| G3 | Seed (menu, customisations, staff, "Louis", hours) | Gian |
+| N1 | Design tokens + Tailwind v4 theme + `formatZar` / `formatDate` | Nikao |
+| GX | Shared types + Server Action stubs | Gian |
+
+After these land, every other task is independently buildable.
+
+---
+
+## Gian — Backend & server logic
+
+| ID | Title | DB tables | Actions / endpoints | Dependency |
+|---|---|---|---|---|
+| G4 | Auth.js v6: PIN provider + HOFMI SSO + RBAC middleware | staff, audit_log | `loginWithPin` | G1, G2, G3, GX |
+| G5 | Order actions: search, create, transition, cancel, staff discount | orders, order_items, customers, staff_entitlement_log, payments, audit_log | `searchCustomer`, `createOrder`, `transitionOrder`, `cancelOrder`, `applyStaffDiscount` | G1, G2, G3, G4, GX |
+| G6 | Yoco webhook + SSE queue endpoint + LISTEN/NOTIFY plumbing | payments, orders, audit_log | `POST /api/payments/yoco/webhook`, `GET /api/queue/stream` | G1, G2, G3, G5 |
+| G7 | Web Push backend (VAPID + send on ready) | customers, audit_log | `POST /api/push/subscribe`, `sendOrderReadyPush()` | G5 |
+
+## Mine — POS frontend & customer-facing UI
+
+| ID | Title | Calls | Dependency |
+|---|---|---|---|
+| M1 | POS shell + PIN login screen | `loginWithPin` | N1, GX |
+| M2 | Customer search + select (Zustand draft store) | `searchCustomer` | N1, GX |
+| M3 | Order builder (menu + size + customisations) | `getMenu`, `createOrder` | N1, GX |
+| M4 | Yoco hosted-fields payment view | `createOrder` | N1, GX → G6 |
+| M5 | Live POS queue board (SSE consumer + reconnect) | `GET /api/queue/stream` | N1, GX → G6 |
+| M6 | Active order view + Done button + staff discount UI | `transitionOrder`, `applyStaffDiscount`, `cancelOrder` | N1, GX → G5 |
+| M7 | Online indicator + role guard polish | — | N1, M1 |
+
+## Mia — Admin frontend UI/UX
+
+| ID | Title | Calls | Dependency |
+|---|---|---|---|
+| A1 | shadcn/ui setup + admin design tokens | — | N1 |
+| A2 | Admin shell + sidebar + auth gate | `getSession` | A1, GX |
+| A3 | HOFMI SSO login page | `signIn('hofmi-sso')` | A1, A2 |
+| A4 | Staff management UI | `listStaff`, `createStaff`, `setStaffPin`, `deactivateStaff` | A1, A2, GX |
+| A5 | Menu management UI (price edit + history) | `getMenu`, `setMenuItemPrice` | A1, A2, GX |
+| A6 | Audit log viewer (paginated + filterable + JSON diff) | `listAudit` | A1, A2, GX |
+
+## Nikao — Landing, customer PWA, design system
+
+| ID | Title | Reads / Calls | Dependency |
+|---|---|---|---|
+| N1 | Design tokens + Tailwind v4 theme + format helpers | — | none |
+| N2 | PWA manifest + icons + favicon + meta | — | N1 |
+| N3 | Landing page (hero, about, hours, visit, login CTA) | `operating_hours` | N1, G3 |
+| N4 | OperatingHours shared component | `operating_hours` | N1, G1, G3 |
+| N5 | Customer PWA shell + push subscription opt-in | `POST /api/push/subscribe` | N1, N2, G7 |
+| N6 | Customer login stub (Phase 3 placeholder) | — | N1 |
+
+---
+
+## Phase 1 verification (merge gate)
+1. Migrate + seed staging
+2. Register Louis device via N5 staging form
+3. Barista PIN login (PIN `1234`)
+4. Search "Lou" → select Louis
+5. Build Cappuccino + Extra Shot
+6. Yoco test card `4111 1111 1111 1111`
+7. Queue board updates
+8. Start → Done
+9. Push received in < 10 s
+10. `/admin/audit` shows ≥ 5 rows for that order
+11. Weekday cappuccino staff discount — accepted
+12. Second same-day claim — rejected by `UNIQUE` constraint
+
+Codified as Playwright spec `tests/e2e/phase1-acceptance.spec.ts` (Gian).
+
+## Quality bars
+| Phase | Vitest | Playwright |
+|---|---|---|
+| P1 | ≥ 20 | ≥ 8 |
+| P2 | ≥ 35 | ≥ 14 |
+| P3 | ≥ 50 | ≥ 20 |
+| P4 | All prior green | Full E2E + read-only smoke on prod |
+
+Audit coverage query must return 0 at end of every phase.
+
+## Day-by-day cadence (P1)
+| Slot | Lands |
+|---|---|
+| Thu AM | G1, G2, G3, N1, GX |
+| Thu PM | G4, A1, N2, M1, A3 |
+| Fri AM | G5, G6, M2, M3, A2, A4, N3, N4 |
+| Fri PM | G7, M4, M5, M6, M7, A5, A6, N5, N6 |
+| Fri EVE | Integration walk-through · Playwright acceptance spec · merge gate |
