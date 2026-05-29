@@ -12,7 +12,7 @@ export async function getSession(): Promise<SessionUser | null> {
   return {
     id: session.user.id,
     name: session.user.name ?? "Unknown",
-    // TODO (G4): pull role from JWT token once auth is implemented
+    // Role is populated by the auth.ts jwt/session callbacks (task G4).
     role: (session.user as { role?: StaffRole }).role ?? "barista",
   };
 }
