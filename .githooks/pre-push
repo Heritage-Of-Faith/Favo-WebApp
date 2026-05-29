@@ -1,0 +1,37 @@
+#!/bin/bash
+# Pre-push hook — runs the same checks as GitHub CI before every push.
+# Installed automatically by `bun install` via the prepare script.
+# To skip in an emergency: git push --no-verify (use sparingly)
+
+echo ""
+echo "🔍 Running CI checks before push..."
+echo "   (same checks that run on GitHub — catching errors before they hit CI)"
+echo ""
+
+# Run all three CI gates
+bun typecheck
+TYPECHECK=$?
+
+bun lint
+LINT=$?
+
+bun test:unit
+TESTS=$?
+
+echo ""
+
+if [ $TYPECHECK -ne 0 ] || [ $LINT -ne 0 ] || [ $TESTS -ne 0 ]; then
+  echo "❌ Push blocked — one or more checks failed:"
+  [ $TYPECHECK -ne 0 ] && echo "   • bun typecheck failed"
+  [ $LINT -ne 0 ]      && echo "   • bun lint failed"
+  [ $TESTS -ne 0 ]     && echo "   • bun test:unit failed"
+  echo ""
+  echo "   Fix the errors above and try again."
+  echo "   Emergency bypass (use sparingly): git push --no-verify"
+  echo ""
+  exit 1
+fi
+
+echo "✅ All checks passed — pushing to GitHub."
+echo ""
+exit 0

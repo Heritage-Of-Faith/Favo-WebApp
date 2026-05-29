@@ -6,6 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "prepare": "git config core.hooksPath .githooks",
+    "check": "bun typecheck && bun lint && bun test:unit",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src db tests proxy.ts auth.ts",
     "test:unit": "vitest run",
