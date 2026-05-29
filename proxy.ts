@@ -1,5 +1,5 @@
 // Next.js 16: proxy.ts replaces middleware.ts for route gating
-import { auth } from "@/lib/auth/session";
+import { auth } from "./auth";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
