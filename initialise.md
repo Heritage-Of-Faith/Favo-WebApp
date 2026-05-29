@@ -115,12 +115,21 @@ Surfaces:
 
 Ask your supervisor which developer you are. Each developer owns one vertical:
 
-| Developer | Vertical | Your main folder | Your tasks |
-|---|---|---|---|
-| **Gian (G)** | Backend + Server | `src/server/`, `src/app/api/`, `db/` | G1–G7 |
-| **Mine (M)** | POS Frontend | `src/app/pos/`, `src/components/pos/` | M1–M7 |
-| **Mia (A)** | Admin Frontend | `src/app/admin/`, `src/components/admin/` | A1–A6 |
-| **Nikao (N)** | Design + Landing | `src/app/(customer)/`, `src/lib/design-tokens.ts` | N1–N6 |
+| Developer | Vertical | Your main folder | Your tasks | FAVO_VERTICAL value |
+|---|---|---|---|---|
+| **Gian (G)** | Backend + Server | `src/server/`, `src/app/api/`, `db/` | G1–G7 | `backend` |
+| **Mine (M)** | POS Frontend | `src/app/pos/`, `src/components/pos/` | M1–M7 | `pos` |
+| **Mia (A)** | Admin Frontend | `src/app/admin/`, `src/components/admin/` | A1–A6 | `admin` |
+| **Nikao (N)** | Design + Landing | `src/app/(customer)/`, `src/lib/design-tokens.ts` | N1–N6 | `design` |
+
+Once you know your vertical, add this line to your shell profile (`~/.zshrc` or `~/.bashrc`) and restart your terminal:
+
+```bash
+# Replace 'backend' with your vertical value from the table above
+export FAVO_VERTICAL=backend
+```
+
+This activates the Claude Code hooks that protect vertical boundaries — they will warn you if you accidentally try to edit a file that belongs to another developer's area.
 
 Read your task list in `docs/PLANNING.md`. Start at Phase 1 and work through tasks one at a time.
 
@@ -138,16 +147,80 @@ Before starting any task, read the docs relevant to it:
 | `docs/ARCHITECTURAL.md` | Understanding wiring, env config, folder choices |
 | `docs/FAVO_CAFE_Project_Brief.md` | Anything ambiguous — PRD is the source of truth |
 
-## Step 6 — Start your first task
+## Step 6 — Understand git worktrees (important — read this)
+
+Before starting any task, you need to understand **git worktrees**. This is how four developers can work in parallel without breaking each other's work.
+
+### What is a worktree? (simple version)
+
+Think of the main repo folder as the main office. Normally, only one person can rearrange the desks at a time — if two people try to rearrange simultaneously, things get messy. A **git worktree** is like opening a separate office on the same floor. It has its own copy of the files to work on, but it is connected to the same building (the same git history). Four developers can each have their own office and work simultaneously without getting in each other's way.
+
+When you finish your task, you close that office (delete the worktree) and your finished work gets reviewed before it is moved into the main office (merged to main).
+
+### How to use worktrees for every task
+
+**Do this at the start of every new task instead of `git checkout -b`:**
+
+```bash
+# 1. Make sure you have the latest main
+git fetch origin
+
+# 2. Create a worktree for your task (this creates a new folder AND a new branch at once)
+git worktree add ../favo-<task-id> -b feat/<your-initial>-<task-id>-<kebab-name> origin/main
+
+# Example for task G1:
+git worktree add ../favo-g1 -b feat/g-g1-db-schema origin/main
+
+# 3. Move into your worktree folder to start working
+cd ../favo-g1
+
+# 4. Install dependencies in this worktree
+bun install
+```
+
+Your worktree is now a completely separate working folder. You can have multiple worktrees open at once — one per task — and they never interfere with each other.
+
+**When your task is done and the PR is merged:**
+
+```bash
+# Go back to the main repo folder
+cd ../Favo-WebApp
+
+# Remove the worktree (safe — your branch is already on GitHub)
+git worktree remove ../favo-g1
+```
+
+### Quick reference: task start-to-finish with worktrees
+
+```bash
+# START a task
+git fetch origin
+git worktree add ../favo-<task-id> -b feat/<initial>-<task-id>-<name> origin/main
+cd ../favo-<task-id>
+bun install
+
+# WORK on the task (build, test, commit normally)
+git add src/server/actions/orders.ts
+git commit -m "feat: implement createOrder action"
+
+# FINISH — push and open PR
+git push -u origin feat/<initial>-<task-id>-<name>
+gh pr create --title "[HOFMI-FAVO-P1] G5 — Order actions"
+
+# CLEAN UP after PR is merged
+cd ../Favo-WebApp
+git worktree remove ../favo-<task-id>
+```
+
+## Step 7 — Start your first task
 
 1. Read your task card in `docs/PLANNING.md`
-2. Check out the branch: `git checkout -b feat/<your-initial>-<task-id>-<kebab-name>`
-   - Example: `git checkout -b feat/g-g1-db-schema`
+2. Create a worktree for the task (see Step 6 above)
 3. Read the specialist docs listed in your task card
 4. Implement the task to its acceptance criteria
 5. Write or extend the tests
 6. Run CI checks: `bun typecheck && bun lint && bun test:unit`
-7. Open a PR with the title: `[HOFMI-FAVO-P1] {TASK-ID} — {task title}`
+7. Push and open a PR with the title: `[HOFMI-FAVO-P1] {TASK-ID} — {task title}`
 8. Tell your supervisor you're done and ask for the next task
 
 ## Non-negotiables (never break these)
@@ -165,12 +238,30 @@ Before starting any task, read the docs relevant to it:
 ## Useful commands
 
 ```bash
-bun typecheck          # Must pass before PR
-bun lint               # Must pass before PR
-bun test:unit          # Must pass before PR
+# CI checks (must all pass before opening a PR)
+bun typecheck          # TypeScript check
+bun lint               # ESLint
+bun test:unit          # Vitest unit tests
 bun test:unit:watch    # Watch mode during development
-bun db:studio          # Browse the DB in a web UI
+
+# Database
+bun db:studio          # Browse the DB in a web UI (http://localhost:4983)
+bun db:migrate         # Run pending migrations
+bun db:seed            # Re-seed test data
+
+# Git worktrees
+git worktree list                          # See all open worktrees
+git worktree add ../favo-<id> -b <branch> origin/main   # Start a task
+git worktree remove ../favo-<id>           # Clean up after PR merged
+
+# GitHub CLI
+gh pr create           # Open a pull request
+gh pr list             # See open PRs
+gh pr status           # See status of your PRs
+
+# General
 git log --oneline -10  # See recent commits
+git fetch origin       # Get latest changes from GitHub
 ```
 
 ## Asking for help
