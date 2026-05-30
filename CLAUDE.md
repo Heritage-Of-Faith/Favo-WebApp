@@ -15,6 +15,24 @@ Next.js 16 (App Router) · React 19 · TS 5.6 strict · Tailwind v4 + shadcn/ui 
 - `db/schema.ts` · `db/seed/*` · `drizzle/*` — schema, seed, migrations
 - `tests/{unit,e2e,db,components}` — Vitest + Playwright
 
+## Backend status — LIVE on `main` (G1–G7, as of 2026-05-30)
+Gian's backend vertical is merged and green (89 unit tests). Other verticals can call these now.
+All Server Actions return `{ ok: true, data } | { ok: false, code, message }` — **always check `res.ok`** (they never throw for auth/validation).
+
+**Server Actions** (`import { … } from "@/server/actions/…"`):
+- `loginWithPin(pin)` → `{ staffId, name }` · `signOut()` — `actions/auth.ts`
+- `searchCustomer(query)` → `Customer[]` (ILIKE name + exact phone) — `actions/customers.ts`
+- `createOrder({ customerId?, items:[{ menuItemId, quantity, modifications:string[] }] })` → `{ orderId, yocoClientSecret }` — `actions/orders.ts`
+- `transitionOrder(orderId, toState)` → `Order` · `cancelOrder(orderId, reason)` · `applyStaffDiscount(orderId, beneficiaryStaffId)` — `actions/orders.ts`
+
+**Route handlers:** `POST /api/payments/yoco/webhook` · `GET /api/queue/stream` (SSE, authed, `QueueEvent` frames + 30s heartbeat) · `POST /api/push/subscribe` (`{ customerId, subscription }`) · `GET /api/healthz`
+
+**Importable helpers:** `@/lib/format` (`formatZar`, `formatDate`, `revenueDay`) · `@/server/orders/pricing` (`computeOrderTotalZar`) · `@/server/loyalty/calc` (`earnPoints`, `canRedeem`) · `@/lib/auth/session` (`getSession`, `requireRole`) · `@/server/auth/rbac` (`canAccessAdmin`, …)
+
+**Seed for local testing:** test barista PIN `1234`; customer "Louis" (search `Lou`).
+
+**Not built yet (don't assume these exist):** admin-support actions `listStaff` / `createStaff` / `setStaffPin` / `setMenuItemPrice` / `listAudit`; loyalty `redeem`/wallet/packs (Phase 3). End-to-end run needs a DB + Yoco/VAPID env — pure logic is fully testable without them.
+
 ## Branches & PRs
 - Branch: `feat/<initial>-<task-id>-<kebab-name>` (e.g. `feat/g-g1-db-schema`)
 - Squash-merge to `main` with WI key in commit: `[HOFMI-FAVO-P{n}] {ID} — {title}`
