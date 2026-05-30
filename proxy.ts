@@ -2,20 +2,22 @@
 import { auth } from "./auth";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { canAccessAdmin } from "@/server/auth/rbac";
+import type { StaffRole } from "@/lib/types";
 
 // Auth.js v5 User type does not include role by default — we extend it via JWT callback in auth.ts
 type SessionUser = {
-  role?: string;
+  role?: StaffRole;
 };
 
 export async function proxy(request: NextRequest) {
   const session = await auth();
   const { pathname } = request.nextUrl;
 
-  // Admin routes require admin, owner, or finance role
+  // Admin routes require an admin-capable role (admin / owner / finance)
   if (pathname.startsWith("/admin")) {
-    const role = (session?.user as SessionUser | undefined)?.role ?? "";
-    if (!session || !["admin", "owner", "finance"].includes(role)) {
+    const role = (session?.user as SessionUser | undefined)?.role;
+    if (!session || !role || !canAccessAdmin(role)) {
       return NextResponse.redirect(new URL("/", request.url));
     }
   }

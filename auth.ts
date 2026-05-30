@@ -1,9 +1,14 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import type { NextAuthConfig } from "next-auth";
+import { eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { staff } from "@db/schema";
+import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
 
-// TODO (G4): Implement PIN lookup against staff.pin_hash (bcrypt compare)
-// TODO (G4): Add HOFMI SSO provider (OAuth)
+// Task G4 — PIN provider (staff). HOFMI SSO provider is a follow-up (A3 needs it).
+// Role is resolved at authorize time and carried through the JWT so getSession()
+// and proxy.ts can gate routes without a DB round-trip on every request.
 
 export const authConfig: NextAuthConfig = {
   providers: [
@@ -13,9 +18,19 @@ export const authConfig: NextAuthConfig = {
         pin: { label: "PIN", type: "password" },
       },
       async authorize(credentials) {
-        // TODO (G4): query staff table, bcrypt.compare(pin, pin_hash)
-        // Return null if invalid, staff object if valid
-        void credentials;
+        const pin = typeof credentials?.pin === "string" ? credentials.pin : "";
+        if (!isValidPinFormat(pin)) return null;
+
+        const activeStaff = await db
+          .select()
+          .from(staff)
+          .where(eq(staff.active, true));
+
+        for (const s of activeStaff) {
+          if (await verifyPin(pin, s.pinHash)) {
+            return { id: s.id, name: s.name, role: s.role };
+          }
+        }
         return null;
       },
     }),
@@ -28,12 +43,15 @@ export const authConfig: NextAuthConfig = {
     jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        // TODO (G4): attach role from staff table
+        token.role = (user as { role?: string }).role;
       }
       return token;
     },
     session({ session, token }) {
       if (token.id) session.user.id = token.id as string;
+      if (token.role) {
+        (session.user as { role?: string }).role = token.role as string;
+      }
       return session;
     },
   },
