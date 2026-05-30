@@ -264,7 +264,7 @@ export const purchases = pgTable(
     kind: purchaseKind("kind").notNull(),
     adminApprovedBy: text("admin_approved_by").references(() => staff.id),
   },
-  (t) => [
+  () => [
     check(
       "emergency_requires_approval",
       sql`kind != 'emergency' OR admin_approved_by IS NOT NULL`
