@@ -19,26 +19,27 @@ Barista PIN login → search "Louis" → place Cappuccino + Extra Shot → Yoco 
 
 ## Foundation (must merge to `main` first)
 
-| ID | Title | Owner |
-|---|---|---|
-| G1 | DB schema (24 tables) | Gian |
-| G2 | Audit triggers + RLS policies | Gian |
-| G3 | Seed (menu, customisations, staff, "Louis", hours) | Gian |
-| N1 | Design tokens + Tailwind v4 theme + `formatZar` / `formatDate` | Nikao |
-| GX | Shared types + Server Action stubs | Gian |
+| ID | Title | Owner | Status |
+|---|---|---|---|
+| G1 | DB schema (24 tables) | Gian | ✅ merged |
+| G2 | Audit triggers + RLS policies | Gian | ✅ merged (trigger + RLS SQL + `writeAudit`) |
+| G3 | Seed (menu, customisations, staff, "Louis", hours) | Gian | ✅ merged (PR #1) |
+| N1 | Design tokens + Tailwind v4 theme + `formatZar` / `formatDate` | Nikao | ⬜ todo |
+| GX | Shared types + Server Action stubs | Gian | ✅ merged |
 
 After these land, every other task is independently buildable.
+**Gian's foundation (G1–G3, GX) is on `main`** — see "Backend status" in `CLAUDE.md` for callable signatures.
 
 ---
 
 ## Gian — Backend & server logic
 
-| ID | Title | DB tables | Actions / endpoints | Dependency |
-|---|---|---|---|---|
-| G4 | Auth.js v6: PIN provider + HOFMI SSO + RBAC middleware | staff, audit_log | `loginWithPin` | G1, G2, G3, GX |
-| G5 | Order actions: search, create, transition, cancel, staff discount | orders, order_items, customers, staff_entitlement_log, payments, audit_log | `searchCustomer`, `createOrder`, `transitionOrder`, `cancelOrder`, `applyStaffDiscount` | G1, G2, G3, G4, GX |
-| G6 | Yoco webhook + SSE queue endpoint + LISTEN/NOTIFY plumbing | payments, orders, audit_log | `POST /api/payments/yoco/webhook`, `GET /api/queue/stream` | G1, G2, G3, G5 |
-| G7 | Web Push backend (VAPID + send on ready) | customers, audit_log | `POST /api/push/subscribe`, `sendOrderReadyPush()` | G5 |
+| ID | Title | DB tables | Actions / endpoints | Dependency | Status |
+|---|---|---|---|---|---|
+| G4 | Auth.js v6: PIN provider + HOFMI SSO + RBAC middleware | staff, audit_log | `loginWithPin` | G1, G2, G3, GX | ✅ merged (PR #3) — PIN + RBAC done; HOFMI SSO provider still TODO (A3 needs it) |
+| G5 | Order actions: search, create, transition, cancel, staff discount | orders, order_items, customers, staff_entitlement_log, payments, audit_log | `searchCustomer`, `createOrder`, `transitionOrder`, `cancelOrder`, `applyStaffDiscount` | G1, G2, G3, G4, GX | ✅ merged (PR #4) |
+| G6 | Yoco webhook + SSE queue endpoint + LISTEN/NOTIFY plumbing | payments, orders, audit_log | `POST /api/payments/yoco/webhook`, `GET /api/queue/stream` | G1, G2, G3, G5 | ✅ merged (PR #5) — HMAC + routing + SSE framing done; PG LISTEN bridge + Yoco envelope confirm need live infra |
+| G7 | Web Push backend (VAPID + send on ready) | customers, audit_log | `POST /api/push/subscribe`, `sendOrderReadyPush()` | G5 | ✅ merged (PR #6) — `transitionOrder→ready` push call-site is TODO |
 
 ## Mine — POS frontend & customer-facing UI
 
