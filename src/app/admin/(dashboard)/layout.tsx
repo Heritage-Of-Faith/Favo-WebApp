@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { canAccessAdmin } from "@/server/auth/rbac";
 import Sidebar from "@/components/admin/Sidebar";
+import { Toaster } from "@/components/ui/sonner";
 
 export default async function AdminDashboardLayout({
   children,
@@ -24,6 +25,7 @@ export default async function AdminDashboardLayout({
     <div className="flex min-h-screen bg-surface text-text-strong">
       <Sidebar role={session.role} />
       <main className="flex-1 p-6">{children}</main>
+      <Toaster />
     </div>
   );
 }
