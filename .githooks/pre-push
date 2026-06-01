@@ -18,13 +18,26 @@ LINT=$?
 bun test:unit
 TESTS=$?
 
+# Check for hardcoded hex values in inline styles (design token bypass)
+HEX_VIOLATIONS=$(grep -rn 'style={{[^}]*#[0-9a-fA-F]\{3,6\}' src/ --include="*.tsx" --include="*.ts" 2>/dev/null | grep -v "design-tokens.ts")
+DESIGN=$?
+if [ -n "$HEX_VIOLATIONS" ]; then
+  echo "⚠️  Hardcoded hex values found in inline styles (use design tokens instead):"
+  echo "$HEX_VIOLATIONS"
+  echo ""
+  DESIGN=1
+else
+  DESIGN=0
+fi
+
 echo ""
 
-if [ $TYPECHECK -ne 0 ] || [ $LINT -ne 0 ] || [ $TESTS -ne 0 ]; then
+if [ $TYPECHECK -ne 0 ] || [ $LINT -ne 0 ] || [ $TESTS -ne 0 ] || [ $DESIGN -ne 0 ]; then
   echo "❌ Push blocked — one or more checks failed:"
   [ $TYPECHECK -ne 0 ] && echo "   • bun typecheck failed"
   [ $LINT -ne 0 ]      && echo "   • bun lint failed"
   [ $TESTS -ne 0 ]     && echo "   • bun test:unit failed"
+  [ $DESIGN -ne 0 ]    && echo "   • hardcoded hex values in inline styles (run /design-audit)"
   echo ""
   echo "   Fix the errors above and try again."
   echo "   Emergency bypass (use sparingly): git push --no-verify"

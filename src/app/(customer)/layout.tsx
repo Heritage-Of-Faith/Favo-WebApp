@@ -6,7 +6,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "FAVO Café",
   manifest: "/manifest.json",
-  themeColor: "#1a0a00",
+  themeColor: "#1C0501",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

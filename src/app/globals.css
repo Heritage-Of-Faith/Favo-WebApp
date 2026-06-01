@@ -1,47 +1,176 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;700;900&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,600;9..40,700&display=swap');
 
 /* ─── FAVO Café Design Tokens (Tailwind v4 CSS-first) ─────────────────────── */
-/* Owner: Nikao (task N1). Extend these tokens, do not hardcode colour values. */
+/* Owner: Nikao. Extend these tokens, do not hardcode colour values.           */
 
 @theme {
-  /* Brand palette */
-  --color-espresso: #1a0a00;
-  --color-cream: #fdf8f2;
-  --color-copper: #c97435;
-  --color-oat: #f5efe6;
-  --color-charcoal: #2d2d2d;
+  /* ── Brand palette ── */
+  --color-porcelain:        #F7F6F2;
+  --color-cool-steel:       #81A4B1;
+  --color-crimson-carrot:   #F5560C;
+  --color-coffee-bean:      #1C0501;
+  --color-dark-teal:        #054D61;
 
-  /* Semantic surface tokens */
-  --color-surface: var(--color-cream);
-  --color-elevated: #ffffff;
-  --color-text-strong: var(--color-espresso);
-  --color-text-muted: #6b6056;
-  --color-border-subtle: #e8ddd0;
+  /* Derived / tints */
+  --color-paper:            #FBFAF6;
+  --color-porcelain-soft:   #E5E4DE;
+  --color-dark-teal-deep:   #033844;
+  --color-coffee-bean-deep: #0F0301;
 
-  /* Status tokens */
+  /* ── Semantic tokens ── */
+  --color-surface:          var(--color-paper);
+  --color-elevated:         var(--color-porcelain);
+  --color-text-strong:      var(--color-coffee-bean);
+  --color-text-muted:       var(--color-cool-steel);
+  --color-text-faint:       #6B7378;
+  --color-text-inverse:     var(--color-porcelain);
+  --color-border-subtle:    var(--color-porcelain-soft);
+  --color-accent:           var(--color-crimson-carrot);
+
+  /* ── Status tokens ── */
   --color-success: #2d7a3a;
   --color-warning: #b87a00;
-  --color-error: #c0392b;
-  --color-info: #1a5fa8;
+  --color-error:   #c0392b;
+  --color-info:    #1a5fa8;
 
-  /* Type scale */
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.25rem;
-  --text-2xl: 1.5rem;
-  --text-3xl: 1.875rem;
-  --text-display: 3rem;
+  /* ── Type families ── */
+  --font-display: 'Barlow Condensed', 'Oswald', 'Arial Narrow', sans-serif;
+  --font-sans:    'DM Sans', 'Helvetica Neue', Arial, sans-serif;
 
-  /* Font */
-  --font-sans: "Inter", system-ui, sans-serif;
-  --font-display: "Inter", system-ui, sans-serif;
+  /* ── Type scale ── */
+  --text-caption: 0.6875rem;   /* 11px */
+  --text-small:   0.8125rem;   /* 13px */
+  --text-base:    1rem;        /* 16px */
+  --text-sub:     1.125rem;    /* 18px */
+  --text-h3:      1.375rem;    /* 22px */
+  --text-h2:      clamp(1.75rem, 3.4vw, 3.5rem);
+  --text-h1:      clamp(2.5rem, 5.2vw, 5.5rem);
+  --text-hero:    clamp(3.5rem, 9vw, 9rem);
+
+  /* ── Letter spacing ── */
+  --tracking-hero:  0.08em;
+  --tracking-head:  0.06em;
+  --tracking-cta:   0.12em;
+  --tracking-label: 0.14em;
+
+  /* ── Spacing (4px base) ── */
+  --spacing-xs:  4px;
+  --spacing-s:   8px;
+  --spacing-m:   16px;
+  --spacing-l:   24px;
+  --spacing-xl:  40px;
+  --spacing-xxl: 64px;
+
+  /* ── Radii — FAVO prefers crisp corners ── */
+  --radius-none: 0px;
+  --radius-card: 2px;
+  --radius-btn:  4px;
+  --radius-pill: 999px;
+
+  /* ── Shadows — almost none ── */
+  --shadow-1: 0 1px 0 rgba(28,5,1,0.06);
+  --shadow-2: 0 6px 24px rgba(28,5,1,0.10);
+
+  /* ── Motion ── */
+  --ease-out: cubic-bezier(.22,.61,.36,1);
+  --ease-in:  cubic-bezier(.55,.06,.68,.19);
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --dur-slow: 420ms;
 }
 
-/* Base styles */
+/* ── Base reset ── */
 body {
-  background-color: var(--color-cream);
-  color: var(--color-charcoal);
+  background-color: var(--color-paper);
+  color: var(--color-coffee-bean);
   font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-crimson-carrot); text-decoration: underline; text-underline-offset: 3px; }
+a:hover { color: var(--color-coffee-bean); }
+
+hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(--spacing-l) 0; }
+
+/* ── Semantic type classes ── */
+.favo-hero {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: var(--text-hero);
+  line-height: 0.92;
+  letter-spacing: var(--tracking-hero);
+  text-transform: uppercase;
+}
+
+.favo-h1 {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: var(--text-h1);
+  line-height: 0.96;
+  letter-spacing: var(--tracking-hero);
+  text-transform: uppercase;
+}
+
+.favo-h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h2);
+  line-height: 1.0;
+  letter-spacing: var(--tracking-head);
+  text-transform: uppercase;
+}
+
+.favo-h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h3);
+  line-height: 1.1;
+  letter-spacing: var(--tracking-head);
+  text-transform: uppercase;
+}
+
+.favo-subhead {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: var(--text-sub);
+  line-height: 1.35;
+}
+
+.favo-body {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: var(--text-base);
+  line-height: 1.7;
+  color: var(--color-coffee-bean);
+  text-wrap: pretty;
+}
+
+.favo-small {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: var(--text-small);
+  line-height: 1.55;
+}
+
+.favo-label,
+.favo-caption {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  font-size: var(--text-caption);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-cool-steel);
+}
+
+.favo-cta {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: var(--text-small);
+  letter-spacing: var(--tracking-cta);
+  text-transform: uppercase;
+  color: var(--color-crimson-carrot);
 }
