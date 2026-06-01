@@ -17,21 +17,18 @@
 /src/components/ui/                @NikaoduT
 /src/components/shared/            @NikaoduT
 
-# Backend — Gian owns all server and DB code
-# Replace @gian with the real GitHub username
-/db/                               @brynnclaw
-/src/server/                       @brynnclaw
-/src/app/api/                      @brynnclaw
-/auth.ts                           @brynnclaw
-/proxy.ts                          @brynnclaw
-/drizzle.config.ts                 @brynnclaw
+# Backend — Gian
+/db/                               @Gian-HOF
+/src/server/                       @Gian-HOF
+/src/app/api/                      @Gian-HOF
+/auth.ts                           @Gian-HOF
+/proxy.ts                          @Gian-HOF
+/drizzle.config.ts                 @Gian-HOF
 
-# POS — Mine's vertical
-# Replace @mine with the real GitHub username
-/src/app/pos/                      @brynnclaw
-/src/components/pos/               @brynnclaw
+# POS — Mine
+/src/app/pos/                      @Minevdw
+/src/components/pos/               @Minevdw
 
-# Admin — Mia's vertical
-# Replace @mia with the real GitHub username
-/src/app/admin/                    @brynnclaw
-/src/components/admin/             @brynnclaw
+# Admin — Mia
+/src/app/admin/                    @MiaLigthelm
+/src/components/admin/             @MiaLigthelm
