@@ -3,6 +3,9 @@
 # Installed automatically by `bun install` via the prepare script.
 # To skip in an emergency: git push --no-verify (use sparingly)
 
+# Ensure bun is on the PATH (Windows + Git bash)
+export PATH="$HOME/.bun/bin:$PATH"
+
 echo ""
 echo "🔍 Running CI checks before push..."
 echo "   (same checks that run on GitHub — catching errors before they hit CI)"
