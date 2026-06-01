@@ -2,4 +2,33 @@
 # silent deletion of review workflows from the default branch (which disables
 # @claude comment-triggers entirely). Enforced when branch protection has
 # "Require review from Code Owners" enabled.
-/.github/ @brynnclaw
+/.github/                          @brynnclaw
+
+# Design system — Nikao owns every token and asset change.
+# A design PR that doesn't have Nikao's approval should never reach main.
+/src/app/globals.css               @NikaoduT
+/src/lib/design-tokens.ts          @NikaoduT
+/src/app/(customer)/               @NikaoduT
+/src/components/landing/           @NikaoduT
+/public/brand/                     @NikaoduT
+/docs/DESIGN.md                    @NikaoduT
+
+# Shared UI — both design and admin vertical sign off
+/src/components/ui/                @NikaoduT
+/src/components/shared/            @NikaoduT
+
+# Backend — Gian
+/db/                               @Gian-HOF
+/src/server/                       @Gian-HOF
+/src/app/api/                      @Gian-HOF
+/auth.ts                           @Gian-HOF
+/proxy.ts                          @Gian-HOF
+/drizzle.config.ts                 @Gian-HOF
+
+# POS — Mine
+/src/app/pos/                      @Minevdw
+/src/components/pos/               @Minevdw
+
+# Admin — Mia
+/src/app/admin/                    @MiaLigthelm
+/src/components/admin/             @MiaLigthelm
