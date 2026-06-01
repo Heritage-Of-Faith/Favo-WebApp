@@ -1,10 +1,10 @@
 # FAVO Café — Claude Context
 
 Project: FAVO Café Web App · single-tenant café POS + admin
-Repo: `github.com/hofmi-ai/favo` · Deploy: `favo.hofmi.org`
+Repo: `github.com/Heritage-Of-Faith/Favo-WebApp` · Deploy: `favo.hofmi.org`
 
 ## Stack snapshot
-Next.js 16 (App Router) · React 19 · TS 5.6 strict · Tailwind v4 + shadcn/ui · PG 16 + Drizzle ORM · Auth.js v6 · Yoco Online API · Web Push + VAPID · SSE via PG LISTEN/NOTIFY · Bun · Infisical · Coolify · Cloudflare
+Next.js 16 (App Router) · React 19 · TS 5.6 strict · Tailwind v4 + shadcn/ui · PG 17 (Supabase) + Drizzle ORM · Auth.js v5 · Yoco Online API · Web Push + VAPID · SSE via PG LISTEN/NOTIFY · Bun · Infisical · Cloudflare
 
 ## Repo map
 - `src/app/(customer)` — landing + customer PWA (Nikao)
@@ -29,9 +29,11 @@ All Server Actions return `{ ok: true, data } | { ok: false, code, message }` �
 
 **Importable helpers:** `@/lib/format` (`formatZar`, `formatDate`, `revenueDay`) · `@/server/orders/pricing` (`computeOrderTotalZar`) · `@/server/loyalty/calc` (`earnPoints`, `canRedeem`) · `@/lib/auth/session` (`getSession`, `requireRole`) · `@/server/auth/rbac` (`canAccessAdmin`, …)
 
-**Seed for local testing:** test barista PIN `1234`; customer "Louis" (search `Lou`).
+**Seed for local testing:** test barista PIN `1234`; customer "Louis" (search `Lou`). Seed is already applied to Supabase (Flavo-Real).
 
-**Not built yet (don't assume these exist):** admin-support actions `listStaff` / `createStaff` / `setStaffPin` / `setMenuItemPrice` / `listAudit`; loyalty `redeem`/wallet/packs (Phase 3). End-to-end run needs a DB + Yoco/VAPID env — pure logic is fully testable without them.
+**Database:** Live on Supabase (Flavo-Real, eu-west-1, PG 17). Set `DATABASE_URL` (Transaction pooler, port 6543) via `.env.local` or Infisical. `db/index.ts` has `prepare: false` for PgBouncer compatibility — do not remove it.
+
+**Not built yet (don't assume these exist):** admin-support actions `listStaff` / `createStaff` / `setStaffPin` / `setMenuItemPrice` / `listAudit`; loyalty `redeem`/wallet/packs (Phase 3). End-to-end run needs Yoco/VAPID env vars — pure logic is fully testable without them.
 
 ## Branches & PRs
 - Branch: `feat/<initial>-<task-id>-<kebab-name>` (e.g. `feat/g-g1-db-schema`)
