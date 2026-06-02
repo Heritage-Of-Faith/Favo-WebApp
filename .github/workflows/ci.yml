@@ -1,8 +1,7 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [main]
+  pull_request:   # run on every PR regardless of target branch
   push:
     branches: [main]
 
@@ -51,8 +50,20 @@ jobs:
       - name: Unit tests
         run: bun test:unit
 
+      # ── E2E is a best-effort signal, NOT part of the merge gate. ──
+      # CLAUDE.md defines the gate as typecheck · lint · test:unit.
+      # The Phase 1 acceptance flow runs against seeded staging (PLANNING.md),
+      # not an ephemeral CI dev server. We still run it here for early signal,
+      # against a freshly migrated + seeded test DB, but it never blocks merge.
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
-      - name: E2E tests
+      - name: Migrate test DB
+        run: bun db:migrate
+
+      - name: Seed test DB
+        run: bun db:seed
+
+      - name: E2E tests (non-blocking signal)
         run: bun test:e2e:ci
+        continue-on-error: true

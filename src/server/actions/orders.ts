@@ -22,6 +22,10 @@ import {
 } from "@/server/orders/pricing";
 import { checkStaffDiscountEligibility } from "@/server/orders/discount";
 import { earnPoints } from "@/server/loyalty/calc";
+import { createPaymentIntent } from "@/server/yoco/client";
+import { notifyOrderChange } from "@/server/queue/notify";
+import { sendOrderReadyPush } from "@/server/push/send";
+import { isValidPushSubscription } from "@/server/push/payload";
 import type { ActionResult, Order, OrderState } from "@/lib/types";
 
 // Docs: docs/API.md · Business rules L01–L06, L14–L15.
@@ -144,8 +148,21 @@ export async function createOrder(
     after: { state: "ordered", totalZar, customerId: data.customerId ?? null },
   });
 
-  // TODO (G6): create a real Yoco payment intent and return its client secret.
-  return { ok: true, data: { orderId, yocoClientSecret: "" } };
+  // Create a Yoco payment intent — the client secret goes to the hosted-fields SDK.
+  let yocoClientSecret = "";
+  try {
+    const intent = await createPaymentIntent({
+      amountZar: totalZar,
+      metadata: { orderId },
+    });
+    yocoClientSecret = intent.clientSecret;
+  } catch (err) {
+    // Non-fatal in dev without YOCO_SECRET_KEY; fatal in production.
+    if (process.env.NODE_ENV === "production") throw err;
+    console.warn("[createOrder] Yoco intent skipped (YOCO_SECRET_KEY not set):", err);
+  }
+
+  return { ok: true, data: { orderId, yocoClientSecret } };
 }
 
 /**
@@ -195,8 +212,26 @@ export async function transitionOrder(
         .set({ loyaltyPoints: sql`${customers.loyaltyPoints} + ${points}` })
         .where(eq(customers.id, current.customerId));
     }
-    // TODO (G6/G7): notifyOrderChange(...) + sendOrderReadyPush(...)
+    // Push notification to customer's device.
+    const [cust] = await db
+      .select({ name: customers.name, pushSubscription: customers.pushSubscription })
+      .from(customers)
+      .where(eq(customers.id, current.customerId));
+    if (cust?.pushSubscription && isValidPushSubscription(cust.pushSubscription)) {
+      // Non-fatal — order is ready regardless of push delivery.
+      sendOrderReadyPush(cust.pushSubscription, orderId, cust.name ?? undefined).catch(
+        () => {}
+      );
+    }
   }
+
+  // Notify all connected POS queue listeners of the state change.
+  notifyOrderChange({
+    type: "state_change",
+    orderId,
+    state: toState,
+    at: new Date().toISOString(),
+  }).catch(() => {}); // Non-fatal — POS will resync on reconnect.
 
   await writeAudit({
     entityKind: "order",
