@@ -189,7 +189,7 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
       )}
 
       {error && (
-        <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#F5560C" }}>
+        <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "var(--color-crimson-carrot)" }}>
           {error}
         </p>
       )}

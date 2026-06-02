@@ -47,7 +47,7 @@ function MockOperatingHours({ hours, className }: MockOperatingHoursProps) {
     <section
       className={className}
       aria-label="Operating hours"
-      style={{ borderColor: "var(--color-porcelain-soft, #f0ece8)", maxWidth: 340 }}
+      style={{ borderColor: "var(--color-porcelain-soft)", maxWidth: 340 }}
     >
       <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
         {DISPLAY_ORDER.map((dow) => {
