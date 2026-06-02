@@ -1,6 +1,6 @@
 // Customer PWA home — owner: Nikao (task N5)
 // Push notification opt-in + Phase 1 staging customer form.
-// Route: /customer
+// Route: /customer  (inside (customer) route group — inherits PWA layout + meta)
 "use client";
 
 import { useState } from "react";
@@ -11,7 +11,7 @@ const isStaging = process.env.NEXT_PUBLIC_STAGING === "true";
 
 const S = {
   page: {
-    backgroundColor: "#1C0501",
+    backgroundColor: "var(--color-coffee-bean)",
     minHeight: "100dvh",
     display: "flex",
     flexDirection: "column" as const,
@@ -29,7 +29,7 @@ const S = {
     fontSize: 22,
     letterSpacing: "0.22em",
     textTransform: "uppercase" as const,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
     textDecoration: "none",
     lineHeight: 1,
   } as React.CSSProperties,
@@ -39,7 +39,7 @@ const S = {
     fontSize: 11,
     letterSpacing: "0.12em",
     textTransform: "uppercase" as const,
-    color: "#81A4B1",
+    color: "var(--color-cool-steel)",
     textDecoration: "none",
   } as React.CSSProperties,
   main: {
@@ -57,7 +57,7 @@ const S = {
     lineHeight: 0.95,
     letterSpacing: "0.06em",
     textTransform: "uppercase" as const,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
     margin: 0,
   },
   sub: {
@@ -65,7 +65,7 @@ const S = {
     fontWeight: 400,
     fontSize: 15,
     lineHeight: 1.7,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
     opacity: 0.7,
     margin: 0,
   },
@@ -120,7 +120,7 @@ export default function CustomerPage() {
               fontSize: 11,
               letterSpacing: "0.14em",
               textTransform: "uppercase",
-              color: "#81A4B1",
+              color: "var(--color-cool-steel)",
               marginBottom: 8,
             }}>
               Coming in Phase 3
@@ -130,7 +130,7 @@ export default function CustomerPage() {
               fontWeight: 400,
               fontSize: 15,
               lineHeight: 1.7,
-              color: "#F7F6F2",
+              color: "var(--color-porcelain)",
               opacity: 0.7,
             }}>
               Your full loyalty dashboard — stamps, history, and rewards —
