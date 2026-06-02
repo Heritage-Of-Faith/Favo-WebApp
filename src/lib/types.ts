@@ -121,3 +121,12 @@ export type SessionUser = {
   name: string;
   role: StaffRole;
 };
+
+// ─── Operating Hours ──────────────────────────────────────────────────────────
+
+export type OperatingHour = {
+  dayOfWeek: number; // 0=Sun … 6=Sat
+  opensAt: string;   // "HH:mm"
+  closesAt: string;  // "HH:mm"
+  isClosed: boolean;
+};
