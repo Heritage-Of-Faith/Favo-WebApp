@@ -20,6 +20,10 @@ export const metadata: Metadata = {
     title: "FAVO Café",
     description: "Speciality coffee. Reward every visit.",
   },
+  icons: {
+    icon: "/brand/logo-monogram.svg",
+    apple: "/brand/logo-monogram.svg",
+  },
 };
 
 export default function RootLayout({

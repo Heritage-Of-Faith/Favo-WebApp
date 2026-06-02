@@ -16,7 +16,10 @@ export default defineConfig({
   ],
   webServer: {
     command: "bun dev",
-    url: "http://localhost:3000",
+    // Wait on the lightweight health route — `/` triggers a full first-paint
+    // compile that can exceed the default 60s budget on a cold CI runner.
+    url: "http://localhost:3000/api/healthz",
+    timeout: 120_000,
     reuseExistingServer: !process.env.CI,
   },
 });
