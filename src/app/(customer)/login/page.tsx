@@ -1,6 +1,6 @@
 // Customer login stub — owner: Nikao (task N6)
 // Phase 3 placeholder. No auth. Visual match with landing page.
-// Route: /customer/login
+// Route: /login  (inside (customer) route group — gets PWA layout + meta)
 
 export const metadata = {
   title: "Your Reward Portal",
@@ -9,8 +9,8 @@ export const metadata = {
 
 const S = {
   page: {
-    backgroundColor: "#054D61",
-    color: "#F7F6F2",
+    backgroundColor: "var(--color-dark-teal)",
+    color: "var(--color-porcelain)",
     minHeight: "100dvh",
     display: "flex",
     flexDirection: "column" as const,
@@ -26,7 +26,7 @@ const S = {
     lineHeight: 0.9,
     letterSpacing: "0.22em",
     textTransform: "uppercase" as const,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
     marginBottom: 48,
   } satisfies React.CSSProperties,
   eyebrow: {
@@ -35,7 +35,7 @@ const S = {
     fontSize: 11,
     letterSpacing: "0.14em",
     textTransform: "uppercase" as const,
-    color: "#F5560C",
+    color: "var(--color-crimson-carrot)",
     marginBottom: 16,
   } satisfies React.CSSProperties,
   heading: {
@@ -45,7 +45,7 @@ const S = {
     lineHeight: 1.0,
     letterSpacing: "0.06em",
     textTransform: "uppercase" as const,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
     margin: 0,
     marginBottom: 24,
   } satisfies React.CSSProperties,
@@ -54,7 +54,7 @@ const S = {
     fontWeight: 400,
     fontSize: 16,
     lineHeight: 1.75,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
     opacity: 0.85,
     maxWidth: "34ch",
     textWrap: "pretty" as const,
@@ -66,7 +66,7 @@ const S = {
     fontSize: 11,
     letterSpacing: "0.14em",
     textTransform: "uppercase" as const,
-    color: "#81A4B1",
+    color: "var(--color-cool-steel)",
     marginBottom: 40,
   } satisfies React.CSSProperties,
   divider: {
@@ -81,7 +81,7 @@ const S = {
     fontSize: 12,
     letterSpacing: "0.12em",
     textTransform: "uppercase" as const,
-    color: "#F5560C",
+    color: "var(--color-crimson-carrot)",
     textDecoration: "none",
   } satisfies React.CSSProperties,
 } as const;
