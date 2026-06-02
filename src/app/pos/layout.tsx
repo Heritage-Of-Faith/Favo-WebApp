@@ -1,8 +1,8 @@
-// POS layout — owner: Mine (M1)
-// Locked to iPad portrait 768×1024. Viewport meta set here so the POS shell
-// never scales or zooms on touch devices.
+// POS layout — owner: Mine (M1 + M7)
+// Locked to iPad portrait 768×1024. OnlineIndicator is always visible.
 
 import type { Metadata, Viewport } from "next";
+import OnlineIndicator from "@/components/pos/OnlineIndicator";
 
 export const metadata: Metadata = {
   title: "FAVO POS",
@@ -20,6 +20,8 @@ export default function POSLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen w-full bg-dark-teal font-sans antialiased">
       {children}
+      {/* Offline banner — renders only when connection is lost */}
+      <OnlineIndicator />
     </div>
   );
 }
