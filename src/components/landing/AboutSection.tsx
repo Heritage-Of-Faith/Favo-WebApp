@@ -1,11 +1,11 @@
-// About / Story section — owner: Nikao (task N3)
+﻿// About / Story section â€” owner: Nikao (task N3)
 // Coffee Bean dark background. Transparency breakdown on the left, sourcing story right.
 // Inspired by design system StoryBlock pattern.
 
 const S = {
   section: {
-    backgroundColor: "#1C0501",
-    color: "#F7F6F2",
+    backgroundColor: "var(--color-coffee-bean)",
+    color: "var(--color-porcelain)",
     padding: "88px 40px",
   } satisfies React.CSSProperties,
   inner: {
@@ -22,7 +22,7 @@ const S = {
     fontSize: 11,
     letterSpacing: "0.14em",
     textTransform: "uppercase" as const,
-    color: "#F5560C",
+    color: "var(--color-crimson-carrot)",
     marginBottom: 16,
   } satisfies React.CSSProperties,
   heading: {
@@ -32,7 +32,7 @@ const S = {
     lineHeight: 1.0,
     letterSpacing: "0.06em",
     textTransform: "uppercase" as const,
-    color: "#F5560C",
+    color: "var(--color-crimson-carrot)",
     margin: 0,
     marginBottom: 24,
   } satisfies React.CSSProperties,
@@ -41,13 +41,13 @@ const S = {
     fontWeight: 400,
     fontSize: 16,
     lineHeight: 1.75,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
     opacity: 0.9,
     marginBottom: 20,
     textWrap: "pretty" as const,
   } satisfies React.CSSProperties,
   box: {
-    backgroundColor: "#054D61",
+    backgroundColor: "var(--color-dark-teal)",
     padding: 32,
   } satisfies React.CSSProperties,
   boxEyebrow: {
@@ -56,7 +56,7 @@ const S = {
     fontSize: 11,
     letterSpacing: "0.14em",
     textTransform: "uppercase" as const,
-    color: "#F5560C",
+    color: "var(--color-crimson-carrot)",
     marginBottom: 20,
   } satisfies React.CSSProperties,
   row: {
@@ -74,12 +74,12 @@ const S = {
     fontSize: 16,
     letterSpacing: "0.06em",
     textTransform: "uppercase" as const,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
   } satisfies React.CSSProperties,
   rowWhat: {
     fontFamily: "'DM Sans', sans-serif",
     fontSize: 12,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
     opacity: 0.65,
   } satisfies React.CSSProperties,
   rowPct: {
@@ -87,13 +87,13 @@ const S = {
     fontWeight: 900,
     fontSize: 20,
     letterSpacing: "0.04em",
-    color: "#F5560C",
+    color: "var(--color-crimson-carrot)",
     textAlign: "right" as const,
   } satisfies React.CSSProperties,
 } as const;
 
 const breakdown = [
-  { who: "Diofanor Ruiz", what: "Farm gate · Huila",       pct: "62%" },
+  { who: "Diofanor Ruiz", what: "Farm gate Â· Huila",       pct: "62%" },
   { who: "Origin co-op",   what: "Milling, drying",         pct: "6%"  },
   { who: "Importer",       what: "Logistics, finance",       pct: "8%"  },
   { who: "FAVO",           what: "Roasting, packaging",      pct: "21%" },
@@ -104,7 +104,7 @@ export default function AboutSection() {
   return (
     <section style={S.section}>
       <div style={S.inner}>
-        {/* ── Left: story ── */}
+        {/* â”€â”€ Left: story â”€â”€ */}
         <div>
           <p style={S.eyebrow}>Our coffee</p>
           <h2 style={S.heading}>Specific.<br />Transparent.<br />Direct.</h2>
@@ -121,9 +121,9 @@ export default function AboutSection() {
           </p>
         </div>
 
-        {/* ── Right: price breakdown ── */}
+        {/* â”€â”€ Right: price breakdown â”€â”€ */}
         <div style={S.box}>
-          <p style={S.boxEyebrow}>Where the bag price went · El Jordán</p>
+          <p style={S.boxEyebrow}>Where the bag price went Â· El JordÃ¡n</p>
           {breakdown.map((row, i) => (
             <div
               key={row.who}
