@@ -1,0 +1,4 @@
+# Files to copy automatically into new git worktrees.
+# These are gitignored locally but needed for the app to run in any branch.
+# Reference: https://code.claude.com/docs/en/worktrees
+.env.local

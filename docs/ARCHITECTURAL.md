@@ -6,15 +6,15 @@
 | Framework | Next.js 16 App Router + React 19 |
 | Language | TypeScript 5.6 strict (`tsc --noEmit` in CI) |
 | Styling | Tailwind v4 + shadcn/ui |
-| DB | PostgreSQL 16 (self-hosted on `hofmi-eu-open`) |
-| ORM | Drizzle ORM |
-| Auth | Auth.js v6 — PIN provider (staff) + HOFMI SSO (admin/finance/owner) + email magic link (customers, Phase 3) |
+| DB | PostgreSQL 17 (Supabase, project `Flavo-Real`, eu-west-1) |
+| ORM | Drizzle ORM (`prepare: false` in `db/index.ts` — required for PgBouncer Transaction pooler) |
+| Auth | Auth.js v5 — PIN provider (staff) + HOFMI SSO (admin/finance/owner, TODO) + email magic link (customers, Phase 3) |
 | Payments | Yoco Online API (hosted fields, tokenisation) |
 | Real-time | Postgres LISTEN/NOTIFY → SSE |
 | Push | Web Push API + VAPID (`web-push`) |
 | Offline | IndexedDB (`idb`) + Service Worker (Phase 3) |
 | Storage | Cloudflare R2 (`hofmi-favo`) |
-| Hosting | Coolify on `hofmi-eu-open` |
+| Hosting | TBD — app hosting not yet set up; DB on Supabase |
 | CDN | Cloudflare (`favo.hofmi.org`); Cloudflare Access gates `/admin/*` + `/finance/*` |
 | Secrets | Infisical (`hofmi/favo`) |
 | Logs | Pino → Loki |
@@ -63,7 +63,7 @@ db/
 drizzle/                 # generated migrations
 tests/
   unit/ e2e/ db/ components/ hooks/ lib/ server/ auth/
-middleware.ts            # route gating by role
+proxy.ts                 # route gating by role (Next.js 16 — replaces middleware.ts)
 ```
 
 ## Environment (canonical names — never commit)
@@ -82,16 +82,16 @@ NEXT_PUBLIC_STAGING                  # gates staging-only stubs
 ```
 
 ## Deploy pipeline
-GitHub Actions → CI on every PR (`bun typecheck`, `bun lint`, `bun test:unit`, `bun test:e2e:ci`) → squash-merge to `main` → Coolify webhook → rebuild → `favo.hofmi.org`.
+GitHub Actions → CI on every PR (`bun typecheck`, `bun lint`, `bun test:unit`, `bun test:e2e:ci`) → squash-merge to `main` → app hosting TBD → `favo.hofmi.org`.
 
 ## Local dev
 ```
 bun install
-infisical run -- bun db:migrate
-infisical run -- bun db:seed
-infisical run -- bun dev
+# Create .env.local with DATABASE_URL (Supabase Transaction pooler, port 6543)
+# DB is already migrated and seeded — do NOT run db:migrate or db:seed against prod
+bun dev
 ```
-Requires Postgres 16. Use Infisical CLI to inject env at runtime.
+DB is on Supabase (PG 17) — no local Postgres needed. `DATABASE_URL` must point at the Supabase Transaction pooler (port 6543). The Session pooler (port 5432) is required for PG LISTEN/NOTIFY only (SSE stream). Use Infisical CLI to inject env in production: `infisical run -- bun dev`.
 
 ## Test commands
 | Command | Scope |

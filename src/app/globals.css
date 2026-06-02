@@ -6,7 +6,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ─── FAVO Café Design Tokens (Tailwind v4 CSS-first) ─────────────────────── */
-/* Owner: Nikao (task N1). Extend these tokens, do not hardcode colour values. */
+/* Owner: Nikao. Extend these tokens, do not hardcode colour values.           */
 
 @theme {
   /* ── Brand palette ── */
