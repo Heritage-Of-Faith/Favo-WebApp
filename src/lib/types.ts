@@ -121,3 +121,27 @@ export type SessionUser = {
   name: string;
   role: StaffRole;
 };
+
+// ─── Operating Hours ──────────────────────────────────────────────────────────
+
+export type OperatingHour = {
+  dayOfWeek: number; // 0=Sun … 6=Sat
+  opensAt: string;   // "HH:mm"
+  closesAt: string;  // "HH:mm"
+  isClosed: boolean;
+};
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+export type AuditLog = {
+  id: string;
+  entityKind: string;
+  entityId: string;
+  action: string;
+  actorId: string | null;
+  actorRole: string | null;
+  at: string; // ISO 8601 timestamp
+  before: unknown | null;
+  after: unknown | null;
+  reason: string | null;
+};
