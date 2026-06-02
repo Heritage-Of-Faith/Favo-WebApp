@@ -23,8 +23,8 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
 
 const S = {
   wrap: {
-    backgroundColor: "#054D61",
-    color: "#F7F6F2",
+    backgroundColor: "var(--color-dark-teal)",
+    color: "var(--color-porcelain)",
     padding: "40px",
     display: "flex",
     flexDirection: "column" as const,
@@ -37,7 +37,7 @@ const S = {
     fontSize: 11,
     letterSpacing: "0.14em",
     textTransform: "uppercase" as const,
-    color: "#F5560C",
+    color: "var(--color-crimson-carrot)",
   },
   heading: {
     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
@@ -46,7 +46,7 @@ const S = {
     lineHeight: 1.0,
     letterSpacing: "0.06em",
     textTransform: "uppercase" as const,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
     margin: 0,
   },
   body: {
@@ -54,15 +54,15 @@ const S = {
     fontWeight: 400,
     fontSize: 15,
     lineHeight: 1.7,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
     opacity: 0.85,
   },
   btn: (disabled: boolean) => ({
     display: "inline-flex",
     alignItems: "center",
     gap: 8,
-    backgroundColor: disabled ? "rgba(245,86,12,0.4)" : "#F5560C",
-    color: "#FBFAF6",
+    backgroundColor: disabled ? "rgba(245,86,12,0.4)" : "var(--color-crimson-carrot)",
+    color: "var(--color-paper)",
     fontFamily: "'DM Sans', sans-serif",
     fontWeight: 700,
     fontSize: 12,
@@ -80,14 +80,14 @@ const S = {
     fontFamily: "'DM Sans', sans-serif",
     fontWeight: 400,
     fontSize: 13,
-    color: "#F7F6F2",
+    color: "var(--color-porcelain)",
     opacity: 0.8,
   },
   dot: (on: boolean) => ({
     width: 8,
     height: 8,
     borderRadius: "50%",
-    backgroundColor: on ? "#22c55e" : "#81A4B1",
+    backgroundColor: on ? "var(--color-success)" : "var(--color-cool-steel)",
     flexShrink: 0,
   } as React.CSSProperties),
 } as const;
