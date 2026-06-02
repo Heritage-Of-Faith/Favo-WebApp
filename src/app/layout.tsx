@@ -5,6 +5,22 @@ export const metadata: Metadata = {
   title: "FAVO Café",
   description: "Coffee loyalty + POS for FAVO Café",
   manifest: "/manifest.json",
+  themeColor: "#1C0501",
+  openGraph: {
+    title: "FAVO Café",
+    description: "Speciality coffee. Reward every visit.",
+    type: "website",
+    siteName: "FAVO Café",
+  },
+  twitter: {
+    card: "summary",
+    title: "FAVO Café",
+    description: "Speciality coffee. Reward every visit.",
+  },
+  icons: {
+    icon: "/brand/logo-monogram.svg",
+    apple: "/brand/logo-monogram.svg",
+  },
 };
 
 export default function RootLayout({
