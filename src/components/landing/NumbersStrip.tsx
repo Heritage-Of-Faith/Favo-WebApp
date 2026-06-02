@@ -1,19 +1,19 @@
-// Numbers strip — owner: Nikao (task N3)
-// Four café facts set large in Barlow Condensed on a paper background.
-// These are decorative data points — specific, not generic.
+﻿// Numbers strip â€” owner: Nikao (task N3)
+// Four cafÃ© facts set large in Barlow Condensed on a paper background.
+// These are decorative data points â€” specific, not generic.
 
 const facts = [
-  { number: "09:00",  label: "Mon – Fri open",       sub: "Saturdays closed" },
-  { number: "93°C",   label: "Espresso temperature",  sub: "9 bar · 28 second extraction" },
-  { number: "1,750",  label: "Metres elevation",       sub: "Current lot · El Jordán, Huila" },
-  { number: "62%",    label: "Paid to producer",       sub: "On this lot · nothing hidden" },
+  { number: "09:00",  label: "Mon â€“ Fri open",       sub: "Saturdays closed" },
+  { number: "93Â°C",   label: "Espresso temperature",  sub: "9 bar Â· 28 second extraction" },
+  { number: "1,750",  label: "Metres elevation",       sub: "Current lot Â· El JordÃ¡n, Huila" },
+  { number: "62%",    label: "Paid to producer",       sub: "On this lot Â· nothing hidden" },
 ] as const;
 
 const S = {
   section: {
-    backgroundColor: "#FBFAF6",
-    borderTop: "1px solid #E5E4DE",
-    borderBottom: "1px solid #E5E4DE",
+    backgroundColor: "var(--color-paper)",
+    borderTop: "1px solid var(--color-porcelain-soft)",
+    borderBottom: "1px solid var(--color-porcelain-soft)",
   } satisfies React.CSSProperties,
   grid: {
     maxWidth: 1200,
@@ -23,7 +23,7 @@ const S = {
     padding: "40px 40px",
   } satisfies React.CSSProperties,
   cell: (i: number) => ({
-    borderLeft: i > 0 ? "1px solid #E5E4DE" : "none",
+    borderLeft: i > 0 ? "1px solid var(--color-porcelain-soft)" : "none",
     paddingLeft: i > 0 ? 28 : 0,
     paddingRight: 20,
   } satisfies React.CSSProperties),
@@ -32,7 +32,7 @@ const S = {
     fontWeight: 900,
     fontSize: "clamp(2.5rem, 4vw, 4rem)",
     letterSpacing: "0.04em",
-    color: "#1C0501",
+    color: "var(--color-coffee-bean)",
     lineHeight: 1,
     marginBottom: 8,
   } satisfies React.CSSProperties,
@@ -42,14 +42,14 @@ const S = {
     fontSize: 11,
     letterSpacing: "0.14em",
     textTransform: "uppercase" as const,
-    color: "#81A4B1",
+    color: "var(--color-cool-steel)",
     marginBottom: 3,
   } satisfies React.CSSProperties,
   sub: {
     fontFamily: "'DM Sans', sans-serif",
     fontWeight: 400,
     fontSize: 12,
-    color: "#81A4B1",
+    color: "var(--color-cool-steel)",
     opacity: 0.8,
   } satisfies React.CSSProperties,
 } as const;

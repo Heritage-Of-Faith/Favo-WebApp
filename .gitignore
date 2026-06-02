@@ -40,3 +40,8 @@ yarn-error.log*
 # Misc
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude Code — personal local settings (never commit)
+.claude/settings.local.json
+.claude/launch.json
+NIKAO_STARTUP.md
