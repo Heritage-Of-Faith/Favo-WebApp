@@ -87,8 +87,8 @@ export default function Sidebar({ role }: Props) {
                   "flex min-h-10 items-center rounded-md px-3 text-sm font-medium transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   isActive(item.href)
-                    ? "bg-oat text-text-strong"
-                    : "text-text-muted hover:bg-oat hover:text-text-strong"
+                    ? "bg-elevated text-text-strong"
+                    : "text-text-muted hover:bg-elevated hover:text-text-strong"
                 )}
               >
                 {item.label}

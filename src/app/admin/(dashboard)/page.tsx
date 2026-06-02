@@ -42,7 +42,7 @@ export default async function AdminDashboardPage() {
           <Link
             key={card.href}
             href={card.href}
-            className="rounded-lg border border-border-subtle bg-elevated p-5 transition-colors hover:bg-oat focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-lg border border-border-subtle bg-elevated p-5 transition-colors hover:bg-porcelain-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <h2 className="text-base font-semibold text-text-strong">{card.title}</h2>
             <p className="mt-1 text-sm text-text-muted">{card.description}</p>
