@@ -1,7 +1,8 @@
 name: CI
 
 on:
-  pull_request:   # run on every PR regardless of base branch
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
 
