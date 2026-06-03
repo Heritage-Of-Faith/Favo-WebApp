@@ -1,25 +1,17 @@
 // Operating hours display — owner: Nikao (task N4)
 // Display-only. System NEVER rejects orders based on time (rule L04).
-//
-// TODO (G-backend): replace PLACEHOLDER_HOURS below with a call to
-// getOperatingHours() from @/server/actions/hours once Gian ships that action.
-// The action already exists in the DB seed (db/seed/hours.ts).
+// Data sourced from getOperatingHours() (G-backend, src/server/actions/hours.ts).
+
+import { getOperatingHours } from "@/server/actions/hours";
+import type { OperatingHour } from "@/lib/types";
 
 export interface OperatingHoursProps {
   className?: string;
 }
 
-// ─── Type (mirrors db/seed/hours.ts SeedHours shape) ─────────────────────────
-interface OperatingHour {
-  dayOfWeek: number; // 0=Sun … 6=Sat
-  opensAt: string;   // "HH:mm"
-  closesAt: string;  // "HH:mm"
-  isClosed: boolean;
-}
-
-// ─── Placeholder data (matches the live seed in Supabase) ────────────────────
-// Replace with: const result = await getOperatingHours(); once G-backend lands.
-const PLACEHOLDER_HOURS: OperatingHour[] = [
+// Silent fallback if the DB is unreachable at render time (e.g. cold boot).
+// Matches the live seed values in db/seed/hours.ts.
+const FALLBACK_HOURS: OperatingHour[] = [
   { dayOfWeek: 0, opensAt: "07:00", closesAt: "15:00", isClosed: false }, // Sun
   { dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00", isClosed: false }, // Mon
   { dayOfWeek: 2, opensAt: "09:00", closesAt: "17:00", isClosed: false }, // Tue
@@ -75,8 +67,9 @@ function isOpenNow(row: OperatingHour, todayDow: number, nowMinutes: number): bo
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export default function OperatingHours({ className }: OperatingHoursProps) {
-  const data = PLACEHOLDER_HOURS;
+export default async function OperatingHours({ className }: OperatingHoursProps) {
+  const result = await getOperatingHours();
+  const data = result.ok ? result.data : FALLBACK_HOURS;
   const byDay = new Map<number, OperatingHour>(data.map((r) => [r.dayOfWeek, r]));
   const { dayOfWeek: todayDow, minutes: nowMinutes } = getCurrentJhbParts();
 
