@@ -6,7 +6,8 @@
 
 import { useState, useTransition } from "react";
 import { formatDate } from "@/lib/format";
-import { listAudit, PAGE_SIZE } from "@/server/actions/audit";
+import { listAudit } from "@/server/actions/audit";
+const PAGE_SIZE = 50;
 import type { AuditLog } from "@/lib/types";
 
 const ENTITY_KINDS = [

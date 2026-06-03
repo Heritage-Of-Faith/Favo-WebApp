@@ -11,7 +11,7 @@ import { auditLog } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import type { ActionResult, AuditLog } from "@/lib/types";
 
-export const PAGE_SIZE = 50;
+const PAGE_SIZE = 50;
 
 const listAuditSchema = z.object({
   page: z.number().int().nonnegative().default(0),
