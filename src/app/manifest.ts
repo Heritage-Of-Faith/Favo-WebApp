@@ -1,5 +1,8 @@
 import type { MetadataRoute } from "next";
 
+// PWA metadata requires literal hex — maps to var(--color-coffee-bean)
+const COFFEE_BEAN = "#1C0501";
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "FAVO Café",
@@ -7,8 +10,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Order coffee. Earn rewards. Every visit counts.",
     start_url: "/",
     display: "standalone",
-    background_color: "#1C0501",
-    theme_color: "#1C0501",
+    background_color: COFFEE_BEAN,
+    theme_color: COFFEE_BEAN,
     orientation: "portrait",
     icons: [
       {
