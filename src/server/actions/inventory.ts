@@ -1,265 +1,315 @@
 "use server";
 
-// Inventory server actions — Phase 2 (G8 / G9 / G10 / G11 / G12)
-// Functions marked STUB return fixture data until the real implementation
-// is merged on its respective branch.
+// Inventory server actions — G12 (real DB implementations)
+// listInventory, listLots, listInventoryStatus, getActiveBeanLot:
+//   admin/finance/manager read; POS reads listInventoryStatus post-login.
+// setItemThreshold, updateLotCost: admin+ write + audit (L08) + cogs_changes notify.
 // Docs: docs/API.md · docs/DATA_MODEL.md · docs/BUSINESS_RULES.md L08 T04
 
+import { asc, desc, eq, sql } from "drizzle-orm";
+import { db } from "@/lib/db";
+import {
+  inventoryItems,
+  inventoryLots,
+  stockMovements,
+} from "@db/schema";
+import { authorize } from "@/server/auth/guard";
+import { writeAudit } from "@/server/audit";
 import type {
   ActionResult,
   InventoryItemStatus,
   InventoryLot,
   InventoryStatusMap,
 } from "@/lib/types";
+import type { DB } from "@/lib/db";
 
-// ─── Fixture data (removed once real implementations land) ───────────────────
+const READER_ROLES = ["manager", "admin", "finance", "owner"] as const;
+const ADMIN_ROLES = ["admin", "owner"] as const;
 
-const FIXTURE_ITEMS: InventoryItemStatus[] = [
-  {
-    id: "inv_item_espresso_beans",
-    name: "Espresso Beans",
-    kind: "bean",
-    unit: "g",
-    lowStockThreshold: 500,
-    currentStock: 1800,
-    status: "ok",
-  },
-  {
-    id: "inv_item_whole_milk",
-    name: "Full-Cream Milk",
-    kind: "milk",
-    unit: "ml",
-    lowStockThreshold: 2000,
-    currentStock: 3500,
-    status: "ok",
-  },
-  {
-    id: "inv_item_oat_milk",
-    name: "Oat Milk",
-    kind: "milk",
-    unit: "ml",
-    lowStockThreshold: 1000,
-    currentStock: 800,
-    status: "low",
-  },
-  {
-    id: "inv_item_macadamia_milk",
-    name: "Macadamia Milk",
-    kind: "milk",
-    unit: "ml",
-    lowStockThreshold: 500,
-    currentStock: 500,
-    status: "ok",
-  },
-  {
-    id: "inv_item_cup_8oz",
-    name: "8 oz Cup",
-    kind: "packaging",
-    unit: "unit",
-    lowStockThreshold: 50,
-    currentStock: 175,
-    status: "ok",
-  },
-  {
-    id: "inv_item_cup_12oz",
-    name: "12 oz Cup",
-    kind: "packaging",
-    unit: "unit",
-    lowStockThreshold: 50,
-    currentStock: 85,
-    status: "ok",
-  },
-  {
-    id: "inv_item_lid",
-    name: "Cup Lid",
-    kind: "packaging",
-    unit: "unit",
-    lowStockThreshold: 100,
-    currentStock: 260,
-    status: "ok",
-  },
-  {
-    id: "inv_item_hot_choc_powder",
-    name: "Hot Chocolate Powder",
-    kind: "other",
-    unit: "g",
-    lowStockThreshold: 200,
-    currentStock: 440,
-    status: "ok",
-  },
-];
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const FIXTURE_LOTS: InventoryLot[] = [
-  {
-    id: "lot_espresso_beans_001",
-    inventoryItemId: "inv_item_espresso_beans",
-    inventoryItemName: "Espresso Beans",
-    sourceName: "Origin Coffee Roasters",
-    batchNumber: "OCR-2026-05-01",
-    roastDate: "2026-04-28T00:00:00Z",
-    receivedAt: "2026-05-01T07:00:00Z",
-    state: "active",
-    origin: "Yirgacheffe · Konga",
-    unitCostZar: "0.4500",
-    quantityReceived: "2000.00",
-    quantityRemaining: 1800,
-  },
-  {
-    id: "lot_whole_milk_001",
-    inventoryItemId: "inv_item_whole_milk",
-    inventoryItemName: "Full-Cream Milk",
-    sourceName: "Clover SA",
-    batchNumber: "CLV-2026-05-01",
-    roastDate: null,
-    receivedAt: "2026-05-01T07:00:00Z",
-    state: "active",
-    origin: null,
-    unitCostZar: "0.0280",
-    quantityReceived: "4000.00",
-    quantityRemaining: 3500,
-  },
-  {
-    id: "lot_oat_milk_001",
-    inventoryItemId: "inv_item_oat_milk",
-    inventoryItemName: "Oat Milk",
-    sourceName: "Oatly SA",
-    batchNumber: "OAT-2026-05-01",
-    roastDate: null,
-    receivedAt: "2026-05-01T07:00:00Z",
-    state: "active",
-    origin: null,
-    unitCostZar: "0.0450",
-    quantityReceived: "2000.00",
-    quantityRemaining: 800,
-  },
-  {
-    id: "lot_cup_8oz_001",
-    inventoryItemId: "inv_item_cup_8oz",
-    inventoryItemName: "8 oz Cup",
-    sourceName: "Bunzl SA",
-    batchNumber: "BNZ-8OZ-2026-05",
-    roastDate: null,
-    receivedAt: "2026-05-01T07:00:00Z",
-    state: "active",
-    origin: null,
-    unitCostZar: "120.0000",
-    quantityReceived: "200.00",
-    quantityRemaining: 175,
-  },
-  {
-    id: "lot_lid_001",
-    inventoryItemId: "inv_item_lid",
-    inventoryItemName: "Cup Lid",
-    sourceName: "Bunzl SA",
-    batchNumber: "BNZ-LID-2026-05",
-    roastDate: null,
-    receivedAt: "2026-05-01T07:00:00Z",
-    state: "active",
-    origin: null,
-    unitCostZar: "80.0000",
-    quantityReceived: "300.00",
-    quantityRemaining: 260,
-  },
-];
+/** Running stock for a lot = SUM of all stock_movements.delta. */
+async function lotRunningStock(lotId: string): Promise<number> {
+  const [row] = await db
+    .select({
+      total: sql<number>`COALESCE(SUM(${stockMovements.delta}), 0)::int`,
+    })
+    .from(stockMovements)
+    .where(eq(stockMovements.inventoryLotId, lotId));
+  return row?.total ?? 0;
+}
+
+/** Running stock for an inventory item = SUM across ALL its lots. */
+async function itemRunningStock(itemId: string): Promise<number> {
+  const [row] = await db
+    .select({
+      total: sql<number>`COALESCE(SUM(${stockMovements.delta}), 0)::int`,
+    })
+    .from(stockMovements)
+    .innerJoin(inventoryLots, eq(stockMovements.inventoryLotId, inventoryLots.id))
+    .where(eq(inventoryLots.inventoryItemId, itemId));
+  return row?.total ?? 0;
+}
+
+function deriveStatus(
+  currentStock: number,
+  threshold: number
+): "ok" | "low" | "out" {
+  if (currentStock <= 0) return "out";
+  if (currentStock < threshold) return "low";
+  return "ok";
+}
 
 // ─── listInventory ────────────────────────────────────────────────────────────
 
-/**
- * Returns all inventory items with their current running-stock and status.
- * Admin / finance / manager read.
- * TODO (P2 G12): replace fixture with real DB query.
- */
 export async function listInventory(): Promise<
   ActionResult<{ items: InventoryItemStatus[] }>
 > {
-  // STUB — returns fixture data until G12 is merged.
-  return { ok: true, data: { items: FIXTURE_ITEMS } };
+  const auth = await authorize(...READER_ROLES);
+  if (!auth.ok) return auth;
+
+  const items = await db.select().from(inventoryItems);
+
+  const result: InventoryItemStatus[] = await Promise.all(
+    items.map(async (item) => {
+      const currentStock = await itemRunningStock(item.id);
+      return {
+        id: item.id,
+        name: item.name,
+        kind: item.kind as InventoryItemStatus["kind"],
+        unit: item.unit as InventoryItemStatus["unit"],
+        lowStockThreshold: item.lowStockThreshold,
+        currentStock,
+        status: deriveStatus(currentStock, item.lowStockThreshold),
+      };
+    })
+  );
+
+  return { ok: true, data: { items: result } };
 }
 
 // ─── listLots ─────────────────────────────────────────────────────────────────
 
-/**
- * Returns lots for a specific inventory item, most-recently-received first.
- * Admin / finance / manager read.
- * TODO (P2 G12): replace fixture with real DB query.
- */
 export async function listLots(
   inventoryItemId: string
 ): Promise<ActionResult<{ lots: InventoryLot[] }>> {
-  // STUB — returns fixture lots for the requested item.
-  const lots = FIXTURE_LOTS.filter(
-    (l) => l.inventoryItemId === inventoryItemId
+  const auth = await authorize(...READER_ROLES);
+  if (!auth.ok) return auth;
+
+  const [item] = await db
+    .select({ name: inventoryItems.name })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.id, inventoryItemId));
+
+  const itemName = item?.name ?? inventoryItemId;
+
+  const lots = await db
+    .select()
+    .from(inventoryLots)
+    .where(eq(inventoryLots.inventoryItemId, inventoryItemId))
+    .orderBy(desc(inventoryLots.receivedAt));
+
+  const result: InventoryLot[] = await Promise.all(
+    lots.map(async (lot) => ({
+      id: lot.id,
+      inventoryItemId: lot.inventoryItemId,
+      inventoryItemName: itemName,
+      sourceName: lot.sourceName,
+      batchNumber: lot.batchNumber,
+      roastDate: lot.roastDate?.toISOString() ?? null,
+      receivedAt: lot.receivedAt.toISOString(),
+      state: lot.state as InventoryLot["state"],
+      origin: lot.origin,
+      unitCostZar: lot.unitCostZar,
+      quantityReceived: lot.quantityReceived,
+      quantityRemaining: await lotRunningStock(lot.id),
+    }))
   );
-  return { ok: true, data: { lots } };
+
+  return { ok: true, data: { lots: result } };
 }
 
 // ─── listInventoryStatus ──────────────────────────────────────────────────────
 
 /**
- * Lightweight map of itemId → status for POS low-stock badges (M9).
- * No auth required (POS reads this after PIN login via session cookie).
- * TODO (P2 G12): replace fixture with real DB query.
+ * Lightweight map for POS low-stock badges (M9). No auth required beyond
+ * a valid session — called after PIN login.
  */
 export async function listInventoryStatus(): Promise<
   ActionResult<{ statusMap: InventoryStatusMap }>
 > {
-  // STUB — returns fixture map.
-  const statusMap: InventoryStatusMap = Object.fromEntries(
-    FIXTURE_ITEMS.map((item) => [item.id, item])
-  );
+  const auth = await authorize(...READER_ROLES);
+  if (!auth.ok) return auth;
+
+  const items = await db.select().from(inventoryItems);
+  const statusMap: InventoryStatusMap = {};
+
+  for (const item of items) {
+    const currentStock = await itemRunningStock(item.id);
+    statusMap[item.id] = {
+      id: item.id,
+      name: item.name,
+      kind: item.kind as InventoryItemStatus["kind"],
+      unit: item.unit as InventoryItemStatus["unit"],
+      lowStockThreshold: item.lowStockThreshold,
+      currentStock,
+      status: deriveStatus(currentStock, item.lowStockThreshold),
+    };
+  }
+
   return { ok: true, data: { statusMap } };
 }
 
 // ─── getActiveBeanLot ─────────────────────────────────────────────────────────
 
-/**
- * Returns the currently active espresso-bean lot for the POS bean card (M11).
- * No auth required (POS reads this post PIN login).
- * TODO (P2 G12): replace fixture with real DB query (FIFO active lot for
- *   inv_item_espresso_beans).
- */
 export async function getActiveBeanLot(): Promise<
   ActionResult<{ lot: InventoryLot | null }>
 > {
-  // STUB — returns the seeded bean lot.
-  const lot = FIXTURE_LOTS.find(
-    (l) => l.inventoryItemId === "inv_item_espresso_beans"
-  ) ?? null;
-  return { ok: true, data: { lot } };
+  const auth = await authorize(...READER_ROLES);
+  if (!auth.ok) return auth;
+
+  const [lot] = await db
+    .select()
+    .from(inventoryLots)
+    .where(eq(inventoryLots.inventoryItemId, "inv_item_espresso_beans"))
+    .orderBy(asc(inventoryLots.receivedAt))
+    .limit(1);
+
+  if (!lot) return { ok: true, data: { lot: null } };
+
+  return {
+    ok: true,
+    data: {
+      lot: {
+        id: lot.id,
+        inventoryItemId: lot.inventoryItemId,
+        inventoryItemName: "Espresso Beans",
+        sourceName: lot.sourceName,
+        batchNumber: lot.batchNumber,
+        roastDate: lot.roastDate?.toISOString() ?? null,
+        receivedAt: lot.receivedAt.toISOString(),
+        state: lot.state as InventoryLot["state"],
+        origin: lot.origin,
+        unitCostZar: lot.unitCostZar,
+        quantityReceived: lot.quantityReceived,
+        quantityRemaining: await lotRunningStock(lot.id),
+      },
+    },
+  };
 }
 
 // ─── setItemThreshold ─────────────────────────────────────────────────────────
 
-/**
- * Updates low_stock_threshold for an inventory item. Admin+ only.
- * TODO (P2 G12): implement real DB update + writeAudit.
- */
 export async function setItemThreshold(
   inventoryItemId: string,
   threshold: number
 ): Promise<ActionResult> {
-  void inventoryItemId;
-  void threshold;
-  // STUB — no-op until G12 is merged.
+  const auth = await authorize(...ADMIN_ROLES);
+  if (!auth.ok) return auth;
+  const session = auth.session;
+
+  if (!Number.isInteger(threshold) || threshold < 0) {
+    return {
+      ok: false,
+      code: "VALIDATION_ERROR",
+      message: "threshold must be a non-negative integer.",
+    };
+  }
+
+  const [item] = await db
+    .select({ id: inventoryItems.id, lowStockThreshold: inventoryItems.lowStockThreshold })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.id, inventoryItemId));
+
+  if (!item) {
+    return { ok: false, code: "NOT_FOUND", message: "Inventory item not found." };
+  }
+
+  await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DB;
+    await tx
+      .update(inventoryItems)
+      .set({ lowStockThreshold: threshold })
+      .where(eq(inventoryItems.id, inventoryItemId));
+
+    await writeAudit(
+      {
+        entityKind: "inventory_item",
+        entityId: inventoryItemId,
+        action: "update",
+        actorId: session.id,
+        actorRole: session.role,
+        before: { lowStockThreshold: item.lowStockThreshold },
+        after: { lowStockThreshold: threshold },
+      },
+      txDb
+    );
+  });
+
   return { ok: true, data: undefined };
 }
 
 // ─── updateLotCost ────────────────────────────────────────────────────────────
 
 /**
- * Updates unit_cost_zar on a lot (admin recost — R10 mitigation). Admin+ only.
- * Also pings `cogs_changes` SSE channel so A7 refreshes within 5 s.
- * TODO (P2 G12): implement real DB update + writeAudit + pg_notify.
+ * Admin recosts a lot (R10 mitigation). Pings cogs_changes so A7 refreshes.
  */
 export async function updateLotCost(
   lotId: string,
   newCostZar: string
 ): Promise<ActionResult> {
-  void lotId;
-  void newCostZar;
-  // STUB — no-op until G12 is merged.
+  const auth = await authorize(...ADMIN_ROLES);
+  if (!auth.ok) return auth;
+  const session = auth.session;
+
+  const costNum = parseFloat(newCostZar);
+  if (!Number.isFinite(costNum) || costNum < 0) {
+    return {
+      ok: false,
+      code: "VALIDATION_ERROR",
+      message: "newCostZar must be a non-negative numeric string.",
+    };
+  }
+
+  const [lot] = await db
+    .select({ id: inventoryLots.id, unitCostZar: inventoryLots.unitCostZar })
+    .from(inventoryLots)
+    .where(eq(inventoryLots.id, lotId));
+
+  if (!lot) {
+    return { ok: false, code: "NOT_FOUND", message: "Inventory lot not found." };
+  }
+
+  await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DB;
+
+    await tx
+      .update(inventoryLots)
+      .set({ unitCostZar: newCostZar })
+      .where(eq(inventoryLots.id, lotId));
+
+    await writeAudit(
+      {
+        entityKind: "inventory_lot",
+        entityId: lotId,
+        action: "recost",
+        actorId: session.id,
+        actorRole: session.role,
+        before: { unitCostZar: lot.unitCostZar },
+        after: { unitCostZar: newCostZar },
+        reason: "admin_recost",
+      },
+      txDb
+    );
+  });
+
+  // Notify COGS dashboard (non-fatal)
+  db.execute(
+    sql`SELECT pg_notify('cogs_changes', ${JSON.stringify({ lotId })})`
+  ).catch(() => {});
+
   return { ok: true, data: undefined };
 }
 
-// logWaste moved to src/server/actions/waste.ts        (G10)
+// logWaste moved to src/server/actions/waste.ts (G10)
 // runStockTake moved to src/server/actions/stock-takes.ts (G11)
