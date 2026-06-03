@@ -339,6 +339,43 @@ export const auditLog = pgTable("audit_log", {
   index("audit_log_at_idx").on(t.at),
 ]);
 
+// ─── Monthly reports (G15 dual-sign) ─────────────────────────────────────────
+
+export const monthlyReports = pgTable(
+  "monthly_reports",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    /** First day of the month (YYYY-MM-DD). UNIQUE — one report per month. */
+    month: text("month").notNull().unique(),
+    revenueZar: integer("revenue_zar").notNull(),
+    cogsZar: integer("cogs_zar").notNull(),
+    expensesZar: integer("expenses_zar").notNull(),
+    grossMarginZar: integer("gross_margin_zar").notNull(),
+    netZar: integer("net_zar").notNull(),
+    /** draft → awaiting_signatures → closed */
+    status: text("status", {
+      enum: ["draft", "awaiting_signatures", "closed"],
+    })
+      .default("draft")
+      .notNull(),
+    /** JSONB: { signerId, signerName, at } */
+    adminSig: jsonb("admin_sig"),
+    financeSig: jsonb("finance_sig"),
+    generatedAt: timestamp("generated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  () => [
+    // L11: a report can only be closed when BOTH signatures are present.
+    check(
+      "monthly_report_closed_requires_both_sigs",
+      sql`status != 'closed' OR (admin_sig IS NOT NULL AND finance_sig IS NOT NULL)`
+    ),
+  ]
+);
+
 // ─── Low-stock pings (G14 dedup) ─────────────────────────────────────────────
 
 export const lowStockPings = pgTable("low_stock_pings", {

@@ -43,6 +43,13 @@
       "when": 1780490027181,
       "tag": "0005_wise_the_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780490256357,
+      "tag": "0006_remarkable_stingray",
+      "breakpoints": true
     }
   ]
 }
