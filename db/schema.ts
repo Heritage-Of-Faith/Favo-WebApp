@@ -43,6 +43,9 @@ export const staff = pgTable("staff", {
   pinHash: text("pin_hash").notNull(),
   active: boolean("active").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // Web Push subscription stored by M10 (POS opt-in). Used by G14 cron to
+  // send low-stock alerts to barista devices.
+  pushSubscription: jsonb("push_subscription"),
 });
 
 // ─── Customers ────────────────────────────────────────────────────────────────
@@ -335,3 +338,30 @@ export const auditLog = pgTable("audit_log", {
   index("audit_log_actor_idx").on(t.actorId),
   index("audit_log_at_idx").on(t.at),
 ]);
+
+// ─── Low-stock pings (G14 dedup) ─────────────────────────────────────────────
+
+export const lowStockPings = pgTable("low_stock_pings", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  inventoryItemId: text("inventory_item_id").notNull().references(() => inventoryItems.id),
+  staffId: text("staff_id").notNull().references(() => staff.id),
+  firedAt: timestamp("fired_at", { withTimezone: true }).defaultNow().notNull(),
+  /** Stock level (integer base units) at the time the ping was sent. */
+  stockAtFire: integer("stock_at_fire").notNull(),
+});
+
+// ─── Weekly reports (G14 cron) ────────────────────────────────────────────────
+
+export const weeklyReports = pgTable("weekly_reports", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  /** ISO date of Monday that starts the week (SAST). */
+  weekStarting: text("week_starting").notNull().unique(),
+  revenueZar: integer("revenue_zar").notNull(),
+  cogsZar: integer("cogs_zar").notNull(),
+  expensesZar: integer("expenses_zar").notNull(),
+  grossMarginZar: integer("gross_margin_zar").notNull(),
+  netZar: integer("net_zar").notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+});
