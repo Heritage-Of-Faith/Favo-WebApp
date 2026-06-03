@@ -9,6 +9,7 @@ import {
   unique,
   index,
   check,
+  numeric,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -126,6 +127,15 @@ export const inventoryLots = pgTable("inventory_lots", {
   receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
   state: lotState("state").default("active").notNull(),
   origin: text("origin"),
+  // Exception to the integer-cents rule: per-unit production cost is a RATE,
+  // not a money amount. When unit=g or unit=ml the cost per gram/ml is
+  // sub-cent (e.g. R450/kg → 0.45 ¢/g). Using integer would force it to 0
+  // and break COGS entirely. numeric(10,4) gives 4-decimal cent precision.
+  // G13 COGS sums (delta × unit_cost_zar) → cast to integer cents at
+  // the order level. Admin recosts via A8 after launch (R10 mitigation).
+  unitCostZar: numeric("unit_cost_zar", { precision: 10, scale: 4 }),
+  // Quantity received when this lot was booked in (in the item's unit).
+  quantityReceived: numeric("quantity_received", { precision: 10, scale: 2 }),
 });
 
 export const stockMovements = pgTable("stock_movements", {
