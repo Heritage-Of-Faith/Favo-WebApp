@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import type { DB } from "@/lib/db";
 import { auditLog } from "@db/schema";
 
 export type AuditInput = {
@@ -18,9 +19,16 @@ export type AuditInput = {
  * Appends a row to audit_log. Must be called inside every mutation transaction.
  * If this insert fails, the caller's transaction rolls back — failure to audit
  * fails the entire operation (business rule L08 + L12).
+ *
+ * @param tx  Optional Drizzle transaction object. Pass the `tx` from
+ *            `db.transaction(async (tx) => { ... })` so the audit row is
+ *            part of the same atomic unit as the mutation it records.
+ *            Defaults to the global `db` singleton when called outside
+ *            a transaction (legacy callsites remain unaffected).
  */
-export async function writeAudit(input: AuditInput): Promise<void> {
-  await db.insert(auditLog).values({
+export async function writeAudit(input: AuditInput, tx?: DB): Promise<void> {
+  const client = tx ?? db;
+  await client.insert(auditLog).values({
     entityKind: input.entityKind,
     entityId: input.entityId,
     action: input.action,
