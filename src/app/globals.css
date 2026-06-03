@@ -1,7 +1,18 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;700;900&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,600;9..40,700&display=swap');
+/* shadcn/tailwind.css inlined — package "style" export condition not supported by PostCSS */
+@theme inline {
+  @keyframes accordion-down { from { height: 0; } to { height: var(--radix-accordion-content-height); } }
+  @keyframes accordion-up { from { height: var(--radix-accordion-content-height); } to { height: 0; } }
+  @keyframes collapsible-down { from { height: 0; } to { height: var(--radix-collapsible-content-height); } }
+  @keyframes collapsible-up { from { height: var(--radix-collapsible-content-height); } to { height: 0; } }
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-collapsible-down: collapsible-down 0.2s ease-out;
+  --animate-collapsible-up: collapsible-up 0.2s ease-out;
+}
+/* Google Fonts loaded via <link> in root layout — @import url() must come before
+   all CSS rules but PostCSS expansion makes it invalid here. */
 
 @custom-variant dark (&:is(.dark *));
 
