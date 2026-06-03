@@ -261,39 +261,5 @@ export async function updateLotCost(
   return { ok: true, data: undefined };
 }
 
-// ─── logWaste ─────────────────────────────────────────────────────────────────
-
-export type LogWasteInput = {
-  category:
-    | "expired"
-    | "damaged"
-    | "spilled"
-    | "overproduction"
-    | "other";
-  inventoryLotId?: string;
-  quantity: number;
-  reason?: string;
-};
-
-/**
- * Inserts a waste_log row + paired stock_movements(kind='waste') atomically.
- * Barista+ can log waste. writeAudit on both inserts (L08).
- * TODO (P2 G10): real implementation.
- */
-export async function logWaste(input: LogWasteInput): Promise<ActionResult> {
-  void input;
-  throw new Error("Not implemented — Phase 2 G10");
-}
-
-// ─── runStockTake (stub — full impl in G11) ───────────────────────────────────
-
-/**
- * Creates a new stock-take and pre-fills lines for every active lot.
- * TODO (P2 G11): real implementation in src/server/actions/stock-takes.ts.
- */
-export async function runStockTake(
-  kind: "full" | "spot"
-): Promise<ActionResult<{ stockTakeId: string }>> {
-  void kind;
-  throw new Error("Not implemented — Phase 2 G11");
-}
+// logWaste moved to src/server/actions/waste.ts        (G10)
+// runStockTake moved to src/server/actions/stock-takes.ts (G11)

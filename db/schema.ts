@@ -273,11 +273,19 @@ export const purchases = pgTable(
     totalZar: integer("total_zar").notNull(),
     kind: purchaseKind("kind").notNull(),
     adminApprovedBy: text("admin_approved_by").references(() => staff.id),
+    // L10: emergency purchases by non-admins wait here until an admin approves.
+    // 'active' = lots can be used; 'pending_admin_approval' = lots quarantined.
+    status: text("status", { enum: ["active", "pending_admin_approval"] })
+      .default("active")
+      .notNull(),
   },
   () => [
     check(
       "emergency_requires_approval",
-      sql`kind != 'emergency' OR admin_approved_by IS NOT NULL`
+      // Allows: emergency + pending (adminApprovedBy still null) OR
+      //         emergency + active  (adminApprovedBy must be set)    OR
+      //         planned  (no restriction)
+      sql`kind != 'emergency' OR status = 'pending_admin_approval' OR admin_approved_by IS NOT NULL`
     ),
   ]
 );
