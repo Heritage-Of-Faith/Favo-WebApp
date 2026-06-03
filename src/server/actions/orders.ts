@@ -162,6 +162,14 @@ export async function createOrder(
     console.warn("[createOrder] Yoco intent skipped (YOCO_SECRET_KEY not set):", err);
   }
 
+  // Notify the live queue board that a new order is waiting.
+  notifyOrderChange({
+    type: "state_change",
+    orderId,
+    state: "ordered",
+    at: new Date().toISOString(),
+  }).catch(() => {}); // Non-fatal
+
   return { ok: true, data: { orderId, yocoClientSecret } };
 }
 
