@@ -1,5 +1,5 @@
-﻿// Landing hero â€” owner: Nikao (task N3)
-// Full-bleed Dark Teal. Barlow Condensed 900 headline. Specific cafÃ© copy.
+// Landing hero -- owner: Nikao (task N3)
+// Full-bleed Dark Teal. Barlow Condensed 900 headline. Specific cafe copy.
 
 const S = {
   section: {
@@ -103,9 +103,9 @@ export default function Hero() {
   return (
     <section style={S.section}>
       <div style={S.inner}>
-        {/* â”€â”€ Left column â”€â”€ */}
+        {/* Left column */}
         <div>
-          <p style={S.eyebrow}>Speciality coffee Â· Cape Town</p>
+          <p style={S.eyebrow}>Speciality coffee &middot; Cape Town</p>
           <h1 style={S.headline}>
             Single&#8209;origin.<br />
             No shortcuts.
@@ -116,17 +116,17 @@ export default function Hero() {
             nothing sits on a burner.
           </p>
           <a href="/login" style={S.cta}>
-            Join the loyalty programme â†’
+            Join the loyalty programme &rarr;
           </a>
         </div>
 
-        {/* â”€â”€ Right column â€” current lot â”€â”€ */}
+        {/* Right column -- current lot */}
         <div style={S.visual}>
-          <p style={S.lotLabel}>Current lot Â· Colombia</p>
-          <p style={S.lotName}>El JordÃ¡n</p>
+          <p style={S.lotLabel}>Current lot &middot; Colombia</p>
+          <p style={S.lotName}>El Jord&aacute;n</p>
           <p style={S.lotDetail}>
             Caturra, washed<br />
-            1,750 m Â· Huila<br />
+            1,750 m &middot; Huila<br />
             Blackberry jam, dark cane sugar
           </p>
         </div>
