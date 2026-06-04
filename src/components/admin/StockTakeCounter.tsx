@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Stock-take counter — task A9.
 // One lot's count step in the walk-lots flow. Mobile-friendly: a large numeric
@@ -57,7 +57,7 @@ export default function StockTakeCounter({
       </div>
 
       <div>
-        <h2 className="favo-h3" style={{ color: "var(--color-text-strong)" }}>
+        <h2 className="admin-section-title" style={{ color: "var(--color-text-strong)" }}>
           {line.inventoryItemName}
         </h2>
         <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>

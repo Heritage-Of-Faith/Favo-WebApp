@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Audit log viewer — task A6 (Gian, taken over from Mia)
 // Paginated, filterable, read-only.
@@ -288,7 +288,7 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
             {/* Modal header */}
             <div className="flex items-start justify-between px-5 py-4 border-b border-border-subtle shrink-0">
               <div>
-                <h2 className="favo-h3 text-text-strong">
+                <h2 className="admin-section-title">
                   {diffRow.entityKind} · {diffRow.action}
                 </h2>
                 <p className="favo-small text-text-muted mt-0.5">

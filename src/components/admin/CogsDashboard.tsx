@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Live COGS dashboard — task A7 (taken over from Mia).
 // Centrepiece of the admin surface. Shows today's revenue/COGS/expenses/net as
@@ -137,7 +137,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
+          <h1 className="admin-page-title" style={{ color: "var(--color-text-strong)" }}>
             Live COGS
           </h1>
           <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>
