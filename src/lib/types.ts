@@ -131,6 +131,7 @@ export type OperatingHour = {
   isClosed: boolean;
 };
 
+
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 
 export type AuditLog = {

@@ -1,12 +1,15 @@
-﻿// Numbers strip â€” owner: Nikao (task N3)
-// Four cafÃ© facts set large in Barlow Condensed on a paper background.
-// These are decorative data points â€” specific, not generic.
+// Numbers strip -- owner: Nikao (task N3)
+// Four cafe facts set large in Barlow Condensed on a paper background.
+// These are decorative data points -- specific, not generic.
+// Strings use clean UTF-8 punctuation (middot, en-dash, degree, a-acute).
+// Written via UTF-8-safe tooling — do NOT re-save with PowerShell Set-Content
+// -Encoding, which previously double-encoded these into mojibake.
 
 const facts = [
-  { number: "09:00",  label: "Mon â€“ Fri open",       sub: "Saturdays closed" },
-  { number: "93Â°C",   label: "Espresso temperature",  sub: "9 bar Â· 28 second extraction" },
-  { number: "1,750",  label: "Metres elevation",       sub: "Current lot Â· El JordÃ¡n, Huila" },
-  { number: "62%",    label: "Paid to producer",       sub: "On this lot Â· nothing hidden" },
+  { number: "09:00",   label: "Mon – Fri open",  sub: "Saturdays closed" },
+  { number: "93°C", label: "Espresso temperature", sub: "9 bar · 28 second extraction" },
+  { number: "1,750",   label: "Metres elevation",     sub: "Current lot · El Jordán, Huila" },
+  { number: "62%",     label: "Paid to producer",     sub: "On this lot · nothing hidden" },
 ] as const;
 
 const S = {

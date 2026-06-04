@@ -1,4 +1,4 @@
-﻿// About / Story section â€” owner: Nikao (task N3)
+﻿// About / Story section -- owner: Nikao (task N3)
 // Coffee Bean dark background. Transparency breakdown on the left, sourcing story right.
 // Inspired by design system StoryBlock pattern.
 
@@ -93,7 +93,7 @@ const S = {
 } as const;
 
 const breakdown = [
-  { who: "Diofanor Ruiz", what: "Farm gate Â· Huila",       pct: "62%" },
+  { who: "Diofanor Ruiz", what: "Farm gate · Huila",       pct: "62%" },
   { who: "Origin co-op",   what: "Milling, drying",         pct: "6%"  },
   { who: "Importer",       what: "Logistics, finance",       pct: "8%"  },
   { who: "FAVO",           what: "Roasting, packaging",      pct: "21%" },
@@ -104,7 +104,7 @@ export default function AboutSection() {
   return (
     <section style={S.section}>
       <div style={S.inner}>
-        {/* â”€â”€ Left: story â”€â”€ */}
+        {/* Left: story */}
         <div>
           <p style={S.eyebrow}>Our coffee</p>
           <h2 style={S.heading}>Specific.<br />Transparent.<br />Direct.</h2>
@@ -121,9 +121,9 @@ export default function AboutSection() {
           </p>
         </div>
 
-        {/* â”€â”€ Right: price breakdown â”€â”€ */}
+        {/* Right: price breakdown */}
         <div style={S.box}>
-          <p style={S.boxEyebrow}>Where the bag price went Â· El JordÃ¡n</p>
+          <p style={S.boxEyebrow}>Where the bag price went &middot; El Jord&aacute;n</p>
           {breakdown.map((row, i) => (
             <div
               key={row.who}
