@@ -106,7 +106,7 @@ export default function CustomerPage() {
           <PushOptIn customerId={customerId} />
         )}
 
-        {/* Production: loyalty portal coming in Phase 3 */}
+        {/* Production: loyalty portal not yet open */}
         {!isStaging && !customerId && (
           <div style={{
             backgroundColor: "rgba(247,246,242,0.05)",
@@ -123,7 +123,7 @@ export default function CustomerPage() {
               color: "var(--color-cool-steel)",
               marginBottom: 8,
             }}>
-              Coming in Phase 3
+              Opening soon
             </p>
             <p style={{
               fontFamily: "'DM Sans', sans-serif",
@@ -133,8 +133,8 @@ export default function CustomerPage() {
               color: "var(--color-porcelain)",
               opacity: 0.7,
             }}>
-              Your full loyalty dashboard — stamps, history, and rewards —
-              launches with the magic-link login in Phase 3.
+              Your loyalty dashboard — stamps, history, and rewards — is on its way.
+              We&rsquo;ll let you know as soon as it&rsquo;s ready.
             </p>
           </div>
         )}

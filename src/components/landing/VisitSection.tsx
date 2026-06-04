@@ -1,19 +1,11 @@
 // Visit / hours section — owner: Nikao (task N3)
-// Split: hours table left, address + CTA right. Porcelain background.
+// Split: address + CTA left, hours right. Porcelain background.
+// Responsive via .landing-visit-grid in globals.css.
 
 const S = {
   section: {
     backgroundColor: "var(--color-porcelain)",
-    padding: "88px 40px",
     borderTop: "1px solid var(--color-porcelain-soft)",
-  } satisfies React.CSSProperties,
-  inner: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 80,
-    alignItems: "flex-start",
   } satisfies React.CSSProperties,
   eyebrow: {
     fontFamily: "'DM Sans', sans-serif",
@@ -87,8 +79,8 @@ const HOURS = [
 
 export default function VisitSection() {
   return (
-    <section style={S.section}>
-      <div style={S.inner}>
+    <section style={S.section} className="landing-section-pad-l">
+      <div className="landing-visit-grid">
         {/* Left: address + CTA */}
         <div>
           <p style={S.eyebrow}>Find us</p>
