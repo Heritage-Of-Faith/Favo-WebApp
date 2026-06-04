@@ -320,6 +320,12 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
   gap: 80px;
   align-items: flex-start;
 }
+.landing-footer-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  gap: 40px;
+  align-items: flex-start;
+}
 
 @media (max-width: 900px) {
   .landing-section-pad   { padding: 56px 24px; }
@@ -346,6 +352,14 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
     grid-template-columns: 1fr;
     gap: 48px;
   }
+  .landing-footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .landing-footer-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 480px) {
