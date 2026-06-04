@@ -327,10 +327,10 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
 
   .landing-hero-grid {
     grid-template-columns: 1fr;
-    gap: 40px;
+    gap: 32px;
   }
-  /* hide the menu column on mobile — hero is already clear */
-  .landing-hero-visual { display: none; }
+  /* café photo shows on mobile, capped height so it doesn't dominate */
+  .landing-hero-visual { aspect-ratio: 3 / 2; max-height: 320px; }
 
   .landing-about-grid {
     grid-template-columns: 1fr;
