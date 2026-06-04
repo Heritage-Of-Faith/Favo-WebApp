@@ -265,6 +265,18 @@ export type RecordPurchaseInput = {
   items: PurchaseLotItem[];
 };
 
+// ─── Phase 2: Low-stock alert recipients ─────────────────────────────────────
+
+export type AlertRecipient = {
+  id: string;
+  staffId: string;
+  staffName: string;
+  staffRole: string;
+  /** null = global (receives alerts for all items). */
+  inventoryItemId: string | null;
+  inventoryItemName: string | null;
+};
+
 // ─── Phase 2: Stock Takes ─────────────────────────────────────────────────────
 
 export type StockTakeKind = "full" | "spot";
