@@ -1,6 +1,5 @@
-// Visit / hours section -- owner: Nikao (task N3)
+// Visit / hours section — owner: Nikao (task N3)
 // Split: hours table left, address + CTA right. Porcelain background.
-// TODO: replace placeholder address before launch.
 
 const S = {
   section: {
@@ -69,18 +68,21 @@ const S = {
     padding: "14px 28px",
     borderRadius: 2,
   } satisfies React.CSSProperties,
+  note: {
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 11,
+    letterSpacing: "0.10em",
+    textTransform: "uppercase" as const,
+    color: "var(--color-cool-steel)",
+    marginTop: 20,
+  } satisfies React.CSSProperties,
 } as const;
 
-// Static hours -- shown when OperatingHours server component falls back.
-// Will be replaced by live data from N4/OperatingHours once G3 seeds the table.
-const STATIC_HOURS = [
-  { day: "Monday",    hours: "09:00 – 17:00" },
-  { day: "Tuesday",   hours: "09:00 – 17:00" },
-  { day: "Wednesday", hours: "09:00 – 17:00" },
-  { day: "Thursday",  hours: "09:00 – 17:00" },
-  { day: "Friday",    hours: "09:00 – 17:00" },
-  { day: "Saturday",  hours: "Closed"        },
-  { day: "Sunday",    hours: "07:00 – 15:00" },
+const HOURS = [
+  { day: "Monday – Friday", hours: "After morning prayer", note: true },
+  { day: "Saturday",        hours: "Closed",               note: false },
+  { day: "Sunday",          hours: "07:50 – 09:15",        note: false },
+  { day: "Sunday (events)", hours: "16:00 – 16:45 · 18:00 – 19:00", note: false },
 ] as const;
 
 export default function VisitSection() {
@@ -91,13 +93,12 @@ export default function VisitSection() {
         <div>
           <p style={S.eyebrow}>Find us</p>
           <h2 style={S.heading}>Come in.<br />We&rsquo;ll be here.</h2>
-          {/* TODO: replace with actual address before launch */}
           <address style={{ display: "block" }}>
-            <p style={S.address}>12 Bean Street</p>
-            <p style={S.addressSub}>Cape Town, Western Cape &middot; 8001</p>
+            <p style={S.address}>7 Duiker Street</p>
+            <p style={S.addressSub}>Reyno Ridge · Emalahleni · 1049</p>
           </address>
           <a href="/login" style={S.cta}>
-            Join the loyalty programme &rarr;
+            Join the loyalty programme →
           </a>
         </div>
 
@@ -106,12 +107,10 @@ export default function VisitSection() {
           <p style={S.eyebrow}>Opening hours</p>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <tbody>
-              {STATIC_HOURS.map((row) => (
+              {HOURS.map((row) => (
                 <tr
                   key={row.day}
-                  style={{
-                    borderBottom: "1px solid var(--color-porcelain-soft)",
-                  }}
+                  style={{ borderBottom: "1px solid var(--color-porcelain-soft)" }}
                 >
                   <td
                     style={{
@@ -119,7 +118,8 @@ export default function VisitSection() {
                       fontWeight: 400,
                       fontSize: 15,
                       color: "var(--color-coffee-bean)",
-                      padding: "10px 0",
+                      padding: "12px 0",
+                      verticalAlign: "top",
                     }}
                   >
                     {row.day}
@@ -131,27 +131,24 @@ export default function VisitSection() {
                       fontSize: 15,
                       color: row.hours === "Closed" ? "var(--color-cool-steel)" : "var(--color-coffee-bean)",
                       textAlign: "right",
-                      padding: "10px 0",
+                      padding: "12px 0",
                       letterSpacing: "0.02em",
+                      verticalAlign: "top",
                     }}
                   >
                     {row.hours}
+                    {row.note && (
+                      <span style={{ display: "block", fontSize: 11, color: "var(--color-cool-steel)", marginTop: 2 }}>
+                        Hours vary — not guaranteed
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p
-            style={{
-              fontFamily: "'DM Sans', sans-serif",
-              fontSize: 11,
-              letterSpacing: "0.10em",
-              textTransform: "uppercase",
-              color: "var(--color-cool-steel)",
-              marginTop: 20,
-            }}
-          >
-            Hours informational only
+          <p style={S.note}>
+            Sunday event hours apply to monthly church services only
           </p>
         </div>
       </div>

@@ -1,5 +1,5 @@
-// Landing hero -- owner: Nikao (task N3)
-// Full-bleed Dark Teal. Barlow Condensed 900 headline. Specific cafe copy.
+// Landing hero — owner: Nikao (task N3)
+// Full-bleed Dark Teal. Barlow Condensed 900 headline.
 
 const S = {
   section: {
@@ -70,34 +70,29 @@ const S = {
     borderLeft: "2px solid rgba(247,246,242,0.12)",
     gap: 0,
   } satisfies React.CSSProperties,
-  lotLabel: {
+  menuLabel: {
     fontFamily: "'DM Sans', sans-serif",
     fontWeight: 300,
     fontSize: 11,
     letterSpacing: "0.18em",
     textTransform: "uppercase" as const,
     color: "var(--color-crimson-carrot)",
-    marginBottom: 12,
+    marginBottom: 20,
   } satisfies React.CSSProperties,
-  lotName: {
+  menuItem: {
     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-    fontWeight: 900,
-    fontSize: "clamp(3rem, 6vw, 6rem)",
-    lineHeight: 0.88,
+    fontWeight: 700,
+    fontSize: "clamp(1.5rem, 3vw, 2.5rem)",
+    lineHeight: 1.1,
     letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    color: "var(--color-crimson-carrot)",
-    marginBottom: 16,
-  } satisfies React.CSSProperties,
-  lotDetail: {
-    fontFamily: "'DM Sans', sans-serif",
-    fontWeight: 400,
-    fontSize: 13,
-    lineHeight: 1.8,
     color: "var(--color-porcelain)",
-    opacity: 0.75,
+    marginBottom: 6,
+    opacity: 0.85,
   } satisfies React.CSSProperties,
 } as const;
+
+const MENU = ["Cappuccino", "Americano", "Hot Chocolate", "Mocha", "Chai Latte"] as const;
 
 export default function Hero() {
   return (
@@ -105,30 +100,27 @@ export default function Hero() {
       <div style={S.inner}>
         {/* Left column */}
         <div>
-          <p style={S.eyebrow}>Speciality coffee &middot; Cape Town</p>
+          <p style={S.eyebrow}>Heritage of Faith · Emalahleni</p>
           <h1 style={S.headline}>
-            Single&#8209;origin.<br />
-            No shortcuts.
+            Coffee for<br />
+            the family.
           </h1>
           <p style={S.body}>
-            Every cup names the farm, the harvest, and the roast date.
-            We pull espresso at 93&deg;C and brew filter to order &mdash;
-            nothing sits on a burner.
+            FAVO is the café at Heritage of Faith Ministries.
+            Our baristas are iXchange interns — people learning to serve
+            the community, one drink at a time. Come as you are.
           </p>
           <a href="/login" style={S.cta}>
-            Join the loyalty programme &rarr;
+            Join the loyalty programme →
           </a>
         </div>
 
-        {/* Right column -- current lot */}
+        {/* Right column — menu */}
         <div style={S.visual}>
-          <p style={S.lotLabel}>Current lot &middot; Colombia</p>
-          <p style={S.lotName}>El Jord&aacute;n</p>
-          <p style={S.lotDetail}>
-            Caturra, washed<br />
-            1,750 m &middot; Huila<br />
-            Blackberry jam, dark cane sugar
-          </p>
+          <p style={S.menuLabel}>What we make</p>
+          {MENU.map((item) => (
+            <p key={item} style={S.menuItem}>{item}</p>
+          ))}
         </div>
       </div>
     </section>

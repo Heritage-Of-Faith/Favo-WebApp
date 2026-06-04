@@ -1,15 +1,14 @@
-// Numbers strip -- owner: Nikao (task N3)
-// Four cafe facts set large in Barlow Condensed on a paper background.
-// These are decorative data points -- specific, not generic.
+// Numbers strip — owner: Nikao (task N3)
+// Four real facts about FAVO set large in Barlow Condensed.
 // Strings use clean UTF-8 punctuation (middot, en-dash, degree, a-acute).
 // Written via UTF-8-safe tooling — do NOT re-save with PowerShell Set-Content
 // -Encoding, which previously double-encoded these into mojibake.
 
 const facts = [
-  { number: "09:00",   label: "Mon – Fri open",  sub: "Saturdays closed" },
-  { number: "93°C", label: "Espresso temperature", sub: "9 bar · 28 second extraction" },
-  { number: "1,750",   label: "Metres elevation",     sub: "Current lot · El Jordán, Huila" },
-  { number: "62%",     label: "Paid to producer",     sub: "On this lot · nothing hidden" },
+  { number: "07:50",   label: "Opens Sundays",           sub: "Before morning service · 07:50–09:15" },
+  { number: "5",       label: "Drinks on the menu",       sub: "Cappuccino, Americano, Mocha & more" },
+  { number: "Mon–Fri", label: "Open on weekdays",         sub: "After morning prayer · hours vary" },
+  { number: "1 049",   label: "Reyno Ridge, Emalahleni",  sub: "7 Duiker Street · Mpumalanga" },
 ] as const;
 
 const S = {
@@ -33,7 +32,7 @@ const S = {
   number: {
     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
     fontWeight: 900,
-    fontSize: "clamp(2.5rem, 4vw, 4rem)",
+    fontSize: "clamp(2rem, 3.5vw, 3.5rem)",
     letterSpacing: "0.04em",
     color: "var(--color-coffee-bean)",
     lineHeight: 1,
