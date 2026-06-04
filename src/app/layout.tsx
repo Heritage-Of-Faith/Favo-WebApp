@@ -24,8 +24,12 @@ export const metadata: Metadata = {
     description: "The café at Heritage of Faith Ministries. Good coffee, real community. Reyno Ridge, Emalahleni.",
   },
   icons: {
-    icon: "/brand/logo-monogram.svg",
-    apple: "/brand/logo-monogram.svg",
+    icon: [
+      { url: "/brand/logo-monogram.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/icons/apple-touch-icon.png",
   },
 };
 
