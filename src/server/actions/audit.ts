@@ -4,31 +4,18 @@
 // Paginated, filterable, read-only. Auth: admin, finance, owner only.
 // Docs: docs/API.md · docs/DATA_MODEL.md → audit_log
 
-import { z } from "zod";
 import { and, desc, gte, lte, eq, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auditLog } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
-import type { ActionResult, AuditLog } from "@/lib/types";
-
-export const PAGE_SIZE = 50;
-
-const listAuditSchema = z.object({
-  page: z.number().int().nonnegative().default(0),
-  entityKind: z.string().optional(),
-  actorRole: z.string().optional(),
-  dateFrom: z.string().optional(), // YYYY-MM-DD
-  dateTo: z.string().optional(),   // YYYY-MM-DD
-});
-
-export type ListAuditInput = z.infer<typeof listAuditSchema>;
-
-export type ListAuditResult = {
-  rows: AuditLog[];
-  total: number;
-  page: number;
-  pageSize: number;
-};
+import { startOfDaySast, endOfDaySast } from "@/lib/format";
+import type { ActionResult } from "@/lib/types";
+import {
+  PAGE_SIZE,
+  listAuditSchema,
+  type ListAuditInput,
+  type ListAuditResult,
+} from "./audit-types";
 
 /**
  * List audit log entries, newest-first.
@@ -55,10 +42,10 @@ export async function listAudit(
     conditions.push(eq(auditLog.actorRole, actorRole));
   }
   if (dateFrom) {
-    conditions.push(gte(auditLog.at, new Date(`${dateFrom}T00:00:00+02:00`)));
+    conditions.push(gte(auditLog.at, startOfDaySast(dateFrom)));
   }
   if (dateTo) {
-    conditions.push(lte(auditLog.at, new Date(`${dateTo}T23:59:59+02:00`)));
+    conditions.push(lte(auditLog.at, endOfDaySast(dateTo)));
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;

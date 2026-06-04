@@ -80,7 +80,7 @@ export default function Sidebar({ role }: Props) {
           {visibleItems.map((item) => (
             <li key={item.href}>
               <Link
-                href={item.href}
+                href={item.href as any}
                 onClick={() => setOpen(false)}
                 aria-current={isActive(item.href) ? "page" : undefined}
                 className={cn(
