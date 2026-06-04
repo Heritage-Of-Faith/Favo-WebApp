@@ -19,6 +19,7 @@ import {
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
   CheckCircle, AlertCircle, Tag, Star, ShieldCheck,
 } from "lucide-react";
+import StaffPushOptIn from "@/components/pos/StaffPushOptIn";
 import type { Customer, MenuItem, MenuCustomisation, Order, OrderState } from "@/lib/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -688,6 +689,9 @@ export default function POSWorkspace({ staffName }: Props) {
           </div>
         </div>
       )}
+
+      {/* ════════ STAFF PUSH OPT-IN (M10) ════════ */}
+      <StaffPushOptIn />
     </div>
   );
 }
