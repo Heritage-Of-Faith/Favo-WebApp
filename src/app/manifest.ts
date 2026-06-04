@@ -16,7 +16,7 @@ export default function manifest(): MetadataRoute.Manifest {
     icons: [
       // SVG first (crisp where supported), then PNG fallbacks for installability.
       {
-        src: "/brand/logos/logo-monogram.svg",
+        src: "/brand/logo-monogram.svg",
         sizes: "any",
         type: "image/svg+xml",
         purpose: "any",

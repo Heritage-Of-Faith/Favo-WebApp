@@ -1,13 +1,15 @@
 // Customer PWA shell — owner: Nikao (tasks N2, N5)
 // Docs: docs/ARCHITECTURAL.md → src/app/(customer)/
 
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import ServiceWorkerRegister from "@/components/customer/ServiceWorkerRegister";
+
+export const viewport: Viewport = {
+  themeColor: "#1C0501",
+};
 
 export const metadata: Metadata = {
   title: "FAVO Café",
-  manifest: "/manifest.webmanifest",
-  themeColor: "#1C0501",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

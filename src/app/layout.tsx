@@ -1,11 +1,15 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
-// Next.js Metadata API requires literal hex — maps to var(--color-coffee-bean)
+// Literal hex — maps to var(--color-coffee-bean)
 const COFFEE_BEAN = "#1C0501";
 
 const DESCRIPTION =
   "The café at Heritage of Faith Ministries. Good coffee, real community. Reyno Ridge, Emalahleni.";
+
+export const viewport: Viewport = {
+  themeColor: COFFEE_BEAN,
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.PUBLIC_BASE_URL ?? "https://favo.hofmi.org"),
@@ -14,8 +18,6 @@ export const metadata: Metadata = {
     template: "%s · FAVO Café",
   },
   description: DESCRIPTION,
-  manifest: "/manifest.webmanifest",
-  themeColor: COFFEE_BEAN,
   openGraph: {
     title: "FAVO Café",
     description: DESCRIPTION,
