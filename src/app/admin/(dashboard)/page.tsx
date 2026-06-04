@@ -9,16 +9,21 @@ import { getCogsLive, getCogsHistory } from "@/server/actions/cogs";
 import { todaySast } from "@/server/cogs/compute";
 import CogsDashboard from "@/components/admin/CogsDashboard";
 
-type Card = { href: Route; title: string; description: string };
+type Card = { href: Route; title: string; description: string; hideFor?: string[] };
 
-// NOTE: finance/manager fallback cards. Expanded with inventory/expenses/P&L
-// links in the nav-wiring step once those routes exist (keeps typedRoutes happy).
+// Finance/manager fallback cards (admin/owner get the COGS dashboard instead).
 const CARDS: Card[] = [
+  { href: "/admin/reports/monthly", title: "Monthly P&L", description: "Review and co-sign monthly profit & loss reports.", hideFor: ["manager"] },
+  { href: "/admin/inventory", title: "Inventory", description: "Stock levels, lots, and costs." },
+  { href: "/admin/stock-takes", title: "Stock takes", description: "Count lots and review variance." },
+  { href: "/admin/purchases", title: "Purchases", description: "Record purchases and approve emergencies." },
+  { href: "/admin/expenses", title: "Expenses", description: "Log and review operating expenses." },
   { href: "/admin/audit", title: "Audit log", description: "Review every change made across the system." },
 ];
 
 export default async function AdminDashboardPage() {
   const session = await getSession();
+  const role = session?.role;
 
   // Try to load COGS (admin/owner only). On success, render the dashboard.
   const [liveRes, historyRes] = await Promise.all([
@@ -49,7 +54,7 @@ export default async function AdminDashboardPage() {
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {CARDS.map((card) => (
+        {CARDS.filter((card) => !(role && card.hideFor?.includes(role))).map((card) => (
           <Link
             key={card.href}
             href={card.href}

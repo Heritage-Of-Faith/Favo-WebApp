@@ -1,10 +1,11 @@
-// Admin sidebar nav — owner: Mia (task A2)
-// Collapsible below 1024px. Finance role hides "Menu" and "Staff" items.
+// Admin sidebar nav — owner: Mia (task A2), Phase 2 sections added by Gian.
+// Collapsible below 1024px. `hideFor` mirrors server-side RBAC (advisory only).
 // Docs: docs/DESIGN.md → Admin Rules.
 "use client";
 
 import { useState } from "react";
 import Link from "next/link";
+import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import type { StaffRole } from "@/lib/types";
 import { adminLayout } from "@/lib/admin-tokens";
@@ -13,7 +14,7 @@ import { cn } from "@/lib/utils";
 export type Props = { role: StaffRole };
 
 type NavItem = {
-  href: string;
+  href: Route;
   label: string;
   // Roles for which this item is hidden (advisory; server enforces access).
   hideFor?: StaffRole[];
@@ -21,8 +22,14 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard" },
-  { href: "/admin/staff", label: "Staff", hideFor: ["finance"] },
+  { href: "/admin/inventory", label: "Inventory" },
+  { href: "/admin/stock-takes", label: "Stock takes" },
+  { href: "/admin/purchases", label: "Purchases" },
+  { href: "/admin/expenses", label: "Expenses" },
+  // Monthly P&L is admin/finance/owner only (manager cannot read it).
+  { href: "/admin/reports/monthly", label: "Monthly P&L", hideFor: ["manager"] },
   { href: "/admin/menu", label: "Menu", hideFor: ["finance"] },
+  { href: "/admin/staff", label: "Staff", hideFor: ["finance"] },
   { href: "/admin/audit", label: "Audit log" },
 ];
 
@@ -80,7 +87,7 @@ export default function Sidebar({ role }: Props) {
           {visibleItems.map((item) => (
             <li key={item.href}>
               <Link
-                href={item.href as any}
+                href={item.href}
                 onClick={() => setOpen(false)}
                 aria-current={isActive(item.href) ? "page" : undefined}
                 className={cn(
