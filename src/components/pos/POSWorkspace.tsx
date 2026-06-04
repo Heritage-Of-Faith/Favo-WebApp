@@ -12,7 +12,7 @@ import { searchCustomer } from "@/server/actions/customers";
 import { getMenu } from "@/server/actions/menu";
 import { createOrder, transitionOrder, cancelOrder, applyStaffDiscount } from "@/server/actions/orders";
 import { useOrderStream } from "@/hooks/useOrderStream";
-import { useDraftOrder } from "@/store/draftOrder";
+import { useDraftOrder, lineKey } from "@/store/draftOrder";
 import { formatZar, formatDate } from "@/lib/format";
 import {
   Search, X, Plus, Minus, Trash2, ChevronDown, ChevronUp,
@@ -125,10 +125,16 @@ export default function POSWorkspace({ staffName }: Props) {
   // Fetch full order when expanded
   async function fetchFullOrder(orderId: string) {
     if (fullOrders[orderId]) return;
-    const r = await fetch(`/api/pos/order/${orderId}`);
-    if (r.ok) {
-      const d = await r.json();
-      setFullOrders(prev => ({ ...prev, [orderId]: d.order }));
+    try {
+      const r = await fetch(`/api/pos/order/${orderId}`);
+      if (r.ok) {
+        const d = await r.json();
+        setFullOrders(prev => ({ ...prev, [orderId]: d.order }));
+      } else {
+        setActionError(prev => ({ ...prev, [orderId]: "Failed to load order details." }));
+      }
+    } catch {
+      setActionError(prev => ({ ...prev, [orderId]: "Network error — could not load order details." }));
     }
   }
 
@@ -351,14 +357,14 @@ export default function POSWorkspace({ staffName }: Props) {
                 <p className="favo-label text-cool-steel mb-2">Order</p>
                 <div className="space-y-1.5 max-h-[160px] overflow-y-auto mb-3">
                   {items.map(item => (
-                    <div key={item.menuItemId} className="flex items-center gap-2">
+                    <div key={lineKey(item)} className="flex items-center gap-2">
                       <div className="flex items-center gap-1">
-                        <button type="button" onClick={() => updateQuantity(item.menuItemId, item.quantity - 1)}
+                        <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity - 1)}
                           className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-porcelain/10">
                           <Minus size={12} strokeWidth={2} />
                         </button>
                         <span className="favo-small text-porcelain w-5 text-center">{item.quantity}</span>
-                        <button type="button" onClick={() => updateQuantity(item.menuItemId, item.quantity + 1)}
+                        <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity + 1)}
                           className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-porcelain/10">
                           <Plus size={12} strokeWidth={2} />
                         </button>
@@ -372,7 +378,7 @@ export default function POSWorkspace({ staffName }: Props) {
                       <span className="favo-small text-porcelain shrink-0">
                         {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
                       </span>
-                      <button type="button" onClick={() => removeItem(item.menuItemId)}
+                      <button type="button" onClick={() => removeItem(lineKey(item))}
                         className="flex h-7 w-7 items-center justify-center text-cool-steel hover:text-[var(--color-error)]">
                         <Trash2 size={12} strokeWidth={2} />
                       </button>
