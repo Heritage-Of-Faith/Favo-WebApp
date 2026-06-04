@@ -1,7 +1,33 @@
 // GY stub tests — verifies that all Phase 2 stubs are callable, type-safe,
 // and return the expected fixture shapes.  No DB connection required.
+//
+// authorize is mocked globally here because real implementations (added in G10+)
+// chain into next-auth → next/server which is unavailable in the jsdom test env.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("@/server/auth/guard", () => ({
+  authorize: vi.fn().mockResolvedValue({
+    ok: true,
+    session: { id: "staff_manager_mia", name: "Mia", role: "admin" },
+  }),
+}));
+
+// Prevent any real DB connection attempts (functions with real impls post-G10+)
+vi.mock("@db/index", () => ({
+  db: {
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    }),
+    insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),
+    update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+    transaction: vi.fn(),
+  },
+}));
 import { getCogsLive, getCogsHistory } from "@/server/actions/cogs";
 import { listInventory, listLots, listInventoryStatus, getActiveBeanLot } from "@/server/actions/inventory";
 import { listExpenses } from "@/server/actions/expenses";
@@ -136,15 +162,14 @@ describe("listExpenses stub", () => {
 
 // ─── listPurchases ────────────────────────────────────────────────────────────
 
-describe("listPurchases stub", () => {
-  it("returns purchases including one pending emergency", async () => {
+describe("listPurchases", () => {
+  it("returns ok:true with purchases array (real impl post-G10, DB mocked)", async () => {
     const result = await listPurchases();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const pending = result.data.purchases.filter(
-      (p) => p.status === "pending_admin_approval"
-    );
-    expect(pending.length).toBeGreaterThan(0);
+    // DB is mocked to return [] — just verify the shape is correct
+    expect(Array.isArray(result.data.purchases)).toBe(true);
+    expect(typeof result.data.total).toBe("number");
   });
 });
 
