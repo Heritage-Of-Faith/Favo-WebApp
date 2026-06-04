@@ -54,3 +54,22 @@ export function revenueDay(date: Date = new Date()): string {
     day: "2-digit",
   }).format(date);
 }
+
+/**
+ * Returns the UTC Date for 00:00:00 SAST on the given YYYY-MM-DD string.
+ * Africa/Johannesburg is UTC+2 year-round (no DST).
+ * Use this for inclusive date-range lower bounds in DB queries.
+ */
+export function startOfDaySast(dateStr: string): Date {
+  // Midnight SAST = 22:00 UTC the previous calendar day.
+  return new Date(`${dateStr}T00:00:00.000+02:00`);
+}
+
+/**
+ * Returns the UTC Date for 23:59:59.999 SAST on the given YYYY-MM-DD string.
+ * Africa/Johannesburg is UTC+2 year-round (no DST).
+ * Use this for inclusive date-range upper bounds in DB queries.
+ */
+export function endOfDaySast(dateStr: string): Date {
+  return new Date(`${dateStr}T23:59:59.999+02:00`);
+}
