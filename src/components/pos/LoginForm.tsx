@@ -24,9 +24,16 @@ const PAD_KEYS = [
 export type Props = {
   /** Optional override for redirect target after successful login. */
   redirectTo?: string;
+  /** Which surface the form sits on — controls the sub-label only. */
+  surface?: "pos" | "admin";
 };
 
-export default function LoginForm({ redirectTo = "/pos/queue" }: Props) {
+const SURFACE_LABEL: Record<NonNullable<Props["surface"]>, string> = {
+  pos: "Point of Sale",
+  admin: "Admin",
+};
+
+export default function LoginForm({ redirectTo = "/pos/queue", surface = "pos" }: Props) {
   const router = useRouter();
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +89,7 @@ export default function LoginForm({ redirectTo = "/pos/queue" }: Props) {
           className="opacity-90"
         />
         <span className="favo-label tracking-[var(--tracking-label)] text-cool-steel">
-          Point of Sale
+          {SURFACE_LABEL[surface]}
         </span>
       </div>
 
