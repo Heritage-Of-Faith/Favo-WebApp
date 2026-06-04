@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+// Next.js Metadata API requires literal hex — maps to var(--color-coffee-bean)
+const COFFEE_BEAN = "#1C0501";
+
 export const metadata: Metadata = {
   title: {
     default: "FAVO Café",
@@ -8,7 +11,7 @@ export const metadata: Metadata = {
   },
   description: "Speciality coffee. Reward every visit.",
   manifest: "/manifest.webmanifest",
-  themeColor: "#1C0501",
+  themeColor: COFFEE_BEAN,
   openGraph: {
     title: "FAVO Café",
     description: "Single-origin, no shortcuts. Every cup names the farm, the harvest, and the roast date.",
