@@ -19,6 +19,7 @@ import {
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
   CheckCircle, AlertCircle, Tag, Star, ShieldCheck,
 } from "lucide-react";
+import ActiveBeanCard from "@/components/pos/ActiveBeanCard";
 import type { Customer, MenuItem, MenuCustomisation, Order, OrderState } from "@/lib/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -281,6 +282,7 @@ export default function POSWorkspace({ staffName }: Props) {
               <Star size={10} strokeWidth={2} />{customer.name}
             </span>
           )}
+          <div className="shrink-0 hidden lg:block"><ActiveBeanCard /></div>
           <span className="favo-small text-cool-steel shrink-0 hidden lg:block">{staffName}</span>
         </div>
 
