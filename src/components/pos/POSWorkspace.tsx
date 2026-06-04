@@ -158,9 +158,16 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
       setDiscountMsg(null);
       setCancelConfirm(null);
       setActionError(prev => ({ ...prev, [orderId]: null }));
-      fetchFullOrder(orderId);
     }
   }
+
+  // Load full order details whenever a card is expanded — covers both manual
+  // taps (toggleExpand) and programmatic auto-expand after placing an order.
+  // Without this, the auto-expanded new order's action buttons stay disabled
+  // (they require `full` to be loaded).
+  useEffect(() => {
+    if (expandedId) fetchFullOrder(expandedId);
+  }, [expandedId]);
 
   // ── Order building ─────────────────────────────────────────────────────────
   const grouped = menu.reduce<Record<string, MenuItem[]>>((acc, item) => {
@@ -254,7 +261,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   ].slice(0, 5) : [];
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <main className="flex h-screen overflow-hidden">
 
       {/* ════════ LEFT — ORDER BUILDER ════════ */}
       <div className="flex flex-col border-r border-cool-steel/20" style={{ width: "60%" }}>
@@ -395,7 +402,17 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
             </div>
           </div>
 
-            {/* Order summary */}
+            {/* Order placed success banner — outside items gate so it shows after reset() */}
+          {orderSuccess && (
+            <div className="border-t border-cool-steel/20 px-4 py-3 shrink-0">
+              <p className="favo-small rounded px-3 py-2" role="status" aria-live="polite"
+                style={{ background: "color-mix(in srgb, var(--color-success) 15%, transparent)", color: "var(--color-success)" }}>
+                ✓ {orderSuccess}
+              </p>
+            </div>
+          )}
+
+          {/* Order summary */}
             {items.length > 0 && (
               <div className="border-t border-cool-steel/20 px-4 py-3 shrink-0 bg-dark-teal-deep/40">
                 <p className="favo-label text-cool-steel mb-2">Order</p>
@@ -430,12 +447,6 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                   ))}
                 </div>
                 {orderError && <p className="favo-small text-[var(--color-error)] mb-2" role="alert">{orderError}</p>}
-                {orderSuccess && (
-                  <p className="favo-small mb-2 rounded px-3 py-2" role="status"
-                    style={{ background: "color-mix(in srgb, var(--color-success) 15%, transparent)", color: "var(--color-success)" }}>
-                    ✓ {orderSuccess}
-                  </p>
-                )}
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="favo-label text-cool-steel">Total</p>
@@ -764,25 +775,25 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
 
 function StreamChip({ status }: { status: string }) {
   if (status === "connected") return (
-    <span className="flex items-center gap-1 rounded-[999px] bg-[var(--color-success)]/10 px-2 py-0.5">
+    <span role="status" aria-label="Queue connected" className="flex items-center gap-1 rounded-[999px] bg-[var(--color-success)]/10 px-2 py-0.5">
       <Wifi size={10} strokeWidth={2.5} className="text-[var(--color-success)]" />
       <span className="favo-caption text-[var(--color-success)]">Live</span>
     </span>
   );
   if (status === "offline") return (
-    <span className="flex items-center gap-1 rounded-[999px] bg-[var(--color-error)]/10 px-2 py-0.5">
+    <span role="status" aria-label="Queue offline" className="flex items-center gap-1 rounded-[999px] bg-[var(--color-error)]/10 px-2 py-0.5">
       <WifiOff size={10} strokeWidth={2.5} className="text-[var(--color-error)]" />
       <span className="favo-caption text-[var(--color-error)]">Offline</span>
     </span>
   );
   return (
-    <span className="flex items-center gap-1 rounded-[999px] bg-porcelain/10 px-2 py-0.5">
+    <span role="status" aria-label="Queue reconnecting" className="flex items-center gap-1 rounded-[999px] bg-porcelain/10 px-2 py-0.5">
       <RefreshCw size={10} strokeWidth={2.5} className="text-cool-steel animate-spin" />
       <span className="favo-caption text-cool-steel">Reconnecting</span>
     </span>
