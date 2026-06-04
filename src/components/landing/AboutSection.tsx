@@ -2,8 +2,6 @@
 // Coffee Bean dark background. iXchange community story left, menu right.
 // Responsive via .landing-about-grid in globals.css.
 
-import Image from "next/image";
-
 const S = {
   section: {
     backgroundColor: "var(--color-coffee-bean)",
@@ -55,8 +53,8 @@ const S = {
   drinkRow: {
     display: "flex",
     alignItems: "baseline",
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
     borderBottom: "1px solid rgba(247,246,242,0.12)",
   } satisfies React.CSSProperties,
   drinkName: {
@@ -84,25 +82,6 @@ export default function AboutSection() {
       <div className="landing-about-grid">
         {/* Left: story */}
         <div>
-          <div
-            style={{
-              position: "relative",
-              width: "100%",
-              aspectRatio: "4 / 3",
-              borderRadius: 2,
-              overflow: "hidden",
-              marginBottom: 28,
-              backgroundColor: "var(--color-coffee-bean-deep)",
-            }}
-          >
-            <Image
-              src="/images/community-cup.jpg"
-              alt="A member of the HOFMI community smiling with a FAVO coffee"
-              fill
-              sizes="(max-width: 900px) 100vw, 40vw"
-              style={{ objectFit: "cover", objectPosition: "center 25%" }}
-            />
-          </div>
           <p style={S.eyebrow}>Who we are</p>
           <h2 style={S.heading}>Built on<br />service.</h2>
           <p style={S.body}>

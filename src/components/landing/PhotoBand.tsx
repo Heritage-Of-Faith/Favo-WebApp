@@ -43,11 +43,12 @@ export default function PhotoBand() {
   return (
     <section style={S.section} aria-label="FAVO baristas serving the community">
       <Image
-        src="/images/counter-handoff.jpg"
-        alt="A FAVO barista handing a coffee across the counter to a member of the congregation"
+        src="/images/community-cup.jpg"
+        alt="A member of the HOFMI community smiling with a FAVO coffee"
         fill
+        priority
         sizes="100vw"
-        style={{ objectFit: "cover", objectPosition: "center 35%" }}
+        style={{ objectFit: "cover", objectPosition: "center 32%" }}
       />
       <div style={S.overlay} />
       <div style={S.caption}>
