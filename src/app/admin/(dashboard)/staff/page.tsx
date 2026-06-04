@@ -21,9 +21,14 @@ export default function StaffPage() {
   const [form, setForm] = useState<FormState>({ mode: "closed" });
 
   const refresh = useCallback(async () => {
-    const res = await listStaff();
-    if (res.ok) setStaff(res.data);
-    setLoading(false);
+    try {
+      const res = await listStaff();
+      if (res.ok) setStaff(res.data);
+    } catch {
+      // Non-fatal — keep showing existing data on refresh failures.
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {

@@ -53,18 +53,22 @@ export default function StaffForm({ staffId, staffName, onClose, onSaved }: Prop
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    const res = isEdit
-      ? await setStaffPin({ staffId: staffId!, newPin: pin })
-      : await createStaff({ name, role, pin });
-    setSubmitting(false);
-
-    if (!res.ok) {
-      toast.error(res.message);
-      return;
+    try {
+      const res = isEdit
+        ? await setStaffPin({ staffId: staffId!, newPin: pin })
+        : await createStaff({ name, role, pin });
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      toast.success(isEdit ? "PIN updated." : `${name} added.`);
+      onSaved();
+      onClose();
+    } catch {
+      toast.error("Could not save staff changes. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
-    toast.success(isEdit ? "PIN updated." : `${name} added.`);
-    onSaved();
-    onClose();
   }
 
   return (
