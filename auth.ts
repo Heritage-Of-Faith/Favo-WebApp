@@ -9,6 +9,19 @@ import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
 // Task G4 — PIN provider (staff). HOFMI SSO provider is a follow-up (A3 needs it).
 // Role is resolved at authorize time and carried through the JWT so getSession()
 // and proxy.ts can gate routes without a DB round-trip on every request.
+//
+// Two credential modes:
+//
+// 1. staffId (fast path) — loginWithPin has already bcrypt-verified the PIN and
+//    resolved the matched staff id; it passes `staffId` here so we just do a
+//    cheap primary-key lookup. This avoids running bcrypt a second time (each
+//    bcrypt.compare at cost 10 takes ~150–250ms, and the full sequential scan of
+//    all staff would run it for every active staff member).
+//
+// 2. pin (fallback / direct) — performs the full bcrypt scan. Used when
+//    signIn("credentials", { pin }) is called without a pre-verified staffId
+//    (e.g. direct API testing). The POS and admin login forms always go through
+//    loginWithPin first, so they take the fast path.
 
 export const authConfig: NextAuthConfig = {
   providers: [
@@ -16,9 +29,24 @@ export const authConfig: NextAuthConfig = {
       name: "PIN",
       credentials: {
         pin: { label: "PIN", type: "password" },
+        staffId: { label: "Staff ID", type: "text" },
       },
       async authorize(credentials) {
+        const staffId = typeof credentials?.staffId === "string" ? credentials.staffId.trim() : "";
         const pin = typeof credentials?.pin === "string" ? credentials.pin : "";
+
+        // ── Fast path: PIN already verified by loginWithPin ──────────────────
+        if (staffId) {
+          const [member] = await db
+            .select({ id: staff.id, name: staff.name, role: staff.role, active: staff.active })
+            .from(staff)
+            .where(eq(staff.id, staffId));
+          // Guard: must still be an active staff member.
+          if (!member || !member.active) return null;
+          return { id: member.id, name: member.name, role: member.role };
+        }
+
+        // ── Fallback: full bcrypt scan (direct signIn call without staffId) ──
         if (!isValidPinFormat(pin)) return null;
 
         const activeStaff = await db

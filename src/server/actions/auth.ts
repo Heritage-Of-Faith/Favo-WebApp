@@ -55,8 +55,10 @@ export async function loginWithPin(
     actorRole: matched.role,
   });
 
-  // Emit the Auth.js session via the Credentials provider.
-  await signIn("credentials", { pin, redirect: false });
+  // Pass the pre-verified staffId to Auth.js so its authorize callback skips
+  // the bcrypt scan entirely (a cheap primary-key lookup instead of
+  // N × bcrypt.compare, saving 150–250 ms per staff member in the roster).
+  await signIn("credentials", { staffId: matched.id, redirect: false });
 
   return { ok: true, data: { staffId: matched.id, name: matched.name } };
 }
