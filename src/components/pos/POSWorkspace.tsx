@@ -19,6 +19,9 @@ import {
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
   CheckCircle, AlertCircle, Tag, Star, ShieldCheck,
 } from "lucide-react";
+import StockBadge from "@/components/pos/StockBadge";
+import StockBanner from "@/components/pos/StockBanner";
+import { useStockStatus } from "@/hooks/useStockStatus";
 import type { Customer, MenuItem, MenuCustomisation, Order, OrderState } from "@/lib/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -83,6 +86,9 @@ export default function POSWorkspace({ staffName }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { customer, items, totalZar, setCustomer, addItem, removeItem, updateQuantity, reset } = useDraftOrder();
+
+  // ── Inventory awareness (M9) ────────────────────────────────────────────────
+  const { menuItemStock, outOfStockItems } = useStockStatus();
 
   // ── Right panel — queue with full orders ───────────────────────────────────
   const { activeOrders, status } = useOrderStream();
@@ -237,7 +243,12 @@ export default function POSWorkspace({ staffName }: Props) {
   ].slice(0, 5) : [];
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden">
+
+      {/* ════════ OUT-OF-STOCK BANNER (M9) ════════ */}
+      <StockBanner outOfStockItems={outOfStockItems} />
+
+      <div className="flex flex-1 overflow-hidden">
 
       {/* ════════ LEFT — ORDER BUILDER ════════ */}
       <div className="flex flex-col border-r border-cool-steel/20" style={{ width: "60%" }}>
@@ -316,15 +327,23 @@ export default function POSWorkspace({ staffName }: Props) {
                 <div className="shrink-0 border-b border-cool-steel/15 px-3 pt-2 pb-2">
                   <p className="favo-label mb-1.5">Quick Keys</p>
                   <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${quickKeys.length}, 1fr)` }}>
-                    {quickKeys.map(item => (
-                      <button key={`qk-${item.id}`} type="button"
-                        onClick={() => { setModTarget(item); setSelectedMods([]); }}
-                        className="flex flex-col items-start rounded-[2px] p-2 min-h-[52px] text-left transition-all active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
-                        style={{ background: "rgba(245,86,12,0.1)", border: "1px solid rgba(245,86,12,0.25)" }}>
-                        <span className="text-porcelain font-semibold leading-tight" style={{ fontSize: 12 }}>{item.name}</span>
-                        <span className="text-cool-steel mt-auto" style={{ fontSize: 11 }}>{formatZar(item.currentPriceZar)}</span>
-                      </button>
-                    ))}
+                    {quickKeys.map(item => {
+                      const stock = menuItemStock(item.id);
+                      const oos = stock === "out";
+                      return (
+                        <button key={`qk-${item.id}`} type="button"
+                          disabled={oos}
+                          onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); } }}
+                          className="relative flex flex-col items-start rounded-[2px] p-2 min-h-[52px] text-left transition-all active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot disabled:cursor-not-allowed"
+                          style={{ background: "rgba(245,86,12,0.1)", border: "1px solid rgba(245,86,12,0.25)", opacity: oos ? 0.4 : 1 }}>
+                          <span className="text-porcelain font-semibold leading-tight" style={{ fontSize: 12 }}>{item.name}</span>
+                          <span className="text-cool-steel mt-auto" style={{ fontSize: 11 }}>{formatZar(item.currentPriceZar)}</span>
+                          {stock !== "ok" && (
+                            <span className="absolute top-1 right-1"><StockBadge state={stock} /></span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -338,13 +357,22 @@ export default function POSWorkspace({ staffName }: Props) {
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
-                    {(grouped[activeCategory] ?? []).map(item => (
-                      <button key={item.id} type="button" onClick={() => { setModTarget(item); setSelectedMods([]); }}
-                        className="flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
-                        <span className="favo-small text-porcelain font-semibold leading-tight">{item.name}</span>
-                        <span className="favo-caption text-cool-steel mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
-                      </button>
-                    ))}
+                    {(grouped[activeCategory] ?? []).map(item => {
+                      const stock = menuItemStock(item.id);
+                      const oos = stock === "out";
+                      return (
+                        <button key={item.id} type="button"
+                          disabled={oos}
+                          onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); } }}
+                          className="relative flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-porcelain/5">
+                          <span className="favo-small text-porcelain font-semibold leading-tight">{item.name}</span>
+                          <span className="favo-caption text-cool-steel mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
+                          {stock !== "ok" && (
+                            <span className="absolute top-1.5 right-1.5"><StockBadge state={stock} /></span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -645,6 +673,7 @@ export default function POSWorkspace({ staffName }: Props) {
           })}
         </div>
       </div>
+      </div>{/* end flex flex-1 row */}
 
       {/* ════════ MOD SHEET ════════ */}
       {modTarget && (
