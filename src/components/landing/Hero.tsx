@@ -1,19 +1,13 @@
 // Landing hero — owner: Nikao (task N3)
-// Full-bleed Dark Teal. Barlow Condensed 900 headline.
+// Full-bleed Dark Teal. Barlow Condensed 900 headline + café photo.
+// Responsive via .landing-hero-grid in globals.css.
+
+import Image from "next/image";
 
 const S = {
   section: {
     backgroundColor: "var(--color-dark-teal)",
     color: "var(--color-porcelain)",
-    padding: "80px 40px 96px",
-  } satisfies React.CSSProperties,
-  inner: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "1.2fr 1fr",
-    gap: 56,
-    alignItems: "center",
   } satisfies React.CSSProperties,
   eyebrow: {
     fontFamily: "'DM Sans', 'Helvetica Neue', Arial, sans-serif",
@@ -62,42 +56,19 @@ const S = {
     borderRadius: 2,
   } satisfies React.CSSProperties,
   visual: {
-    display: "flex",
-    flexDirection: "column" as const,
-    justifyContent: "center",
-    alignItems: "flex-start",
-    paddingLeft: 16,
-    borderLeft: "2px solid rgba(247,246,242,0.12)",
-    gap: 0,
-  } satisfies React.CSSProperties,
-  menuLabel: {
-    fontFamily: "'DM Sans', sans-serif",
-    fontWeight: 300,
-    fontSize: 11,
-    letterSpacing: "0.18em",
-    textTransform: "uppercase" as const,
-    color: "var(--color-crimson-carrot)",
-    marginBottom: 20,
-  } satisfies React.CSSProperties,
-  menuItem: {
-    fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-    fontWeight: 700,
-    fontSize: "clamp(1.5rem, 3vw, 2.5rem)",
-    lineHeight: 1.1,
-    letterSpacing: "0.04em",
-    textTransform: "uppercase" as const,
-    color: "var(--color-porcelain)",
-    marginBottom: 6,
-    opacity: 0.85,
+    position: "relative" as const,
+    width: "100%",
+    aspectRatio: "4 / 5",
+    borderRadius: 2,
+    overflow: "hidden",
+    backgroundColor: "var(--color-dark-teal-deep)",
   } satisfies React.CSSProperties,
 } as const;
 
-const MENU = ["Cappuccino", "Americano", "Hot Chocolate", "Mocha", "Chai Latte"] as const;
-
 export default function Hero() {
   return (
-    <section style={S.section}>
-      <div style={S.inner}>
+    <section style={S.section} className="landing-section-pad">
+      <div className="landing-hero-grid">
         {/* Left column */}
         <div>
           <p style={S.eyebrow}>Heritage of Faith · Emalahleni</p>
@@ -115,12 +86,16 @@ export default function Hero() {
           </a>
         </div>
 
-        {/* Right column — menu */}
-        <div style={S.visual}>
-          <p style={S.menuLabel}>What we make</p>
-          {MENU.map((item) => (
-            <p key={item} style={S.menuItem}>{item}</p>
-          ))}
+        {/* Right column — café photo (shown on mobile too via .landing-hero-visual) */}
+        <div style={S.visual} className="landing-hero-visual">
+          <Image
+            src="/images/hero-barista.jpg"
+            alt="A FAVO barista pulling a shot on the espresso machine"
+            fill
+            priority
+            sizes="(max-width: 900px) 100vw, 40vw"
+            style={{ objectFit: "cover" }}
+          />
         </div>
       </div>
     </section>

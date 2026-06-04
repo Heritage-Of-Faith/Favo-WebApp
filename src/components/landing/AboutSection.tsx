@@ -1,19 +1,11 @@
 // About / Story section — owner: Nikao (task N3)
 // Coffee Bean dark background. iXchange community story left, menu right.
+// Responsive via .landing-about-grid in globals.css.
 
 const S = {
   section: {
     backgroundColor: "var(--color-coffee-bean)",
     color: "var(--color-porcelain)",
-    padding: "88px 40px",
-  } satisfies React.CSSProperties,
-  inner: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "1fr 1.4fr",
-    gap: 64,
-    alignItems: "flex-start",
   } satisfies React.CSSProperties,
   eyebrow: {
     fontFamily: "'DM Sans', sans-serif",
@@ -86,8 +78,8 @@ const DRINKS = [
 
 export default function AboutSection() {
   return (
-    <section style={S.section}>
-      <div style={S.inner}>
+    <section style={S.section} className="landing-section-pad-l">
+      <div className="landing-about-grid">
         {/* Left: story */}
         <div>
           <p style={S.eyebrow}>Who we are</p>

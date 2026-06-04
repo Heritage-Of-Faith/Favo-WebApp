@@ -282,3 +282,72 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
     @apply font-sans;
   }
 }
+
+/* ─── Landing page responsive grids ───────────────────────────────────────── */
+/* Inline styles can't use media queries — these classes fill that gap.        */
+
+.landing-section-pad   { padding: 80px 40px; }
+.landing-section-pad-l { padding: 88px 40px; }
+
+.landing-hero-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 56px;
+  align-items: center;
+}
+.landing-about-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 64px;
+  align-items: flex-start;
+}
+.landing-numbers-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 40px;
+}
+.landing-visit-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: flex-start;
+}
+
+@media (max-width: 900px) {
+  .landing-section-pad   { padding: 56px 24px; }
+  .landing-section-pad-l { padding: 64px 24px; }
+
+  .landing-hero-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  /* café photo shows on mobile, capped height so it doesn't dominate */
+  .landing-hero-visual { aspect-ratio: 3 / 2; max-height: 320px; }
+
+  .landing-about-grid {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .landing-numbers-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    padding: 32px 24px;
+  }
+  .landing-numbers-cell-border { border-left: none !important; padding-left: 0 !important; }
+  .landing-visit-grid {
+    grid-template-columns: 1fr;
+    gap: 48px;
+  }
+}
+
+@media (max-width: 480px) {
+  .landing-numbers-grid { grid-template-columns: 1fr; }
+}
