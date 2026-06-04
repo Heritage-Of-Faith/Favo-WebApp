@@ -53,8 +53,8 @@ const S = {
   drinkRow: {
     display: "flex",
     alignItems: "baseline",
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
     borderBottom: "1px solid rgba(247,246,242,0.12)",
   } satisfies React.CSSProperties,
   drinkName: {

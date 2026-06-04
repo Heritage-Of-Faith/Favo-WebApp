@@ -4,28 +4,45 @@ import "./globals.css";
 // Next.js Metadata API requires literal hex — maps to var(--color-coffee-bean)
 const COFFEE_BEAN = "#1C0501";
 
+const DESCRIPTION =
+  "The café at Heritage of Faith Ministries. Good coffee, real community. Reyno Ridge, Emalahleni.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.PUBLIC_BASE_URL ?? "https://favo.hofmi.org"),
   title: {
     default: "FAVO Café",
     template: "%s · FAVO Café",
   },
-  description: "The café at Heritage of Faith Ministries. Good coffee, real community. Reyno Ridge, Emalahleni.",
+  description: DESCRIPTION,
   manifest: "/manifest.webmanifest",
   themeColor: COFFEE_BEAN,
   openGraph: {
     title: "FAVO Café",
-    description: "The café at Heritage of Faith Ministries. Good coffee, real community. Reyno Ridge, Emalahleni.",
+    description: DESCRIPTION,
     type: "website",
     siteName: "FAVO Café",
+    images: [
+      {
+        url: "/og-image.jpg",
+        width: 1200,
+        height: 630,
+        alt: "FAVO — the café at Heritage of Faith, Emalahleni",
+      },
+    ],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "FAVO Café",
-    description: "The café at Heritage of Faith Ministries. Good coffee, real community. Reyno Ridge, Emalahleni.",
+    description: DESCRIPTION,
+    images: ["/og-image.jpg"],
   },
   icons: {
-    icon: "/brand/logo-monogram.svg",
-    apple: "/brand/logo-monogram.svg",
+    icon: [
+      { url: "/brand/logo-monogram.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/icons/apple-touch-icon.png",
   },
 };
 

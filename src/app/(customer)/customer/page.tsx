@@ -4,6 +4,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import PushOptIn from "@/components/customer/PushOptIn";
 import StagingCustomerResume from "@/components/customer/StagingCustomerResume";
 
@@ -84,6 +85,26 @@ export default function CustomerPage() {
 
       {/* Main */}
       <main style={S.main}>
+        {/* Banner photo */}
+        <div
+          style={{
+            position: "relative",
+            width: "100%",
+            aspectRatio: "16 / 9",
+            borderRadius: 2,
+            overflow: "hidden",
+            backgroundColor: "rgba(247,246,242,0.05)",
+          }}
+        >
+          <Image
+            src="/images/espresso-pour.jpg"
+            alt="Espresso pouring into a glass on the FAVO machine"
+            fill
+            sizes="(max-width: 640px) 100vw, 600px"
+            style={{ objectFit: "cover", objectPosition: "center 40%" }}
+          />
+        </div>
+
         {/* Greeting */}
         <div>
           <h1 style={S.greeting}>
@@ -92,7 +113,7 @@ export default function CustomerPage() {
           <p style={S.sub}>
             {customerId
               ? "Notifications are being set up for this device."
-              : "Earn a stamp with every order. Get notified when it's ready."}
+              : "Earn points with every order. Get notified when it's ready."}
           </p>
         </div>
 
@@ -106,36 +127,94 @@ export default function CustomerPage() {
           <PushOptIn customerId={customerId} />
         )}
 
-        {/* Production: loyalty portal not yet open */}
+        {/* Production: loyalty portal not yet open — preview what's coming */}
         {!isStaging && !customerId && (
-          <div style={{
-            backgroundColor: "rgba(247,246,242,0.05)",
-            border: "1px solid rgba(247,246,242,0.1)",
-            padding: 24,
-            borderRadius: 2,
-          }}>
-            <p style={{
-              fontFamily: "'DM Sans', sans-serif",
-              fontWeight: 300,
-              fontSize: 11,
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-              color: "var(--color-cool-steel)",
-              marginBottom: 8,
+          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            <div style={{
+              backgroundColor: "rgba(247,246,242,0.05)",
+              border: "1px solid rgba(247,246,242,0.1)",
+              padding: 24,
+              borderRadius: 2,
             }}>
-              Opening soon
-            </p>
-            <p style={{
-              fontFamily: "'DM Sans', sans-serif",
-              fontWeight: 400,
-              fontSize: 15,
-              lineHeight: 1.7,
-              color: "var(--color-porcelain)",
-              opacity: 0.7,
-            }}>
-              Your loyalty dashboard — stamps, history, and rewards — is on its way.
-              We&rsquo;ll let you know as soon as it&rsquo;s ready.
-            </p>
+              <p style={{
+                fontFamily: "'DM Sans', sans-serif",
+                fontWeight: 300,
+                fontSize: 11,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: "var(--color-cool-steel)",
+                marginBottom: 8,
+              }}>
+                Opening soon
+              </p>
+              <p style={{
+                fontFamily: "'DM Sans', sans-serif",
+                fontWeight: 400,
+                fontSize: 15,
+                lineHeight: 1.7,
+                color: "var(--color-porcelain)",
+                opacity: 0.7,
+              }}>
+                Your loyalty dashboard is on its way. Here&rsquo;s what you&rsquo;ll get
+                once it opens.
+              </p>
+            </div>
+
+            {/* Feature preview */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {[
+                { t: "Points on every cup", d: "Earn as you sip — every order counts." },
+                { t: "Rewards that add up", d: "100 points = R20 off your next coffee." },
+                { t: "Ready alerts", d: "We'll notify you the moment your order is up." },
+              ].map((f) => (
+                <div
+                  key={f.t}
+                  style={{
+                    display: "flex",
+                    gap: 16,
+                    alignItems: "flex-start",
+                    padding: "18px 0",
+                    borderBottom: "1px solid rgba(247,246,242,0.1)",
+                  }}
+                >
+                  <span
+                    aria-hidden
+                    style={{
+                      flexShrink: 0,
+                      width: 8,
+                      height: 8,
+                      marginTop: 7,
+                      borderRadius: 999,
+                      backgroundColor: "var(--color-crimson-carrot)",
+                    }}
+                  />
+                  <div>
+                    <p style={{
+                      fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+                      fontWeight: 700,
+                      fontSize: 18,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase",
+                      color: "var(--color-porcelain)",
+                      margin: 0,
+                    }}>
+                      {f.t}
+                    </p>
+                    <p style={{
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontWeight: 400,
+                      fontSize: 14,
+                      lineHeight: 1.6,
+                      color: "var(--color-porcelain)",
+                      opacity: 0.65,
+                      margin: "2px 0 0",
+                    }}>
+                      {f.d}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </main>

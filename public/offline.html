@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Offline · FAVO Café</title>
+    <style>
+      :root { --teal: #054D61; --porcelain: #F7F6F2; --carrot: #F5560C; --paper: #FBFAF6; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: var(--teal);
+        color: var(--porcelain);
+        font-family: 'DM Sans', 'Helvetica Neue', Arial, sans-serif;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        text-align: center; padding: 40px 24px; gap: 20px;
+        min-height: 100dvh;
+      }
+      .mark {
+        font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+        font-weight: 900; font-size: clamp(3.5rem, 12vw, 7rem);
+        letter-spacing: 0.08em; text-transform: uppercase; line-height: 0.9; margin: 0;
+      }
+      h1 {
+        font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+        font-weight: 700; font-size: clamp(1.4rem, 5vw, 2rem);
+        letter-spacing: 0.06em; text-transform: uppercase; margin: 0;
+      }
+      p { max-width: 32ch; line-height: 1.7; opacity: 0.85; margin: 0; font-size: 1rem; }
+      button {
+        margin-top: 8px; border: 0; cursor: pointer;
+        background: var(--carrot); color: var(--paper);
+        font-family: inherit; font-weight: 700; font-size: 0.75rem;
+        letter-spacing: 0.12em; text-transform: uppercase;
+        padding: 14px 28px; border-radius: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <p class="mark">FAVO</p>
+    <h1>You&rsquo;re offline</h1>
+    <p>No connection right now. Check your signal and try again — your coffee will still be here.</p>
+    <button onclick="location.reload()">Try again</button>
+  </body>
+</html>
