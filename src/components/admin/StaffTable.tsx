@@ -23,13 +23,17 @@ export type Props = {
 
 export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
   async function handleDeactivate(member: Staff) {
-    const res = await deactivateStaff(member.id);
-    if (!res.ok) {
-      toast.error(res.message);
-      return;
+    try {
+      const res = await deactivateStaff(member.id);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      toast.success(`${member.name} deactivated.`);
+      onChanged();
+    } catch {
+      toast.error("Failed to deactivate staff member. Please try again.");
     }
-    toast.success(`${member.name} deactivated.`);
-    onChanged();
   }
 
   if (staff.length === 0) {

@@ -2,6 +2,8 @@
 // Price edits call setMenuItemPrice → price_history row (rule, docs/API.md).
 // Wired to Gian's menu Server Actions (src/server/actions/menu.ts).
 
+
+export const metadata = { title: "Menu" };
 import MenuEditor from "@/components/admin/MenuEditor";
 
 export default function MenuPage() {

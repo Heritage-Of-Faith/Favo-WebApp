@@ -9,10 +9,16 @@
 // in auth.ts, PIN is the available admin sign-in mechanism.
 // Docs: docs/DESIGN.md → Admin Rules · docs/API.md → loginWithPin
 
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { canAccessAdmin } from "@/server/auth/rbac";
 import LoginForm from "@/components/pos/LoginForm";
+
+export const metadata: Metadata = {
+  title: "Sign in — FAVO Admin",
+  robots: { index: false, follow: false },
+};
 
 export default async function AdminLoginPage() {
   const session = await getSession();

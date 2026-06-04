@@ -10,16 +10,19 @@ import Image from "next/image";
 import { signOut } from "@/server/actions/auth";
 import { searchCustomer } from "@/server/actions/customers";
 import { getMenu } from "@/server/actions/menu";
+import { getActiveBeanLot } from "@/server/actions/inventory";
 import { createOrder, transitionOrder, cancelOrder, applyStaffDiscount } from "@/server/actions/orders";
 import { useOrderStream } from "@/hooks/useOrderStream";
 import { useDraftOrder, lineKey } from "@/store/draftOrder";
 import { formatZar, formatDate } from "@/lib/format";
+import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, X, Plus, Minus, Trash2, ChevronDown, ChevronUp,
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
   CheckCircle, AlertCircle, Tag, Star, ShieldCheck,
 } from "lucide-react";
-import type { Customer, MenuItem, MenuCustomisation, Order, OrderState } from "@/lib/types";
+import type { Customer, MenuItem, MenuCustomisation, Order, OrderState, InventoryLot } from "@/lib/types";
+import WasteLogModal from "@/components/pos/WasteLogModal";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATE_LABEL: Record<OrderState, string> = {
@@ -75,7 +78,10 @@ export default function POSWorkspace({ staffName }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [showPayment, setShowPayment] = useState(false);
-  const [yocoSecret, setYocoSecret] = useState("");
+  const [_yocoSecret, setYocoSecret] = useState("");
+  const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
+  const [showWasteModal, setShowWasteModal] = useState(false);
+  const [activeBeanLot, setActiveBeanLot] = useState<InventoryLot | null>(null);
 
   // Customer search
   const [query, setQuery] = useState("");
@@ -100,7 +106,7 @@ export default function POSWorkspace({ staffName }: Props) {
     return sp !== 0 ? sp : b.lastUpdatedAt.localeCompare(a.lastUpdatedAt);
   });
 
-  // Load menu
+  // Load menu + active bean lot (parallel — no waterfall)
   useEffect(() => {
     getMenu().then(r => {
       if (r.ok) {
@@ -109,6 +115,11 @@ export default function POSWorkspace({ staffName }: Props) {
         if (cats.length) setActiveCategory(cats[0]);
       }
     }).finally(() => setMenuLoading(false));
+
+    // M9: fetch active bean lot for freshness indicator
+    getActiveBeanLot().then(r => {
+      if (r.ok) setActiveBeanLot(r.data.lot);
+    }).catch(() => { /* non-fatal */ });
   }, []);
 
   // Customer search debounce
@@ -170,8 +181,14 @@ export default function POSWorkspace({ staffName }: Props) {
       // Auto-expand the new order in the queue so barista sees it immediately
       setExpandedId(r.data.orderId);
       setYocoSecret(r.data.yocoClientSecret);
-      if (r.data.yocoClientSecret) setShowPayment(true);
-      else { reset(); } // No Yoco — order placed, reset left panel
+      if (r.data.yocoClientSecret) {
+        setShowPayment(true);
+      } else {
+        // No Yoco key (dev mode / offline) — order is in the DB, inform barista.
+        setOrderSuccess("Order placed — accept cash or card manually.");
+        reset();
+        setTimeout(() => setOrderSuccess(null), 4000);
+      }
     } else {
       setOrderError(r.message);
     }
@@ -286,6 +303,33 @@ export default function POSWorkspace({ staffName }: Props) {
 
         {!showPayment ? (
           <>
+          {/* M9 — Bean freshness alert banner */}
+          {activeBeanLot?.roastDate && (() => {
+            const f = freshness(activeBeanLot.roastDate!);
+            if (f === "fresh") return null;
+            const days = daysSinceRoast(activeBeanLot.roastDate!);
+            const isStale = f === "stale";
+            return (
+              <div
+                className="shrink-0 flex items-center gap-2 px-3 py-1.5 favo-caption"
+                style={{
+                  background: isStale
+                    ? "color-mix(in srgb, var(--color-error, #dc2626) 12%, transparent)"
+                    : "color-mix(in srgb, var(--color-warning, #eab308) 12%, transparent)",
+                  color: isStale ? "var(--color-error, #dc2626)" : "var(--color-warning, #eab308)",
+                  borderBottom: "1px solid currentColor",
+                  opacity: 0.9,
+                }}
+                role="alert"
+              >
+                <span aria-hidden>{isStale ? "●" : "▲"}</span>
+                <span>
+                  Beans {isStale ? "past peak" : "ageing"} ({days}d since roast)
+                  {activeBeanLot.sourceName ? ` — ${activeBeanLot.sourceName}` : ""}
+                </span>
+              </div>
+            );
+          })()}
           <div className="flex flex-1 overflow-hidden">
 
             {/* ── Vertical category sidebar ── */}
@@ -386,18 +430,33 @@ export default function POSWorkspace({ staffName }: Props) {
                   ))}
                 </div>
                 {orderError && <p className="favo-small text-[var(--color-error)] mb-2" role="alert">{orderError}</p>}
+                {orderSuccess && (
+                  <p className="favo-small mb-2 rounded px-3 py-2" role="status"
+                    style={{ background: "color-mix(in srgb, var(--color-success) 15%, transparent)", color: "var(--color-success)" }}>
+                    ✓ {orderSuccess}
+                  </p>
+                )}
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="favo-label text-cool-steel">Total</p>
                     <p className="favo-subhead text-porcelain">{formatZar(totalZar)}</p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowWasteModal(true)}
+                      className="favo-caption text-cool-steel/60 hover:text-cool-steel flex items-center gap-1 px-2 min-h-[44px] rounded-[4px] hover:bg-porcelain/8 transition-colors"
+                      aria-label="Log waste"
+                    >
+                      <Trash2 size={12} strokeWidth={2} aria-hidden />
+                      <span>Waste</span>
+                    </button>
                     <button type="button" onClick={() => reset()}
-                      className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel hover:bg-porcelain/10 min-h-[40px]">
+                      className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel hover:bg-porcelain/10 min-h-[44px]">
                       Clear
                     </button>
                     <button type="button" onClick={handlePlaceOrder} disabled={submitting}
-                      className="flex items-center gap-2 rounded-[4px] px-4 py-2 min-h-[40px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
+                      className="flex items-center gap-2 rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
                       style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
                       {submitting
                         ? <Loader2 size={14} strokeWidth={2} className="animate-spin" />
@@ -645,6 +704,14 @@ export default function POSWorkspace({ staffName }: Props) {
           })}
         </div>
       </div>
+
+      {/* ════════ WASTE LOG MODAL (M8) ════════ */}
+      {showWasteModal && (
+        <WasteLogModal
+          onClose={() => setShowWasteModal(false)}
+          onLogged={() => setShowWasteModal(false)}
+        />
+      )}
 
       {/* ════════ MOD SHEET ════════ */}
       {modTarget && (

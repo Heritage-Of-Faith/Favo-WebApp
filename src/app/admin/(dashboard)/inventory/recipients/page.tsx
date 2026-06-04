@@ -2,6 +2,8 @@
 // Configure who receives low-stock pings, per item and globally.
 // Docs: API.md, DATA_MODEL.md (stock_alert_recipients), BUSINESS_RULES.md T04.
 
+
+export const metadata = { title: "Alert Recipients" };
 import Link from "next/link";
 import { listStockAlertRecipients } from "@/server/actions/alert-recipients";
 import { listInventory } from "@/server/actions/inventory";

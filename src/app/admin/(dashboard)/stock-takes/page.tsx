@@ -2,6 +2,8 @@
 // List past + in-progress takes with a "Start take" CTA. Tap a take to resume
 // counting or view its variance summary. Docs: API.md, BUSINESS_RULES.md T01.
 
+
+export const metadata = { title: "Stock Takes" };
 import Link from "next/link";
 import { listStockTakes } from "@/server/actions/stock-takes";
 import { varianceBand } from "@/lib/status/variance-band";

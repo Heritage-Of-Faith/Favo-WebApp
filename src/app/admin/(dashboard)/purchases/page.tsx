@@ -2,6 +2,8 @@
 // Record purchases (creating lots) and approve pending emergency purchases.
 // Docs: API.md, BUSINESS_RULES.md L10.
 
+
+export const metadata = { title: "Purchases" };
 import { getSession } from "@/lib/auth/session";
 import { listPurchases } from "@/server/actions/purchases";
 import { listInventory } from "@/server/actions/inventory";

@@ -2,6 +2,8 @@
 // Admin AND finance read; admin generates drafts; admin + finance co-sign to
 // close. Docs: FAVO_PRD_v3.md §04 §08 L11, API.md.
 
+
+export const metadata = { title: "Monthly P\u0026L" };
 import { getSession } from "@/lib/auth/session";
 import { listMonthlyReports } from "@/server/actions/monthly-pnl";
 import { revenueDay } from "@/lib/format";
