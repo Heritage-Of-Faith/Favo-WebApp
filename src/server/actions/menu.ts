@@ -7,11 +7,18 @@
 
 import { z } from "zod";
 import { eq, asc, desc, and, isNull } from "drizzle-orm";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
 import { menuItems, menuCustomisations, priceHistory, operatingHours } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import type { ActionResult, MenuItem, MenuCustomisation } from "@/lib/types";
+
+// Cache tag for the public menu. The menu changes rarely (only on price edits
+// or item/customisation changes), but is read on every POS mount, landing page,
+// and customer PWA load. Caching it removes ~1.5s of cross-region DB latency
+// (Supabase eu-west-1 ↔ South Africa) from every one of those reads.
+const MENU_CACHE_TAG = "menu";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -39,38 +46,52 @@ const setPriceSchema = z.object({
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 /**
+ * Build the full menu from the DB: all active items with their current price
+ * and customisations. Wrapped by `unstable_cache` below — invalidated by
+ * `revalidateTag(MENU_CACHE_TAG)` on any menu mutation, with a 5-minute
+ * time-based fallback so a missed invalidation self-heals.
+ */
+const loadMenu = unstable_cache(
+  async (): Promise<MenuItem[]> => {
+    const [items, customisations] = await Promise.all([
+      db
+        .select()
+        .from(menuItems)
+        .where(eq(menuItems.active, true))
+        .orderBy(asc(menuItems.category), asc(menuItems.name)),
+      db
+        .select()
+        .from(menuCustomisations)
+        .orderBy(asc(menuCustomisations.name)),
+    ]);
+
+    const custByItem = new Map<string, MenuCustomisation[]>();
+    for (const c of customisations) {
+      const list = custByItem.get(c.menuItemId) ?? [];
+      list.push({ id: c.id, name: c.name, priceDeltaZar: c.priceDeltaZar });
+      custByItem.set(c.menuItemId, list);
+    }
+
+    return items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      currentPriceZar: item.currentPriceZar,
+      active: item.active,
+      customisations: custByItem.get(item.id) ?? [],
+    }));
+  },
+  ["get-menu"],
+  { tags: [MENU_CACHE_TAG], revalidate: 300 }
+);
+
+/**
  * Return the full menu: all active items with their current price and
  * customisations. Public — no auth required (POS, landing page, customer PWA).
+ * Served from cache; see `loadMenu` for the underlying query.
  */
 export async function getMenu(): Promise<ActionResult<MenuItem[]>> {
-  const [items, customisations] = await Promise.all([
-    db
-      .select()
-      .from(menuItems)
-      .where(eq(menuItems.active, true))
-      .orderBy(asc(menuItems.category), asc(menuItems.name)),
-    db
-      .select()
-      .from(menuCustomisations)
-      .orderBy(asc(menuCustomisations.name)),
-  ]);
-
-  const custByItem = new Map<string, MenuCustomisation[]>();
-  for (const c of customisations) {
-    const list = custByItem.get(c.menuItemId) ?? [];
-    list.push({ id: c.id, name: c.name, priceDeltaZar: c.priceDeltaZar });
-    custByItem.set(c.menuItemId, list);
-  }
-
-  const menu: MenuItem[] = items.map((item) => ({
-    id: item.id,
-    name: item.name,
-    category: item.category,
-    currentPriceZar: item.currentPriceZar,
-    active: item.active,
-    customisations: custByItem.get(item.id) ?? [],
-  }));
-
+  const menu = await loadMenu();
   return { ok: true, data: menu };
 }
 
@@ -152,6 +173,13 @@ export async function setMenuItemPrice(input: {
     before: { priceZar: oldPriceZar },
     after: { priceZar: newPriceZar },
   });
+
+  // The denormalised price the menu serves has changed — invalidate the menu
+  // cache so subsequent getMenu() reads reflect the new price. "max" gives
+  // stale-while-revalidate semantics (Next 16 recommended); a momentarily stale
+  // *display* price is harmless because createOrder always re-reads prices
+  // directly from the DB and never trusts the cached menu.
+  revalidateTag(MENU_CACHE_TAG, "max");
 
   // Return the updated item with customisations.
   const [updated] = await db
