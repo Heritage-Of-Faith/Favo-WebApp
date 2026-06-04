@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { canAccessAdmin } from "@/server/auth/rbac";
 import Sidebar from "@/components/admin/Sidebar";
+import PendingApprovalsBanner from "@/components/admin/PendingApprovalsBanner";
 import { Toaster } from "@/components/ui/sonner";
 
 export default async function AdminDashboardLayout({
@@ -21,10 +22,16 @@ export default async function AdminDashboardLayout({
     redirect("/admin/login");
   }
 
+  const canApprove = session.role === "admin" || session.role === "owner";
+
   return (
     <div className="flex min-h-screen bg-surface text-text-strong">
       <Sidebar role={session.role} />
-      <main className="flex-1 p-6">{children}</main>
+      <main className="flex-1 p-6">
+        {/* L10: emergency purchases awaiting approval surface on every admin page. */}
+        <PendingApprovalsBanner canApprove={canApprove} />
+        {children}
+      </main>
       <Toaster />
     </div>
   );

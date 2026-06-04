@@ -11,23 +11,13 @@ import { db } from "@/lib/db";
 import { stockAlertRecipients, staff, inventoryItems } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
-import type { ActionResult } from "@/lib/types";
+import type { ActionResult, AlertRecipient } from "@/lib/types";
 import type { DB } from "@/lib/db";
 
 const ADMIN_ROLES = ["admin", "manager", "owner"] as const;
 const READER_ROLES = ["admin", "manager", "owner"] as const;
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type AlertRecipient = {
-  id: string;
-  staffId: string;
-  staffName: string;
-  staffRole: string;
-  /** null = global (receives alerts for all items). */
-  inventoryItemId: string | null;
-  inventoryItemName: string | null;
-};
+// AlertRecipient now lives in @/lib/types (shared with the admin RecipientsEditor).
 
 // ─── listStockAlertRecipients ─────────────────────────────────────────────────
 

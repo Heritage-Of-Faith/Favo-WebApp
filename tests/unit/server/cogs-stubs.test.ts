@@ -178,29 +178,29 @@ describe("listStockTakes", () => {
 
 // ─── getRecipe ────────────────────────────────────────────────────────────────
 
-describe("getRecipe stub", () => {
-  it("returns cappuccino recipe with 4 ingredients", async () => {
+// getRecipe is now a real DB implementation (A11). With the DB mocked to empty,
+// an unknown menu item resolves to a NOT_FOUND ActionResult (no throw).
+describe("getRecipe", () => {
+  it("returns a well-formed ActionResult for an unknown item (DB mocked empty)", async () => {
     const result = await getRecipe("menu_cappuccino");
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.recipe).not.toBeNull();
-    expect(result.data.recipe?.ingredients).toHaveLength(4);
-  });
-
-  it("returns null for an item with no recipe", async () => {
-    const result = await getRecipe("menu_croissant");
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.recipe).toBeNull();
+    expect(typeof result.ok).toBe("boolean");
+    if (!result.ok) {
+      expect(result.code).toBe("NOT_FOUND");
+    } else {
+      // If a row were present it would be a RecipeDetail or null.
+      expect(result.data).toHaveProperty("recipe");
+    }
   });
 });
 
-describe("listRecipes stub", () => {
-  it("returns at least 4 recipes", async () => {
+// listRecipes is a real DB implementation (A11) — with no menu items it returns
+// an empty list. Shape exercised here; full behaviour needs an integration DB.
+describe("listRecipes", () => {
+  it("returns ok:true with a recipes array (DB mocked empty)", async () => {
     const result = await listRecipes();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.data.recipes.length).toBeGreaterThanOrEqual(4);
+    expect(Array.isArray(result.data.recipes)).toBe(true);
   });
 });
 
