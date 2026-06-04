@@ -13,21 +13,29 @@ vi.mock("@/server/auth/guard", () => ({
   }),
 }));
 
-// Prevent any real DB connection attempts (functions with real impls post-G10+)
-vi.mock("@db/index", () => ({
-  db: {
-    select: vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          orderBy: vi.fn().mockResolvedValue([]),
-        }),
-      }),
-    }),
-    insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),
-    update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
-    transaction: vi.fn(),
-  },
-}));
+// Prevent any real DB connection attempts (functions with real impls post-G10+).
+// The chain mock supports: select().from().where/innerJoin/orderBy → []
+vi.mock("@db/index", () => {
+  const chain = {
+    from: vi.fn(),
+    where: vi.fn(),
+    innerJoin: vi.fn(),
+    leftJoin: vi.fn(),
+    orderBy: vi.fn().mockResolvedValue([]),
+  };
+  chain.from.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  chain.innerJoin.mockReturnValue(chain);
+  chain.leftJoin.mockReturnValue(chain);
+  return {
+    db: {
+      select: vi.fn().mockReturnValue(chain),
+      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),
+      update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+      transaction: vi.fn(),
+    },
+  };
+});
 import { getCogsLive, getCogsHistory } from "@/server/actions/cogs";
 import { listInventory, listLots, listInventoryStatus, getActiveBeanLot } from "@/server/actions/inventory";
 import { listExpenses } from "@/server/actions/expenses";
@@ -175,21 +183,14 @@ describe("listPurchases", () => {
 
 // ─── listStockTakes ───────────────────────────────────────────────────────────
 
-describe("listStockTakes stub", () => {
-  it("returns takes; at least one is closed", async () => {
+describe("listStockTakes", () => {
+  it("returns ok:true with takes array (real impl post-G11, DB mocked)", async () => {
     const result = await listStockTakes();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const closed = result.data.takes.filter((t) => t.completedAt !== null);
-    expect(closed.length).toBeGreaterThan(0);
-  });
-
-  it("closed takes have a variancePct", async () => {
-    const result = await listStockTakes();
-    if (!result.ok) return;
-    for (const take of result.data.takes.filter((t) => t.completedAt)) {
-      expect(take.variancePct).not.toBeNull();
-    }
+    // DB mocked to return [] — just verify shape
+    expect(Array.isArray(result.data.takes)).toBe(true);
+    expect(typeof result.data.total).toBe("number");
   });
 });
 

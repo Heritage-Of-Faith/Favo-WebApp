@@ -163,9 +163,12 @@ export const stockTakeLines = pgTable("stock_take_lines", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   stockTakeId: text("stock_take_id").notNull().references(() => stockTakes.id),
   inventoryLotId: text("inventory_lot_id").notNull().references(() => inventoryLots.id),
+  /** Running-stock at take-creation time (SUM of movements up to startedAt). */
   expected: integer("expected").notNull(),
-  counted: integer("counted").notNull(),
-  variance: integer("variance").notNull(),
+  /** Null until the admin physically counts this lot (walk-lots flow in A9). */
+  counted: integer("counted"),
+  /** Null until counted. Raw delta: counted − expected (integer units). */
+  variance: integer("variance"),
 });
 
 export const stockAlertRecipients = pgTable("stock_alert_recipients", {
