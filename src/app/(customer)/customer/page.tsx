@@ -4,6 +4,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import PushOptIn from "@/components/customer/PushOptIn";
 import StagingCustomerResume from "@/components/customer/StagingCustomerResume";
 
@@ -84,6 +85,26 @@ export default function CustomerPage() {
 
       {/* Main */}
       <main style={S.main}>
+        {/* Banner photo */}
+        <div
+          style={{
+            position: "relative",
+            width: "100%",
+            aspectRatio: "16 / 9",
+            borderRadius: 2,
+            overflow: "hidden",
+            backgroundColor: "rgba(247,246,242,0.05)",
+          }}
+        >
+          <Image
+            src="/images/espresso-pour.jpg"
+            alt="Espresso pouring into a glass on the FAVO machine"
+            fill
+            sizes="(max-width: 640px) 100vw, 600px"
+            style={{ objectFit: "cover", objectPosition: "center 40%" }}
+          />
+        </div>
+
         {/* Greeting */}
         <div>
           <h1 style={S.greeting}>

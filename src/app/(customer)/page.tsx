@@ -4,6 +4,7 @@
 import Hero from "@/components/landing/Hero";
 import NumbersStrip from "@/components/landing/NumbersStrip";
 import AboutSection from "@/components/landing/AboutSection";
+import PhotoBand from "@/components/landing/PhotoBand";
 import VisitSection from "@/components/landing/VisitSection";
 import Footer from "@/components/landing/Footer";
 
@@ -19,6 +20,7 @@ export default function LandingPage() {
       <Hero />
       <NumbersStrip />
       <AboutSection />
+      <PhotoBand />
       <VisitSection />
       <Footer />
     </main>
