@@ -206,23 +206,14 @@ describe("listRecipes stub", () => {
 
 // ─── listMonthlyReports ───────────────────────────────────────────────────────
 
-describe("listMonthlyReports stub", () => {
-  it("returns reports including a closed and an awaiting-signatures one", async () => {
+// listMonthlyReports is now a real DB implementation (G15) — shape tested in monthly-pnl.test.ts
+describe("listMonthlyReports", () => {
+  it("returns ok:true with reports array (real impl post-G15, DB mocked)", async () => {
     const result = await listMonthlyReports();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const statuses = result.data.reports.map((r) => r.status);
-    expect(statuses).toContain("closed");
-    expect(statuses).toContain("awaiting_signatures");
-  });
-
-  it("closed report has both sigs non-null", async () => {
-    const result = await listMonthlyReports();
-    if (!result.ok) return;
-    const closed = result.data.reports.find((r) => r.status === "closed");
-    expect(closed?.adminSig).not.toBeNull();
-    expect(closed?.financeSig).not.toBeNull();
-    expect(closed?.closedAt).not.toBeNull();
+    expect(Array.isArray(result.data.reports)).toBe(true);
+    expect(typeof result.data.total).toBe("number");
   });
 });
 
