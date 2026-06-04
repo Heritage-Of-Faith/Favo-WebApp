@@ -19,6 +19,7 @@ import {
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
   CheckCircle, AlertCircle, Tag, Star, ShieldCheck,
 } from "lucide-react";
+import WasteDialog from "@/components/pos/WasteDialog";
 import type { Customer, MenuItem, MenuCustomisation, Order, OrderState } from "@/lib/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -94,6 +95,7 @@ export default function POSWorkspace({ staffName }: Props) {
   const [discountId, setDiscountId] = useState("");
   const [discountMsg, setDiscountMsg] = useState<string | null>(null);
   const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
+  const [wasteOpen, setWasteOpen] = useState(false);
 
   const sortedOrders = [...activeOrders].sort((a, b) => {
     const sp = STATE_PRIORITY[a.state] - STATE_PRIORITY[b.state];
@@ -606,6 +608,14 @@ export default function POSWorkspace({ staffName }: Props) {
                       </div>
                     )}
 
+                    {/* Report waste (M8) */}
+                    {!isDone && (
+                      <button type="button" onClick={() => setWasteOpen(true)}
+                        className="favo-caption text-cool-steel hover:text-porcelain underline underline-offset-2 min-h-[28px] transition-colors flex items-center gap-1">
+                        <Trash2 size={11} strokeWidth={2} /> Report waste
+                      </button>
+                    )}
+
                     {/* Collected success */}
                     {full && o.state === "collected" && (
                       <div className="flex items-center gap-2 py-1">
@@ -687,6 +697,11 @@ export default function POSWorkspace({ staffName }: Props) {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ════════ WASTE DIALOG (M8) ════════ */}
+      {wasteOpen && (
+        <WasteDialog onClose={() => setWasteOpen(false)} />
       )}
     </div>
   );
