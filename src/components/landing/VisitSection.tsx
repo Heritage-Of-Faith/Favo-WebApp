@@ -1,4 +1,4 @@
-﻿// Visit / hours section â€” owner: Nikao (task N3)
+// Visit / hours section -- owner: Nikao (task N3)
 // Split: hours table left, address + CTA right. Porcelain background.
 // TODO: replace placeholder address before launch.
 
@@ -71,37 +71,37 @@ const S = {
   } satisfies React.CSSProperties,
 } as const;
 
-// Static hours â€” shown when OperatingHours server component falls back.
+// Static hours -- shown when OperatingHours server component falls back.
 // Will be replaced by live data from N4/OperatingHours once G3 seeds the table.
 const STATIC_HOURS = [
-  { day: "Monday",    hours: "09:00 â€“ 17:00" },
-  { day: "Tuesday",   hours: "09:00 â€“ 17:00" },
-  { day: "Wednesday", hours: "09:00 â€“ 17:00" },
-  { day: "Thursday",  hours: "09:00 â€“ 17:00" },
-  { day: "Friday",    hours: "09:00 â€“ 17:00" },
-  { day: "Saturday",  hours: "Closed"         },
-  { day: "Sunday",    hours: "07:00 â€“ 15:00"  },
+  { day: "Monday",    hours: "09:00 – 17:00" },
+  { day: "Tuesday",   hours: "09:00 – 17:00" },
+  { day: "Wednesday", hours: "09:00 – 17:00" },
+  { day: "Thursday",  hours: "09:00 – 17:00" },
+  { day: "Friday",    hours: "09:00 – 17:00" },
+  { day: "Saturday",  hours: "Closed"        },
+  { day: "Sunday",    hours: "07:00 – 15:00" },
 ] as const;
 
 export default function VisitSection() {
   return (
     <section style={S.section}>
       <div style={S.inner}>
-        {/* â”€â”€ Left: address + CTA â”€â”€ */}
+        {/* Left: address + CTA */}
         <div>
           <p style={S.eyebrow}>Find us</p>
           <h2 style={S.heading}>Come in.<br />We&rsquo;ll be here.</h2>
           {/* TODO: replace with actual address before launch */}
           <address style={{ display: "block" }}>
             <p style={S.address}>12 Bean Street</p>
-            <p style={S.addressSub}>Cape Town, Western Cape Â· 8001</p>
+            <p style={S.addressSub}>Cape Town, Western Cape &middot; 8001</p>
           </address>
           <a href="/login" style={S.cta}>
-            Join the loyalty programme â†’
+            Join the loyalty programme &rarr;
           </a>
         </div>
 
-        {/* â”€â”€ Right: hours â”€â”€ */}
+        {/* Right: hours */}
         <div>
           <p style={S.eyebrow}>Opening hours</p>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
