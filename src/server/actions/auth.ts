@@ -7,6 +7,7 @@ import { staff } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
 import { signIn, signOut as nextSignOut } from "../../../auth";
+import { mintLoginAttestation } from "../../../auth";
 import type { ActionResult } from "@/lib/types";
 
 // Docs: docs/API.md → loginWithPin · Bcrypt-compare against staff.pin_hash.
@@ -47,6 +48,23 @@ export async function loginWithPin(
     return { ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect PIN." };
   }
 
+  // Mint a short-lived HMAC attestation token so Auth.js can take the fast
+  // path (single primary-key lookup) without re-running bcrypt.
+  const attestation = mintLoginAttestation(matched.id);
+
+  // Establish the Auth.js session. If signIn throws (e.g. AuthError when
+  // the authorize callback returns null), map it to a structured error — server
+  // actions must never throw across the client boundary.
+  try {
+    await signIn("credentials", { attestation, redirect: false });
+  } catch (err) {
+    // AuthError or unexpected failure — session was NOT created.
+    const message = err instanceof Error ? err.message : "Sign-in failed.";
+    return { ok: false, code: "AUTH_ERROR", message };
+  }
+
+  // Audit only after the session is confirmed — prevents a login_success row
+  // for a session that was never actually created.
   await writeAudit({
     entityKind: "staff",
     entityId: matched.id,
@@ -54,11 +72,6 @@ export async function loginWithPin(
     actorId: matched.id,
     actorRole: matched.role,
   });
-
-  // Pass the pre-verified staffId to Auth.js so its authorize callback skips
-  // the bcrypt scan entirely (a cheap primary-key lookup instead of
-  // N × bcrypt.compare, saving 150–250 ms per staff member in the roster).
-  await signIn("credentials", { staffId: matched.id, redirect: false });
 
   return { ok: true, data: { staffId: matched.id, name: matched.name } };
 }

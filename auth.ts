@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "crypto";
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import type { NextAuthConfig } from "next-auth";
@@ -12,41 +13,89 @@ import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
 //
 // Two credential modes:
 //
-// 1. staffId (fast path) — loginWithPin has already bcrypt-verified the PIN and
-//    resolved the matched staff id; it passes `staffId` here so we just do a
-//    cheap primary-key lookup. This avoids running bcrypt a second time (each
-//    bcrypt.compare at cost 10 takes ~150–250ms, and the full sequential scan of
-//    all staff would run it for every active staff member).
+// 1. attestation (fast path) — loginWithPin bcrypt-verified the PIN and minted a
+//    short-lived HMAC-SHA256 token (60 s). Auth.js verifies the token and does a
+//    single primary-key lookup — no bcrypt at all. The HMAC prevents a direct
+//    POST to /api/auth/callback/credentials from forging the fast path.
 //
-// 2. pin (fallback / direct) — performs the full bcrypt scan. Used when
-//    signIn("credentials", { pin }) is called without a pre-verified staffId
-//    (e.g. direct API testing). The POS and admin login forms always go through
-//    loginWithPin first, so they take the fast path.
+// 2. pin (fallback / direct) — full bcrypt scan. Used when signIn("credentials",
+//    { pin }) is called without an attestation (e.g. direct API testing). Normal
+//    POS/admin login always goes through loginWithPin first.
+
+// ─── Short-lived attestation token ───────────────────────────────────────────
+
+const ATTEST_TTL_MS = 60_000; // 60 seconds
+
+/**
+ * Mint a short-lived HMAC-SHA256 attestation token that proves `loginWithPin`
+ * already verified the PIN for this staff member.
+ * Format: `<staffId>.<expiresAt>.<sig16>`
+ */
+export function mintLoginAttestation(staffId: string): string {
+  const secret = process.env.AUTH_SECRET ?? "dev-secret";
+  const expiresAt = Date.now() + ATTEST_TTL_MS;
+  const payload = `${staffId}.${expiresAt}`;
+  const sig = createHmac("sha256", secret).update(payload).digest("hex").slice(0, 16);
+  return `${payload}.${sig}`;
+}
+
+/**
+ * Verify an attestation token. Returns the staffId on success, null on any
+ * failure (bad format, expired, or tampered signature).
+ */
+function verifyLoginAttestation(token: string): string | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [staffId, expiresAtStr, sig] = parts;
+  const expiresAt = parseInt(expiresAtStr, 10);
+  if (!staffId || isNaN(expiresAt) || Date.now() > expiresAt) return null;
+
+  const secret = process.env.AUTH_SECRET ?? "dev-secret";
+  const payload = `${staffId}.${expiresAt}`;
+  const expected = createHmac("sha256", secret).update(payload).digest("hex").slice(0, 16);
+
+  // Constant-time comparison to prevent timing-based token enumeration.
+  try {
+    const sigBuf = Buffer.from(sig, "hex");
+    const expBuf = Buffer.from(expected, "hex");
+    if (sigBuf.length !== expBuf.length) return null;
+    return timingSafeEqual(sigBuf, expBuf) ? staffId : null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Auth.js config ───────────────────────────────────────────────────────────
 
 export const authConfig: NextAuthConfig = {
   providers: [
     Credentials({
       name: "PIN",
       credentials: {
-        pin: { label: "PIN", type: "password" },
-        staffId: { label: "Staff ID", type: "text" },
+        pin:         { label: "PIN",         type: "password" },
+        attestation: { label: "Attestation", type: "text" },
       },
       async authorize(credentials) {
-        const staffId = typeof credentials?.staffId === "string" ? credentials.staffId.trim() : "";
+        const attestation = typeof credentials?.attestation === "string"
+          ? credentials.attestation.trim()
+          : "";
         const pin = typeof credentials?.pin === "string" ? credentials.pin : "";
 
-        // ── Fast path: PIN already verified by loginWithPin ──────────────────
-        if (staffId) {
+        // ── Fast path: HMAC-attested token from loginWithPin ─────────────────
+        if (attestation) {
+          const staffId = verifyLoginAttestation(attestation);
+          if (!staffId) return null; // expired or tampered
+
           const [member] = await db
             .select({ id: staff.id, name: staff.name, role: staff.role, active: staff.active })
             .from(staff)
             .where(eq(staff.id, staffId));
-          // Guard: must still be an active staff member.
-          if (!member || !member.active) return null;
+
+          if (!member?.active) return null;
           return { id: member.id, name: member.name, role: member.role };
         }
 
-        // ── Fallback: full bcrypt scan (direct signIn call without staffId) ──
+        // ── Fallback: full bcrypt scan (direct signIn without attestation) ───
         if (!isValidPinFormat(pin)) return null;
 
         const activeStaff = await db

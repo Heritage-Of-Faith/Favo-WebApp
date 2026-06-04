@@ -173,7 +173,10 @@ export async function createOrder(
     createPaymentIntent({ amountZar: totalZar, metadata: { orderId } }).catch(
       (err: unknown) => {
         if (process.env.NODE_ENV === "production") throw err;
-        console.warn("[createOrder] Yoco intent skipped (YOCO_SECRET_KEY not set):", err);
+        // In dev, YOCO_SECRET_KEY is not set — warn with the actual error rather
+        // than a hardcoded message so real Yoco API errors are not misreported.
+        const reason = !process.env.YOCO_SECRET_KEY ? "YOCO_SECRET_KEY not set" : String(err);
+        console.warn(`[createOrder] Yoco intent skipped (${reason})`);
         return null;
       }
     ),
