@@ -1,13 +1,12 @@
 // Purchases — task A10 (L10).
 // Record purchases (creating lots) and approve pending emergency purchases.
 // Docs: API.md, BUSINESS_RULES.md L10.
-
-
-export const metadata = { title: "Purchases" };
 import { getSession } from "@/lib/auth/session";
 import { listPurchases } from "@/server/actions/purchases";
 import { listInventory } from "@/server/actions/inventory";
 import PurchasesManager from "@/components/admin/PurchasesManager";
+
+export const metadata = { title: "Purchases" };
 
 export default async function PurchasesPage() {
   const session = await getSession();
