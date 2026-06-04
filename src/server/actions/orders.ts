@@ -113,67 +113,73 @@ export async function createOrder(
   }
   const totalZar = computeOrderTotalZar(lines);
 
-  const orderId = await db.transaction(async (tx) => {
-    const txDb = tx as unknown as DB;
+  // Pre-generate the order ID in Node so we can supply it to both the DB
+  // transaction and the Yoco intent call simultaneously (gen_random_uuid() in
+  // Postgres produces a v4 UUID with the same entropy — crypto.randomUUID() is
+  // equivalent and lets us avoid waiting for .returning()).
+  const orderId = crypto.randomUUID();
 
-    const [order] = await tx
-      .insert(orders)
-      .values({
+  const itemRows = data.items.map((item) => {
+    const mi = menuById.get(item.menuItemId)!;
+    const mods = item.modifications
+      .map((id) => modById.get(id))
+      .filter((m): m is NonNullable<typeof m> => Boolean(m))
+      .map((m) => ({ id: m.id, name: m.name, priceDeltaZar: m.priceDeltaZar }));
+    return {
+      orderId,
+      menuItemId: item.menuItemId,
+      quantity: item.quantity,
+      unitPriceZar: mi.currentPriceZar,
+      modifications: mods,
+    };
+  });
+
+  // Run the DB transaction and the Yoco intent creation in parallel — the
+  // pre-generated orderId lets both start immediately without waiting on each
+  // other. Yoco is an external HTTPS call to Ireland (~200–500ms); overlapping
+  // it with the DB work removes it from the critical path entirely.
+  const [, yocoResult] = await Promise.all([
+    db.transaction(async (tx) => {
+      const txDb = tx as unknown as DB;
+
+      // INSERT orders + INSERT order_items + writeAudit: orders must come first
+      // (FK constraint), then items and audit can run in parallel since both
+      // only need orderId.
+      await tx.insert(orders).values({
+        id: orderId,
         customerId: data.customerId ?? null,
         staffId: session.id,
         state: "ordered",
         totalZar,
-      })
-      .returning({ id: orders.id });
+      });
 
-    await tx.insert(orderItems).values(
-      data.items.map((item) => {
-        const mi = menuById.get(item.menuItemId)!;
-        const mods = item.modifications
-          .map((id) => modById.get(id))
-          .filter((m): m is NonNullable<typeof m> => Boolean(m))
-          .map((m) => ({ id: m.id, name: m.name, priceDeltaZar: m.priceDeltaZar }));
-        return {
-          orderId: order.id,
-          menuItemId: item.menuItemId,
-          quantity: item.quantity,
-          unitPriceZar: mi.currentPriceZar,
-          modifications: mods,
-        };
-      })
-    );
+      await Promise.all([
+        tx.insert(orderItems).values(itemRows),
+        writeAudit(
+          {
+            entityKind: "order",
+            entityId: orderId,
+            action: "create",
+            actorId: session.id,
+            actorRole: session.role,
+            after: { state: "ordered", totalZar, customerId: data.customerId ?? null },
+          },
+          txDb
+        ),
+      ]);
+    }),
 
-    // Audit inside the transaction — the order and its audit row commit (or roll
-    // back) atomically, per writeAudit's contract. This also folds the audit
-    // insert into the transaction batch rather than a separate round trip.
-    await writeAudit(
-      {
-        entityKind: "order",
-        entityId: order.id,
-        action: "create",
-        actorId: session.id,
-        actorRole: session.role,
-        after: { state: "ordered", totalZar, customerId: data.customerId ?? null },
-      },
-      txDb
-    );
+    // Yoco intent runs concurrently with the DB work.
+    createPaymentIntent({ amountZar: totalZar, metadata: { orderId } }).catch(
+      (err: unknown) => {
+        if (process.env.NODE_ENV === "production") throw err;
+        console.warn("[createOrder] Yoco intent skipped (YOCO_SECRET_KEY not set):", err);
+        return null;
+      }
+    ),
+  ]);
 
-    return order.id;
-  });
-
-  // Create a Yoco payment intent — the client secret goes to the hosted-fields SDK.
-  let yocoClientSecret = "";
-  try {
-    const intent = await createPaymentIntent({
-      amountZar: totalZar,
-      metadata: { orderId },
-    });
-    yocoClientSecret = intent.clientSecret;
-  } catch (err) {
-    // Non-fatal in dev without YOCO_SECRET_KEY; fatal in production.
-    if (process.env.NODE_ENV === "production") throw err;
-    console.warn("[createOrder] Yoco intent skipped (YOCO_SECRET_KEY not set):", err);
-  }
+  const yocoClientSecret = yocoResult?.clientSecret ?? "";
 
   // Notify the live queue board that a new order is waiting.
   notifyOrderChange({
