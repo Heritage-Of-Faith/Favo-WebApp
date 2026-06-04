@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { deactivateStaff } from "@/lib/staff-placeholders";
+import { deactivateStaff } from "@/server/actions/staff";
 import type { Staff } from "@/lib/types";
 
 export type Props = {

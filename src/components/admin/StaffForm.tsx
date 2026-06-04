@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createStaff, setStaffPin } from "@/lib/staff-placeholders";
+import { createStaff, setStaffPin } from "@/server/actions/staff";
 import type { StaffRole } from "@/lib/types";
 
 export type Props = {
@@ -54,7 +54,7 @@ export default function StaffForm({ staffId, staffName, onClose, onSaved }: Prop
     e.preventDefault();
     setSubmitting(true);
     const res = isEdit
-      ? await setStaffPin(staffId!, pin)
+      ? await setStaffPin({ staffId: staffId!, newPin: pin })
       : await createStaff({ name, role, pin });
     setSubmitting(false);
 
