@@ -1,6 +1,10 @@
-// Customer login stub — owner: Nikao (task N6)
-// Phase 3 placeholder. No auth. Visual match with landing page.
-// Docs: docs/DESIGN.md
+// Customer login — owner: Nikao (task N6)
+// Magic-link login placeholder. Visible to the public — no internal language.
+
+export const metadata = {
+  title: "Sign in · FAVO Café",
+  description: "Sign in to your FAVO loyalty account.",
+};
 
 export default function CustomerLoginPage() {
   return (
@@ -26,7 +30,7 @@ export default function CustomerLoginPage() {
           fontSize: "var(--text-hero)",
           lineHeight: 0.92,
           letterSpacing: "var(--tracking-hero)",
-          textTransform: "uppercase",
+          textTransform: "uppercase" as const,
           color: "var(--color-porcelain)",
         }}
       >
@@ -35,7 +39,7 @@ export default function CustomerLoginPage() {
 
       {/* Heading */}
       <h1 className="favo-h2" style={{ color: "var(--color-porcelain)" }}>
-        Your Reward Portal
+        Your loyalty portal
       </h1>
 
       {/* Body copy */}
@@ -47,20 +51,18 @@ export default function CustomerLoginPage() {
           lineHeight: 1.7,
           color: "var(--color-porcelain)",
           maxWidth: "34ch",
-          textWrap: "pretty",
+          textWrap: "pretty" as const,
+          opacity: 0.85,
         }}
       >
-        We&rsquo;re building your loyalty portal. When it&rsquo;s ready,
-        you&rsquo;ll sign in with a magic link sent to your email &mdash; no
-        password needed.
+        We&rsquo;re putting the finishing touches on your rewards portal.
+        Sign-in will use a magic link sent straight to your email &mdash;
+        no password needed.
       </p>
 
-      {/* Phase label */}
-      <span
-        className="favo-label"
-        style={{ color: "var(--color-cool-steel)" }}
-      >
-        Coming in Phase 3
+      {/* Status label */}
+      <span className="favo-label" style={{ color: "var(--color-cool-steel)" }}>
+        Opening soon
       </span>
 
       {/* Back link */}

@@ -7,9 +7,9 @@ import AboutSection from "@/components/landing/AboutSection";
 import VisitSection from "@/components/landing/VisitSection";
 
 export const metadata = {
-  title: "FAVO Café — Speciality Coffee, Cape Town",
+  title: "FAVO Café — Heritage of Faith, Emalahleni",
   description:
-    "Single-origin, no shortcuts. Every cup names the farm, the harvest, and the roast date.",
+    "The café at Heritage of Faith Ministries. Good coffee, real community. 7 Duiker Street, Reyno Ridge.",
 };
 
 export default function LandingPage() {

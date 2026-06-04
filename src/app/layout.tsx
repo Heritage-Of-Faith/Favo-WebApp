@@ -9,19 +9,19 @@ export const metadata: Metadata = {
     default: "FAVO Café",
     template: "%s · FAVO Café",
   },
-  description: "Speciality coffee. Reward every visit.",
+  description: "The café at Heritage of Faith Ministries. Good coffee, real community. Reyno Ridge, Emalahleni.",
   manifest: "/manifest.webmanifest",
   themeColor: COFFEE_BEAN,
   openGraph: {
     title: "FAVO Café",
-    description: "Single-origin, no shortcuts. Every cup names the farm, the harvest, and the roast date.",
+    description: "The café at Heritage of Faith Ministries. Good coffee, real community. Reyno Ridge, Emalahleni.",
     type: "website",
     siteName: "FAVO Café",
   },
   twitter: {
     card: "summary",
     title: "FAVO Café",
-    description: "Speciality coffee. Reward every visit.",
+    description: "The café at Heritage of Faith Ministries. Good coffee, real community. Reyno Ridge, Emalahleni.",
   },
   icons: {
     icon: "/brand/logo-monogram.svg",

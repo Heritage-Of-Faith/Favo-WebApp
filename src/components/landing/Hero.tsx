@@ -1,19 +1,11 @@
 // Landing hero — owner: Nikao (task N3)
 // Full-bleed Dark Teal. Barlow Condensed 900 headline.
+// Responsive via .landing-hero-grid in globals.css.
 
 const S = {
   section: {
     backgroundColor: "var(--color-dark-teal)",
     color: "var(--color-porcelain)",
-    padding: "80px 40px 96px",
-  } satisfies React.CSSProperties,
-  inner: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "1.2fr 1fr",
-    gap: 56,
-    alignItems: "center",
   } satisfies React.CSSProperties,
   eyebrow: {
     fontFamily: "'DM Sans', 'Helvetica Neue', Arial, sans-serif",
@@ -96,8 +88,8 @@ const MENU = ["Cappuccino", "Americano", "Hot Chocolate", "Mocha", "Chai Latte"]
 
 export default function Hero() {
   return (
-    <section style={S.section}>
-      <div style={S.inner}>
+    <section style={S.section} className="landing-section-pad">
+      <div className="landing-hero-grid">
         {/* Left column */}
         <div>
           <p style={S.eyebrow}>Heritage of Faith · Emalahleni</p>
@@ -115,8 +107,8 @@ export default function Hero() {
           </a>
         </div>
 
-        {/* Right column — menu */}
-        <div style={S.visual}>
+        {/* Right column — menu (hidden on mobile via .landing-hero-visual) */}
+        <div style={S.visual} className="landing-hero-visual">
           <p style={S.menuLabel}>What we make</p>
           {MENU.map((item) => (
             <p key={item} style={S.menuItem}>{item}</p>
