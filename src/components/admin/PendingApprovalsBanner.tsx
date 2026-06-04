@@ -30,17 +30,25 @@ export default function PendingApprovalsBanner({ canApprove }: PendingApprovalsB
 
   useEffect(() => {
     load();
+    // Refresh every 30s while the layout stays mounted across navigations.
+    const timer = window.setInterval(load, 30_000);
+    return () => window.clearInterval(timer);
   }, [load]);
 
   async function approve(id: string) {
     setApproving(id);
-    const res = await approveEmergencyPurchase(id);
-    setApproving(null);
-    if (res.ok) {
-      toast.success("Emergency purchase approved.");
-      setPending((prev) => prev.filter((p) => p.id !== id));
-    } else {
-      toast.error(res.message);
+    try {
+      const res = await approveEmergencyPurchase(id);
+      if (res.ok) {
+        toast.success("Emergency purchase approved.");
+        setPending((prev) => prev.filter((p) => p.id !== id));
+      } else {
+        toast.error(res.message);
+      }
+    } catch {
+      toast.error("Failed to approve emergency purchase.");
+    } finally {
+      setApproving(null);
     }
   }
 

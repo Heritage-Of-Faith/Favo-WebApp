@@ -98,19 +98,24 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
     }
 
     setSubmitting(true);
-    const res = await recordPurchase({ sourceName: sourceName.trim(), kind, items: built });
-    setSubmitting(false);
-    if (!res.ok) {
-      toast.error(res.message);
-      return;
+    try {
+      const res = await recordPurchase({ sourceName: sourceName.trim(), kind, items: built });
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      if (kind === "emergency" && !canApprove) {
+        toast.success("Submitted — pending admin approval.");
+      } else {
+        toast.success("Purchase recorded.");
+      }
+      onSaved();
+      onClose();
+    } catch {
+      toast.error("Failed to record purchase. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
-    if (kind === "emergency" && !canApprove) {
-      toast.success("Submitted — pending admin approval.");
-    } else {
-      toast.success("Purchase recorded.");
-    }
-    onSaved();
-    onClose();
   }
 
   return (

@@ -1,7 +1,7 @@
 "use server";
 
 // Recipe server actions — Phase 2 (G8 seed / A11 UI), real DB implementations.
-// getRecipe / listRecipes: no auth (read-only; used by deduction + admin UI).
+// getRecipe / listRecipes: admin/owner only (admin UI only; deduction uses direct DB helpers).
 // updateRecipeIngredient / bumpRecipeVersion: admin/owner only, audited.
 //
 // Active-recipe model: menu_items.recipe_id points at the live recipe. There is
@@ -74,6 +74,9 @@ async function ingredientsByRecipe(
 export async function getRecipe(
   menuItemId: string
 ): Promise<ActionResult<{ recipe: RecipeDetail | null }>> {
+  const auth = await authorize(...ADMIN_ROLES);
+  if (!auth.ok) return auth;
+
   const [item] = await db
     .select({ id: menuItems.id, name: menuItems.name, recipeId: menuItems.recipeId })
     .from(menuItems)
@@ -113,8 +116,11 @@ export async function getRecipe(
 
 // ─── listRecipes ──────────────────────────────────────────────────────────────
 
-/** Returns the active recipe for every menu item that has one. */
+/** Returns the active recipe for every menu item that has one. Admin/owner only. */
 export async function listRecipes(): Promise<ActionResult<{ recipes: RecipeDetail[] }>> {
+  const auth = await authorize(...ADMIN_ROLES);
+  if (!auth.ok) return auth;
+
   const items = await db
     .select({ id: menuItems.id, name: menuItems.name, recipeId: menuItems.recipeId })
     .from(menuItems);

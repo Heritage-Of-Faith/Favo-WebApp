@@ -32,19 +32,29 @@ export default function PurchasesManager({ initialPurchases, items, canApprove }
   const [approving, setApproving] = useState<string | null>(null);
 
   async function refresh() {
-    const res = await listPurchases();
-    if (res.ok) setPurchases(res.data.purchases);
+    try {
+      const res = await listPurchases();
+      if (res.ok) setPurchases(res.data.purchases);
+      else toast.error(res.message);
+    } catch {
+      toast.error("Failed to refresh purchases.");
+    }
   }
 
   async function approve(id: string) {
     setApproving(id);
-    const res = await approveEmergencyPurchase(id);
-    setApproving(null);
-    if (res.ok) {
-      toast.success("Approved.");
-      void refresh();
-    } else {
-      toast.error(res.message);
+    try {
+      const res = await approveEmergencyPurchase(id);
+      if (res.ok) {
+        toast.success("Approved.");
+        void refresh();
+      } else {
+        toast.error(res.message);
+      }
+    } catch {
+      toast.error("Failed to approve purchase.");
+    } finally {
+      setApproving(null);
     }
   }
 
