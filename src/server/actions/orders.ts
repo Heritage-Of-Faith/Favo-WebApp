@@ -420,14 +420,22 @@ export async function applyStaffDiscount(
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-/** Reload an order with its items into the shared Order shape. */
+/** Reload an order with its items into the shared Order shape, including menu item names. */
 async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
   const [o] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!o) return { ok: false, code: "NOT_FOUND", message: "Order not found." };
 
-  const items = await db
-    .select()
+  const itemRows = await db
+    .select({
+      id: orderItems.id,
+      menuItemId: orderItems.menuItemId,
+      menuItemName: menuItems.name,
+      quantity: orderItems.quantity,
+      unitPriceZar: orderItems.unitPriceZar,
+      modifications: orderItems.modifications,
+    })
     .from(orderItems)
+    .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
     .where(eq(orderItems.orderId, orderId));
 
   const order: Order = {
@@ -440,10 +448,10 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
     completedAt: o.completedAt ? o.completedAt.toISOString() : null,
     totalZar: o.totalZar,
     isStaffDiscount: o.isStaffDiscount,
-    items: items.map((it) => ({
+    items: itemRows.map((it) => ({
       id: it.id,
       menuItemId: it.menuItemId,
-      menuItemName: "",
+      menuItemName: it.menuItemName ?? it.menuItemId,
       quantity: it.quantity,
       unitPriceZar: it.unitPriceZar,
       modifications:

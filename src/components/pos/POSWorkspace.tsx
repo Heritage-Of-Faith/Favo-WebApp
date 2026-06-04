@@ -66,7 +66,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 type Props = { staffName: string; staffId: string };
 
-export default function POSWorkspace({ staffName }: Props) {
+export default function POSWorkspace({ staffName, staffId }: Props) {
   const router = useRouter();
 
   // ── Left panel ─────────────────────────────────────────────────────────────
@@ -614,14 +614,23 @@ export default function POSWorkspace({ staffName }: Props) {
                     {full && !isDone && !full.isStaffDiscount && (
                       <div>
                         {showDiscount !== o.orderId ? (
-                          <button type="button" onClick={() => { setShowDiscount(o.orderId); setDiscountMsg(null); setDiscountId(""); }}
+                          <button type="button"
+                            onClick={() => {
+                              setShowDiscount(o.orderId);
+                              setDiscountMsg(null);
+                              // Pre-fill with the logged-in barista's own ID (L03: most discounts are self-applied)
+                              setDiscountId(staffId);
+                            }}
                             className="flex items-center gap-1 favo-caption text-cool-steel hover:text-porcelain min-h-[32px] transition-colors">
                             <Tag size={11} strokeWidth={2} /> Apply staff discount
                           </button>
                         ) : (
                           <div className="space-y-1.5 rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-2">
+                            <p className="favo-caption text-cool-steel">
+                              Staff member: <span className="text-porcelain">{staffName}</span>
+                            </p>
                             <input type="text" value={discountId} onChange={e => setDiscountId(e.target.value)}
-                              placeholder="Staff ID"
+                              placeholder="Override with different staff ID"
                               className="w-full rounded-[2px] border border-cool-steel/30 bg-porcelain/10 px-2 py-1 text-porcelain favo-caption min-h-[32px] focus:border-crimson-carrot focus:outline-none" />
                             {discountMsg && (
                               <p className={["favo-caption", discountMsg.startsWith("✓") ? "text-[var(--color-success)]" : "text-[var(--color-error)]"].join(" ")}>
