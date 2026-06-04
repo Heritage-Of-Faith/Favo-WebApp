@@ -7,7 +7,7 @@
 import { useState, useTransition } from "react";
 import { formatDate } from "@/lib/format";
 import { listAudit } from "@/server/actions/audit";
-import { PAGE_SIZE } from "@/server/actions/audit-types";
+const PAGE_SIZE = 50;
 import type { AuditLog } from "@/lib/types";
 
 const ENTITY_KINDS = [
@@ -61,19 +61,13 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
     }
   ) {
     const f = filters ?? { entityKind, actorRole, dateFrom, dateTo };
-    let result;
-    try {
-      result = await listAudit({
-        page: targetPage,
-        entityKind: f.entityKind || undefined,
-        actorRole: f.actorRole || undefined,
-        dateFrom: f.dateFrom || undefined,
-        dateTo: f.dateTo || undefined,
-      });
-    } catch {
-      setError("Failed to load audit log. Please try again.");
-      return;
-    }
+    const result = await listAudit({
+      page: targetPage,
+      entityKind: f.entityKind || undefined,
+      actorRole: f.actorRole || undefined,
+      dateFrom: f.dateFrom || undefined,
+      dateTo: f.dateTo || undefined,
+    });
     if (!result.ok) {
       setError(result.message);
       return;
