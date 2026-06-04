@@ -248,6 +248,23 @@ export type Purchase = {
   adminApprovedBy: string | null; // staff id
 };
 
+/** One lot received in a purchase (input to recordPurchase). */
+export type PurchaseLotItem = {
+  inventoryItemId: string;
+  /** Quantity received in the item's own unit (positive number). */
+  quantity: number;
+  /** Cost per base unit as a numeric string (matches numeric(10,4) column). */
+  unitCostZar: string;
+  /** Total cost for this lot item in integer cents. */
+  totalZar: number;
+};
+
+export type RecordPurchaseInput = {
+  sourceName: string;
+  kind: PurchaseKind;
+  items: PurchaseLotItem[];
+};
+
 // ─── Phase 2: Stock Takes ─────────────────────────────────────────────────────
 
 export type StockTakeKind = "full" | "spot";

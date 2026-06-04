@@ -16,7 +16,12 @@ import {
 } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
-import type { ActionResult, Purchase, PurchaseKind } from "@/lib/types";
+import type {
+  ActionResult,
+  Purchase,
+  PurchaseKind,
+  RecordPurchaseInput,
+} from "@/lib/types";
 import type { DB } from "@/lib/db";
 
 const READER_ROLES = ["manager", "admin", "finance", "owner"] as const;
@@ -32,23 +37,8 @@ const RECORDER_ROLES = [
   "owner",
 ] as const;
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type PurchaseLotItem = {
-  inventoryItemId: string;
-  /** Quantity received in the item's own unit (positive number). */
-  quantity: number;
-  /** Cost per base unit in numeric string (matches numeric(10,4) column). */
-  unitCostZar: string;
-  /** Total cost for this lot item in integer cents. */
-  totalZar: number;
-};
-
-export type RecordPurchaseInput = {
-  sourceName: string;
-  kind: PurchaseKind;
-  items: PurchaseLotItem[];
-};
+// Input types (PurchaseLotItem, RecordPurchaseInput) now live in @/lib/types so
+// both this action and the admin PurchaseForm share one definition.
 
 // ─── listPurchases ────────────────────────────────────────────────────────────
 
