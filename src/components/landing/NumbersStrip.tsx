@@ -6,7 +6,7 @@ const facts = [
   { number: "07:50",   label: "Opens Sundays",           sub: "Before morning service · 07:50–09:15" },
   { number: "5",       label: "Drinks on the menu",       sub: "Cappuccino, Americano, Mocha & more" },
   { number: "Mon–Fri", label: "Open on weekdays",         sub: "After morning prayer · hours vary" },
-  { number: "1 049",   label: "Reyno Ridge, Emalahleni",  sub: "7 Duiker Street · Mpumalanga" },
+  { number: "3",       label: "iXchangers serving",       sub: "Interns learning to serve you" },
 ] as const;
 
 const S = {
