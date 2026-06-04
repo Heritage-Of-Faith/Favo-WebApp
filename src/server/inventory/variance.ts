@@ -1,31 +1,14 @@
 // Inventory variance helpers — task G11
-// Pure functions for stock-take variance computation and band classification.
-// All three are unit-testable without a DB connection.
+// Pure functions for stock-take variance computation.
+// All are unit-testable without a DB connection.
 //
 // Docs: docs/BUSINESS_RULES.md T01 (variance bands)
+//
+// `varianceBand` and its band type live in src/lib/status/variance-band.ts
+// (single source of truth for T01, shared with the admin UI). Re-exported here
+// so existing server callers keep working without an import change.
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type VarianceBand = "ok" | "investigate" | "critical";
-
-// ─── varianceBand ─────────────────────────────────────────────────────────────
-
-/**
- * Classifies an absolute variance percentage into a display band per T01.
- *
- * T01 defaults:
- *   0–5%   → ok          (within acceptable shrinkage)
- *   5–10%  → investigate  (elevated — admin should review)
- *   10%+   → critical     (significant loss or counting error)
- *
- * `pct` is the absolute percentage (always ≥ 0).
- * Exact boundary of 5% is "investigate" (≥ 5, < 10).
- */
-export function varianceBand(pct: number): VarianceBand {
-  if (pct < 5) return "ok";
-  if (pct < 10) return "investigate";
-  return "critical";
-}
+export { varianceBand, type VarianceBand } from "@/lib/status/variance-band";
 
 // ─── computeLinePct ───────────────────────────────────────────────────────────
 
