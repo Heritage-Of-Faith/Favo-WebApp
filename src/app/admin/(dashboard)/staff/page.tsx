@@ -1,13 +1,13 @@
 // Staff management — owner: Mia (task A4)
-// Lists staff, creates new staff, resets PINs, deactivates. Uses placeholder
-// data until Gian's staff Server Actions land (see src/lib/staff-placeholders.ts).
+// Lists staff, creates new staff, resets PINs, deactivates.
+// Wired to Gian's staff Server Actions (src/server/actions/staff.ts).
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
 import StaffTable from "@/components/admin/StaffTable";
 import StaffForm from "@/components/admin/StaffForm";
 import { Button } from "@/components/ui/button";
-import { listStaff } from "@/lib/staff-placeholders";
+import { listStaff } from "@/server/actions/staff";
 import type { Staff } from "@/lib/types";
 
 type FormState =
@@ -21,9 +21,14 @@ export default function StaffPage() {
   const [form, setForm] = useState<FormState>({ mode: "closed" });
 
   const refresh = useCallback(async () => {
-    const res = await listStaff();
-    if (res.ok) setStaff(res.data);
-    setLoading(false);
+    try {
+      const res = await listStaff();
+      if (res.ok) setStaff(res.data);
+    } catch {
+      // Non-fatal — keep showing existing data on refresh failures.
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {

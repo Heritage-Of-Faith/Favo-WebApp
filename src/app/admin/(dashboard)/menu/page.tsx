@@ -1,6 +1,6 @@
 // Menu management — owner: Mia (task A5)
 // Price edits call setMenuItemPrice → price_history row (rule, docs/API.md).
-// Uses placeholder data until Gian's menu actions land (src/lib/menu-placeholders.ts).
+// Wired to Gian's menu Server Actions (src/server/actions/menu.ts).
 
 import MenuEditor from "@/components/admin/MenuEditor";
 
