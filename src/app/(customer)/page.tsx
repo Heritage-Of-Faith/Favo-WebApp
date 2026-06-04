@@ -1,6 +1,7 @@
 // Landing page — owner: Nikao (task N3)
 // Renders without JavaScript. Lighthouse mobile ≥ 90. Docs: docs/DESIGN.md
 
+import Header from "@/components/landing/Header";
 import Hero from "@/components/landing/Hero";
 import NumbersStrip from "@/components/landing/NumbersStrip";
 import AboutSection from "@/components/landing/AboutSection";
@@ -17,6 +18,7 @@ export const metadata = {
 export default function LandingPage() {
   return (
     <main>
+      <Header />
       <Hero />
       <NumbersStrip />
       <AboutSection />

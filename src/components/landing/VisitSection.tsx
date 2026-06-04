@@ -79,7 +79,7 @@ const HOURS = [
 
 export default function VisitSection() {
   return (
-    <section style={S.section} className="landing-section-pad-l">
+    <section id="visit" style={{ ...S.section, scrollMarginTop: 64 }} className="landing-section-pad-l">
       <div className="landing-visit-grid">
         {/* Left: address + CTA */}
         <div>
