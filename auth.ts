@@ -32,7 +32,8 @@ const ATTEST_TTL_MS = 60_000; // 60 seconds
  * Format: `<staffId>.<expiresAt>.<sig16>`
  */
 export function mintLoginAttestation(staffId: string): string {
-  const secret = process.env.AUTH_SECRET ?? "dev-secret";
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) throw new Error("AUTH_SECRET is not set");
   const expiresAt = Date.now() + ATTEST_TTL_MS;
   const payload = `${staffId}.${expiresAt}`;
   const sig = createHmac("sha256", secret).update(payload).digest("hex").slice(0, 16);
@@ -50,7 +51,8 @@ function verifyLoginAttestation(token: string): string | null {
   const expiresAt = parseInt(expiresAtStr, 10);
   if (!staffId || isNaN(expiresAt) || Date.now() > expiresAt) return null;
 
-  const secret = process.env.AUTH_SECRET ?? "dev-secret";
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) return null;
   const payload = `${staffId}.${expiresAt}`;
   const expected = createHmac("sha256", secret).update(payload).digest("hex").slice(0, 16);
 
