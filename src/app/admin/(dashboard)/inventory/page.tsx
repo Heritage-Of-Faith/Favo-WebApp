@@ -1,12 +1,11 @@
 // Inventory management — task A8.
 // Items table with editable thresholds + a lot drawer for recosting (R10).
 // Docs: DATA_MODEL.md, API.md, BUSINESS_RULES.md T04.
-
-
-export const metadata = { title: "Inventory" };
 import Link from "next/link";
 import { listInventory } from "@/server/actions/inventory";
 import InventoryManager from "@/components/admin/InventoryManager";
+
+export const metadata = { title: "Inventory" };
 
 export default async function InventoryPage() {
   const res = await listInventory();

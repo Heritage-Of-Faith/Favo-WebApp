@@ -1,12 +1,11 @@
 // Expenses — task A10.
 // Log and review operating expenses. Admin/owner log; finance/manager read.
 // Docs: API.md, DATA_MODEL.md (expenses).
-
-
-export const metadata = { title: "Expenses" };
 import { getSession } from "@/lib/auth/session";
 import { listExpenses } from "@/server/actions/expenses";
 import ExpensesManager from "@/components/admin/ExpensesManager";
+
+export const metadata = { title: "Expenses" };
 
 export default async function ExpensesPage() {
   const session = await getSession();
