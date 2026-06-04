@@ -223,102 +223,127 @@ export default function POSWorkspace({ staffName }: Props) {
     router.push("/pos");
   }
 
+  // Quick Keys — top 5 most-ordered items pinned for fast access
+  const quickKeys = menu.length > 0 ? [
+    ...menu.filter(i => i.category === "coffee").slice(0, 3),
+    ...menu.filter(i => i.category === "food").slice(0, 1),
+    ...menu.filter(i => i.category === "cold_brew").slice(0, 1),
+  ].slice(0, 5) : [];
+
   return (
     <div className="flex h-screen overflow-hidden">
 
       {/* ════════ LEFT — ORDER BUILDER ════════ */}
-      <div className="flex flex-col border-r border-cool-steel/20" style={{ width: "58%" }}>
+      <div className="flex flex-col border-r border-cool-steel/20" style={{ width: "60%" }}>
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-cool-steel/20 shrink-0">
-          <Image src="/brand/logos/logo-monogram.svg" alt="FAVO" width={28} height={28} className="opacity-80" />
-          <span className="favo-label text-cool-steel">New Order</span>
-          <span className="favo-small text-cool-steel">{staffName}</span>
+        {/* Top header: logo + customer search + staff + logout */}
+        <div className="flex items-center gap-3 px-3 py-2 border-b border-cool-steel/20 shrink-0">
+          <Image src="/brand/logos/logo-monogram.svg" alt="FAVO" width={24} height={24} className="opacity-80 shrink-0" />
+          {/* Customer search — inline in header */}
+          <div className="flex-1 relative">
+            <Search size={13} strokeWidth={2} className="absolute left-2 top-1/2 -translate-y-1/2 text-cool-steel pointer-events-none" />
+            <input type="search" inputMode="text" autoComplete="off"
+              placeholder="Customer name or phone (optional)…"
+              value={query}
+              onChange={e => { setQuery(e.target.value); if (!e.target.value) setCustomer(null); }}
+              onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
+              onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+              className="w-full rounded-[4px] border border-cool-steel/20 bg-porcelain/8 pl-7 pr-7 py-1.5 text-porcelain placeholder:text-cool-steel text-xs focus:border-crimson-carrot focus:outline-none min-h-[34px]"
+            />
+            {customer && (
+              <button type="button" onClick={() => { setCustomer(null); setQuery(""); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-cool-steel hover:text-porcelain">
+                <X size={12} strokeWidth={2} />
+              </button>
+            )}
+            {searchOpen && searchResults.length > 0 && !customer && (
+              <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-dark-teal shadow-[var(--shadow-2)] overflow-hidden">
+                {searchResults.map(c => (
+                  <li key={c.id}>
+                    <button type="button" onMouseDown={() => { setCustomer(c); setQuery(""); setSearchOpen(false); }}
+                      className="flex w-full items-center justify-between px-3 py-2 min-h-[36px] hover:bg-porcelain/10 text-left">
+                      <span className="favo-small text-porcelain font-semibold">{c.name}</span>
+                      {c.loyaltyPoints > 0 && <span className="favo-caption text-crimson-carrot">{c.loyaltyPoints} pts</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {customer && (
+            <span className="favo-caption text-crimson-carrot shrink-0 flex items-center gap-1">
+              <Star size={10} strokeWidth={2} />{customer.name}
+            </span>
+          )}
+          <span className="favo-small text-cool-steel shrink-0 hidden lg:block">{staffName}</span>
         </div>
 
         {!showPayment ? (
           <>
-            {/* Customer search */}
-            <div className="px-4 pt-3 pb-2 shrink-0 relative">
-              <div className="relative flex items-center">
-                <Search size={14} strokeWidth={2} className="absolute left-3 text-cool-steel pointer-events-none" />
-                <input type="search" inputMode="text" autoComplete="off"
-                  placeholder="Search customer (optional)…"
-                  value={query}
-                  onChange={e => { setQuery(e.target.value); if (!e.target.value) setCustomer(null); }}
-                  onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
-                  onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
-                  className="w-full rounded-[4px] border border-cool-steel/30 bg-porcelain/10 pl-8 pr-8 py-2 text-porcelain placeholder:text-cool-steel favo-small focus:border-crimson-carrot focus:outline-none min-h-[40px]"
-                />
-                {customer && (
-                  <button type="button" onClick={() => { setCustomer(null); setQuery(""); }}
-                    className="absolute right-2 text-cool-steel hover:text-porcelain">
-                    <X size={14} strokeWidth={2} />
+          <div className="flex flex-1 overflow-hidden">
+
+            {/* ── Vertical category sidebar ── */}
+            <div className="flex flex-col border-r border-cool-steel/15 shrink-0 pt-2" style={{ width: "13%" }}>
+              {Object.keys(grouped).map(cat => {
+                const active = activeCategory === cat;
+                return (
+                  <button key={cat} type="button" onClick={() => setActiveCategory(cat)}
+                    className="text-left py-3 px-2 transition-colors min-h-[44px]"
+                    style={{
+                      fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13,
+                      letterSpacing: "0.06em", textTransform: "uppercase",
+                      color: active ? "var(--color-crimson-carrot)" : "var(--color-cool-steel)",
+                      borderLeft: active ? "3px solid var(--color-crimson-carrot)" : "3px solid transparent",
+                      background: active ? "rgba(245,86,12,0.08)" : "none",
+                    }}>
+                    {CATEGORY_LABEL[cat] ?? cat}
                   </button>
+                );
+              })}
+            </div>
+
+            {/* ── Menu area: Quick Keys + grid ── */}
+            <div className="flex flex-col flex-1 overflow-hidden">
+
+              {/* Quick Keys row */}
+              {quickKeys.length > 0 && (
+                <div className="shrink-0 border-b border-cool-steel/15 px-3 pt-2 pb-2">
+                  <p className="favo-label mb-1.5">Quick Keys</p>
+                  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${quickKeys.length}, 1fr)` }}>
+                    {quickKeys.map(item => (
+                      <button key={`qk-${item.id}`} type="button"
+                        onClick={() => { setModTarget(item); setSelectedMods([]); }}
+                        className="flex flex-col items-start rounded-[2px] p-2 min-h-[52px] text-left transition-all active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+                        style={{ background: "rgba(245,86,12,0.1)", border: "1px solid rgba(245,86,12,0.25)" }}>
+                        <span className="text-porcelain font-semibold leading-tight" style={{ fontSize: 12 }}>{item.name}</span>
+                        <span className="text-cool-steel mt-auto" style={{ fontSize: 11 }}>{formatZar(item.currentPriceZar)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Menu grid */}
+              <div className="flex-1 overflow-y-auto px-3 pt-2 pb-2">
+                {menuLoading ? (
+                  <div className="flex items-center justify-center h-32 text-cool-steel gap-2">
+                    <Loader2 size={18} strokeWidth={2} className="animate-spin" />
+                    <span className="favo-small">Loading…</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {(grouped[activeCategory] ?? []).map(item => (
+                      <button key={item.id} type="button" onClick={() => { setModTarget(item); setSelectedMods([]); }}
+                        className="flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
+                        <span className="favo-small text-porcelain font-semibold leading-tight">{item.name}</span>
+                        <span className="favo-caption text-cool-steel mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
-              {customer && (
-                <div className="flex items-center gap-2 mt-1 px-1">
-                  <span className="favo-small text-porcelain font-semibold">{customer.name}</span>
-                  {customer.loyaltyPoints > 0 && (
-                    <span className="flex items-center gap-0.5 favo-caption text-crimson-carrot">
-                      <Star size={10} strokeWidth={2} />{customer.loyaltyPoints} pts
-                    </span>
-                  )}
-                </div>
-              )}
-              {searchOpen && searchResults.length > 0 && !customer && (
-                <ul className="absolute z-50 left-4 right-4 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-dark-teal shadow-[var(--shadow-2)] overflow-hidden">
-                  {searchResults.map(c => (
-                    <li key={c.id}>
-                      <button type="button" onMouseDown={() => { setCustomer(c); setQuery(""); setSearchOpen(false); }}
-                        className="flex w-full items-center justify-between px-3 py-2 min-h-[40px] hover:bg-porcelain/10 text-left">
-                        <div>
-                          <p className="favo-small text-porcelain font-semibold">{c.name}</p>
-                          {c.phone && <p className="favo-caption text-cool-steel">{c.phone}</p>}
-                        </div>
-                        {c.loyaltyPoints > 0 && <span className="favo-caption text-crimson-carrot">{c.loyaltyPoints} pts</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </div>
-
-            {/* Category tabs */}
-            <div className="flex gap-1 px-4 pb-2 overflow-x-auto shrink-0">
-              {Object.keys(grouped).map(cat => (
-                <button key={cat} type="button" onClick={() => setActiveCategory(cat)}
-                  className={["favo-caption px-3 py-1 rounded-[999px] transition-colors whitespace-nowrap",
-                    activeCategory === cat
-                      ? "bg-crimson-carrot"
-                      : "bg-porcelain/10 text-cool-steel hover:bg-porcelain/20 hover:text-porcelain"
-                  ].join(" ")}
-                  style={activeCategory === cat ? { color: "var(--color-porcelain)" } : undefined}>
-                  {CATEGORY_LABEL[cat] ?? cat}
-                </button>
-              ))}
-            </div>
-
-            {/* Menu grid */}
-            <div className="flex-1 overflow-y-auto px-4 pb-2">
-              {menuLoading ? (
-                <div className="flex items-center justify-center h-32 text-cool-steel gap-2">
-                  <Loader2 size={18} strokeWidth={2} className="animate-spin" />
-                  <span className="favo-small">Loading…</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-2">
-                  {(grouped[activeCategory] ?? []).map(item => (
-                    <button key={item.id} type="button" onClick={() => { setModTarget(item); setSelectedMods([]); }}
-                      className="flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
-                      <span className="favo-small text-porcelain font-semibold leading-tight">{item.name}</span>
-                      <span className="favo-caption text-cool-steel mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+          </div>
 
             {/* Order summary */}
             {items.length > 0 && (
@@ -403,7 +428,7 @@ export default function POSWorkspace({ staffName }: Props) {
       </div>
 
       {/* ════════ RIGHT — LIVE QUEUE ════════ */}
-      <div className="flex flex-col" style={{ width: "42%" }}>
+      <div className="flex flex-col" style={{ width: "40%" }}>
 
         {/* Queue header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-cool-steel/20 shrink-0">
