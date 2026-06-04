@@ -9,6 +9,8 @@ import { getCogsLive, getCogsHistory } from "@/server/actions/cogs";
 import { todaySast } from "@/server/cogs/compute";
 import CogsDashboard from "@/components/admin/CogsDashboard";
 
+export const metadata = { title: "Dashboard" };
+
 type Card = { href: Route; title: string; description: string; hideFor?: string[] };
 
 // Finance/manager fallback cards (admin/owner get the COGS dashboard instead).

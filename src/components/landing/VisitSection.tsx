@@ -89,7 +89,7 @@ export default function VisitSection() {
             <p style={S.address}>7 Duiker Street</p>
             <p style={S.addressSub}>Reyno Ridge · Emalahleni · 1049</p>
           </address>
-          <a href="/login" style={S.cta}>
+          <a href="/customer/login" style={S.cta}>
             Join the loyalty programme →
           </a>
         </div>
