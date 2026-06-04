@@ -28,7 +28,7 @@ export default async function MonthlyReportsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <header>
-        <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
+        <h1 className="admin-page-title" style={{ color: "var(--color-text-strong)" }}>
           Monthly P&amp;L
         </h1>
         <p className="mt-1 favo-small" style={{ color: "var(--color-text-muted)" }}>

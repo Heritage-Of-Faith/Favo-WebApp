@@ -15,7 +15,7 @@ export default function AdminError({ error, reset }: Props) {
   return (
     <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
       <p className="favo-label text-text-muted">Something went wrong</p>
-      <p className="favo-h3 text-text-strong">This page failed to load</p>
+      <p className="admin-section-title">This page failed to load</p>
       <p className="favo-small text-text-muted max-w-sm">
         {error.message || "An unexpected error occurred. Please try again."}
       </p>

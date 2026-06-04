@@ -190,6 +190,26 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
   color: var(--color-crimson-carrot);
 }
 
+/* ─── Admin surface headings ───────────────────────────────────────────────── */
+/* Admin is a data tool — DM Sans (readable) not Barlow Condensed (marketing). */
+
+.admin-page-title {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--color-text-strong);
+}
+
+.admin-section-title {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 1.125rem;
+  line-height: 1.35;
+  color: var(--color-text-strong);
+}
+
 /* ─── shadcn/ui CSS variable layer ────────────────────────────────────────── */
 /* Maps shadcn's generic token names onto FAVO semantic tokens.               */
 /* Admin surface uses shadcn components; these keep them consistent.          */

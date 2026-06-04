@@ -27,7 +27,7 @@ export default async function RecipientsPage() {
         <Link href="/admin/inventory" className="favo-caption" style={{ color: "var(--color-accent)" }}>
           ← Inventory
         </Link>
-        <h1 className="mt-1 favo-h2" style={{ color: "var(--color-text-strong)" }}>
+        <h1 className="admin-page-title" style={{ color: "var(--color-text-strong)" }}>
           Low-stock recipients
         </h1>
         <p className="mt-1 favo-small" style={{ color: "var(--color-text-muted)" }}>
