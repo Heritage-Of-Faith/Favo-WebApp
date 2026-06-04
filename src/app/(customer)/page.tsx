@@ -5,6 +5,7 @@ import Hero from "@/components/landing/Hero";
 import NumbersStrip from "@/components/landing/NumbersStrip";
 import AboutSection from "@/components/landing/AboutSection";
 import VisitSection from "@/components/landing/VisitSection";
+import Footer from "@/components/landing/Footer";
 
 export const metadata = {
   title: "FAVO Café — Heritage of Faith, Emalahleni",
@@ -19,6 +20,7 @@ export default function LandingPage() {
       <NumbersStrip />
       <AboutSection />
       <VisitSection />
+      <Footer />
     </main>
   );
 }
