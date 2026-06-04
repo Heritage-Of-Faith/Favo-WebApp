@@ -16,6 +16,8 @@ import { writeAudit } from "@/server/audit";
 import { authorize } from "@/server/auth/guard";
 import { revenueDay } from "@/lib/format";
 import { canTransition } from "@/server/orders/state-machine";
+import { deductForOrder, DeductionError } from "@/server/orders/deduction";
+import type { DB } from "@/lib/db";
 import {
   computeOrderTotalZar,
   type PricedLine,
@@ -174,8 +176,15 @@ export async function createOrder(
 }
 
 /**
- * Move an order through the state machine. On `ready`, accrue loyalty for a
- * known customer (rule L06). Push + pg_notify wiring is G6/G7.
+ * Move an order through the state machine.
+ *
+ * On `ordered → in_progress`: deducts stock atomically inside a transaction
+ *   (rule L01 / R5). Returns OUT_OF_STOCK if any ingredient lot is empty.
+ * On `in_progress → ready`:  accrues loyalty for known customers (rule L06).
+ *
+ * All DB mutations (state change + deduction + loyalty + audit) are wrapped
+ * in a single transaction so every failure rolls back the full operation.
+ * Side effects (push, pg_notify) fire after the transaction commits.
  */
 export async function transitionOrder(
   orderId: string,
@@ -185,6 +194,7 @@ export async function transitionOrder(
   if (!auth.ok) return auth;
   const session = auth.session;
 
+  // Read outside the transaction — guard checks don't need to be atomic.
   const [current] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!current) {
     return { ok: false, code: "NOT_FOUND", message: "Order not found." };
@@ -197,59 +207,90 @@ export async function transitionOrder(
     };
   }
 
-  await db
-    .update(orders)
-    .set({
-      state: toState,
-      completedAt: toState === "collected" ? new Date() : current.completedAt,
-    })
-    .where(eq(orders.id, orderId));
+  // Track whether we need to send the ready-push after the transaction.
+  let pushSubscription: unknown = null;
+  let pushCustomerName: string | null = null;
 
-  // Loyalty accrues when the drink is ready, for a known (non-guest) customer.
-  if (toState === "ready" && current.customerId) {
-    const points = earnPoints(current.totalZar);
-    if (points > 0) {
-      await db.insert(loyaltyTransactions).values({
-        customerId: current.customerId,
-        orderId: current.id,
-        delta: points,
-        kind: "earn",
-      });
-      await db
-        .update(customers)
-        .set({ loyaltyPoints: sql`${customers.loyaltyPoints} + ${points}` })
-        .where(eq(customers.id, current.customerId));
-    }
-    // Push notification to customer's device.
-    const [cust] = await db
-      .select({ name: customers.name, pushSubscription: customers.pushSubscription })
-      .from(customers)
-      .where(eq(customers.id, current.customerId));
-    if (cust?.pushSubscription && isValidPushSubscription(cust.pushSubscription)) {
-      // Non-fatal — order is ready regardless of push delivery.
-      sendOrderReadyPush(cust.pushSubscription, orderId, cust.name ?? undefined).catch(
-        () => {}
+  try {
+    await db.transaction(async (tx) => {
+      const txDb = tx as unknown as DB;
+
+      // ── 1. Update order state ──────────────────────────────────────────────
+      await tx
+        .update(orders)
+        .set({
+          state: toState,
+          completedAt: toState === "collected" ? new Date() : current.completedAt,
+        })
+        .where(eq(orders.id, orderId));
+
+      // ── 2. Deduct stock on ordered → in_progress (L01 / R5) ───────────────
+      if (toState === "in_progress") {
+        await deductForOrder(orderId, txDb, session.id);
+      }
+
+      // ── 3. Loyalty accrual on in_progress → ready (L06) ───────────────────
+      if (toState === "ready" && current.customerId) {
+        const points = earnPoints(current.totalZar);
+        if (points > 0) {
+          await tx.insert(loyaltyTransactions).values({
+            customerId: current.customerId,
+            orderId: current.id,
+            delta: points,
+            kind: "earn",
+          });
+          await tx
+            .update(customers)
+            .set({ loyaltyPoints: sql`${customers.loyaltyPoints} + ${points}` })
+            .where(eq(customers.id, current.customerId));
+        }
+        // Capture push subscription for post-transaction delivery.
+        const [cust] = await tx
+          .select({ name: customers.name, pushSubscription: customers.pushSubscription })
+          .from(customers)
+          .where(eq(customers.id, current.customerId));
+        pushSubscription = cust?.pushSubscription ?? null;
+        pushCustomerName = cust?.name ?? null;
+      }
+
+      // ── 4. Audit ───────────────────────────────────────────────────────────
+      await writeAudit(
+        {
+          entityKind: "order",
+          entityId: orderId,
+          action: "transition",
+          actorId: session.id,
+          actorRole: session.role,
+          before: { state: current.state },
+          after: { state: toState },
+        },
+        txDb
       );
+    });
+  } catch (err) {
+    if (err instanceof DeductionError) {
+      // Structured error the client can handle (e.g. show "out of stock" toast)
+      return { ok: false, code: err.code, message: err.message };
     }
+    throw err; // Unexpected — let Next.js error boundary handle it
   }
 
-  // Notify all connected POS queue listeners of the state change.
+  // ── Post-transaction side effects (non-fatal) ──────────────────────────────
+
+  // Notify SSE queue listeners of the state change.
   notifyOrderChange({
     type: "state_change",
     orderId,
     state: toState,
     at: new Date().toISOString(),
-  }).catch(() => {}); // Non-fatal — POS will resync on reconnect.
+  }).catch(() => {}); // POS resyncs on reconnect if this drops
 
-  await writeAudit({
-    entityKind: "order",
-    entityId: orderId,
-    action: "transition",
-    actorId: session.id,
-    actorRole: session.role,
-    before: { state: current.state },
-    after: { state: toState },
-  });
+  // Push to customer device when order is ready.
+  if (toState === "ready" && pushSubscription && isValidPushSubscription(pushSubscription)) {
+    sendOrderReadyPush(pushSubscription, orderId, pushCustomerName ?? undefined).catch(
+      () => {}
+    );
+  }
 
   return await loadOrder(orderId);
 }

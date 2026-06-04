@@ -9,6 +9,7 @@ import {
   unique,
   index,
   check,
+  numeric,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -42,6 +43,9 @@ export const staff = pgTable("staff", {
   pinHash: text("pin_hash").notNull(),
   active: boolean("active").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // Web Push subscription stored by M10 (POS opt-in). Used by G14 cron to
+  // send low-stock alerts to barista devices.
+  pushSubscription: jsonb("push_subscription"),
 });
 
 // ─── Customers ────────────────────────────────────────────────────────────────
@@ -126,6 +130,15 @@ export const inventoryLots = pgTable("inventory_lots", {
   receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
   state: lotState("state").default("active").notNull(),
   origin: text("origin"),
+  // Exception to the integer-cents rule: per-unit production cost is a RATE,
+  // not a money amount. When unit=g or unit=ml the cost per gram/ml is
+  // sub-cent (e.g. R450/kg → 0.45 ¢/g). Using integer would force it to 0
+  // and break COGS entirely. numeric(10,4) gives 4-decimal cent precision.
+  // G13 COGS sums (delta × unit_cost_zar) → cast to integer cents at
+  // the order level. Admin recosts via A8 after launch (R10 mitigation).
+  unitCostZar: numeric("unit_cost_zar", { precision: 10, scale: 4 }),
+  // Quantity received when this lot was booked in (in the item's unit).
+  quantityReceived: numeric("quantity_received", { precision: 10, scale: 2 }),
 });
 
 export const stockMovements = pgTable("stock_movements", {
@@ -153,9 +166,12 @@ export const stockTakeLines = pgTable("stock_take_lines", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   stockTakeId: text("stock_take_id").notNull().references(() => stockTakes.id),
   inventoryLotId: text("inventory_lot_id").notNull().references(() => inventoryLots.id),
+  /** Running-stock at take-creation time (SUM of movements up to startedAt). */
   expected: integer("expected").notNull(),
-  counted: integer("counted").notNull(),
-  variance: integer("variance").notNull(),
+  /** Null until the admin physically counts this lot (walk-lots flow in A9). */
+  counted: integer("counted"),
+  /** Null until counted. Raw delta: counted − expected (integer units). */
+  variance: integer("variance"),
 });
 
 export const stockAlertRecipients = pgTable("stock_alert_recipients", {
@@ -263,11 +279,19 @@ export const purchases = pgTable(
     totalZar: integer("total_zar").notNull(),
     kind: purchaseKind("kind").notNull(),
     adminApprovedBy: text("admin_approved_by").references(() => staff.id),
+    // L10: emergency purchases by non-admins wait here until an admin approves.
+    // 'active' = lots can be used; 'pending_admin_approval' = lots quarantined.
+    status: text("status", { enum: ["active", "pending_admin_approval"] })
+      .default("active")
+      .notNull(),
   },
   () => [
     check(
       "emergency_requires_approval",
-      sql`kind != 'emergency' OR admin_approved_by IS NOT NULL`
+      // Allows: emergency + pending (adminApprovedBy still null) OR
+      //         emergency + active  (adminApprovedBy must be set)    OR
+      //         planned  (no restriction)
+      sql`kind != 'emergency' OR status = 'pending_admin_approval' OR admin_approved_by IS NOT NULL`
     ),
   ]
 );
@@ -314,3 +338,67 @@ export const auditLog = pgTable("audit_log", {
   index("audit_log_actor_idx").on(t.actorId),
   index("audit_log_at_idx").on(t.at),
 ]);
+
+// ─── Monthly reports (G15 dual-sign) ─────────────────────────────────────────
+
+export const monthlyReports = pgTable(
+  "monthly_reports",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    /** First day of the month (YYYY-MM-DD). UNIQUE — one report per month. */
+    month: text("month").notNull().unique(),
+    revenueZar: integer("revenue_zar").notNull(),
+    cogsZar: integer("cogs_zar").notNull(),
+    expensesZar: integer("expenses_zar").notNull(),
+    grossMarginZar: integer("gross_margin_zar").notNull(),
+    netZar: integer("net_zar").notNull(),
+    /** draft → awaiting_signatures → closed */
+    status: text("status", {
+      enum: ["draft", "awaiting_signatures", "closed"],
+    })
+      .default("draft")
+      .notNull(),
+    /** JSONB: { signerId, signerName, at } */
+    adminSig: jsonb("admin_sig"),
+    financeSig: jsonb("finance_sig"),
+    generatedAt: timestamp("generated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  () => [
+    // L11: a report can only be closed when BOTH signatures are present.
+    check(
+      "monthly_report_closed_requires_both_sigs",
+      sql`status != 'closed' OR (admin_sig IS NOT NULL AND finance_sig IS NOT NULL)`
+    ),
+  ]
+);
+
+// ─── Low-stock pings (G14 dedup) ─────────────────────────────────────────────
+
+export const lowStockPings = pgTable("low_stock_pings", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  inventoryItemId: text("inventory_item_id").notNull().references(() => inventoryItems.id),
+  staffId: text("staff_id").notNull().references(() => staff.id),
+  firedAt: timestamp("fired_at", { withTimezone: true }).defaultNow().notNull(),
+  /** Stock level (integer base units) at the time the ping was sent. */
+  stockAtFire: integer("stock_at_fire").notNull(),
+});
+
+// ─── Weekly reports (G14 cron) ────────────────────────────────────────────────
+
+export const weeklyReports = pgTable("weekly_reports", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  /** ISO date of Monday that starts the week (SAST). */
+  weekStarting: text("week_starting").notNull().unique(),
+  revenueZar: integer("revenue_zar").notNull(),
+  cogsZar: integer("cogs_zar").notNull(),
+  expensesZar: integer("expenses_zar").notNull(),
+  grossMarginZar: integer("gross_margin_zar").notNull(),
+  netZar: integer("net_zar").notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+});
