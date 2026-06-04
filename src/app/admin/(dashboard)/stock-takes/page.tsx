@@ -1,14 +1,15 @@
 // Stock takes — task A9.
 // List past + in-progress takes with a "Start take" CTA. Tap a take to resume
 // counting or view its variance summary. Docs: API.md, BUSINESS_RULES.md T01.
+
+
+export const metadata = { title: "Stock Takes" };
 import Link from "next/link";
 import { listStockTakes } from "@/server/actions/stock-takes";
 import { varianceBand } from "@/lib/status/variance-band";
 import StatusBadge, { varianceVariant } from "@/components/shared/StatusBadge";
 import StockTakeStarter from "@/components/admin/StockTakeStarter";
 import { formatDate } from "@/lib/format";
-
-export const metadata = { title: "Stock Takes" };
 
 export default async function StockTakesPage() {
   const res = await listStockTakes();
@@ -18,7 +19,7 @@ export default async function StockTakesPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="admin-page-title" style={{ color: "var(--color-text-strong)" }}>
+          <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
             Stock takes
           </h1>
           <p className="mt-1 favo-small" style={{ color: "var(--color-text-muted)" }}>

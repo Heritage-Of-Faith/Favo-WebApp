@@ -1,7 +1,10 @@
-// Global 404 — owner: Nikao (task N3)
-// On-brand not-found. Renders inside the root layout.
+// Global 404 page — rendered for any unmatched route.
 
-export const metadata = { title: "Page not found · FAVO Café" };
+import Link from "next/link";
+
+export const metadata = {
+  title: "Page not found — FAVO Café",
+};
 
 export default function NotFound() {
   return (
@@ -14,8 +17,8 @@ export default function NotFound() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        padding: "var(--spacing-xl) var(--spacing-m)",
         textAlign: "center",
+        padding: "var(--spacing-xl) var(--spacing-m)",
         gap: "var(--spacing-l)",
       }}
     >
@@ -23,50 +26,69 @@ export default function NotFound() {
         style={{
           fontFamily: "var(--font-display)",
           fontWeight: 900,
-          fontSize: "clamp(4rem, 14vw, 9rem)",
-          lineHeight: 0.9,
-          letterSpacing: "var(--tracking-hero)",
+          fontSize: "clamp(6rem, 20vw, 14rem)",
+          lineHeight: 0.85,
+          letterSpacing: "0.04em",
           textTransform: "uppercase",
-          color: "var(--color-crimson-carrot)",
+          color: "var(--color-porcelain)",
+          opacity: 0.08,
+          userSelect: "none",
         }}
+        aria-hidden
       >
         404
       </span>
 
-      <h1 className="favo-h2" style={{ color: "var(--color-porcelain)" }}>
-        This cup&rsquo;s empty
-      </h1>
+      <div style={{ marginTop: "-4rem" }}>
+        <h1
+          style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 900,
+            fontSize: "clamp(2rem, 5vw, 4rem)",
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            margin: 0,
+            marginBottom: 16,
+          }}
+        >
+          Page not found
+        </h1>
+        <p
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontWeight: 400,
+            fontSize: 16,
+            lineHeight: 1.7,
+            color: "var(--color-porcelain)",
+            opacity: 0.7,
+            maxWidth: "32ch",
+            margin: "0 auto",
+          }}
+        >
+          The page you&rsquo;re looking for doesn&rsquo;t exist or has moved.
+        </p>
+      </div>
 
-      <p
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontWeight: 400,
-          fontSize: "var(--text-base)",
-          lineHeight: 1.7,
-          color: "var(--color-porcelain)",
-          maxWidth: "34ch",
-          textWrap: "pretty",
-          opacity: 0.85,
-        }}
-      >
-        We couldn&rsquo;t find that page. It may have moved, or never existed.
-        Let&rsquo;s get you back to something warm.
-      </p>
-
-      <a
+      <Link
         href="/"
-        className="favo-cta"
         style={{
-          marginTop: "var(--spacing-s)",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
           backgroundColor: "var(--color-crimson-carrot)",
           color: "var(--color-paper)",
+          fontFamily: "var(--font-sans)",
+          fontWeight: 700,
+          fontSize: 12,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          textDecoration: "none",
           padding: "14px 28px",
           borderRadius: 2,
-          textDecoration: "none",
         }}
       >
-        &larr; Back to FAVO
-      </a>
+        ← Back to FAVO
+      </Link>
     </main>
   );
 }

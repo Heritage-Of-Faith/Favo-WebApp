@@ -1,11 +1,12 @@
 // Inventory management — task A8.
 // Items table with editable thresholds + a lot drawer for recosting (R10).
 // Docs: DATA_MODEL.md, API.md, BUSINESS_RULES.md T04.
+
+
+export const metadata = { title: "Inventory" };
 import Link from "next/link";
 import { listInventory } from "@/server/actions/inventory";
 import InventoryManager from "@/components/admin/InventoryManager";
-
-export const metadata = { title: "Inventory" };
 
 export default async function InventoryPage() {
   const res = await listInventory();
@@ -14,7 +15,7 @@ export default async function InventoryPage() {
     <div className="mx-auto max-w-5xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="admin-page-title" style={{ color: "var(--color-text-strong)" }}>
+          <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
             Inventory
           </h1>
           <p className="mt-1 favo-small" style={{ color: "var(--color-text-muted)" }}>

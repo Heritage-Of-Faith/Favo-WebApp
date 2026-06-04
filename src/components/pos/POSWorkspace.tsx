@@ -447,6 +447,12 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                   ))}
                 </div>
                 {orderError && <p className="favo-small text-[var(--color-error)] mb-2" role="alert">{orderError}</p>}
+                {orderSuccess && (
+                  <p className="favo-small mb-2 rounded px-3 py-2" role="status"
+                    style={{ background: "color-mix(in srgb, var(--color-success) 15%, transparent)", color: "var(--color-success)" }}>
+                    ✓ {orderSuccess}
+                  </p>
+                )}
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="favo-label text-cool-steel">Total</p>
