@@ -161,6 +161,8 @@ export default function POSWorkspace({ staffName }: Props) {
     }).catch(() => ({ ok: false as const, code: "ERR", message: "Failed to place order." }));
     setSubmitting(false);
     if (r.ok) {
+      // Auto-expand the new order in the queue so barista sees it immediately
+      setExpandedId(r.data.orderId);
       setYocoSecret(r.data.yocoClientSecret);
       if (r.data.yocoClientSecret) setShowPayment(true);
       else { reset(); } // No Yoco — order placed, reset left panel
