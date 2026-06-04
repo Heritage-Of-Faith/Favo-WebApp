@@ -74,19 +74,22 @@ export async function createOrder(
   const data = parsed.data;
 
   // Resolve current prices from the DB (never trust client-supplied prices).
-  const menuRows = await db
-    .select()
-    .from(menuItems)
-    .where(inArray(menuItems.id, data.items.map((i) => i.menuItemId)));
-  const menuById = new Map(menuRows.map((m) => [m.id, m]));
-
+  // The item and modifier lookups are independent — run them in parallel so
+  // creation costs one round trip here, not two sequential ones.
   const modIds = data.items.flatMap((i) => i.modifications);
-  const modRows = modIds.length
-    ? await db
-        .select()
-        .from(menuCustomisations)
-        .where(inArray(menuCustomisations.id, modIds))
-    : [];
+  const [menuRows, modRows] = await Promise.all([
+    db
+      .select()
+      .from(menuItems)
+      .where(inArray(menuItems.id, data.items.map((i) => i.menuItemId))),
+    modIds.length
+      ? db
+          .select()
+          .from(menuCustomisations)
+          .where(inArray(menuCustomisations.id, modIds))
+      : Promise.resolve([]),
+  ]);
+  const menuById = new Map(menuRows.map((m) => [m.id, m]));
   const modById = new Map(modRows.map((m) => [m.id, m]));
 
   const lines: PricedLine[] = [];
@@ -111,6 +114,8 @@ export async function createOrder(
   const totalZar = computeOrderTotalZar(lines);
 
   const orderId = await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DB;
+
     const [order] = await tx
       .insert(orders)
       .values({
@@ -138,16 +143,22 @@ export async function createOrder(
       })
     );
 
-    return order.id;
-  });
+    // Audit inside the transaction — the order and its audit row commit (or roll
+    // back) atomically, per writeAudit's contract. This also folds the audit
+    // insert into the transaction batch rather than a separate round trip.
+    await writeAudit(
+      {
+        entityKind: "order",
+        entityId: order.id,
+        action: "create",
+        actorId: session.id,
+        actorRole: session.role,
+        after: { state: "ordered", totalZar, customerId: data.customerId ?? null },
+      },
+      txDb
+    );
 
-  await writeAudit({
-    entityKind: "order",
-    entityId: orderId,
-    action: "create",
-    actorId: session.id,
-    actorRole: session.role,
-    after: { state: "ordered", totalZar, customerId: data.customerId ?? null },
+    return order.id;
   });
 
   // Create a Yoco payment intent — the client secret goes to the hosted-fields SDK.
