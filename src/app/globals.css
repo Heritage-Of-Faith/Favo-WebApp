@@ -191,14 +191,15 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
 }
 
 /* ─── Admin surface headings ───────────────────────────────────────────────── */
-/* Admin is a data tool — DM Sans (readable) not Barlow Condensed (marketing). */
+/* FAVO brand font everywhere — Barlow Condensed for all page-level headings.  */
 
 .admin-page-title {
-  font-family: var(--font-sans);
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.5rem;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+  font-size: clamp(1.5rem, 2.5vw, 2.25rem);
+  line-height: 1.0;
+  letter-spacing: var(--tracking-head);
+  text-transform: uppercase;
   color: var(--color-text-strong);
 }
 

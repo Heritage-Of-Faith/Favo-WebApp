@@ -193,7 +193,7 @@ export default function LoginForm({ redirectTo = "/pos/queue", surface = "pos" }
                 "flex min-h-[44px] min-w-[44px] items-center justify-center",
                 "rounded-[var(--radius-btn)] border border-porcelain/20",
                 "bg-porcelain/10 text-porcelain",
-                "font-sans text-[var(--text-h3)] font-600",
+                "font-heading text-[var(--text-h3)] font-bold tracking-[var(--tracking-head)]",
                 "transition-colors duration-[var(--dur-fast)]",
                 "hover:bg-porcelain/20 active:bg-porcelain/30 active:scale-95",
                 "focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot",

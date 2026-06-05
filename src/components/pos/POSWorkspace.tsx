@@ -372,7 +372,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                         onClick={() => { setModTarget(item); setSelectedMods([]); }}
                         className="flex flex-col items-start rounded-[2px] p-2 min-h-[52px] text-left transition-all active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
                         style={{ background: "rgba(245,86,12,0.1)", border: "1px solid rgba(245,86,12,0.25)" }}>
-                        <span className="text-porcelain font-semibold leading-tight" style={{ fontSize: 12 }}>{item.name}</span>
+                        <span className="font-heading font-bold leading-tight text-porcelain uppercase" style={{ fontSize: 12, letterSpacing: "var(--tracking-head)" }}>{item.name}</span>
                         <span className="text-cool-steel mt-auto" style={{ fontSize: 11 }}>{formatZar(item.currentPriceZar)}</span>
                       </button>
                     ))}
