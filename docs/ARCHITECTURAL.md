@@ -16,7 +16,7 @@
 | Storage | Cloudflare R2 (`hofmi-favo`) |
 | Hosting | TBD — app hosting not yet set up; DB on Supabase |
 | CDN | Cloudflare (`favo.hofmi.org`); Cloudflare Access gates `/admin/*` + `/finance/*` |
-| Secrets | Infisical (`hofmi/favo`) |
+| Secrets | `.env.local` (local) · Vercel env vars (production) |
 | Logs | Pino → Loki |
 | Tracing | Raindrop |
 | Tests | Vitest + Playwright + Storybook |
@@ -67,31 +67,28 @@ proxy.ts                 # route gating by role (Next.js 16 — replaces middlew
 ```
 
 ## Environment (canonical names — never commit)
-Pulled from Infisical via Coolify at deploy:
+Set in Vercel env vars (production) or `.env.local` (local):
 ```
-DATABASE_URL
-NEXTAUTH_SECRET · NEXTAUTH_URL
-YOCO_SECRET_KEY · YOCO_WEBHOOK_SECRET
+DATABASE_URL              # Supabase Transaction pooler (port 6543)
+DATABASE_URL_SESSION      # Supabase Session pooler (port 5432) — SSE/LISTEN only
+AUTH_SECRET               # Auth.js signing secret
+AUTH_URL                  # https://favo.hofmi.org (production)
+YOCO_SECRET_KEY · YOCO_WEBHOOK_SECRET · NEXT_PUBLIC_YOCO_PUBLIC_KEY
 VAPID_PUBLIC_KEY · VAPID_PRIVATE_KEY · NEXT_PUBLIC_VAPID_PUBLIC_KEY
-R2_ACCESS_KEY_ID · R2_SECRET_ACCESS_KEY · R2_BUCKET · R2_ENDPOINT
-DISCORD_WEBHOOK_FAVO_OPS
-RAINDROP_TOKEN · LOKI_URL
 PUBLIC_BASE_URL · TZ=Africa/Johannesburg
-HOFMI_SSO_CLIENT_ID · HOFMI_SSO_CLIENT_SECRET · HOFMI_SSO_ISSUER
-NEXT_PUBLIC_STAGING                  # gates staging-only stubs
+CRON_SECRET               # secures cron route handlers
 ```
 
 ## Deploy pipeline
-GitHub Actions → CI on every PR (`bun typecheck`, `bun lint`, `bun test:unit`, `bun test:e2e:ci`) → squash-merge to `main` → app hosting TBD → `favo.hofmi.org`.
+GitHub Actions → CI on every PR (`bun typecheck`, `bun lint`, `bun test:unit`) → squash-merge to `main` → Vercel auto-deploy → `favo.hofmi.org`.
 
 ## Local dev
 ```
 bun install
-# Create .env.local with DATABASE_URL (Supabase Transaction pooler, port 6543)
-# DB is already migrated and seeded — do NOT run db:migrate or db:seed against prod
+cp .env.example .env.local   # fill in values (ask Gian for DB creds)
 bun dev
 ```
-DB is on Supabase (PG 17) — no local Postgres needed. `DATABASE_URL` must point at the Supabase Transaction pooler (port 6543). The Session pooler (port 5432) is required for PG LISTEN/NOTIFY only (SSE stream). Use Infisical CLI to inject env in production: `infisical run -- bun dev`.
+DB is on Supabase (PG 17) — no local Postgres needed. `DATABASE_URL` must point at the Supabase Transaction pooler (port 6543). The Session pooler (port 5432) is required for PG LISTEN/NOTIFY only (SSE stream).
 
 ## Test commands
 | Command | Scope |
