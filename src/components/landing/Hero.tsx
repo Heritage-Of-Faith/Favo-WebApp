@@ -106,7 +106,7 @@ export default function Hero() {
             Our baristas are iXchange interns — people learning to serve
             the community, one drink at a time. Come as you are.
           </p>
-          <a href="/login" style={S.cta}>
+          <a href="/signup" style={S.cta}>
             Join the loyalty programme →
           </a>
         </div>
