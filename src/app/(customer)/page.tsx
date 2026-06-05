@@ -5,7 +5,7 @@ import Header from "@/components/landing/Header";
 import Hero from "@/components/landing/Hero";
 import NumbersStrip from "@/components/landing/NumbersStrip";
 import AboutSection from "@/components/landing/AboutSection";
-import PhotoBand from "@/components/landing/PhotoBand";
+import TeamStrip from "@/components/landing/TeamStrip";
 import VisitSection from "@/components/landing/VisitSection";
 import Footer from "@/components/landing/Footer";
 
@@ -22,7 +22,7 @@ export default function LandingPage() {
       <Hero />
       <NumbersStrip />
       <AboutSection />
-      <PhotoBand />
+      <TeamStrip />
       <VisitSection />
       <Footer />
     </main>

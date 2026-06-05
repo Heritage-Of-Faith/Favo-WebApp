@@ -6,8 +6,22 @@ import Image from "next/image";
 
 const S = {
   section: {
+    position: "relative" as const,
+    overflow: "hidden",
     backgroundColor: "var(--color-dark-teal)",
     color: "var(--color-porcelain)",
+  } satisfies React.CSSProperties,
+  // Faint hand-drawn watermark — bleeds off the bottom-left, behind content.
+  watermark: {
+    position: "absolute" as const,
+    left: "-3%",
+    bottom: "-12%",
+    width: "clamp(280px, 34vw, 520px)",
+    aspectRatio: "1000 / 1039",
+    opacity: 0.07,
+    filter: "invert(1)",
+    pointerEvents: "none" as const,
+    zIndex: 0,
   } satisfies React.CSSProperties,
   eyebrow: {
     fontFamily: "'DM Sans', 'Helvetica Neue', Arial, sans-serif",
@@ -68,7 +82,18 @@ const S = {
 export default function Hero() {
   return (
     <section style={S.section} className="landing-section-pad">
-      <div className="landing-hero-grid">
+      {/* Subtle café-theme watermark */}
+      <div style={S.watermark} aria-hidden="true">
+        <Image
+          src="/illustrations/coffee-machine.png"
+          alt=""
+          fill
+          sizes="520px"
+          style={{ objectFit: "contain" }}
+        />
+      </div>
+
+      <div className="landing-hero-grid" style={{ position: "relative", zIndex: 1 }}>
         {/* Left column */}
         <div>
           <p style={S.eyebrow}>Heritage of Faith · Emalahleni</p>

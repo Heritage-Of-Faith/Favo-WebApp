@@ -386,3 +386,9 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
 @media (max-width: 480px) {
   .landing-numbers-grid { grid-template-columns: 1fr; }
 }
+
+/* ─── Team strip ─────────────────────────────────────────────────────────── */
+/* 3-col portrait grid on desktop, single col on mobile (stacks vertically). */
+@media (max-width: 640px) {
+  .team-strip-grid { grid-template-columns: 1fr !important; }
+}
