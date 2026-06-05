@@ -18,7 +18,7 @@ export default async function StockTakesPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="admin-page-title" style={{ color: "var(--color-text-strong)" }}>
+          <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
             Stock takes
           </h1>
           <p className="mt-1 favo-small" style={{ color: "var(--color-text-muted)" }}>
