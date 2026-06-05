@@ -11,16 +11,26 @@ const S = {
     backgroundColor: "var(--color-coffee-bean)",
     color: "var(--color-porcelain)",
   } satisfies React.CSSProperties,
-  // Large hand-drawn takeaway-cup watermark — bleeds off the bottom-left,
-  // behind the story. filter:invert makes the black line art read light on
-  // the dark Coffee Bean fold.
-  watermark: {
+  // Hand-drawn café watermarks on the dark Coffee Bean fold. filter:invert
+  // lifts the black line art to a warm light tone; low opacity keeps them subtle.
+  watermarkCup: {
     position: "absolute" as const,
-    left: "-4%",
-    bottom: "-14%",
-    width: "clamp(340px, 40vw, 600px)",
+    right: "-2%",
+    bottom: "-10%",
+    width: "clamp(220px, 24vw, 360px)",
     aspectRatio: "1000 / 1476",
-    opacity: 0.22,
+    opacity: 0.18,
+    filter: "invert(1)",
+    pointerEvents: "none" as const,
+    zIndex: 0,
+  } satisfies React.CSSProperties,
+  watermarkBean: {
+    position: "absolute" as const,
+    left: "-2%",
+    bottom: "-6%",
+    width: "clamp(150px, 18vw, 260px)",
+    aspectRatio: "1000 / 1113",
+    opacity: 0.16,
     filter: "invert(1)",
     pointerEvents: "none" as const,
     zIndex: 0,
@@ -97,13 +107,22 @@ const DRINKS = [
 export default function AboutSection() {
   return (
     <section style={S.section} className="landing-section-pad-l">
-      {/* Subtle café-theme watermark */}
-      <div style={S.watermark} aria-hidden="true">
+      {/* Subtle café-theme watermarks */}
+      <div style={S.watermarkBean} aria-hidden="true">
+        <Image
+          src="/illustrations/coffee-bean.png"
+          alt=""
+          fill
+          sizes="260px"
+          style={{ objectFit: "contain" }}
+        />
+      </div>
+      <div style={S.watermarkCup} aria-hidden="true">
         <Image
           src="/illustrations/takeaway-cup-single.png"
           alt=""
           fill
-          sizes="500px"
+          sizes="360px"
           style={{ objectFit: "contain" }}
         />
       </div>
