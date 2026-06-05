@@ -24,9 +24,26 @@ const BARISTAS = [
 
 const S = {
   section: {
+    position: "relative" as const,
+    overflow: "hidden",
     backgroundColor: "var(--color-coffee-bean)",
   } satisfies React.CSSProperties,
+  // Hand-drawn coffee-bean watermark, bottom-left. filter:invert lifts the
+  // black art to a warm light tone on the dark Coffee Bean fold.
+  watermarkBean: {
+    position: "absolute" as const,
+    left: "-2%",
+    bottom: "-8%",
+    width: "clamp(150px, 17vw, 250px)",
+    aspectRatio: "1000 / 1113",
+    opacity: 0.16,
+    filter: "invert(1)",
+    pointerEvents: "none" as const,
+    zIndex: 0,
+  } satisfies React.CSSProperties,
   inner: {
+    position: "relative" as const,
+    zIndex: 1,
     maxWidth: 1100,
     margin: "0 auto",
   } satisfies React.CSSProperties,
@@ -67,6 +84,17 @@ const S = {
 export default function TeamStrip() {
   return (
     <section style={S.section} className="landing-section-pad-l" aria-label="The FAVO barista team">
+      {/* Subtle café-theme watermark */}
+      <div style={S.watermarkBean} aria-hidden="true">
+        <Image
+          src="/illustrations/coffee-bean.png"
+          alt=""
+          fill
+          sizes="250px"
+          style={{ objectFit: "contain" }}
+        />
+      </div>
+
       <div style={S.inner}>
         <p style={S.eyebrow}>The team</p>
         <h2 style={S.heading}>Made by hand. Served with heart.</h2>

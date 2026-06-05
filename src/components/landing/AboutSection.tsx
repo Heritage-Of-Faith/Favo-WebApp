@@ -24,17 +24,6 @@ const S = {
     pointerEvents: "none" as const,
     zIndex: 0,
   } satisfies React.CSSProperties,
-  watermarkBean: {
-    position: "absolute" as const,
-    left: "-2%",
-    bottom: "-6%",
-    width: "clamp(150px, 18vw, 260px)",
-    aspectRatio: "1000 / 1113",
-    opacity: 0.16,
-    filter: "invert(1)",
-    pointerEvents: "none" as const,
-    zIndex: 0,
-  } satisfies React.CSSProperties,
   eyebrow: {
     fontFamily: "'DM Sans', sans-serif",
     fontWeight: 300,
@@ -107,16 +96,7 @@ const DRINKS = [
 export default function AboutSection() {
   return (
     <section style={S.section} className="landing-section-pad-l">
-      {/* Subtle café-theme watermarks */}
-      <div style={S.watermarkBean} aria-hidden="true">
-        <Image
-          src="/illustrations/coffee-bean.png"
-          alt=""
-          fill
-          sizes="260px"
-          style={{ objectFit: "contain" }}
-        />
-      </div>
+      {/* Subtle café-theme watermark */}
       <div style={S.watermarkCup} aria-hidden="true">
         <Image
           src="/illustrations/takeaway-cup-single.png"
