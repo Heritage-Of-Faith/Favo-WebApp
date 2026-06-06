@@ -67,13 +67,13 @@ export default function WasteLogModal({ onClose, onLogged }: Props) {
     // Backdrop — click outside to dismiss
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(5, 77, 97, 0.80)" }}
+      style={{ background: "rgba(28, 5, 1, 0.5)" }}
       onClick={(e) => e.target === e.currentTarget && !submitting && onClose()}
     >
       {/* Modal panel */}
       <div
         className="w-full max-w-[340px] rounded-[4px] border border-cool-steel/20"
-        style={{ background: "var(--color-dark-teal)" }}
+        style={{ background: "var(--color-porcelain)" }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="waste-modal-title"
@@ -82,14 +82,14 @@ export default function WasteLogModal({ onClose, onLogged }: Props) {
         <div className="flex items-center justify-between border-b border-cool-steel/20 px-4 py-3">
           <div className="flex items-center gap-2">
             <Trash2 size={16} strokeWidth={2} className="text-cool-steel" aria-hidden />
-            <h2 id="waste-modal-title" className="favo-h3 text-porcelain">Log Waste</h2>
+            <h2 id="waste-modal-title" className="favo-h3 text-coffee-bean">Log Waste</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={submitting || success}
             aria-label="Close"
-            className="flex h-[44px] w-[44px] items-center justify-center rounded-[4px] text-cool-steel transition-colors hover:bg-porcelain/10 hover:text-porcelain disabled:opacity-40"
+            className="flex h-[44px] w-[44px] items-center justify-center rounded-[4px] text-cool-steel transition-colors hover:bg-coffee-bean/8 hover:text-coffee-bean disabled:opacity-40"
           >
             <X size={16} strokeWidth={2} />
           </button>
@@ -107,8 +107,8 @@ export default function WasteLogModal({ onClose, onLogged }: Props) {
               value={category}
               onChange={(e) => setCategory(e.target.value as Category)}
               disabled={submitting || success}
-              className="w-full min-h-[44px] rounded-[4px] border border-cool-steel/25 px-3 py-2 favo-small text-porcelain focus:border-crimson-carrot focus:outline-none disabled:opacity-50"
-              style={{ background: "color-mix(in srgb, var(--color-dark-teal) 80%, black)" }}
+              className="w-full min-h-[44px] rounded-[4px] border border-cool-steel/25 px-3 py-2 favo-small text-coffee-bean focus:border-crimson-carrot focus:outline-none disabled:opacity-50"
+              style={{ background: "var(--color-surface)" }}
             >
               {CATEGORY_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -131,8 +131,8 @@ export default function WasteLogModal({ onClose, onLogged }: Props) {
               onChange={(e) => setQuantity(e.target.value)}
               disabled={submitting || success}
               required
-              className="w-full min-h-[44px] rounded-[4px] border border-cool-steel/25 px-3 py-2 favo-small text-porcelain focus:border-crimson-carrot focus:outline-none disabled:opacity-50"
-              style={{ background: "color-mix(in srgb, var(--color-dark-teal) 80%, black)" }}
+              className="w-full min-h-[44px] rounded-[4px] border border-cool-steel/25 px-3 py-2 favo-small text-coffee-bean focus:border-crimson-carrot focus:outline-none disabled:opacity-50"
+              style={{ background: "var(--color-surface)" }}
             />
           </div>
 
@@ -148,8 +148,8 @@ export default function WasteLogModal({ onClose, onLogged }: Props) {
               onChange={(e) => setReason(e.target.value)}
               disabled={submitting || success}
               placeholder="e.g. milk expired overnight"
-              className="w-full min-h-[44px] rounded-[4px] border border-cool-steel/25 px-3 py-2 favo-small text-porcelain placeholder:text-cool-steel/50 focus:border-crimson-carrot focus:outline-none disabled:opacity-50"
-              style={{ background: "color-mix(in srgb, var(--color-dark-teal) 80%, black)" }}
+              className="w-full min-h-[44px] rounded-[4px] border border-cool-steel/25 px-3 py-2 favo-small text-coffee-bean placeholder:text-cool-steel/50 focus:border-crimson-carrot focus:outline-none disabled:opacity-50"
+              style={{ background: "var(--color-surface)" }}
             />
           </div>
 
@@ -183,7 +183,7 @@ export default function WasteLogModal({ onClose, onLogged }: Props) {
               type="button"
               onClick={onClose}
               disabled={submitting || success}
-              className="flex-1 min-h-[44px] rounded-[4px] border border-cool-steel/30 py-2 favo-small text-cool-steel transition-colors hover:bg-porcelain/10 disabled:opacity-40"
+              className="flex-1 min-h-[44px] rounded-[4px] border border-cool-steel/30 py-2 favo-small text-cool-steel transition-colors hover:bg-coffee-bean/8 disabled:opacity-40"
             >
               Cancel
             </button>

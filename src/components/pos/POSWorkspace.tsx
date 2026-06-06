@@ -44,10 +44,10 @@ const STATE_DOT: Record<OrderState, string> = {
   cancelled:   "bg-[var(--color-error)]/40",
 };
 const STATE_BADGE: Record<OrderState, string> = {
-  ordered:     "bg-porcelain/10 text-cool-steel",
+  ordered:     "bg-coffee-bean/8 text-cool-steel",
   in_progress: "bg-[var(--color-warning)]/20 text-[var(--color-warning)]",
   ready:       "bg-[var(--color-success)]/20 text-[var(--color-success)]",
-  collected:   "bg-porcelain/5 text-cool-steel",
+  collected:   "bg-coffee-bean/5 text-cool-steel",
   cancelled:   "bg-[var(--color-error)]/10 text-[var(--color-error)]",
 };
 const STATE_NEXT: Partial<Record<OrderState, OrderState>> = {
@@ -278,21 +278,21 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
               onChange={e => { setQuery(e.target.value); if (!e.target.value) setCustomer(null); }}
               onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
               onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
-              className="w-full rounded-[4px] border border-cool-steel/20 bg-porcelain/8 pl-7 pr-7 py-1.5 text-porcelain placeholder:text-cool-steel text-xs focus:border-crimson-carrot focus:outline-none min-h-[34px]"
+              className="w-full rounded-[4px] border border-cool-steel/20 bg-coffee-bean/5 pl-7 pr-7 py-1.5 text-coffee-bean placeholder:text-cool-steel text-xs focus:border-crimson-carrot focus:outline-none min-h-[34px]"
             />
             {customer && (
               <button type="button" onClick={() => { setCustomer(null); setQuery(""); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-cool-steel hover:text-porcelain">
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-cool-steel hover:text-coffee-bean">
                 <X size={12} strokeWidth={2} />
               </button>
             )}
             {searchOpen && searchResults.length > 0 && !customer && (
-              <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-dark-teal shadow-[var(--shadow-2)] overflow-hidden">
+              <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface shadow-[var(--shadow-2)] overflow-hidden">
                 {searchResults.map(c => (
                   <li key={c.id}>
                     <button type="button" onMouseDown={() => { setCustomer(c); setQuery(""); setSearchOpen(false); }}
-                      className="flex w-full items-center justify-between px-3 py-2 min-h-[36px] hover:bg-porcelain/10 text-left">
-                      <span className="favo-small text-porcelain font-semibold">{c.name}</span>
+                      className="flex w-full items-center justify-between px-3 py-2 min-h-[36px] hover:bg-coffee-bean/8 text-left">
+                      <span className="favo-small text-coffee-bean font-semibold">{c.name}</span>
                       {c.loyaltyPoints > 0 && <span className="favo-caption text-crimson-carrot">{c.loyaltyPoints} pts</span>}
                     </button>
                   </li>
@@ -372,7 +372,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                         onClick={() => { setModTarget(item); setSelectedMods([]); }}
                         className="flex flex-col items-start rounded-[2px] p-2 min-h-[52px] text-left transition-all active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
                         style={{ background: "rgba(245,86,12,0.1)", border: "1px solid rgba(245,86,12,0.25)" }}>
-                        <span className="font-heading font-bold leading-tight text-porcelain uppercase" style={{ fontSize: 12, letterSpacing: "var(--tracking-head)" }}>{item.name}</span>
+                        <span className="font-heading font-bold leading-tight text-coffee-bean uppercase" style={{ fontSize: 12, letterSpacing: "var(--tracking-head)" }}>{item.name}</span>
                         <span className="text-cool-steel mt-auto" style={{ fontSize: 11 }}>{formatZar(item.currentPriceZar)}</span>
                       </button>
                     ))}
@@ -391,8 +391,8 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                   <div className="grid grid-cols-3 gap-2">
                     {(grouped[activeCategory] ?? []).map(item => (
                       <button key={item.id} type="button" onClick={() => { setModTarget(item); setSelectedMods([]); }}
-                        className="flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
-                        <span className="favo-small text-porcelain font-semibold leading-tight">{item.name}</span>
+                        className="flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-coffee-bean/5 p-3 min-h-[72px] text-left transition-all hover:bg-coffee-bean/8 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
+                        <span className="favo-small text-coffee-bean font-semibold leading-tight">{item.name}</span>
                         <span className="favo-caption text-cool-steel mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
                       </button>
                     ))}
@@ -414,29 +414,29 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
 
           {/* Order summary */}
             {items.length > 0 && (
-              <div className="border-t border-cool-steel/20 px-4 py-3 shrink-0 bg-dark-teal-deep/40">
+              <div className="border-t border-cool-steel/20 px-4 py-3 shrink-0 bg-coffee-bean/5">
                 <p className="favo-label text-cool-steel mb-2">Order</p>
                 <div className="space-y-1.5 max-h-[160px] overflow-y-auto mb-3">
                   {items.map(item => (
                     <div key={lineKey(item)} className="flex items-center gap-2">
                       <div className="flex items-center gap-1">
                         <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity - 1)}
-                          className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-porcelain/10">
+                          className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
                           <Minus size={12} strokeWidth={2} />
                         </button>
-                        <span className="favo-small text-porcelain w-5 text-center">{item.quantity}</span>
+                        <span className="favo-small text-coffee-bean w-5 text-center">{item.quantity}</span>
                         <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity + 1)}
-                          className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-porcelain/10">
+                          className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
                           <Plus size={12} strokeWidth={2} />
                         </button>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="favo-small text-porcelain truncate">{item.menuItemName}</p>
+                        <p className="favo-small text-coffee-bean truncate">{item.menuItemName}</p>
                         {item.modifications.length > 0 && (
                           <p className="favo-caption text-cool-steel truncate">{item.modifications.map(m => m.name).join(", ")}</p>
                         )}
                       </div>
-                      <span className="favo-small text-porcelain shrink-0">
+                      <span className="favo-small text-coffee-bean shrink-0">
                         {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
                       </span>
                       <button type="button" onClick={() => removeItem(lineKey(item))}
@@ -456,20 +456,20 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="favo-label text-cool-steel">Total</p>
-                    <p className="favo-subhead text-porcelain">{formatZar(totalZar)}</p>
+                    <p className="favo-subhead text-coffee-bean">{formatZar(totalZar)}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setShowWasteModal(true)}
-                      className="favo-caption text-cool-steel/60 hover:text-cool-steel flex items-center gap-1 px-2 min-h-[44px] rounded-[4px] hover:bg-porcelain/8 transition-colors"
+                      className="favo-caption text-cool-steel/60 hover:text-cool-steel flex items-center gap-1 px-2 min-h-[44px] rounded-[4px] hover:bg-coffee-bean/5 transition-colors"
                       aria-label="Log waste"
                     >
                       <Trash2 size={12} strokeWidth={2} aria-hidden />
                       <span>Waste</span>
                     </button>
                     <button type="button" onClick={() => reset()}
-                      className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel hover:bg-porcelain/10 min-h-[44px]">
+                      className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel hover:bg-coffee-bean/8 min-h-[44px]">
                       Clear
                     </button>
                     <button type="button" onClick={handlePlaceOrder} disabled={submitting}
@@ -490,7 +490,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
             <ShieldCheck size={40} strokeWidth={1.5} className="text-cool-steel opacity-60" />
             <div className="text-center">
               <p className="favo-label text-cool-steel mb-1">Amount due</p>
-              <p className="favo-h2 text-porcelain">{formatZar(totalZar)}</p>
+              <p className="favo-h2 text-coffee-bean">{formatZar(totalZar)}</p>
               <p className="favo-small text-cool-steel mt-1">Card handled securely by Yoco</p>
             </div>
             <div className="flex flex-col gap-3 w-full max-w-[280px]">
@@ -501,7 +501,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                 Confirm Paid
               </button>
               <button type="button" onClick={() => setShowPayment(false)}
-                className="favo-small text-cool-steel underline underline-offset-2 hover:text-porcelain transition-colors">
+                className="favo-small text-cool-steel underline underline-offset-2 hover:text-coffee-bean transition-colors">
                 ← Back to order
               </button>
             </div>
@@ -515,11 +515,11 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
         {/* Queue header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-cool-steel/20 shrink-0">
           <div className="flex items-center gap-2">
-            <h2 className="favo-h3 text-porcelain">Queue</h2>
+            <h2 className="favo-h3 text-coffee-bean">Queue</h2>
             <StreamChip status={status} />
           </div>
           <button type="button" onClick={handleSignOut} aria-label="Sign out"
-            className="flex h-9 w-9 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain transition-colors">
+            className="flex h-9 w-9 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
             <LogOut size={16} strokeWidth={2} />
           </button>
         </div>
@@ -554,11 +554,11 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
 
                 {/* Card header — always visible, tap to expand */}
                 <button type="button" onClick={() => toggleExpand(o.orderId)}
-                  className="w-full flex items-center justify-between px-3 py-3 min-h-[60px] hover:bg-porcelain/5 transition-colors text-left">
+                  className="w-full flex items-center justify-between px-3 py-3 min-h-[60px] hover:bg-coffee-bean/5 transition-colors text-left">
                   <div className="flex items-center gap-2">
                     <span className={["block h-2 w-2 rounded-full shrink-0", STATE_DOT[o.state]].join(" ")} />
                     <div>
-                      <p className="favo-small text-porcelain font-semibold leading-tight">
+                      <p className="favo-small text-coffee-bean font-semibold leading-tight">
                         #{o.orderId.slice(-6).toUpperCase()}
                       </p>
                       <p className="favo-caption text-cool-steel">{formatDate(new Date(o.lastUpdatedAt))}</p>
@@ -577,7 +577,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
 
                 {/* Expanded content */}
                 {isExpanded && (
-                  <div className="border-t border-cool-steel/10 px-3 pb-3 pt-2 space-y-2 bg-porcelain/3">
+                  <div className="border-t border-cool-steel/10 px-3 pb-3 pt-2 space-y-2 bg-coffee-bean/3">
 
                     {/* Order items */}
                     {!full ? (
@@ -589,14 +589,14 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                       <>
                         {full.customerName && (
                           <p className="favo-caption text-cool-steel">
-                            Customer: <span className="text-porcelain">{full.customerName}</span>
+                            Customer: <span className="text-coffee-bean">{full.customerName}</span>
                           </p>
                         )}
                         <div className="space-y-1">
                           {full.items.map(item => (
                             <div key={item.id} className="flex justify-between items-start">
                               <div>
-                                <p className="favo-small text-porcelain">
+                                <p className="favo-small text-coffee-bean">
                                   {item.quantity > 1 && <span className="text-crimson-carrot mr-1">{item.quantity}×</span>}
                                   {item.menuItemName || `Item #${item.id.slice(-4)}`}
                                 </p>
@@ -604,7 +604,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                                   <p className="favo-caption text-cool-steel">{item.modifications.map(m => m.name).join(", ")}</p>
                                 )}
                               </div>
-                              <span className="favo-small text-porcelain shrink-0 ml-3">
+                              <span className="favo-small text-coffee-bean shrink-0 ml-3">
                                 {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
                               </span>
                             </div>
@@ -612,7 +612,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                         </div>
                         <div className="flex justify-between border-t border-cool-steel/10 pt-1.5">
                           <span className="favo-caption text-cool-steel">TOTAL</span>
-                          <span className={["favo-small font-semibold", full.isStaffDiscount ? "text-[var(--color-success)]" : "text-porcelain"].join(" ")}>
+                          <span className={["favo-small font-semibold", full.isStaffDiscount ? "text-[var(--color-success)]" : "text-coffee-bean"].join(" ")}>
                             {full.isStaffDiscount ? "FREE (staff)" : formatZar(full.totalZar)}
                           </span>
                         </div>
@@ -638,17 +638,17 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                               // Pre-fill with the logged-in barista's own ID (L03: most discounts are self-applied)
                               setDiscountId(staffId);
                             }}
-                            className="flex items-center gap-1 favo-caption text-cool-steel hover:text-porcelain min-h-[32px] transition-colors">
+                            className="flex items-center gap-1 favo-caption text-cool-steel hover:text-coffee-bean min-h-[32px] transition-colors">
                             <Tag size={11} strokeWidth={2} /> Apply staff discount
                           </button>
                         ) : (
-                          <div className="space-y-1.5 rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-2">
+                          <div className="space-y-1.5 rounded-[2px] border border-cool-steel/20 bg-coffee-bean/5 p-2">
                             <p className="favo-caption text-cool-steel">
-                              Staff member: <span className="text-porcelain">{staffName}</span>
+                              Staff member: <span className="text-coffee-bean">{staffName}</span>
                             </p>
                             <input type="text" value={discountId} onChange={e => setDiscountId(e.target.value)}
                               placeholder="Override with different staff ID"
-                              className="w-full rounded-[2px] border border-cool-steel/30 bg-porcelain/10 px-2 py-1 text-porcelain favo-caption min-h-[32px] focus:border-crimson-carrot focus:outline-none" />
+                              className="w-full rounded-[2px] border border-cool-steel/30 bg-coffee-bean/8 px-2 py-1 text-coffee-bean favo-caption min-h-[32px] focus:border-crimson-carrot focus:outline-none" />
                             {discountMsg && (
                               <p className={["favo-caption", discountMsg.startsWith("✓") ? "text-[var(--color-success)]" : "text-[var(--color-error)]"].join(" ")}>
                                 {discountMsg}
@@ -661,7 +661,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                                 Apply
                               </button>
                               <button type="button" onClick={() => setShowDiscount(null)}
-                                className="rounded-[2px] border border-cool-steel/30 px-2 text-cool-steel hover:bg-porcelain/10 min-h-[32px]">
+                                className="rounded-[2px] border border-cool-steel/30 px-2 text-cool-steel hover:bg-coffee-bean/8 min-h-[32px]">
                                 <X size={11} strokeWidth={2} />
                               </button>
                             </div>
@@ -685,7 +685,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                           Yes
                         </button>
                         <button type="button" onClick={() => setCancelConfirm(null)}
-                          className="favo-caption text-cool-steel hover:text-porcelain min-h-[28px] px-1 transition-colors">
+                          className="favo-caption text-cool-steel hover:text-coffee-bean min-h-[28px] px-1 transition-colors">
                           Keep
                         </button>
                       </div>
@@ -695,7 +695,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                     {full && o.state === "collected" && (
                       <div className="flex items-center gap-2 py-1">
                         <CheckCircle size={14} strokeWidth={2} className="text-[var(--color-success)]" />
-                        <span className="favo-small text-porcelain">Collected ✓</span>
+                        <span className="favo-small text-coffee-bean">Collected ✓</span>
                       </div>
                     )}
 
@@ -743,8 +743,8 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
       {modTarget && (
         <div className="fixed inset-0 z-50 flex items-end bg-coffee-bean/60"
           onClick={e => e.target === e.currentTarget && setModTarget(null)}>
-          <div className="w-full max-w-[560px] mx-auto rounded-t-[2px] border-t border-cool-steel/20 bg-dark-teal p-5">
-            <p className="favo-h3 text-porcelain mb-1">{modTarget.name}</p>
+          <div className="w-full max-w-[560px] mx-auto rounded-t-[2px] border-t border-cool-steel/20 bg-surface p-5">
+            <p className="favo-h3 text-coffee-bean mb-1">{modTarget.name}</p>
             <p className="favo-small text-cool-steel mb-3">{formatZar(modTarget.currentPriceZar)} — add-ons</p>
             {modTarget.customisations.length === 0
               ? <p className="favo-small text-cool-steel mb-4">No customisations.</p>
@@ -758,7 +758,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                           prev.some(m => m.id === mod.id) ? prev.filter(m => m.id !== mod.id) : [...prev, mod]
                         )} aria-pressed={on}
                           className={["flex w-full items-center justify-between rounded-[2px] border px-3 py-2 min-h-[44px] transition-colors",
-                            on ? "border-crimson-carrot bg-crimson-carrot/10 text-porcelain" : "border-cool-steel/30 bg-porcelain/5 text-porcelain hover:bg-porcelain/10"
+                            on ? "border-crimson-carrot bg-crimson-carrot/10 text-coffee-bean" : "border-cool-steel/30 bg-coffee-bean/5 text-coffee-bean hover:bg-coffee-bean/8"
                           ].join(" ")}>
                           <span className="favo-small font-semibold">{mod.name}</span>
                           {mod.priceDeltaZar !== 0 && <span className="favo-caption text-cool-steel">+{formatZar(mod.priceDeltaZar)}</span>}
@@ -799,7 +799,7 @@ function StreamChip({ status }: { status: string }) {
     </span>
   );
   return (
-    <span role="status" aria-label="Queue reconnecting" className="flex items-center gap-1 rounded-[999px] bg-porcelain/10 px-2 py-0.5">
+    <span role="status" aria-label="Queue reconnecting" className="flex items-center gap-1 rounded-[999px] bg-coffee-bean/8 px-2 py-0.5">
       <RefreshCw size={10} strokeWidth={2.5} className="text-cool-steel animate-spin" />
       <span className="favo-caption text-cool-steel">Reconnecting</span>
     </span>
