@@ -101,9 +101,14 @@ export default function AuthForm({ mode }: Props) {
   return (
     <div className="w-full max-w-[400px]">
       <div className="text-center">
-        <span className="favo-hero text-porcelain text-[clamp(2.75rem,10vw,4.5rem)] leading-none">
+        <Link
+          href="/"
+          aria-label="Back to FAVO home"
+          className="favo-hero inline-block text-[clamp(2.75rem,10vw,4.5rem)] leading-none"
+          style={{ color: "var(--color-porcelain)", textDecoration: "none" }}
+        >
           FAVO
-        </span>
+        </Link>
         <h1 className="favo-h2 mt-5 text-porcelain">{copy.heading}</h1>
         <p className="favo-body mt-3 text-porcelain/80">{copy.sub}</p>
       </div>
@@ -169,6 +174,16 @@ export default function AuthForm({ mode }: Props) {
           {copy.altLabel}
         </Link>
       </p>
+
+      <div className="mt-8 text-center">
+        <Link
+          href="/"
+          className="favo-cta"
+          style={{ color: "var(--color-cool-steel)", textDecoration: "none" }}
+        >
+          &larr; Back to FAVO
+        </Link>
+      </div>
     </div>
   );
 }
