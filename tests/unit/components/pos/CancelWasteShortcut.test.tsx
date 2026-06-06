@@ -23,8 +23,15 @@ vi.mock("@/server/actions/menu", () => ({ getMenu: vi.fn().mockResolvedValue({ o
 vi.mock("@/server/actions/inventory", () => ({
   listInventory: vi.fn().mockResolvedValue({ ok: true, data: { items: [] } }),
   listLots: vi.fn().mockResolvedValue({ ok: true, data: { lots: [] } }),
+  listInventoryStatus: vi.fn().mockResolvedValue({ ok: true, data: { statusMap: {} } }),
+  getActiveBeanLot: vi.fn().mockResolvedValue({ ok: true, data: { lot: null } }),
+}));
+vi.mock("@/server/actions/recipes", () => ({
+  listRecipes: vi.fn().mockResolvedValue({ ok: true, data: { recipes: [] } }),
 }));
 vi.mock("@/server/actions/waste", () => ({ logWaste: vi.fn() }));
+// M10 staff-push chain — cut here so the component graph never pulls next-auth.
+vi.mock("@/lib/push/staff-subscribe", () => ({ enableStaffPush: vi.fn() }));
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
