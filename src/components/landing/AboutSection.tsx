@@ -83,14 +83,23 @@ const S = {
     color: "var(--color-porcelain)",
     flex: 1,
   } satisfies React.CSSProperties,
+  drinkPrice: {
+    fontFamily: "'Barlow Condensed', sans-serif",
+    fontWeight: 700,
+    fontSize: 20,
+    letterSpacing: "0.04em",
+    color: "var(--color-crimson-carrot)",
+    flexShrink: 0,
+    marginLeft: 16,
+  } satisfies React.CSSProperties,
 } as const;
 
 const DRINKS = [
-  "Cappuccino",
-  "Americano",
-  "Hot Chocolate",
-  "Mocha",
-  "Chai Latte",
+  { name: "Cappuccino", price: "R20" },
+  { name: "Americano", price: "R20" },
+  { name: "Hot Chocolate", price: "R20" },
+  { name: "Mocha", price: "R25" },
+  { name: "Chai Latte", price: "R25" },
 ] as const;
 
 export default function AboutSection() {
@@ -127,15 +136,16 @@ export default function AboutSection() {
         {/* Right: menu */}
         <div style={S.box}>
           <p style={S.boxEyebrow}>What we serve</p>
-          {DRINKS.map((name, i) => (
+          {DRINKS.map((drink, i) => (
             <div
-              key={name}
+              key={drink.name}
               style={{
                 ...S.drinkRow,
                 borderTop: i === 0 ? "1px solid rgba(247,246,242,0.12)" : undefined,
               }}
             >
-              <span style={S.drinkName}>{name}</span>
+              <span style={S.drinkName}>{drink.name}</span>
+              <span style={S.drinkPrice}>{drink.price}</span>
             </div>
           ))}
         </div>

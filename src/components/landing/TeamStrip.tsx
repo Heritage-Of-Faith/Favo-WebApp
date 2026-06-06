@@ -7,17 +7,20 @@ import Image from "next/image";
 const BARISTAS = [
   {
     src: "/images/barista-pour.jpg",
-    alt: "A FAVO barista pouring a fresh coffee",
+    name: "Louis",
+    alt: "Louis, a FAVO barista, pouring a fresh coffee",
     position: "center 25%",
   },
   {
     src: "/images/community-cup.jpg",
-    alt: "A FAVO barista smiling with a freshly made coffee",
+    name: "Thandeka",
+    alt: "Thandeka, a FAVO barista, smiling with a freshly made coffee",
     position: "center 20%",
   },
   {
     src: "/images/barista-counter.jpg",
-    alt: "A FAVO barista at the counter ready to serve",
+    name: "Nkuli",
+    alt: "Nkuli, a FAVO barista, at the counter ready to serve",
     position: "center 15%",
   },
 ] as const;
@@ -79,6 +82,24 @@ const S = {
     overflow: "hidden",
     backgroundColor: "var(--color-coffee-bean-deep)",
   } satisfies React.CSSProperties,
+  name: {
+    fontFamily: "var(--font-display)",
+    fontWeight: 700,
+    fontSize: "clamp(1.125rem, 2vw, 1.5rem)",
+    letterSpacing: "var(--tracking-head)",
+    textTransform: "uppercase" as const,
+    color: "var(--color-porcelain)",
+    margin: "12px 0 0",
+  } satisfies React.CSSProperties,
+  role: {
+    fontFamily: "var(--font-sans)",
+    fontWeight: 300,
+    fontSize: 11,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase" as const,
+    color: "var(--color-crimson-carrot)",
+    margin: "2px 0 0",
+  } satisfies React.CSSProperties,
 } as const;
 
 export default function TeamStrip() {
@@ -101,14 +122,18 @@ export default function TeamStrip() {
 
         <div style={S.grid} className="team-strip-grid">
           {BARISTAS.map((b) => (
-            <div key={b.src} style={S.cell}>
-              <Image
-                src={b.src}
-                alt={b.alt}
-                fill
-                sizes="(max-width: 640px) 90vw, 360px"
-                style={{ objectFit: "cover", objectPosition: b.position }}
-              />
+            <div key={b.src}>
+              <div style={S.cell}>
+                <Image
+                  src={b.src}
+                  alt={b.alt}
+                  fill
+                  sizes="(max-width: 640px) 90vw, 360px"
+                  style={{ objectFit: "cover", objectPosition: b.position }}
+                />
+              </div>
+              <p style={S.name}>{b.name}</p>
+              <p style={S.role}>iXchange intern</p>
             </div>
           ))}
         </div>

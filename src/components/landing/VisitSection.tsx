@@ -89,6 +89,25 @@ export default function VisitSection() {
             <p style={S.address}>7 Duiker Street</p>
             <p style={S.addressSub}>Reyno Ridge · Emalahleni · 1049</p>
           </address>
+          <a
+            href="https://www.google.com/maps/dir/?api=1&destination=7+Duiker+Street+Reyno+Ridge+Emalahleni"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-block",
+              fontFamily: "var(--font-sans)",
+              fontWeight: 700,
+              fontSize: 12,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "var(--color-cool-steel)",
+              textDecoration: "none",
+              marginBottom: "var(--spacing-l)",
+            }}
+          >
+            Get directions ↗
+          </a>
+          <br />
           <a href="/signup" style={S.cta}>
             Join the loyalty programme →
           </a>

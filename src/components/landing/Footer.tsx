@@ -108,7 +108,7 @@ export default function Footer() {
             <a href="/login" style={S.link}>Sign in</a>
             <a href="/pos" style={S.link}>Staff sign in</a>
             <a
-              href="https://hofmi.org"
+              href="https://hofmi.net/"
               style={S.link}
               target="_blank"
               rel="noopener noreferrer"
