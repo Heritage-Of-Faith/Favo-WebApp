@@ -24,14 +24,13 @@ This project uses **Bun** — an all-in-one JavaScript/TypeScript toolkit that r
 git clone https://github.com/Heritage-Of-Faith/Favo-WebApp.git
 cd Favo-WebApp
 bun install
-infisical run -- bun db:migrate
-infisical run -- bun db:seed
-infisical run -- bun dev
+cp .env.example .env.local   # fill in values from Gian
+bun dev
 ```
 
 App runs at `http://localhost:3000`
 
-> **Secrets:** pulled from Infisical. Never commit `.env` files. Run `infisical login` first.
+> **Secrets:** stored in `.env.local` locally — never commit it. See `.env.example` for required vars.
 
 ---
 
@@ -58,7 +57,7 @@ App runs at `http://localhost:3000`
 | Auth | Auth.js v5 (PIN + HOFMI SSO) |
 | Payments | Yoco Online API |
 | Runtime | Bun |
-| Secrets | Infisical |
+| Secrets | `.env.local` / Vercel env vars |
 
 ---
 

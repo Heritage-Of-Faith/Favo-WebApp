@@ -372,7 +372,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                         onClick={() => { setModTarget(item); setSelectedMods([]); }}
                         className="flex flex-col items-start rounded-[2px] p-2 min-h-[52px] text-left transition-all active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
                         style={{ background: "rgba(245,86,12,0.1)", border: "1px solid rgba(245,86,12,0.25)" }}>
-                        <span className="text-porcelain font-semibold leading-tight" style={{ fontSize: 12 }}>{item.name}</span>
+                        <span className="font-heading font-bold leading-tight text-porcelain uppercase" style={{ fontSize: 12, letterSpacing: "var(--tracking-head)" }}>{item.name}</span>
                         <span className="text-cool-steel mt-auto" style={{ fontSize: 11 }}>{formatZar(item.currentPriceZar)}</span>
                       </button>
                     ))}
@@ -447,6 +447,12 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                   ))}
                 </div>
                 {orderError && <p className="favo-small text-[var(--color-error)] mb-2" role="alert">{orderError}</p>}
+                {orderSuccess && (
+                  <p className="favo-small mb-2 rounded px-3 py-2" role="status"
+                    style={{ background: "color-mix(in srgb, var(--color-success) 15%, transparent)", color: "var(--color-success)" }}>
+                    ✓ {orderSuccess}
+                  </p>
+                )}
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="favo-label text-cool-steel">Total</p>

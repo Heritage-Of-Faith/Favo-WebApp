@@ -2,10 +2,27 @@
 // Coffee Bean dark background. iXchange community story left, menu right.
 // Responsive via .landing-about-grid in globals.css.
 
+import Image from "next/image";
+
 const S = {
   section: {
+    position: "relative" as const,
+    overflow: "hidden",
     backgroundColor: "var(--color-coffee-bean)",
     color: "var(--color-porcelain)",
+  } satisfies React.CSSProperties,
+  // Hand-drawn café watermarks on the dark Coffee Bean fold. filter:invert
+  // lifts the black line art to a warm light tone; low opacity keeps them subtle.
+  watermarkCup: {
+    position: "absolute" as const,
+    right: "-2%",
+    bottom: "-10%",
+    width: "clamp(220px, 24vw, 360px)",
+    aspectRatio: "1000 / 1476",
+    opacity: 0.18,
+    filter: "invert(1)",
+    pointerEvents: "none" as const,
+    zIndex: 0,
   } satisfies React.CSSProperties,
   eyebrow: {
     fontFamily: "'DM Sans', sans-serif",
@@ -79,7 +96,18 @@ const DRINKS = [
 export default function AboutSection() {
   return (
     <section style={S.section} className="landing-section-pad-l">
-      <div className="landing-about-grid">
+      {/* Subtle café-theme watermark */}
+      <div style={S.watermarkCup} aria-hidden="true">
+        <Image
+          src="/illustrations/takeaway-cup-single.png"
+          alt=""
+          fill
+          sizes="360px"
+          style={{ objectFit: "contain" }}
+        />
+      </div>
+
+      <div className="landing-about-grid" style={{ position: "relative", zIndex: 1 }}>
         {/* Left: story */}
         <div>
           <p style={S.eyebrow}>Who we are</p>

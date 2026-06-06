@@ -7,12 +7,36 @@ const COFFEE_BEAN = "#1C0501";
 const DESCRIPTION =
   "The café at Heritage of Faith Ministries. Good coffee, real community. Reyno Ridge, Emalahleni.";
 
+// Resolve a valid absolute base URL for metadata (OG/Twitter image URLs).
+// Defensive: env vars may be unset OR set to a non-URL placeholder (e.g. a
+// "<from .env.local>" stub). Any invalid candidate is skipped so the build
+// never throws on `new URL(...)`.
+function resolveBaseUrl(): URL {
+  const candidates = [
+    process.env.PUBLIC_BASE_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`,
+    process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`,
+    "https://favo.hofmi.org",
+  ];
+  for (const candidate of candidates) {
+    const value = candidate?.trim();
+    if (value && /^https?:\/\//i.test(value)) {
+      try {
+        return new URL(value);
+      } catch {
+        // skip invalid candidate
+      }
+    }
+  }
+  return new URL("https://favo.hofmi.org");
+}
+
 export const viewport: Viewport = {
   themeColor: COFFEE_BEAN,
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.PUBLIC_BASE_URL ?? "https://favo.hofmi.org"),
+  metadataBase: resolveBaseUrl(),
   title: {
     default: "FAVO Café",
     template: "%s · FAVO Café",

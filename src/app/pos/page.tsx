@@ -15,7 +15,7 @@ export default async function POSPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-[var(--spacing-m)]">
+    <main className="flex min-h-screen items-center justify-center bg-porcelain px-[var(--spacing-m)]">
       <LoginForm />
     </main>
   );

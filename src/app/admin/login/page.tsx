@@ -29,7 +29,7 @@ export default async function AdminLoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-dark-teal px-[var(--spacing-m)]">
+    <main className="flex min-h-screen items-center justify-center bg-porcelain px-[var(--spacing-m)]">
       <LoginForm redirectTo="/admin" surface="admin" />
     </main>
   );

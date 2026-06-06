@@ -6,6 +6,8 @@ import Link from "next/link";
 import { getRecipe } from "@/server/actions/recipes";
 import RecipeEditor from "@/components/admin/RecipeEditor";
 
+export const metadata = { title: "Recipe Editor" };
+
 export default async function RecipePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const res = await getRecipe(id);
