@@ -203,6 +203,23 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
   color: var(--color-text-strong);
 }
 
+/* ─── Admin portal: FAVO palette only + no link underlines ─────────────────── */
+/* Scoped to [data-admin-portal] (the admin dashboard shell) so POS/customer    */
+/* surfaces keep their conventional status colours. Remapping the status tokens */
+/* to brand hues recolours every admin component (charts, tiles, badges,        */
+/* banners, StatusBadge…) in one place — no green / gold / red / blue anywhere. */
+[data-admin-portal] {
+  --color-success: var(--color-dark-teal);
+  --color-warning: var(--color-crimson-carrot);
+  --color-error:   var(--color-crimson-carrot);
+  --color-info:    var(--color-dark-teal);
+}
+
+/* No lines under buttons / nav links anywhere in the admin portal. */
+[data-admin-portal] a {
+  text-decoration: none;
+}
+
 .admin-section-title {
   font-family: var(--font-sans);
   font-weight: 600;

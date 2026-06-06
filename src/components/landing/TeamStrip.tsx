@@ -6,9 +6,9 @@ import Image from "next/image";
 
 const BARISTAS = [
   {
-    src: "/images/hero-barista.jpg",
-    alt: "A FAVO barista working at the espresso machine",
-    position: "center 20%",
+    src: "/images/barista-pour.jpg",
+    alt: "A FAVO barista pouring a fresh coffee",
+    position: "center 25%",
   },
   {
     src: "/images/community-cup.jpg",

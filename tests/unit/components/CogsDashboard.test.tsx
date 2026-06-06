@@ -70,22 +70,22 @@ describe("CogsDashboard", () => {
     expect(screen.getByText(/best-estimate/i)).toBeInTheDocument();
   });
 
-  it("colours the Net tile green on profit and red on loss", () => {
-    // Profit — the Net KPI value is rendered in the success colour.
+  it("colours the Net tile with brand tones (profit → teal, loss → crimson)", () => {
+    // Profit — the Net KPI value is rendered in the brand positive colour.
     mockUseCogsLive.mockReturnValue({ today: makeCogs(), status: "live", refresh: vi.fn() });
     const { rerender } = render(
       <CogsDashboard initialToday={makeCogs()} initialHistory={history} todayDate="2026-06-04" />
     );
     expect(
-      screen.getAllByText(/R\s*300,00/).some((el) => el.style.color === "var(--color-success)")
+      screen.getAllByText(/R\s*300,00/).some((el) => el.style.color === "var(--color-dark-teal)")
     ).toBe(true);
 
-    // Loss (net < 0) — Net KPI value flips to the error colour.
+    // Loss (net < 0) — Net KPI value flips to the brand negative colour.
     const loss = makeCogs({ netZar: -4500, profit: false });
     mockUseCogsLive.mockReturnValue({ today: loss, status: "live", refresh: vi.fn() });
     rerender(<CogsDashboard initialToday={loss} initialHistory={history} todayDate="2026-06-04" />);
     expect(
-      screen.getAllByText(/-R\s*45,00/).some((el) => el.style.color === "var(--color-error)")
+      screen.getAllByText(/-R\s*45,00/).some((el) => el.style.color === "var(--color-crimson-carrot)")
     ).toBe(true);
   });
 });

@@ -31,7 +31,7 @@ export default async function AdminDashboardLayout({
   const canApprove = session.role === "admin" || session.role === "owner";
 
   return (
-    <div className="flex min-h-screen bg-surface text-text-strong">
+    <div data-admin-portal className="flex min-h-screen bg-surface text-text-strong">
       <Sidebar role={session.role} />
       <main className="flex-1 overflow-y-auto p-6 pt-14 lg:pt-6">
         {/* L10: emergency purchases awaiting approval surface on every admin page. */}
