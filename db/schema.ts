@@ -56,6 +56,7 @@ export const customers = pgTable("customers", {
   email: text("email").unique(),
   name: text("name").notNull(),
   phone: text("phone"),
+  passwordHash: text("password_hash"),
   pushSubscription: jsonb("push_subscription"),
   loyaltyPoints: integer("loyalty_points").default(0).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

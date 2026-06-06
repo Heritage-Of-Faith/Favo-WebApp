@@ -6,7 +6,7 @@ import AuthForm from "@/components/customer/AuthForm";
 
 export const metadata = {
   title: "Sign in · FAVO Café",
-  description: "Sign in to your FAVO loyalty account with a secure email link.",
+  description: "Sign in to your FAVO loyalty account.",
 };
 
 export default function CustomerLoginPage() {
