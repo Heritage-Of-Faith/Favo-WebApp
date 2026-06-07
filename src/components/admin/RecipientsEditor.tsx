@@ -122,14 +122,14 @@ export default function RecipientsEditor({ items, staff, initialRecipients }: Re
               key={scope.id}
               style={{
                 borderTop: "1px solid var(--color-border-subtle)",
-                background: scope.id === GLOBAL ? "color-mix(in srgb, var(--color-info) 6%, transparent)" : undefined,
+                background: scope.id === GLOBAL ? "color-mix(in srgb, var(--color-accent) 6%, transparent)" : undefined,
               }}
             >
               <th
                 scope="row"
                 className="sticky left-0 z-10 px-3 py-2.5 favo-small"
                 style={{
-                  background: scope.id === GLOBAL ? "color-mix(in srgb, var(--color-info) 6%, var(--color-surface))" : "var(--color-surface)",
+                  background: scope.id === GLOBAL ? "color-mix(in srgb, var(--color-accent) 6%, var(--color-surface))" : "var(--color-surface)",
                   color: "var(--color-text-strong)",
                   fontWeight: rowIdx === 0 ? 600 : 400,
                   whiteSpace: "nowrap",
@@ -143,14 +143,25 @@ export default function RecipientsEditor({ items, staff, initialRecipients }: Re
                 const busy = inFlight.has(k);
                 return (
                   <td key={s.id} className="px-3 py-2.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={busy}
-                      onChange={() => void toggle(s.id, scope.id)}
-                      aria-label={`${s.name} receives alerts for ${scope.name}`}
-                      style={{ width: 18, height: 18, cursor: busy ? "wait" : "pointer", accentColor: "var(--color-accent)" }}
-                    />
+                    {/* 44×44px tap target wrapping the 18px checkbox */}
+                    <label
+                      className="inline-flex items-center justify-center"
+                      style={{
+                        width: 44,
+                        height: 44,
+                        cursor: busy ? "wait" : "pointer",
+                        opacity: busy ? 0.5 : 1,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={busy}
+                        onChange={() => void toggle(s.id, scope.id)}
+                        aria-label={`${s.name} receives alerts for ${scope.name}`}
+                        style={{ width: 18, height: 18, accentColor: "var(--color-accent)" }}
+                      />
+                    </label>
                   </td>
                 );
               })}

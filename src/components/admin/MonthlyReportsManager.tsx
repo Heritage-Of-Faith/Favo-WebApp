@@ -64,7 +64,7 @@ export default function MonthlyReportsManager({
               value={month}
               max={defaultMonth}
               onChange={(e) => setMonth(e.target.value)}
-              className="h-10 rounded-[var(--radius-btn)] border px-2 favo-small"
+              className="h-10 rounded-[var(--radius-btn)] border px-2 favo-small focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]"
               style={{ background: "var(--color-surface)", color: "var(--color-text-strong)", borderColor: "var(--color-border-subtle)" }}
             />
           </div>
@@ -85,8 +85,10 @@ export default function MonthlyReportsManager({
           className="rounded-[var(--radius-card)] border p-6 text-center favo-small"
           style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-muted)" }}
         >
-          No monthly reports yet.
-          {canGenerate ? " Generate one above." : ""}
+          No monthly reports yet.{" "}
+          {canGenerate
+            ? "Select a month above and generate the first one."
+            : "Ask your admin to generate one."}
         </p>
       ) : (
         <ul className="space-y-2">

@@ -65,7 +65,7 @@ export default function ExpensesManager({ initialExpenses, canLog }: ExpensesMan
             id="exp-cat"
             value={category}
             onChange={(e) => setCategory(e.target.value as ExpenseCategory | "")}
-            className="h-10 rounded-[var(--radius-btn)] border px-2 favo-small capitalize"
+            className="h-10 rounded-[var(--radius-btn)] border px-2 favo-small capitalize focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]"
             style={selectStyle}
           >
             <option value="">All</option>
@@ -80,13 +80,13 @@ export default function ExpensesManager({ initialExpenses, canLog }: ExpensesMan
           <label htmlFor="exp-from" className="favo-caption" style={{ color: "var(--color-text-muted)" }}>
             From
           </label>
-          <input id="exp-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-10 rounded-[var(--radius-btn)] border px-2 favo-small" style={selectStyle} />
+          <input id="exp-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-10 rounded-[var(--radius-btn)] border px-2 favo-small focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]" style={selectStyle} />
         </div>
         <div className="flex flex-col gap-1">
           <label htmlFor="exp-to" className="favo-caption" style={{ color: "var(--color-text-muted)" }}>
             To
           </label>
-          <input id="exp-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-10 rounded-[var(--radius-btn)] border px-2 favo-small" style={selectStyle} />
+          <input id="exp-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-10 rounded-[var(--radius-btn)] border px-2 favo-small focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]" style={selectStyle} />
         </div>
         <button
           type="button"
@@ -95,7 +95,7 @@ export default function ExpensesManager({ initialExpenses, canLog }: ExpensesMan
           className="min-h-10 rounded-[var(--radius-btn)] border px-3 favo-small disabled:opacity-50"
           style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
         >
-          {isPending ? "…" : "Apply"}
+          {isPending ? "Applying…" : "Apply"}
         </button>
 
         {canLog && (

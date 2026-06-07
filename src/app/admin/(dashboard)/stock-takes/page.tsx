@@ -16,13 +16,22 @@ export default async function StockTakesPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-prose">
           <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
             Stock takes
           </h1>
-          <p className="mt-1 favo-small" style={{ color: "var(--color-text-muted)" }}>
-            Count lots, review variance, and apply corrective adjustments (T01).
+          <p className="mt-2 favo-small" style={{ color: "var(--color-text-muted)" }}>
+            A stock take is a physical count of your inventory. The system tracks running
+            stock mathematically — stock takes find real-world gaps like spills, miscounts,
+            or spoilage. You count each{" "}
+            <abbr
+              title="A lot is one specific delivery batch — e.g., the 5 kg of beans you received on a given date"
+              style={{ textDecoration: "underline dotted", cursor: "help" }}
+            >
+              lot
+            </abbr>
+            , then close the take to auto-correct the records.
           </p>
         </div>
         <StockTakeStarter />

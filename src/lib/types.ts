@@ -296,6 +296,16 @@ export type StockTakeLine = {
   id: string;
   inventoryLotId: string;
   inventoryItemName: string;
+  /** Base unit of the inventory item (g, ml, units, etc.). */
+  unit?: string | null;
+  /** Kind of the inventory item (beans, milk, etc.). */
+  itemKind?: string | null;
+  /** ISO timestamp — when this lot was received. */
+  lotReceivedAt?: string | null;
+  /** Supplier / source name for this lot. */
+  lotSourceName?: string | null;
+  /** ISO timestamp — roast date (beans only). */
+  roastDate?: string | null;
   expected: number;
   counted: number | null; // null = not yet counted in this take
   /** null until counted. pct variance vs expected. */
