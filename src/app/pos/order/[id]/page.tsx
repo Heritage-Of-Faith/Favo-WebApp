@@ -5,7 +5,7 @@
 import { redirect, notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders, orderItems } from "@db/schema";
+import { orders, orderItems, menuItems } from "@db/schema";
 import { getSession } from "@/lib/auth/session";
 import ActiveOrder from "@/components/pos/ActiveOrder";
 import type { Order } from "@/lib/types";
@@ -21,7 +21,18 @@ export default async function ActiveOrderPage({ params }: Props) {
   const [row] = await db.select().from(orders).where(eq(orders.id, id));
   if (!row) notFound();
 
-  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, id));
+  const itemRows = await db
+    .select({
+      id: orderItems.id,
+      menuItemId: orderItems.menuItemId,
+      menuItemName: menuItems.name,
+      quantity: orderItems.quantity,
+      unitPriceZar: orderItems.unitPriceZar,
+      modifications: orderItems.modifications,
+    })
+    .from(orderItems)
+    .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
+    .where(eq(orderItems.orderId, id));
 
   const order: Order = {
     id: row.id,
@@ -33,10 +44,10 @@ export default async function ActiveOrderPage({ params }: Props) {
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
     totalZar: row.totalZar,
     isStaffDiscount: row.isStaffDiscount,
-    items: items.map((i) => ({
+    items: itemRows.map((i) => ({
       id: i.id,
       menuItemId: i.menuItemId,
-      menuItemName: "",
+      menuItemName: i.menuItemName ?? i.menuItemId,
       quantity: i.quantity,
       unitPriceZar: i.unitPriceZar,
       modifications:

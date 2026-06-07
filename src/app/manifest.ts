@@ -14,16 +14,29 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: COFFEE_BEAN,
     orientation: "portrait",
     icons: [
+      // SVG first (crisp where supported), then PNG fallbacks for installability.
       {
-        src: "/brand/logos/logo-monogram.svg",
+        src: "/brand/logo-monogram.svg",
         sizes: "any",
         type: "image/svg+xml",
         purpose: "any",
       },
       {
-        src: "/brand/logos/logo-monogram.svg",
-        sizes: "any",
-        type: "image/svg+xml",
+        src: "/icons/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
         purpose: "maskable",
       },
     ],

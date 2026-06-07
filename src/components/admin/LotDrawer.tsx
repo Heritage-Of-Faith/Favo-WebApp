@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Lot drawer — task A8 (R10 recosting).
 // A right-side slide-over listing all lots for an inventory item. Each lot's
@@ -91,7 +91,7 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
           style={{ borderColor: "var(--color-border-subtle)" }}
         >
           <div>
-            <h2 className="favo-h3" style={{ color: "var(--color-text-strong)" }}>
+            <h2 className="admin-section-title" style={{ color: "var(--color-text-strong)" }}>
               {item.name}
             </h2>
             <p className="favo-caption" style={{ color: "var(--color-text-muted)" }}>

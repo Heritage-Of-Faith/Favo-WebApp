@@ -1,19 +1,28 @@
 // About / Story section — owner: Nikao (task N3)
 // Coffee Bean dark background. iXchange community story left, menu right.
+// Responsive via .landing-about-grid in globals.css.
+
+import Image from "next/image";
 
 const S = {
   section: {
+    position: "relative" as const,
+    overflow: "hidden",
     backgroundColor: "var(--color-coffee-bean)",
     color: "var(--color-porcelain)",
-    padding: "88px 40px",
   } satisfies React.CSSProperties,
-  inner: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "1fr 1.4fr",
-    gap: 64,
-    alignItems: "flex-start",
+  // Hand-drawn café watermarks on the dark Coffee Bean fold. filter:invert
+  // lifts the black line art to a warm light tone; low opacity keeps them subtle.
+  watermarkCup: {
+    position: "absolute" as const,
+    right: "-2%",
+    bottom: "-10%",
+    width: "clamp(220px, 24vw, 360px)",
+    aspectRatio: "1000 / 1476",
+    opacity: 0.18,
+    filter: "invert(1)",
+    pointerEvents: "none" as const,
+    zIndex: 0,
   } satisfies React.CSSProperties,
   eyebrow: {
     fontFamily: "'DM Sans', sans-serif",
@@ -61,8 +70,8 @@ const S = {
   drinkRow: {
     display: "flex",
     alignItems: "baseline",
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
     borderBottom: "1px solid rgba(247,246,242,0.12)",
   } satisfies React.CSSProperties,
   drinkName: {
@@ -74,22 +83,42 @@ const S = {
     color: "var(--color-porcelain)",
     flex: 1,
   } satisfies React.CSSProperties,
+  drinkPrice: {
+    fontFamily: "'Barlow Condensed', sans-serif",
+    fontWeight: 700,
+    fontSize: 20,
+    letterSpacing: "0.04em",
+    color: "var(--color-crimson-carrot)",
+    flexShrink: 0,
+    marginLeft: 16,
+  } satisfies React.CSSProperties,
 } as const;
 
 const DRINKS = [
-  "Cappuccino",
-  "Americano",
-  "Hot Chocolate",
-  "Mocha",
-  "Chai Latte",
+  { name: "Cappuccino", price: "R20" },
+  { name: "Americano", price: "R20" },
+  { name: "Hot Chocolate", price: "R20" },
+  { name: "Mocha", price: "R25" },
+  { name: "Chai Latte", price: "R25" },
 ] as const;
 
 export default function AboutSection() {
   return (
-    <section style={S.section}>
-      <div style={S.inner}>
+    <section style={S.section} className="landing-section-pad-l">
+      {/* Subtle café-theme watermark */}
+      <div style={S.watermarkCup} aria-hidden="true">
+        <Image
+          src="/illustrations/takeaway-cup-single.png"
+          alt=""
+          fill
+          sizes="360px"
+          style={{ objectFit: "contain" }}
+        />
+      </div>
+
+      <div className="landing-about-grid" style={{ position: "relative", zIndex: 1 }}>
         {/* Left: story */}
-        <div>
+        <div className="reveal">
           <p style={S.eyebrow}>Who we are</p>
           <h2 style={S.heading}>Built on<br />service.</h2>
           <p style={S.body}>
@@ -105,17 +134,18 @@ export default function AboutSection() {
         </div>
 
         {/* Right: menu */}
-        <div style={S.box}>
+        <div className="reveal" style={S.box}>
           <p style={S.boxEyebrow}>What we serve</p>
-          {DRINKS.map((name, i) => (
+          {DRINKS.map((drink, i) => (
             <div
-              key={name}
+              key={drink.name}
               style={{
                 ...S.drinkRow,
                 borderTop: i === 0 ? "1px solid rgba(247,246,242,0.12)" : undefined,
               }}
             >
-              <span style={S.drinkName}>{name}</span>
+              <span style={S.drinkName}>{drink.name}</span>
+              <span style={S.drinkPrice}>{drink.price}</span>
             </div>
           ))}
         </div>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Live COGS dashboard — task A7 (taken over from Mia).
 // Centrepiece of the admin surface. Shows today's revenue/COGS/expenses/net as
@@ -59,11 +59,12 @@ const STATUS_LABEL: Record<CogsStreamStatus, string> = {
   offline: "Offline",
 };
 
+// FAVO brand palette only.
 const STATUS_COLOR: Record<CogsStreamStatus, string> = {
   connecting: "var(--color-text-muted)",
-  live: "var(--color-success)",
-  polling: "var(--color-warning)",
-  offline: "var(--color-error)",
+  live: "var(--color-dark-teal)",
+  polling: "var(--color-cool-steel)",
+  offline: "var(--color-crimson-carrot)",
 };
 
 // ── component ──────────────────────────────────────────────────────────────────
@@ -137,7 +138,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
+          <h1 className="admin-page-title" style={{ color: "var(--color-text-strong)" }}>
             Live COGS
           </h1>
           <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>
@@ -295,7 +296,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
             ariaLabel={`Revenue allocation: COGS ${formatZar(view.cogsZar)}, expenses ${formatZar(view.expensesZar)}, net ${formatZar(view.netZar)}`}
           />
           {view.netZar < 0 && (
-            <p className="favo-caption mt-2" style={{ color: "var(--color-error)", textTransform: "none", letterSpacing: 0 }}>
+            <p className="favo-caption mt-2" style={{ color: "var(--color-crimson-carrot)", textTransform: "none", letterSpacing: 0 }}>
               Operating at a loss of {formatZar(Math.abs(view.netZar))} — costs exceed revenue.
             </p>
           )}

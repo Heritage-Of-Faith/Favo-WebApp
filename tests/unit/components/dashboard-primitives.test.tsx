@@ -12,12 +12,12 @@ describe("KpiTile", () => {
     expect(screen.getByText(/R\s*123,45/)).toBeInTheDocument();
   });
 
-  it("flips value colour from profit (green) to loss (red) by tone", () => {
+  it("flips value colour between brand tones (profit → teal, loss → crimson)", () => {
     const { rerender } = render(<KpiTile label="Net" valueZar={500} tone="positive" />);
-    expect(screen.getByText(/R\s*5,00/)).toHaveStyle({ color: "var(--color-success)" });
+    expect(screen.getByText(/R\s*5,00/)).toHaveStyle({ color: "var(--color-dark-teal)" });
 
     rerender(<KpiTile label="Net" valueZar={-500} tone="negative" />);
-    expect(screen.getByText(/-R\s*5,00/)).toHaveStyle({ color: "var(--color-error)" });
+    expect(screen.getByText(/-R\s*5,00/)).toHaveStyle({ color: "var(--color-crimson-carrot)" });
   });
 
   it("renders valueText for non-money KPIs", () => {

@@ -50,6 +50,13 @@
       "when": 1780490256357,
       "tag": "0006_remarkable_stingray",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780762331672,
+      "tag": "0007_smooth_adam_warlock",
+      "breakpoints": true
     }
   ]
 }
