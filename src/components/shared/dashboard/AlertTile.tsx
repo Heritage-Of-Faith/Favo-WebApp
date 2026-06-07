@@ -6,26 +6,27 @@
 
 export type AlertSeverity = "info" | "warning" | "critical" | "success";
 
+// FAVO brand palette only — info/success use dark teal, warning/critical crimson.
 const SEVERITY_STYLE: Record<AlertSeverity, { fg: string; bg: string; border: string }> = {
   info: {
-    fg: "var(--color-info)",
-    bg: "color-mix(in srgb, var(--color-info) 8%, transparent)",
-    border: "color-mix(in srgb, var(--color-info) 35%, transparent)",
+    fg: "var(--color-dark-teal)",
+    bg: "color-mix(in srgb, var(--color-dark-teal) 8%, transparent)",
+    border: "color-mix(in srgb, var(--color-dark-teal) 35%, transparent)",
   },
   warning: {
-    fg: "var(--color-warning)",
-    bg: "color-mix(in srgb, var(--color-warning) 10%, transparent)",
-    border: "color-mix(in srgb, var(--color-warning) 40%, transparent)",
+    fg: "var(--color-crimson-carrot)",
+    bg: "color-mix(in srgb, var(--color-crimson-carrot) 10%, transparent)",
+    border: "color-mix(in srgb, var(--color-crimson-carrot) 40%, transparent)",
   },
   critical: {
-    fg: "var(--color-error)",
-    bg: "color-mix(in srgb, var(--color-error) 8%, transparent)",
-    border: "color-mix(in srgb, var(--color-error) 35%, transparent)",
+    fg: "var(--color-crimson-carrot)",
+    bg: "color-mix(in srgb, var(--color-crimson-carrot) 12%, transparent)",
+    border: "color-mix(in srgb, var(--color-crimson-carrot) 50%, transparent)",
   },
   success: {
-    fg: "var(--color-success)",
-    bg: "color-mix(in srgb, var(--color-success) 8%, transparent)",
-    border: "color-mix(in srgb, var(--color-success) 35%, transparent)",
+    fg: "var(--color-dark-teal)",
+    bg: "color-mix(in srgb, var(--color-dark-teal) 8%, transparent)",
+    border: "color-mix(in srgb, var(--color-dark-teal) 35%, transparent)",
   },
 };
 

@@ -29,7 +29,7 @@ export default function InventoryTable({ items, onOpenLots, onThresholdSaved }: 
         className="rounded-[var(--radius-card)] border p-6 text-center favo-small"
         style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-muted)" }}
       >
-        No inventory items yet. Seed Phase 2 data to populate this table.
+        No inventory items found. Add items via the Purchases section to begin tracking stock.
       </div>
     );
   }

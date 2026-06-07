@@ -61,21 +61,20 @@ gh auth login
 
 Walk the developer through the login flow if it opens a browser window.
 
-### Step 3 — Check Infisical CLI is installed
+### Step 3 — Set up .env.local
 
-Infisical is where all the project's secrets (passwords, API keys) live. Nothing sensitive is stored in the code files.
+The app reads secrets from a `.env.local` file in the project root. This file is gitignored and never committed.
 
 ```bash
-infisical --version
+cp .env.example .env.local
 ```
 
-If not installed:
-```bash
-brew install infisical/get-cli/infisical
-infisical login
-```
+Then tell the developer: "Open `.env.local` and fill in the values. Ask Gian for the `DATABASE_URL` and `AUTH_SECRET` — these connect to the Supabase database and are required before you can run the app."
 
-If login fails, tell the developer: "Ask Gian to add you to the Infisical project at hofmi/favo. You need that access to connect to the database and run the app."
+The `.env.example` file lists every required variable. The most critical ones are:
+- `DATABASE_URL` — Supabase Transaction pooler connection string (port 6543)
+- `DATABASE_URL_SESSION` — Supabase Session pooler (port 5432, needed for SSE)
+- `AUTH_SECRET` — Auth.js signing secret
 
 ### Step 4 — Clone the repo if not already inside it
 
@@ -157,11 +156,11 @@ If Docker is not installed, tell the developer: "You need Docker to run the loca
 ### Step 8 — Run database migrations and seed data
 
 ```bash
-infisical run -- bun db:migrate
-infisical run -- bun db:seed
+bun db:migrate
+bun db:seed
 ```
 
-If this fails because of missing Infisical access, tell the developer: "You need Infisical access before this step works. Ask Gian to add you to the hofmi/favo Infisical project, then come back here."
+If this fails with a database connection error, tell the developer: "Check that `DATABASE_URL` is correctly set in `.env.local`. Ask Gian for the Supabase connection string."
 
 When this succeeds, tell the developer what just happened: "The database now has all 24 tables created and filled with test data — including a test customer called Louis and a test barista account you can use to log in."
 
@@ -169,7 +168,7 @@ When this succeeds, tell the developer what just happened: "The database now has
 
 Start the server briefly to confirm everything is wired up:
 ```bash
-infisical run -- bun dev &
+bun dev &
 sleep 6
 curl -s http://localhost:3000/api/healthz
 kill %1 2>/dev/null
@@ -250,7 +249,7 @@ These apply to every line of code I write, no exceptions:
 | Every database change must call `writeAudit()` from `src/server/audit.ts` | Every change must be permanently logged — this is a legal requirement |
 | Never store, log, or display card numbers or card details | Yoco handles all card data — we never see or touch it |
 | RBAC (who can access what) is enforced on the server — UI checks are just decoration | A customer must never be able to see staff or admin data |
-| Never commit `.env` files — secrets live in Infisical only | One leaked key compromises the whole production system |
+| Never commit `.env` files — secrets live in `.env.local` locally and Vercel env vars in production | One leaked key compromises the whole production system |
 | Timezone is always Africa/Johannesburg — use `formatDate()` from `src/lib/format.ts` | Wrong timezone means wrong timestamps on every transaction |
 
 ---
