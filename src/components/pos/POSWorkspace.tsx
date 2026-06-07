@@ -21,11 +21,14 @@ import {
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
   CheckCircle, AlertCircle, Tag, Star, ShieldCheck,
 } from "lucide-react";
+import { toast } from "sonner";
 import ActiveBeanCard from "@/components/pos/ActiveBeanCard";
 import StaffPushOptIn from "@/components/pos/StaffPushOptIn";
 import StockBadge from "@/components/pos/StockBadge";
 import StockBanner from "@/components/pos/StockBanner";
+import WasteDialog from "@/components/pos/WasteDialog";
 import { useStockStatus } from "@/hooks/useStockStatus";
+import type { LogWasteInput } from "@/server/actions/waste";
 import type { Customer, MenuItem, MenuCustomisation, Order, OrderState, InventoryLot } from "@/lib/types";
 import WasteLogModal from "@/components/pos/WasteLogModal";
 
@@ -108,6 +111,8 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const [discountId, setDiscountId] = useState("");
   const [discountMsg, setDiscountMsg] = useState<string | null>(null);
   const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
+  const [wasteOpen, setWasteOpen] = useState(false);
+  const [wasteCategory, setWasteCategory] = useState<LogWasteInput["category"]>("spilled");
 
   const sortedOrders = [...activeOrders].sort((a, b) => {
     const sp = STATE_PRIORITY[a.state] - STATE_PRIORITY[b.state];
@@ -230,6 +235,12 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
     }
   }
 
+  /** Open the waste dialog with a given default category (M13 remake flow). */
+  function openWaste(category: LogWasteInput["category"]) {
+    setWasteCategory(category);
+    setWasteOpen(true);
+  }
+
   async function handleCancel(orderId: string) {
     setCancelConfirm(null);
     setAdvancing(prev => ({ ...prev, [orderId]: true }));
@@ -238,8 +249,15 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
     if (r.ok) {
       setExpandedId(null);
       setFullOrders(prev => { const n = { ...prev }; delete n[orderId]; return n; });
+      // M13: cancel + waste are independent. Offer a waste shortcut without
+      // blocking — a partial failure on either side never affects the other.
+      toast.success("Order cancelled", {
+        description: "Wasting the made drink?",
+        action: { label: "Report waste", onClick: () => openWaste("overproduction") },
+      });
     } else {
       setActionError(prev => ({ ...prev, [orderId]: r.message }));
+      toast.error(r.message ?? "Could not cancel.");
     }
   }
 
@@ -813,6 +831,14 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ════════ WASTE DIALOG (M13 — cancel→waste shortcut) ════════ */}
+      {wasteOpen && (
+        <WasteDialog
+          defaultCategory={wasteCategory}
+          onClose={() => { setWasteOpen(false); setWasteCategory("spilled"); }}
+        />
       )}
 
       {/* ════════ STAFF PUSH OPT-IN (M10) ════════ */}
