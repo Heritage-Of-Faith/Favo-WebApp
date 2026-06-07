@@ -95,7 +95,7 @@ export default function Hero() {
 
       <div className="landing-hero-grid" style={{ position: "relative", zIndex: 1 }}>
         {/* Left column */}
-        <div>
+        <div className="reveal">
           <p style={S.eyebrow}>Heritage of Faith · Emalahleni</p>
           <h1 style={S.headline}>
             Coffee for<br />

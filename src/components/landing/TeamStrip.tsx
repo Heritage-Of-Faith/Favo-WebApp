@@ -120,7 +120,7 @@ export default function TeamStrip() {
         <p style={S.eyebrow}>The team</p>
         <h2 style={S.heading}>Made by hand. Served with heart.</h2>
 
-        <div style={S.grid} className="team-strip-grid">
+        <div style={S.grid} className="team-strip-grid reveal-stagger">
           {BARISTAS.map((b) => (
             <div key={b.src}>
               <div style={S.cell}>

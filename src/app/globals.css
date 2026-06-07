@@ -408,3 +408,26 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
 @media (max-width: 640px) {
   .team-strip-grid { grid-template-columns: 1fr !important; }
 }
+
+/* ─── Scroll reveals (Phase 2) — CSS scroll-driven, progressively enhanced ─── */
+/* Robust by design: with reduced-motion, or in browsers without               */
+/* animation-timeline support, elements are simply visible — no JS, never       */
+/* stuck hidden. Animates only opacity + transform (GPU-friendly).              */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    @keyframes favo-reveal {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .reveal,
+    .reveal-stagger > * {
+      animation: favo-reveal both linear;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+    /* Cascade row children in. */
+    .reveal-stagger > *:nth-child(2) { animation-range: entry 8% entry 63%; }
+    .reveal-stagger > *:nth-child(3) { animation-range: entry 16% entry 71%; }
+    .reveal-stagger > *:nth-child(4) { animation-range: entry 24% entry 79%; }
+  }
+}

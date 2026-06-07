@@ -118,7 +118,7 @@ export default function AboutSection() {
 
       <div className="landing-about-grid" style={{ position: "relative", zIndex: 1 }}>
         {/* Left: story */}
-        <div>
+        <div className="reveal">
           <p style={S.eyebrow}>Who we are</p>
           <h2 style={S.heading}>Built on<br />service.</h2>
           <p style={S.body}>
@@ -134,7 +134,7 @@ export default function AboutSection() {
         </div>
 
         {/* Right: menu */}
-        <div style={S.box}>
+        <div className="reveal" style={S.box}>
           <p style={S.boxEyebrow}>What we serve</p>
           {DRINKS.map((drink, i) => (
             <div

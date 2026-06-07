@@ -45,7 +45,7 @@ const S = {
 export default function NumbersStrip() {
   return (
     <section style={S.section} aria-label="Key facts about FAVO">
-      <div className="landing-numbers-grid">
+      <div className="landing-numbers-grid reveal-stagger">
         {facts.map((f, i) => (
           <div
             key={f.number}
