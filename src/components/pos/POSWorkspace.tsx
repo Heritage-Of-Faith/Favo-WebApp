@@ -691,6 +691,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                       </div>
                     )}
 
+
                     {/* Collected success */}
                     {full && o.state === "collected" && (
                       <div className="flex items-center gap-2 py-1">
