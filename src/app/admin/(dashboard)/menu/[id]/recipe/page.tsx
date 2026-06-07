@@ -6,6 +6,8 @@ import Link from "next/link";
 import { getRecipe } from "@/server/actions/recipes";
 import RecipeEditor from "@/components/admin/RecipeEditor";
 
+export const metadata = { title: "Recipe Editor" };
+
 export default async function RecipePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const res = await getRecipe(id);
@@ -16,7 +18,7 @@ export default async function RecipePage({ params }: { params: Promise<{ id: str
         <Link href="/admin/menu" className="favo-caption" style={{ color: "var(--color-accent)" }}>
           ← Menu
         </Link>
-        <h1 className="mt-1 favo-h2" style={{ color: "var(--color-text-strong)" }}>
+        <h1 className="admin-page-title mt-1">
           Recipe
         </h1>
         <p className="mt-1 favo-small" style={{ color: "var(--color-text-muted)" }}>

@@ -195,7 +195,7 @@ export default function ActiveOrder({ order }: Props) {
                 type="text"
                 value={discountStaffId}
                 onChange={(e) => setDiscountStaffId(e.target.value)}
-                placeholder="staff-uuid"
+                placeholder="e.g. staff_barista_sam"
                 className="rounded-[var(--radius-btn)] border border-cool-steel/30 bg-porcelain/10 px-[var(--spacing-m)] py-[var(--spacing-s)] text-porcelain placeholder:text-cool-steel favo-small min-h-[44px] focus:border-crimson-carrot focus:outline-none"
               />
               {discountMsg && (

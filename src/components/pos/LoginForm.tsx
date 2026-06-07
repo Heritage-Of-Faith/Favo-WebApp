@@ -24,9 +24,16 @@ const PAD_KEYS = [
 export type Props = {
   /** Optional override for redirect target after successful login. */
   redirectTo?: string;
+  /** Which surface the form sits on — controls the sub-label only. */
+  surface?: "pos" | "admin";
 };
 
-export default function LoginForm({ redirectTo = "/pos/queue" }: Props) {
+const SURFACE_LABEL: Record<NonNullable<Props["surface"]>, string> = {
+  pos: "Point of Sale",
+  admin: "Admin",
+};
+
+export default function LoginForm({ redirectTo = "/pos/queue", surface = "pos" }: Props) {
   const router = useRouter();
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -82,12 +89,12 @@ export default function LoginForm({ redirectTo = "/pos/queue" }: Props) {
           className="opacity-90"
         />
         <span className="favo-label tracking-[var(--tracking-label)] text-cool-steel">
-          Point of Sale
+          {SURFACE_LABEL[surface]}
         </span>
       </div>
 
       {/* Heading */}
-      <h1 className="favo-h2 text-center text-porcelain">
+      <h1 className="favo-h2 text-center text-text-strong">
         Enter your PIN
       </h1>
 
@@ -105,7 +112,7 @@ export default function LoginForm({ redirectTo = "/pos/queue" }: Props) {
               "block h-3.5 w-3.5 rounded-full border-2 transition-all duration-[var(--dur-fast)]",
               i < pin.length
                 ? "border-crimson-carrot bg-crimson-carrot scale-110"
-                : "border-porcelain/40 bg-transparent",
+                : "border-text-muted/40 bg-transparent",
             ].join(" ")}
           />
         ))}
@@ -137,10 +144,10 @@ export default function LoginForm({ redirectTo = "/pos/queue" }: Props) {
                 aria-label="Delete last digit"
                 className={[
                   "flex min-h-[44px] min-w-[44px] items-center justify-center",
-                  "rounded-[var(--radius-btn)] border border-porcelain/20",
-                  "bg-porcelain/10 text-porcelain",
+                  "rounded-[var(--radius-btn)] border border-border-subtle",
+                  "bg-surface text-text-strong",
                   "transition-colors duration-[var(--dur-fast)]",
-                  "hover:bg-porcelain/20 active:bg-porcelain/30",
+                  "hover:bg-porcelain-soft active:bg-porcelain-soft",
                   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot",
                   "disabled:opacity-30 disabled:cursor-not-allowed",
                 ].join(" ")}
@@ -184,11 +191,11 @@ export default function LoginForm({ redirectTo = "/pos/queue" }: Props) {
               aria-label={`Digit ${key}`}
               className={[
                 "flex min-h-[44px] min-w-[44px] items-center justify-center",
-                "rounded-[var(--radius-btn)] border border-porcelain/20",
-                "bg-porcelain/10 text-porcelain",
-                "font-sans text-[var(--text-h3)] font-600",
+                "rounded-[var(--radius-btn)] border border-border-subtle",
+                "bg-surface text-text-strong",
+                "font-heading text-[var(--text-h3)] font-bold tracking-[var(--tracking-head)]",
                 "transition-colors duration-[var(--dur-fast)]",
-                "hover:bg-porcelain/20 active:bg-porcelain/30 active:scale-95",
+                "hover:bg-porcelain-soft active:bg-porcelain-soft active:scale-95",
                 "focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot",
                 "disabled:opacity-30 disabled:cursor-not-allowed",
               ].join(" ")}

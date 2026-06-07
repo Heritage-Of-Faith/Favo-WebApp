@@ -24,16 +24,17 @@ export interface KpiTileProps {
   className?: string;
 }
 
+// FAVO brand palette only — positive=dark teal, negative=crimson carrot.
 const TONE_COLOR: Record<NonNullable<KpiTileProps["tone"]>, string> = {
   default: "var(--color-text-strong)",
-  positive: "var(--color-success)",
-  negative: "var(--color-error)",
+  positive: "var(--color-dark-teal)",
+  negative: "var(--color-crimson-carrot)",
 };
 
 function trendColor(direction: TrendDirection, upIsGood: boolean): string {
   if (direction === "flat") return "var(--color-text-muted)";
   const good = direction === "up" ? upIsGood : !upIsGood;
-  return good ? "var(--color-success)" : "var(--color-error)";
+  return good ? "var(--color-dark-teal)" : "var(--color-crimson-carrot)";
 }
 
 function trendArrow(direction: TrendDirection): string {

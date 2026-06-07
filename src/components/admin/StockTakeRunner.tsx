@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Stock-take runner — task A9 orchestrator.
 // Walks the take's lots one at a time (StockTakeCounter), gates "Close take"
@@ -76,7 +76,7 @@ export default function StockTakeRunner({ initialTake }: StockTakeRunnerProps) {
     return (
       <div className="mx-auto max-w-md space-y-5">
         <div>
-          <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
+          <h1 className="admin-page-title" style={{ color: "var(--color-text-strong)" }}>
             Take complete
           </h1>
           <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>
@@ -99,7 +99,7 @@ export default function StockTakeRunner({ initialTake }: StockTakeRunnerProps) {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
+        <h1 className="admin-page-title" style={{ color: "var(--color-text-strong)" }}>
           {take.kind === "full" ? "Full" : "Spot"} stock take
         </h1>
         <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>
