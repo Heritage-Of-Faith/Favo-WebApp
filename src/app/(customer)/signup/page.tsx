@@ -5,7 +5,7 @@ import AuthForm from "@/components/customer/AuthForm";
 
 export const metadata = {
   title: "Create your account · FAVO Café",
-  description: "Join FAVO — earn rewards on every cup. Secure email sign-in, no password.",
+  description: "Join FAVO — earn rewards on every cup.",
 };
 
 export default function SignUpPage() {
