@@ -175,6 +175,17 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
         />
       )}
 
+      {/* ── Empty-day notice ───────────────────────────────────────────────── */}
+      {/* All-zero figures usually mean no trading activity for the day — not a
+          broken dashboard. Spell that out so it isn't mistaken for a bug. */}
+      {view.revenueZar === 0 && view.cogsZar === 0 && view.expensesZar === 0 && (
+        <AlertTile
+          severity="info"
+          title={viewingToday ? "No activity recorded today yet" : "No activity recorded for this day"}
+          description="Figures populate as orders are placed (Revenue, COGS) and expenses are logged. Take an order on the POS or log an expense to see them update live."
+        />
+      )}
+
       {/* ── KPI tiles ──────────────────────────────────────────────────────── */}
       <TileGrid minTile={200}>
         <KpiTile
@@ -182,17 +193,20 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
           valueZar={view.revenueZar}
           trend={trendOf(view.revenueZar, prevDay?.revenueZar)}
           sub={viewingToday ? "today" : undefined}
+          hint="sales from paid orders"
         />
         <KpiTile
           label="COGS"
           valueZar={view.cogsZar}
           trend={{ ...trendOf(view.cogsZar, prevDay?.cogsZar), upIsGood: false }}
           sub={view.revenueZar > 0 ? `${Math.round((view.cogsZar / view.revenueZar) * 100)}% of revenue` : undefined}
+          hint="ingredient cost of items sold"
         />
         <KpiTile
           label="Expenses"
           valueZar={view.expensesZar}
           trend={{ ...trendOf(view.expensesZar, prevDay?.expensesZar), upIsGood: false }}
+          hint="rent, utilities, wages…"
         />
         <KpiTile
           label="Net"
@@ -200,6 +214,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
           tone={view.netZar >= 0 ? "positive" : "negative"}
           trend={trendOf(view.netZar, prevDay?.netZar)}
           sub={view.profit ? "profit" : "loss"}
+          hint="revenue − COGS − expenses"
         />
       </TileGrid>
 

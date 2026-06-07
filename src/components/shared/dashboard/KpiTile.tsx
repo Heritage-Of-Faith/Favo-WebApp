@@ -13,6 +13,8 @@ export interface KpiTileProps {
   /** Pre-formatted value text (use when the KPI is not money). */
   valueText?: string;
   sub?: string;
+  /** Persistent one-line descriptor of what the metric means (e.g. "ingredient cost of items sold"). */
+  hint?: string;
   trend?: {
     direction: TrendDirection;
     label: string;
@@ -46,6 +48,7 @@ export default function KpiTile({
   valueZar,
   valueText,
   sub,
+  hint,
   trend,
   tone = "default",
   className,
@@ -94,6 +97,14 @@ export default function KpiTile({
           </span>
         )}
       </div>
+      {hint && (
+        <span
+          className="favo-caption"
+          style={{ color: "var(--color-text-muted)", textTransform: "none", letterSpacing: 0 }}
+        >
+          {hint}
+        </span>
+      )}
     </div>
   );
 }

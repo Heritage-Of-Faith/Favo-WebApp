@@ -22,6 +22,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "bun db/seed/index.ts",
     "db:seed:phase2": "bun db/seed/phase2.ts",
+    "db:seed:demo": "bun db/seed/demo-transactions.ts",
     "db:studio": "drizzle-kit studio",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
