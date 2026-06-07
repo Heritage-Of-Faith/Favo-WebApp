@@ -17,7 +17,7 @@
 //
 // Run: bun db:seed:demo --confirm   (requires DATABASE_URL in .env.local)
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../index";
 import {
   orders,
@@ -27,6 +27,8 @@ import {
   expenses,
 } from "../schema";
 
+// Single-tenant app — matches the `tenant_id` default in db/schema.ts.
+const TENANT = "hofmi";
 const STAFF_BARISTA = "staff_barista_sam";
 const STAFF_OWNER = "staff_owner_olivia";
 const CUSTOMERS = ["cust_louis", "cust_naledi", null, null] as const; // some walk-ins
@@ -99,7 +101,7 @@ async function main() {
   const lots = await db
     .select({ id: inventoryLots.id, itemId: inventoryLots.inventoryItemId })
     .from(inventoryLots)
-    .where(eq(inventoryLots.state, "active"));
+    .where(and(eq(inventoryLots.state, "active"), eq(inventoryLots.tenantId, TENANT)));
   const lotByItem = new Map(lots.map((l) => [l.itemId, l.id]));
 
   const missing = [BEANS, WHOLE_MILK, CUP_8OZ, CUP_12OZ, LID].filter((i) => !lotByItem.has(i));
