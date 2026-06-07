@@ -1,6 +1,6 @@
 // Phase 2 seed runner — task G8
 // Runs additively — safe to execute after Phase 1 seed (bun db:seed).
-// Use: infisical run -- bun db:seed:phase2
+// Use: bun db:seed:phase2 (requires DATABASE_URL in .env.local)
 //
 // Order matters:
 //   1. inventory items  (referenced by lots + recipes)

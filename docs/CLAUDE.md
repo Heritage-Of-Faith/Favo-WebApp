@@ -4,7 +4,7 @@ Project: FAVO Café Web App · single-tenant café POS + admin
 Repo: `github.com/hofmi-ai/favo` · Deploy: `favo.hofmi.org`
 
 ## Stack snapshot
-Next.js 16 (App Router) · React 19 · TS 5.6 strict · Tailwind v4 + shadcn/ui · PG 16 + Drizzle ORM · Auth.js v6 · Yoco Online API · Web Push + VAPID · SSE via PG LISTEN/NOTIFY · Bun · Infisical · Coolify · Cloudflare
+Next.js 16 (App Router) · React 19 · TS 5.6 strict · Tailwind v4 + shadcn/ui · PG 17 (Supabase) + Drizzle ORM · Auth.js v5 · Yoco Online API · Web Push + VAPID · SSE via PG LISTEN/NOTIFY · Bun · Cloudflare
 
 ## Repo map
 - `src/app/(customer)` — landing + customer PWA (Nikao)
@@ -24,7 +24,7 @@ Next.js 16 (App Router) · React 19 · TS 5.6 strict · Tailwind v4 + shadcn/ui 
 `bun typecheck` · `bun lint` · `bun test:unit`
 
 ## Non-negotiables
-- **Secrets:** never committed. Read from Infisical via env. No `.env` in git.
+- **Secrets:** never committed. Use `.env.local` locally; Vercel env vars in production. No `.env` in git.
 - **Audit log:** append-only, trigger-enforced. Every mutation calls `writeAudit()` from `src/server/audit.ts`.
 - **Money:** integer cents in columns suffixed `_zar`. Never `numeric`. Format with `formatZar()` from `src/lib/format.ts`.
 - **Timezone:** `Africa/Johannesburg`. Wall-clock logic uses `formatDate()`.

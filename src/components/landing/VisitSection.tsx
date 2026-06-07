@@ -1,19 +1,11 @@
 // Visit / hours section — owner: Nikao (task N3)
-// Split: hours table left, address + CTA right. Porcelain background.
+// Split: address + CTA left, hours right. Porcelain background.
+// Responsive via .landing-visit-grid in globals.css.
 
 const S = {
   section: {
     backgroundColor: "var(--color-porcelain)",
-    padding: "88px 40px",
     borderTop: "1px solid var(--color-porcelain-soft)",
-  } satisfies React.CSSProperties,
-  inner: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 80,
-    alignItems: "flex-start",
   } satisfies React.CSSProperties,
   eyebrow: {
     fontFamily: "'DM Sans', sans-serif",
@@ -87,8 +79,8 @@ const HOURS = [
 
 export default function VisitSection() {
   return (
-    <section style={S.section}>
-      <div style={S.inner}>
+    <section id="visit" style={{ ...S.section, scrollMarginTop: 64 }} className="landing-section-pad-l">
+      <div className="landing-visit-grid">
         {/* Left: address + CTA */}
         <div>
           <p style={S.eyebrow}>Find us</p>
@@ -97,7 +89,26 @@ export default function VisitSection() {
             <p style={S.address}>7 Duiker Street</p>
             <p style={S.addressSub}>Reyno Ridge · Emalahleni · 1049</p>
           </address>
-          <a href="/login" style={S.cta}>
+          <a
+            href="https://www.google.com/maps/dir/?api=1&destination=7+Duiker+Street+Reyno+Ridge+Emalahleni"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-block",
+              fontFamily: "var(--font-sans)",
+              fontWeight: 700,
+              fontSize: 12,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "var(--color-cool-steel)",
+              textDecoration: "none",
+              marginBottom: "var(--spacing-l)",
+            }}
+          >
+            Get directions ↗
+          </a>
+          <br />
+          <a href="/signup" style={S.cta}>
             Join the loyalty programme →
           </a>
         </div>

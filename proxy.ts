@@ -14,11 +14,13 @@ export async function proxy(request: NextRequest) {
   const session = await auth();
   const { pathname } = request.nextUrl;
 
-  // Admin routes require an admin-capable role (admin / owner / finance)
-  if (pathname.startsWith("/admin")) {
+  // Admin routes require an admin-capable role (admin / owner / finance).
+  // The login page itself is exempt so it is reachable while signed out.
+  if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
     const role = (session?.user as SessionUser | undefined)?.role;
     if (!session || !role || !canAccessAdmin(role)) {
-      return NextResponse.redirect(new URL("/", request.url));
+      // Send unauthenticated/under-privileged users to the admin login.
+      return NextResponse.redirect(new URL("/admin/login", request.url));
     }
   }
 

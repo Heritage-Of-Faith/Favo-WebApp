@@ -1,4 +1,4 @@
-// Variance summary — task A9 (T01 bands).
+﻿// Variance summary — task A9 (T01 bands).
 // Read-only roll-up of a stock take's per-line and overall variance, coloured
 // by the shared T01 bands. Server-safe.
 
@@ -22,7 +22,7 @@ export default function VarianceSummary({ take }: VarianceSummaryProps) {
         <div>
           <p className="favo-label">Overall variance</p>
           <p
-            className="favo-h3"
+            className="admin-section-title"
             style={{ color: "var(--color-text-strong)", fontVariantNumeric: "tabular-nums" }}
           >
             {overallPct === null ? "—" : `${overallPct}%`}
