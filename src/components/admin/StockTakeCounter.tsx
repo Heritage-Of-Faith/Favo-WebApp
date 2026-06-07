@@ -1,17 +1,19 @@
-﻿"use client";
+"use client";
 
 // Stock-take counter — task A9.
 // One lot's count step in the walk-lots flow. Mobile-friendly: a large numeric
 // input the admin taps on a phone. Save advances; skip/back navigate.
+// Shows lot context (supplier, received date, roast date) so the user knows
+// which physical container to count.
 
 import { useEffect, useState } from "react";
+import { formatDate } from "@/lib/format";
 import type { StockTakeLine } from "@/lib/types";
 
 export interface StockTakeCounterProps {
   line: StockTakeLine;
   index: number;
   total: number;
-  unit?: string;
   saving: boolean;
   canBack: boolean;
   onSave: (counted: number) => void;
@@ -23,7 +25,6 @@ export default function StockTakeCounter({
   line,
   index,
   total,
-  unit,
   saving,
   canBack,
   onSave,
@@ -39,12 +40,15 @@ export default function StockTakeCounter({
 
   const n = Number(draft);
   const valid = draft.trim() !== "" && Number.isFinite(n) && n >= 0;
+  const unitLabel = line.unit ?? "units";
+  const isBean = line.itemKind === "beans";
 
   return (
     <div
       className="mx-auto flex max-w-md flex-col gap-5 rounded-[var(--radius-card)] border p-5"
       style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-elevated)" }}
     >
+      {/* Progress header */}
       <div className="flex items-center justify-between">
         <span className="favo-caption" style={{ color: "var(--color-text-muted)" }}>
           Lot {index + 1} of {total}
@@ -56,29 +60,52 @@ export default function StockTakeCounter({
         )}
       </div>
 
-      <div>
+      {/* Item name + lot context */}
+      <div className="space-y-1 text-center">
         <h2 className="admin-section-title" style={{ color: "var(--color-text-strong)" }}>
           {line.inventoryItemName}
         </h2>
-        <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>
-          Expected: {line.expected}
-          {unit ? ` ${unit}` : ""}
+        {/* Lot context: helps user identify the physical container */}
+        <div className="flex flex-col gap-0.5">
+          {line.lotSourceName && (
+            <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>
+              {line.lotSourceName}
+            </p>
+          )}
+          {line.lotReceivedAt && (
+            <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>
+              Received {formatDate(line.lotReceivedAt)}
+            </p>
+          )}
+          {isBean && line.roastDate && (
+            <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>
+              Roasted {formatDate(line.roastDate)}
+            </p>
+          )}
+        </div>
+        <p className="favo-small mt-1" style={{ color: "var(--color-text-muted)" }}>
+          System expects:{" "}
+          <span style={{ color: "var(--color-text-strong)", fontWeight: 600 }}>
+            {line.expected} {unitLabel}
+          </span>
         </p>
       </div>
 
+      {/* Large tap-friendly input */}
       <label className="block">
-        <span className="favo-label">Counted{unit ? ` (${unit})` : ""}</span>
+        <span className="favo-label">Counted ({unitLabel})</span>
         <input
           type="number"
           inputMode="decimal"
           min={0}
           value={draft}
           autoFocus
+          aria-label={`Counted quantity in ${unitLabel}`}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && valid) onSave(n);
           }}
-          className="mt-1 w-full rounded-[var(--radius-btn)] border px-3 text-center"
+          className="mt-1 w-full rounded-[var(--radius-btn)] border px-3 text-center focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]"
           style={{
             height: 72,
             fontFamily: "var(--font-display)",
@@ -90,6 +117,9 @@ export default function StockTakeCounter({
             fontVariantNumeric: "tabular-nums",
           }}
         />
+        <p className="mt-1.5 text-center favo-caption" style={{ color: "var(--color-text-muted)" }}>
+          Enter the quantity you physically measured on the shelf
+        </p>
       </label>
 
       <div className="flex items-center gap-2">
@@ -97,7 +127,7 @@ export default function StockTakeCounter({
           type="button"
           onClick={onBack}
           disabled={!canBack || saving}
-          className="min-h-12 rounded-[var(--radius-btn)] border px-4 favo-small disabled:opacity-40"
+          className="min-h-12 rounded-[var(--radius-btn)] border px-4 favo-small disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
         >
           ← Back
@@ -106,6 +136,7 @@ export default function StockTakeCounter({
           type="button"
           onClick={onSkip}
           disabled={saving}
+          title="Skip this lot — it will remain uncounted for now"
           className="min-h-12 px-4 favo-small disabled:opacity-40"
           style={{ color: "var(--color-text-muted)" }}
         >

@@ -175,7 +175,7 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
                           if (e.key === "Enter") void saveCost(lot.id);
                           if (e.key === "Escape") setEditingId(null);
                         }}
-                        className="h-9 w-28 rounded-[var(--radius-btn)] border px-2 favo-small"
+                        className="h-9 w-28 rounded-[var(--radius-btn)] border px-2 favo-small focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]"
                         style={{
                           background: "var(--color-surface)",
                           color: "var(--color-text-strong)",

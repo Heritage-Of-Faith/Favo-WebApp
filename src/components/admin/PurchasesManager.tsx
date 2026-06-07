@@ -113,7 +113,7 @@ export default function PurchasesManager({ initialPurchases, items, canApprove }
                             className="min-h-9 rounded-[var(--radius-btn)] px-3 favo-cta disabled:opacity-50"
                             style={{ background: "var(--color-warning)", color: "var(--color-text-inverse)" }}
                           >
-                            {approving === p.id ? "…" : "Approve"}
+                            {approving === p.id ? "Approving…" : "Approve"}
                           </button>
                         ) : (
                           <StatusBadge variant="warning">Pending</StatusBadge>

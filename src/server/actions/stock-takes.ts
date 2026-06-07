@@ -14,6 +14,7 @@ import {
   stockTakes,
   stockTakeLines,
   inventoryLots,
+  inventoryItems,
   stockMovements,
   staff,
 } from "@db/schema";
@@ -116,16 +117,28 @@ export async function getStockTake(
       expected: stockTakeLines.expected,
       counted: stockTakeLines.counted,
       variance: stockTakeLines.variance,
-      itemName: inventoryLots.inventoryItemId, // resolved to name below if needed
+      // Fix: was selecting inventoryItemId (a UUID) — join to inventoryItems for actual name
+      itemName: inventoryItems.name,
+      unit: inventoryItems.unit,
+      itemKind: inventoryItems.kind,
+      lotReceivedAt: inventoryLots.receivedAt,
+      lotSourceName: inventoryLots.sourceName,
+      roastDate: inventoryLots.roastDate,
     })
     .from(stockTakeLines)
     .leftJoin(inventoryLots, eq(stockTakeLines.inventoryLotId, inventoryLots.id))
+    .leftJoin(inventoryItems, eq(inventoryLots.inventoryItemId, inventoryItems.id))
     .where(eq(stockTakeLines.stockTakeId, takeId));
 
   const lines: StockTakeLine[] = lineRows.map((l) => ({
     id: l.id,
     inventoryLotId: l.inventoryLotId,
-    inventoryItemName: l.itemName ?? l.inventoryLotId,
+    inventoryItemName: l.itemName ?? "Unknown item",
+    unit: l.unit ?? null,
+    itemKind: l.itemKind ?? null,
+    lotReceivedAt: l.lotReceivedAt?.toISOString() ?? null,
+    lotSourceName: l.lotSourceName ?? null,
+    roastDate: l.roastDate?.toISOString() ?? null,
     expected: l.expected,
     counted: l.counted ?? null,
     variancePct: l.counted !== null && l.counted !== undefined

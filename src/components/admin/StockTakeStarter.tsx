@@ -25,25 +25,31 @@ export default function StockTakeStarter() {
   }
 
   return (
-    <div className="flex gap-2">
-      <button
-        type="button"
-        onClick={() => start("full")}
-        disabled={starting !== null}
-        className="min-h-10 rounded-[var(--radius-btn)] px-4 favo-cta disabled:opacity-50"
-        style={{ background: "var(--color-accent)", color: "var(--color-text-inverse)" }}
-      >
-        {starting === "full" ? "Starting…" : "Start full take"}
-      </button>
-      <button
-        type="button"
-        onClick={() => start("spot")}
-        disabled={starting !== null}
-        className="min-h-10 rounded-[var(--radius-btn)] border px-4 favo-small disabled:opacity-50"
-        style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
-      >
-        {starting === "spot" ? "Starting…" : "Spot take"}
-      </button>
+    <div className="flex flex-col items-end gap-2">
+      <p className="favo-caption text-right" style={{ color: "var(--color-text-muted)", maxWidth: 280 }}>
+        <strong style={{ color: "var(--color-text-strong)" }}>Full take</strong> counts every active lot.{" "}
+        <strong style={{ color: "var(--color-text-strong)" }}>Spot take</strong> checks a subset (quick audit).
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => start("full")}
+          disabled={starting !== null}
+          className="min-h-10 rounded-[var(--radius-btn)] px-4 favo-cta disabled:opacity-50"
+          style={{ background: "var(--color-accent)", color: "var(--color-text-inverse)" }}
+        >
+          {starting === "full" ? "Starting…" : "Start full take"}
+        </button>
+        <button
+          type="button"
+          onClick={() => start("spot")}
+          disabled={starting !== null}
+          className="min-h-10 rounded-[var(--radius-btn)] border px-4 favo-small disabled:opacity-50"
+          style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
+        >
+          {starting === "spot" ? "Starting…" : "Spot take"}
+        </button>
+      </div>
     </div>
   );
 }

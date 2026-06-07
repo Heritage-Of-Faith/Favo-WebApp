@@ -74,7 +74,7 @@ export default function ThresholdEditor({ itemId, value, unit, onSaved }: Thresh
           if (e.key === "Enter") void save();
           if (e.key === "Escape") setEditing(false);
         }}
-        className="h-10 w-20 rounded-[var(--radius-btn)] border px-2 favo-small"
+        className="h-10 w-20 rounded-[var(--radius-btn)] border px-2 favo-small focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]"
         style={{
           background: "var(--color-surface)",
           color: "var(--color-text-strong)",

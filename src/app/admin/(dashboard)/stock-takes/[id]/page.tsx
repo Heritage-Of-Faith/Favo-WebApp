@@ -31,7 +31,14 @@ export default async function StockTakeDetailPage({
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-3xl space-y-4">
+      <Link
+        href="/admin/stock-takes"
+        className="inline-flex items-center gap-1 favo-small transition-colors hover:opacity-80"
+        style={{ color: "var(--color-text-muted)" }}
+      >
+        ← Stock takes
+      </Link>
       <StockTakeRunner initialTake={res.data.take} />
     </div>
   );

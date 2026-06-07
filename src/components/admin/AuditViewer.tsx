@@ -237,7 +237,7 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
                   {hasDiff(row) ? (
                     <button
                       onClick={() => setDiffRow(row)}
-                      className="text-xs px-2 py-1 border border-border-subtle rounded-[var(--radius-btn)] text-text-muted hover:text-text-strong hover:border-accent transition-colors"
+                      className="min-h-9 min-w-[44px] text-xs px-2 py-1 border border-border-subtle rounded-[var(--radius-btn)] text-text-muted hover:text-text-strong hover:border-accent transition-colors"
                     >
                       View
                     </button>
