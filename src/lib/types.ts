@@ -213,6 +213,17 @@ export type CogsLive = {
   costEstimatedWarning: boolean;
 };
 
+/**
+ * Lightweight POS-readable daily summary (M12). Unlike CogsLive (admin/owner),
+ * this is visible to baristas — it exposes only volume + revenue, no margins.
+ */
+export type PosTodaySummary = {
+  date: string; // YYYY-MM-DD in Africa/Johannesburg
+  orderCount: number;
+  revenueZar: number;
+  wasteCount: number;
+};
+
 // ─── Phase 2: Expenses ────────────────────────────────────────────────────────
 
 export type ExpenseCategory =

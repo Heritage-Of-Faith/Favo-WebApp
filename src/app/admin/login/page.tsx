@@ -1,46 +1,36 @@
-// Admin HOFMI SSO login page — owner: Mia (task A3)
-// Public (ungated) page that starts the HOFMI single-sign-on flow.
-// Lives OUTSIDE the (dashboard) gated layout so it is reachable when signed out.
-// Docs: docs/DESIGN.md → Admin Rules.
+// Admin login — PIN entry (task A3, backend wired by Gian).
+// Public (ungated) page: lives outside the (dashboard) gated layout and is
+// excluded from the proxy redirect (see proxy.ts) so it is reachable when signed
+// out. Staff authenticate with the same numeric PIN used at the POS; the Auth.js
+// Credentials provider carries the role in the JWT, and proxy.ts enforces that
+// only admin-capable roles (admin / owner / finance) may reach /admin/*.
 //
-// ⚠️ Backend follow-up (Gian, not in scope for this frontend task):
-//   1. Add the "hofmi-sso" OAuth provider to auth.ts (G4 marks it TODO).
-//   2. Exclude "/admin/login" from the proxy.ts redirect so it is reachable
-//      while signed out (proxy currently bounces all /admin/* to "/").
-// Until both land, the button below renders correctly but the sign-in call
-// will fail at runtime because the provider does not yet exist.
+// HOFMI SSO remains a future enhancement — until an OAuth provider is configured
+// in auth.ts, PIN is the available admin sign-in mechanism.
+// Docs: docs/DESIGN.md → Admin Rules · docs/API.md → loginWithPin
 
-import { signIn } from "../../../../auth";
-import { Button } from "@/components/ui/button";
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth/session";
+import { canAccessAdmin } from "@/server/auth/rbac";
+import LoginForm from "@/components/pos/LoginForm";
 
-async function startHofmiSso() {
-  "use server";
-  await signIn("hofmi-sso", { redirectTo: "/admin" });
-}
+export const metadata: Metadata = {
+  title: "Sign in — FAVO Admin",
+  robots: { index: false, follow: false },
+};
 
-export default function AdminLoginPage() {
+export default async function AdminLoginPage() {
+  const session = await getSession();
+
+  // Already signed in with an admin-capable role — skip the login screen.
+  if (session && canAccessAdmin(session.role)) {
+    redirect("/admin");
+  }
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-surface p-6">
-      <div className="w-full max-w-sm rounded-lg border border-border-subtle bg-elevated p-8 text-center">
-        <h1 className="text-2xl font-semibold text-text-strong">FAVO Admin</h1>
-        <p className="mt-2 text-sm text-text-muted">
-          Sign in with your Heritage of Faith account to manage the café.
-        </p>
-
-        <form action={startHofmiSso} className="mt-6">
-          <Button type="submit" size="lg" className="min-h-10 w-full">
-            Sign in with HOFMI
-          </Button>
-        </form>
-
-        <p className="mt-4 text-xs text-text-muted">
-          Staff using the till should use the{" "}
-          <a href="/pos" className="underline">
-            POS PIN login
-          </a>{" "}
-          instead.
-        </p>
-      </div>
+    <main className="flex min-h-screen items-center justify-center bg-porcelain px-[var(--spacing-m)]">
+      <LoginForm redirectTo="/admin" surface="admin" />
     </main>
   );
 }

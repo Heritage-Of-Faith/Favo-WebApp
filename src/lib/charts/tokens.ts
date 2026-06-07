@@ -4,19 +4,20 @@
 // Docs: docs/DESIGN.md → data viz
 
 /** Semantic colour roles for chart series, as CSS var references. */
+// FAVO brand palette only — no green/gold/red/blue status hues anywhere.
 export const chartColor = {
   /** Primary brand series (revenue, totals). */
   brand: "var(--color-dark-teal)",
   /** Accent series (highlights, current value). */
   accent: "var(--color-accent)",
-  /** Positive / profit. */
-  positive: "var(--color-success)",
+  /** Positive / profit — coffee bean (distinct from the teal brand series). */
+  positive: "var(--color-coffee-bean)",
   /** Neutral / secondary series. */
   neutral: "var(--color-cool-steel)",
   /** Warning / elevated. */
-  warning: "var(--color-warning)",
+  warning: "var(--color-crimson-carrot)",
   /** Negative / loss. */
-  negative: "var(--color-error)",
+  negative: "var(--color-crimson-carrot)",
   /** Grid lines and axes. */
   grid: "var(--color-border-subtle)",
   /** Muted text for labels. */
@@ -31,11 +32,11 @@ export type ChartColorRole = keyof typeof chartColor;
  */
 export const chartSeries: string[] = [
   "var(--color-dark-teal)",
-  "var(--color-accent)",
+  "var(--color-crimson-carrot)",
   "var(--color-cool-steel)",
-  "var(--color-warning)",
   "var(--color-coffee-bean)",
-  "var(--color-info)",
+  "var(--color-dark-teal-deep)",
+  "var(--color-coffee-bean-deep)",
 ];
 
 /** Default geometry shared across the bespoke SVG charts. */

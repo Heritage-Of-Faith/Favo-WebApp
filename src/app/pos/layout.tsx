@@ -9,7 +9,7 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, maxi
 
 export default function POSLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-dark-teal font-sans antialiased">
+    <div className="min-h-screen bg-porcelain font-sans antialiased">
       {children}
       <OnlineIndicator />
       <Toaster position="top-center" richColors />

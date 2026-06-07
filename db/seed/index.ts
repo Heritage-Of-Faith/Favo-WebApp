@@ -1,5 +1,5 @@
 // Seed runner — task G3
-// Run: bun db:seed (via `infisical run -- bun db:seed`)
+// Run: bun db:seed (requires DATABASE_URL in .env.local)
 
 import { seedMenu } from "./menu";
 import { seedCustomisations } from "./customisations";
