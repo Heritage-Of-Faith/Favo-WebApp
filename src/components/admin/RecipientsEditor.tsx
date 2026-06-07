@@ -129,7 +129,7 @@ export default function RecipientsEditor({ items, staff, initialRecipients }: Re
                 scope="row"
                 className="sticky left-0 z-10 px-3 py-2.5 favo-small"
                 style={{
-                  background: scope.id === GLOBAL ? "color-mix(in srgb, var(--color-info) 6%, var(--color-surface))" : "var(--color-surface)",
+                  background: scope.id === GLOBAL ? "color-mix(in srgb, var(--color-accent) 6%, var(--color-surface))" : "var(--color-surface)",
                   color: "var(--color-text-strong)",
                   fontWeight: rowIdx === 0 ? 600 : 400,
                   whiteSpace: "nowrap",

@@ -23,13 +23,18 @@ export type Props = {
 };
 
 export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
-  const [busy, setBusy] = useState<string | null>(null);
+  // Per-id set so concurrent row actions don't clobber each other's busy state.
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  const markBusy = (id: string) =>
+    setBusyIds((prev) => { const next = new Set(prev); next.add(id); return next; });
+  const clearBusy = (id: string) =>
+    setBusyIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
 
   async function handleDeactivate(member: Staff) {
     if (!window.confirm(`Deactivate ${member.name}? They will lose POS access immediately.`)) {
       return;
     }
-    setBusy(member.id);
+    markBusy(member.id);
     try {
       const res = await deactivateStaff(member.id);
       if (!res.ok) {
@@ -41,12 +46,12 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
     } catch {
       toast.error("Failed to deactivate staff member. Please try again.");
     } finally {
-      setBusy(null);
+      clearBusy(member.id);
     }
   }
 
   async function handleReactivate(member: Staff) {
-    setBusy(member.id);
+    markBusy(member.id);
     try {
       const res = await reactivateStaff(member.id);
       if (!res.ok) {
@@ -58,7 +63,7 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
     } catch {
       toast.error("Failed to reactivate staff member. Please try again.");
     } finally {
-      setBusy(null);
+      clearBusy(member.id);
     }
   }
 
@@ -120,19 +125,19 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
                   <Button
                     variant="destructive"
                     size="default"
-                    disabled={busy === member.id}
+                    disabled={busyIds.has(member.id)}
                     onClick={() => handleDeactivate(member)}
                   >
-                    {busy === member.id ? "Deactivating…" : "Deactivate"}
+                    {busyIds.has(member.id) ? "Deactivating…" : "Deactivate"}
                   </Button>
                 ) : (
                   <Button
                     variant="outline"
                     size="default"
-                    disabled={busy === member.id}
+                    disabled={busyIds.has(member.id)}
                     onClick={() => handleReactivate(member)}
                   >
-                    {busy === member.id ? "Reactivating…" : "Reactivate"}
+                    {busyIds.has(member.id) ? "Reactivating…" : "Reactivate"}
                   </Button>
                 )}
               </div>

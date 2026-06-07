@@ -41,7 +41,7 @@ export default function StockTakeCounter({
   const n = Number(draft);
   const valid = draft.trim() !== "" && Number.isFinite(n) && n >= 0;
   const unitLabel = line.unit ?? "units";
-  const isBean = line.itemKind === "beans";
+  const isBean = line.itemKind === "bean"; // InventoryKind uses "bean" (singular)
 
   return (
     <div
