@@ -57,6 +57,13 @@
       "when": 1780762331672,
       "tag": "0007_smooth_adam_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780908112912,
+      "tag": "0008_ancient_siren",
+      "breakpoints": true
     }
   ]
 }
