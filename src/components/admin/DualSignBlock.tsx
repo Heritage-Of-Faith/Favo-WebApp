@@ -74,14 +74,19 @@ export default function DualSignBlock({ report, canSignAdmin, canSignFinance, on
   async function doSign() {
     if (!confirm) return;
     setSigning(true);
-    const res = await approveMonthlyPnL(report.id, confirm);
-    setSigning(false);
-    if (res.ok) {
-      toast.success(`Signed as ${confirm}.`);
-      setConfirm(null);
-      onSigned();
-    } else {
-      toast.error(res.message);
+    try {
+      const res = await approveMonthlyPnL(report.id, confirm);
+      if (res.ok) {
+        toast.success(`Signed as ${confirm}.`);
+        setConfirm(null);
+        onSigned();
+      } else {
+        toast.error(res.message);
+      }
+    } catch {
+      toast.error("Failed to sign. Please try again.");
+    } finally {
+      setSigning(false);
     }
   }
 
