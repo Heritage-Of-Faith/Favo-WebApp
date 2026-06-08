@@ -126,11 +126,57 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
   const labels = trend.map((t) => shortDate(t.date));
   const prevDay = trend.length >= 2 ? trend[trend.length - 2] : undefined;
 
-  // Revenue allocation for the viewed day (handles loss gracefully).
+  // Period aggregate: sum over all days in the trend window.
+  const sum = (key: keyof CogsLive) =>
+    trend.reduce((s, d) => s + (d[key] as number), 0);
+
+  const periodNetZar = sum("netZar");
+  const periodTotal: CogsLive = inspectDate && snapshot ? snapshot : {
+    date: today.date,
+    revenueZar: sum("revenueZar"),
+    cogsZar: sum("cogsZar"),
+    expensesZar: sum("expensesZar"),
+    grossMarginZar: sum("grossMarginZar"),
+    netZar: periodNetZar,
+    profit: periodNetZar >= 0,
+    costEstimatedWarning: trend.some((d) => d.costEstimatedWarning),
+  };
+
+  // Half-period comparison for trend arrows (first half vs second half).
+  const half = Math.floor(trend.length / 2);
+  const firstHalf = trend.slice(0, half);
+  const secondHalf = trend.slice(half);
+  const halfSum = (arr: CogsLive[], key: keyof CogsLive) =>
+    arr.reduce((s, d) => s + (d[key] as number), 0);
+
+  const periodPrev = {
+    revenueZar: halfSum(firstHalf, "revenueZar"),
+    cogsZar: halfSum(firstHalf, "cogsZar"),
+    expensesZar: halfSum(firstHalf, "expensesZar"),
+    netZar: halfSum(firstHalf, "netZar"),
+  };
+  const periodCurr = {
+    revenueZar: halfSum(secondHalf, "revenueZar"),
+    cogsZar: halfSum(secondHalf, "cogsZar"),
+    expensesZar: halfSum(secondHalf, "expensesZar"),
+    netZar: halfSum(secondHalf, "netZar"),
+  };
+
+  // KPI source: snapshot when inspecting a date, else the period aggregate.
+  const kpi = periodTotal;
+  const kpiTrend = {
+    revenue: trendOf(inspectDate ? view.revenueZar : periodCurr.revenueZar, inspectDate ? prevDay?.revenueZar : periodPrev.revenueZar),
+    cogs: trendOf(inspectDate ? view.cogsZar : periodCurr.cogsZar, inspectDate ? prevDay?.cogsZar : periodPrev.cogsZar),
+    expenses: trendOf(inspectDate ? view.expensesZar : periodCurr.expensesZar, inspectDate ? prevDay?.expensesZar : periodPrev.expensesZar),
+    net: trendOf(inspectDate ? view.netZar : periodCurr.netZar, inspectDate ? prevDay?.netZar : periodPrev.netZar),
+  };
+  const kpiSub = inspectDate ? undefined : `last ${rangeDays}d`;
+
+  // Revenue allocation for the viewed day or period (handles loss gracefully).
   const allocation = [
-    { label: "COGS", value: Math.max(view.cogsZar, 0), color: chartColor.warning },
-    { label: "Expenses", value: Math.max(view.expensesZar, 0), color: chartColor.neutral },
-    { label: view.netZar >= 0 ? "Net profit" : "Net loss", value: Math.max(view.netZar, 0), color: chartColor.positive },
+    { label: "COGS", value: Math.max(kpi.cogsZar, 0), color: chartColor.warning },
+    { label: "Expenses", value: Math.max(kpi.expensesZar, 0), color: chartColor.neutral },
+    { label: kpi.netZar >= 0 ? "Net profit" : "Net loss", value: Math.max(kpi.netZar, 0), color: chartColor.positive },
   ];
 
   return (
@@ -142,7 +188,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
             Live COGS
           </h1>
           <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>
-            {viewingToday ? "Today" : "Viewing"} · {view.date}
+            {inspectDate ? `Viewing · ${inspectDate}` : `Last ${rangeDays} days`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -167,7 +213,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
       </header>
 
       {/* ── Cost-estimate warning (R10) ────────────────────────────────────── */}
-      {view.costEstimatedWarning && (
+      {kpi.costEstimatedWarning && (
         <AlertTile
           severity="warning"
           title="Some lot costs are best-estimate"
@@ -175,13 +221,11 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
         />
       )}
 
-      {/* ── Empty-day notice ───────────────────────────────────────────────── */}
-      {/* All-zero figures usually mean no trading activity for the day — not a
-          broken dashboard. Spell that out so it isn't mistaken for a bug. */}
-      {view.revenueZar === 0 && view.cogsZar === 0 && view.expensesZar === 0 && (
+      {/* ── Empty-period notice ─────────────────────────────────────────────── */}
+      {kpi.revenueZar === 0 && kpi.cogsZar === 0 && kpi.expensesZar === 0 && (
         <AlertTile
           severity="info"
-          title={viewingToday ? "No activity recorded today yet" : "No activity recorded for this day"}
+          title={inspectDate ? "No activity recorded for this day" : `No activity recorded in the last ${rangeDays} days`}
           description="Figures populate as orders are placed (Revenue, COGS) and expenses are logged. Take an order on the POS or log an expense to see them update live."
         />
       )}
@@ -190,30 +234,31 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
       <TileGrid minTile={200}>
         <KpiTile
           label="Revenue"
-          valueZar={view.revenueZar}
-          trend={trendOf(view.revenueZar, prevDay?.revenueZar)}
-          sub={viewingToday ? "today" : undefined}
+          valueZar={kpi.revenueZar}
+          trend={kpiTrend.revenue}
+          sub={kpiSub ?? (viewingToday ? "today" : undefined)}
           hint="sales from paid orders"
         />
         <KpiTile
           label="COGS"
-          valueZar={view.cogsZar}
-          trend={{ ...trendOf(view.cogsZar, prevDay?.cogsZar), upIsGood: false }}
-          sub={view.revenueZar > 0 ? `${Math.round((view.cogsZar / view.revenueZar) * 100)}% of revenue` : undefined}
+          valueZar={kpi.cogsZar}
+          trend={{ ...kpiTrend.cogs, upIsGood: false }}
+          sub={kpi.revenueZar > 0 ? `${Math.round((kpi.cogsZar / kpi.revenueZar) * 100)}% of revenue` : undefined}
           hint="ingredient cost of items sold"
         />
         <KpiTile
           label="Expenses"
-          valueZar={view.expensesZar}
-          trend={{ ...trendOf(view.expensesZar, prevDay?.expensesZar), upIsGood: false }}
+          valueZar={kpi.expensesZar}
+          trend={{ ...kpiTrend.expenses, upIsGood: false }}
+          sub={kpiSub}
           hint="rent, utilities, wages…"
         />
         <KpiTile
           label="Net"
-          valueZar={view.netZar}
-          tone={view.netZar >= 0 ? "positive" : "negative"}
-          trend={trendOf(view.netZar, prevDay?.netZar)}
-          sub={view.profit ? "profit" : "loss"}
+          valueZar={kpi.netZar}
+          tone={kpi.netZar >= 0 ? "positive" : "negative"}
+          trend={kpiTrend.net}
+          sub={kpiSub ?? (kpi.profit ? "profit" : "loss")}
           hint="revenue − COGS − expenses"
         />
       </TileGrid>
@@ -301,18 +346,18 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
           className="rounded-[var(--radius-card)] border p-4"
           style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-elevated)" }}
         >
-          <h2 className="favo-label mb-3">Revenue allocation — {viewingToday ? "today" : view.date}</h2>
+          <h2 className="favo-label mb-3">Revenue allocation — {inspectDate ?? `last ${rangeDays}d`}</h2>
           <DonutChart
             data={allocation}
             size={150}
             formatValue={formatZar}
-            centerLabel={formatZar(view.revenueZar)}
+            centerLabel={formatZar(kpi.revenueZar)}
             centerSub="revenue"
-            ariaLabel={`Revenue allocation: COGS ${formatZar(view.cogsZar)}, expenses ${formatZar(view.expensesZar)}, net ${formatZar(view.netZar)}`}
+            ariaLabel={`Revenue allocation: COGS ${formatZar(kpi.cogsZar)}, expenses ${formatZar(kpi.expensesZar)}, net ${formatZar(kpi.netZar)}`}
           />
-          {view.netZar < 0 && (
+          {kpi.netZar < 0 && (
             <p className="favo-caption mt-2" style={{ color: "var(--color-crimson-carrot)", textTransform: "none", letterSpacing: 0 }}>
-              Operating at a loss of {formatZar(Math.abs(view.netZar))} — costs exceed revenue.
+              Operating at a loss of {formatZar(Math.abs(kpi.netZar))} — costs exceed revenue.
             </p>
           )}
         </section>
