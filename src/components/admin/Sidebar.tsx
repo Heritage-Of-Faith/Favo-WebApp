@@ -3,13 +3,15 @@
 // Docs: docs/DESIGN.md → Admin Rules.
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { LogOut } from "lucide-react";
 import type { StaffRole } from "@/lib/types";
 import { adminLayout } from "@/lib/admin-tokens";
 import { cn } from "@/lib/utils";
+import { signOut } from "@/server/actions/auth";
 
 export type Props = { role: StaffRole };
 
@@ -37,7 +39,15 @@ export default function Sidebar({ role }: Props) {
   // Below 1024px the sidebar is hidden behind a toggle. `open` controls that
   // mobile drawer; on desktop the sidebar is always visible (lg: classes).
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleSignOut = useCallback(async () => {
+    setSigningOut(true);
+    await signOut();
+    router.push("/admin/login");
+  }, [router]);
 
   const visibleItems = NAV_ITEMS.filter((item) => !item.hideFor?.includes(role));
 
@@ -104,8 +114,23 @@ export default function Sidebar({ role }: Props) {
           ))}
         </ul>
 
-        <div className="mt-auto px-3 pt-4 text-xs text-text-muted capitalize">
-          Signed in as {role}
+        <div className="mt-auto flex items-center justify-between px-3 pt-4">
+          <span className="text-xs text-text-muted capitalize">Signed in as {role}</span>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            aria-label="Sign out"
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text-muted transition-colors",
+              "hover:bg-[color:var(--color-surface)] hover:text-text-strong",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "disabled:opacity-40 disabled:cursor-not-allowed"
+            )}
+          >
+            <LogOut size={13} strokeWidth={2.25} />
+            {signingOut ? "Signing out…" : "Sign out"}
+          </button>
         </div>
       </nav>
     </>
