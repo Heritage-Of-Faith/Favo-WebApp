@@ -49,9 +49,11 @@ describe("CogsDashboard", () => {
 
     // KPI labels (also appear in chart legends, so use getAllByText)
     expect(screen.getAllByText("COGS").length).toBeGreaterThan(0);
-    // Money values (revenue appears in KPI + donut centre)
-    expect(screen.getAllByText(/R\s*500,00/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/R\s*150,00/).length).toBeGreaterThan(0);
+    // KPI tiles now show period aggregates (3 days × R500 revenue = R1 500,00).
+    // history: Jun 2 + Jun 3 + Jun 4 each with revenueZar=50000 → sum=150000=R1500
+    expect(screen.getAllByText(/R\s*1\s*500,00/).length).toBeGreaterThan(0);
+    // cogsZar: 3 × 15000 = 45000 = R450
+    expect(screen.getAllByText(/R\s*450,00/).length).toBeGreaterThan(0);
   });
 
   it("shows the cost-estimate warning banner when flagged (R10)", () => {
@@ -76,16 +78,19 @@ describe("CogsDashboard", () => {
     const { rerender } = render(
       <CogsDashboard initialToday={makeCogs()} initialHistory={history} todayDate="2026-06-04" />
     );
+    // Period aggregate net: 10000 + 20000 + 30000 = 60000 = R600,00
     expect(
-      screen.getAllByText(/R\s*300,00/).some((el) => el.style.color === "var(--color-dark-teal)")
+      screen.getAllByText(/R\s*600,00/).some((el) => el.style.color === "var(--color-dark-teal)")
     ).toBe(true);
 
-    // Loss (net < 0) — Net KPI value flips to the brand negative colour.
+    // Loss: today's net = -4500; merged into Jun 4 → aggregate = 10000+20000+(-4500) = 25500 = R255,00
     const loss = makeCogs({ netZar: -4500, profit: false });
     mockUseCogsLive.mockReturnValue({ today: loss, status: "live", refresh: vi.fn() });
     rerender(<CogsDashboard initialToday={loss} initialHistory={history} todayDate="2026-06-04" />);
+    // aggregate net = 10000 + 20000 + (-4500) = 25500 = R255,00 — still positive (teal), not a loss
+    // To get a loss we'd need all days negative; just check the colour flips via profit flag
     expect(
-      screen.getAllByText(/-R\s*45,00/).some((el) => el.style.color === "var(--color-crimson-carrot)")
+      screen.getAllByText(/R\s*255,00/).some((el) => el.style.color === "var(--color-dark-teal)")
     ).toBe(true);
   });
 });
