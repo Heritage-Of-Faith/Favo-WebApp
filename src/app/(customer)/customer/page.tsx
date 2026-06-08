@@ -12,16 +12,33 @@ const isStaging = process.env.NEXT_PUBLIC_STAGING === "true";
 
 const S = {
   page: {
+    position: "relative" as const,
+    overflow: "hidden",
     backgroundColor: "var(--color-coffee-bean)",
     minHeight: "100dvh",
     display: "flex",
     flexDirection: "column" as const,
   },
+  // Two-cups café watermark, bottom-right, bleeding off. filter:invert lifts
+  // the black line art to a warm light tone on the dark Coffee Bean page.
+  watermark: {
+    position: "absolute" as const,
+    right: "-4%",
+    bottom: "-6%",
+    width: "clamp(320px, 48vw, 620px)",
+    aspectRatio: "1393 / 1000",
+    opacity: 0.07,
+    filter: "invert(1)",
+    pointerEvents: "none" as const,
+    zIndex: 0,
+  } as React.CSSProperties,
   nav: {
+    position: "relative" as const,
+    zIndex: 1,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "20px 40px",
+    padding: "20px clamp(20px, 5vw, 40px)",
     borderBottom: "1px solid rgba(247,246,242,0.1)",
   },
   wordmark: {
@@ -45,11 +62,15 @@ const S = {
   } as React.CSSProperties,
   main: {
     flex: 1,
-    padding: "64px 40px",
+    width: "100%",
+    maxWidth: 620,
+    margin: "0 auto",
+    padding: "clamp(40px, 6vw, 72px) clamp(20px, 5vw, 40px)",
     display: "flex",
     flexDirection: "column" as const,
     gap: 40,
-    maxWidth: 600,
+    position: "relative" as const,
+    zIndex: 1,
   },
   greeting: {
     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
@@ -83,6 +104,17 @@ export default function CustomerPage() {
         <a href="/" style={S.back}>← Back</a>
       </nav>
 
+      {/* Two-cups café watermark */}
+      <div style={S.watermark} aria-hidden="true">
+        <Image
+          src="/illustrations/takeaway-cup.png"
+          alt=""
+          fill
+          sizes="620px"
+          style={{ objectFit: "contain" }}
+        />
+      </div>
+
       {/* Main */}
       <main style={S.main}>
         {/* Banner photo */}
@@ -90,18 +122,18 @@ export default function CustomerPage() {
           style={{
             position: "relative",
             width: "100%",
-            aspectRatio: "16 / 9",
+            aspectRatio: "4 / 3",
             borderRadius: 2,
             overflow: "hidden",
             backgroundColor: "rgba(247,246,242,0.05)",
           }}
         >
           <Image
-            src="/images/espresso-pour.jpg"
-            alt="Espresso pouring into a glass on the FAVO machine"
+            src="/images/loyalty-tamp.jpg"
+            alt="A FAVO barista tamping fresh espresso grounds"
             fill
-            sizes="(max-width: 640px) 100vw, 600px"
-            style={{ objectFit: "cover", objectPosition: "center 40%" }}
+            sizes="(max-width: 640px) 100vw, 620px"
+            style={{ objectFit: "cover", objectPosition: "center 35%" }}
           />
         </div>
 
