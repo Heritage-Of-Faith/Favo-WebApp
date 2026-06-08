@@ -12,7 +12,7 @@ import { Delete } from "lucide-react";
 import { loginWithPin } from "@/server/actions/auth";
 
 const MIN_PIN = 4;
-const MAX_PIN = 6;
+const MAX_PIN = 4;
 
 const PAD_KEYS = [
   "1", "2", "3",
