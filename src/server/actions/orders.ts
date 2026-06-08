@@ -170,13 +170,15 @@ export async function createOrder(
     }),
 
     // Yoco intent runs concurrently with the DB work.
+    // NEVER throw on Yoco failure: the order has already been committed in the
+    // parallel transaction, so throwing here would (a) show the barista a generic
+    // "Failed to place order" while (b) leaving a ghost order in the DB that never
+    // reaches the queue. Degrade gracefully — return null and let the POS fall back
+    // to "accept cash or card manually" (yocoClientSecret === "" path in POSWorkspace).
     createPaymentIntent({ amountZar: totalZar, metadata: { orderId } }).catch(
       (err: unknown) => {
-        if (process.env.NODE_ENV === "production") throw err;
-        // In dev, YOCO_SECRET_KEY is not set — warn with the actual error rather
-        // than a hardcoded message so real Yoco API errors are not misreported.
         const reason = !process.env.YOCO_SECRET_KEY ? "YOCO_SECRET_KEY not set" : String(err);
-        console.warn(`[createOrder] Yoco intent skipped (${reason})`);
+        console.error(`[createOrder] Yoco intent failed — falling back to manual payment (${reason})`);
         return null;
       }
     ),
