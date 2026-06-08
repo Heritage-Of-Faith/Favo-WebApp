@@ -107,10 +107,6 @@ export default function VisitSection() {
           >
             Get directions ↗
           </a>
-          <br />
-          <a href="/signup" style={S.cta}>
-            Join the loyalty programme →
-          </a>
         </div>
 
         {/* Right: hours */}
