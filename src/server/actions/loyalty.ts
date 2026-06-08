@@ -3,7 +3,7 @@
 // Loyalty server actions — G8 (redeemLoyalty), G9 (topUpWallet, purchasePack)
 // Docs: docs/API.md · BUSINESS_RULES.md L06, L16
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, customers, loyaltyTransactions } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -89,10 +89,10 @@ export async function redeemLoyalty(
       .set({ totalZar: 0 })
       .where(eq(orders.id, orderId));
 
-    // Deduct points
+    // Deduct points atomically — avoids stale-read race on concurrent redemptions.
     await tx
       .update(customers)
-      .set({ loyaltyPoints: customer.loyaltyPoints - MIN_REDEEM_POINTS })
+      .set({ loyaltyPoints: sql`${customers.loyaltyPoints} - ${MIN_REDEEM_POINTS}` })
       .where(eq(customers.id, customerId));
 
     // Append loyalty transaction
@@ -132,7 +132,7 @@ export async function topUpWallet(
 ): Promise<ActionResult<{ yocoClientSecret: string }>> {
   void customerId;
   void amountZar;
-  throw new Error("Not implemented — G9");
+  return { ok: false, code: "NOT_IMPLEMENTED", message: "Not implemented — G9" };
 }
 
 // ─── purchasePack ─────────────────────────────────────────────────────────────
@@ -146,5 +146,5 @@ export async function purchasePack(
   void customerId;
   void menuItemId;
   void qty;
-  throw new Error("Not implemented — G9");
+  return { ok: false, code: "NOT_IMPLEMENTED", message: "Not implemented — G9" };
 }
