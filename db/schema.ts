@@ -27,6 +27,7 @@ import {
   purchaseKind,
   expenseCategory,
   loyaltyKind,
+  chargeKind,
 } from "./enums";
 
 const TENANT = "hofmi";
@@ -59,6 +60,7 @@ export const customers = pgTable("customers", {
   passwordHash: text("password_hash"),
   pushSubscription: jsonb("push_subscription"),
   loyaltyPoints: integer("loyalty_points").default(0).notNull(),
+  walletZar: integer("wallet_zar").default(0).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -402,4 +404,32 @@ export const weeklyReports = pgTable("weekly_reports", {
   grossMarginZar: integer("gross_margin_zar").notNull(),
   netZar: integer("net_zar").notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── Pending charges (G9 — wallet top-ups + coffee packs via Yoco) ────────────
+
+export const pendingCharges = pgTable("pending_charges", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  yocoCheckoutId: text("yoco_checkout_id").notNull().unique(),
+  kind: chargeKind("kind").notNull(),
+  customerId: text("customer_id").notNull().references(() => customers.id),
+  amountZar: integer("amount_zar").notNull(),
+  status: paymentStatus("status").default("pending").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── Coffee packs (G9 — L16: barista-sold, 90-day expiry) ─────────────────────
+
+export const coffeePacks = pgTable("coffee_packs", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  customerId: text("customer_id").notNull().references(() => customers.id),
+  menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
+  qtyOriginal: integer("qty_original").notNull(),
+  qtyRemaining: integer("qty_remaining").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  pendingChargeId: text("pending_charge_id").notNull().references(() => pendingCharges.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

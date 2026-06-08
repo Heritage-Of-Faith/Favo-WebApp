@@ -5,10 +5,12 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { payments, orders } from "@db/schema";
+import { payments, orders, pendingCharges } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { verifyYocoSignature } from "@/server/yoco/signature";
 import { parseYocoEvent, decideWebhookOutcome } from "@/server/yoco/webhook";
+import { activatePendingCharge } from "@/server/actions/loyalty";
+import type { DB } from "@/lib/db";
 
 const SIGNATURE_HEADER = "webhook-signature";
 
@@ -37,12 +39,48 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unrecognised event" }, { status: 400 });
   }
 
-  // Idempotency: has this payment id already been recorded as processed?
-  const [existing] = await db
-    .select({ id: payments.id, status: payments.status })
-    .from(payments)
-    .where(eq(payments.yocoPaymentId, event.paymentId));
-  const alreadyProcessed = Boolean(existing && existing.status !== "pending");
+  // Check if this payment id belongs to an order payment or a pending charge.
+  const [[existingPayment], [pendingCharge]] = await Promise.all([
+    db
+      .select({ id: payments.id, status: payments.status })
+      .from(payments)
+      .where(eq(payments.yocoPaymentId, event.paymentId)),
+    db
+      .select({ id: pendingCharges.id, status: pendingCharges.status })
+      .from(pendingCharges)
+      .where(eq(pendingCharges.yocoCheckoutId, event.paymentId)),
+  ]);
+
+  // ── Wallet / pack charge path ─────────────────────────────────────────────
+  if (pendingCharge) {
+    const alreadyProcessed = pendingCharge.status !== "pending";
+    if (alreadyProcessed) {
+      return NextResponse.json({ ok: true, deduped: true });
+    }
+
+    if (event.type === "payment.succeeded") {
+      await db.transaction(async (tx) => {
+        await activatePendingCharge(pendingCharge.id, tx as unknown as DB);
+      });
+    } else if (event.type === "payment.failed") {
+      await db
+        .update(pendingCharges)
+        .set({ status: "failed" })
+        .where(eq(pendingCharges.id, pendingCharge.id));
+      await writeAudit({
+        entityKind: "payment",
+        entityId: event.paymentId,
+        action: "yoco_charge_failed",
+        actorRole: "system",
+        after: { chargeId: pendingCharge.id },
+      });
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── Order payment path (original G6 logic) ────────────────────────────────
+  const alreadyProcessed = Boolean(existingPayment && existingPayment.status !== "pending");
 
   const outcome = decideWebhookOutcome(event, alreadyProcessed);
   if (outcome.action === "noop") {

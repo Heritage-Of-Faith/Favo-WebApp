@@ -102,3 +102,8 @@ export const loyaltyKind = pgEnum("loyalty_kind", [
   "adjustment",
   "expiry",
 ]);
+
+export const chargeKind = pgEnum("charge_kind", [
+  "wallet_topup",
+  "coffee_pack",
+]);
