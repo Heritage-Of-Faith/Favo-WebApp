@@ -77,14 +77,17 @@ vi.mock("@db/index", () => ({
   },
 }));
 
+type ExecResult = Awaited<ReturnType<typeof import("@db/index").db.execute>>;
+const emptyResult = [] as unknown as ExecResult;
+
 describe("buildReportRows — date range enumeration", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns one row per calendar day (inclusive)", async () => {
     const { db } = await import("@db/index");
     vi.mocked(db.execute)
-      .mockResolvedValueOnce([]) // revenue
-      .mockResolvedValueOnce([]); // cogs
+      .mockResolvedValueOnce(emptyResult) // revenue
+      .mockResolvedValueOnce(emptyResult); // cogs
 
     const { buildReportRows } = await import("@/server/reports/export-csv");
     const rows = await buildReportRows("2026-06-01", "2026-06-03");
@@ -96,8 +99,8 @@ describe("buildReportRows — date range enumeration", () => {
   it("single-day range returns one row", async () => {
     const { db } = await import("@db/index");
     vi.mocked(db.execute)
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce(emptyResult)
+      .mockResolvedValueOnce(emptyResult);
 
     const { buildReportRows } = await import("@/server/reports/export-csv");
     const rows = await buildReportRows("2026-06-08", "2026-06-08");
@@ -108,8 +111,8 @@ describe("buildReportRows — date range enumeration", () => {
   it("merges revenue and COGS by date correctly", async () => {
     const { db } = await import("@db/index");
     vi.mocked(db.execute)
-      .mockResolvedValueOnce([{ sast_date: "2026-06-08", revenue: "80000" }])
-      .mockResolvedValueOnce([{ sast_date: "2026-06-08", cogs: "24000" }]);
+      .mockResolvedValueOnce([{ sast_date: "2026-06-08", revenue: "80000" }] as unknown as ExecResult)
+      .mockResolvedValueOnce([{ sast_date: "2026-06-08", cogs: "24000" }] as unknown as ExecResult);
 
     const { buildReportRows } = await import("@/server/reports/export-csv");
     const rows = await buildReportRows("2026-06-08", "2026-06-08");
@@ -122,8 +125,8 @@ describe("buildReportRows — date range enumeration", () => {
   it("days without transactions show zero revenue and COGS", async () => {
     const { db } = await import("@db/index");
     vi.mocked(db.execute)
-      .mockResolvedValueOnce([]) // no revenue
-      .mockResolvedValueOnce([]); // no cogs
+      .mockResolvedValueOnce(emptyResult) // no revenue
+      .mockResolvedValueOnce(emptyResult); // no cogs
 
     const { buildReportRows } = await import("@/server/reports/export-csv");
     const rows = await buildReportRows("2026-06-08", "2026-06-08");
