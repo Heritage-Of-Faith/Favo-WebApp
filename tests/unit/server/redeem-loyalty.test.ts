@@ -119,7 +119,7 @@ describe("redeemLoyalty — order state guards", () => {
 
   it("returns NOT_FOUND for missing order", async () => {
     const { db } = await import("@db/index");
-    setupSelectSequence(db as { select: ReturnType<typeof vi.fn> }, [[]]);
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [[]]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
     const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
     expect(res.ok).toBe(false);
@@ -128,7 +128,7 @@ describe("redeemLoyalty — order state guards", () => {
 
   it("rejects order not in 'ordered' state", async () => {
     const { db } = await import("@db/index");
-    setupSelectSequence(db as { select: ReturnType<typeof vi.fn> }, [
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder({ state: "in_progress" })],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
@@ -139,7 +139,7 @@ describe("redeemLoyalty — order state guards", () => {
 
   it("rejects customer mismatch", async () => {
     const { db } = await import("@db/index");
-    setupSelectSequence(db as { select: ReturnType<typeof vi.fn> }, [
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder({ customerId: "cust_other" })],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
@@ -150,7 +150,7 @@ describe("redeemLoyalty — order state guards", () => {
 
   it("rejects combining with a staff discount", async () => {
     const { db } = await import("@db/index");
-    setupSelectSequence(db as { select: ReturnType<typeof vi.fn> }, [
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder({ isStaffDiscount: true })],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
@@ -165,7 +165,7 @@ describe("redeemLoyalty — loyalty point guards", () => {
 
   it("returns NOT_FOUND for missing customer", async () => {
     const { db } = await import("@db/index");
-    setupSelectSequence(db as { select: ReturnType<typeof vi.fn> }, [
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder()],  // order found
       [],             // customer not found
     ]);
@@ -177,7 +177,7 @@ describe("redeemLoyalty — loyalty point guards", () => {
 
   it("rejects customer with insufficient points (99 pts)", async () => {
     const { db } = await import("@db/index");
-    setupSelectSequence(db as { select: ReturnType<typeof vi.fn> }, [
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder()],
       [mockCustomer(99)],
     ]);
@@ -198,7 +198,7 @@ describe("redeemLoyalty — happy path", () => {
 
   it("returns ok and runs the transaction", async () => {
     const { db } = await import("@db/index");
-    setupSelectSequence(db as { select: ReturnType<typeof vi.fn> }, [
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder()],
       [mockCustomer(150)],
     ]);
@@ -210,7 +210,7 @@ describe("redeemLoyalty — happy path", () => {
 
   it("writes audit on successful redemption", async () => {
     const { db } = await import("@db/index");
-    setupSelectSequence(db as { select: ReturnType<typeof vi.fn> }, [
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder()],
       [mockCustomer(100)],
     ]);
