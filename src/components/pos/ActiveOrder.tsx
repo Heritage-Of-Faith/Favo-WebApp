@@ -112,7 +112,7 @@ export default function ActiveOrder({ order }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <p className="favo-label text-cool-steel">Order</p>
-          <h1 className="favo-h3 text-porcelain">
+          <h1 className="favo-h3 text-coffee-bean">
             #{currentOrder.id.slice(-6).toUpperCase()}
           </h1>
         </div>
@@ -121,11 +121,11 @@ export default function ActiveOrder({ order }: Props) {
 
       {currentOrder.customerName && (
         <p className="favo-small text-cool-steel">
-          Customer: <span className="text-porcelain">{currentOrder.customerName}</span>
+          Customer: <span className="text-coffee-bean">{currentOrder.customerName}</span>
         </p>
       )}
       <p className="favo-small text-cool-steel">
-        Placed: <span className="text-porcelain">{formatDate(new Date(currentOrder.placedAt))}</span>
+        Placed: <span className="text-coffee-bean">{formatDate(new Date(currentOrder.placedAt))}</span>
       </p>
 
       {/* ── Order items ────────────────────────────────────────────────────── */}
@@ -134,7 +134,7 @@ export default function ActiveOrder({ order }: Props) {
           {currentOrder.items.map((item) => (
             <li key={item.id} className="flex justify-between px-[var(--spacing-m)] py-[var(--spacing-s)]">
               <div>
-                <p className="favo-subhead text-porcelain leading-snug">
+                <p className="favo-subhead text-coffee-bean leading-snug">
                   {item.quantity > 1 && (
                     <span className="text-crimson-carrot mr-[var(--spacing-xs)]">{item.quantity}×</span>
                   )}
@@ -146,7 +146,7 @@ export default function ActiveOrder({ order }: Props) {
                   </p>
                 )}
               </div>
-              <span className="favo-small text-porcelain shrink-0 ml-[var(--spacing-m)]">
+              <span className="favo-small text-coffee-bean shrink-0 ml-[var(--spacing-m)]">
                 {formatZar(
                   (item.unitPriceZar +
                     item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) *
@@ -159,7 +159,7 @@ export default function ActiveOrder({ order }: Props) {
         {/* Total */}
         <div className="flex justify-between px-[var(--spacing-m)] py-[var(--spacing-s)] border-t border-cool-steel/20">
           <span className="favo-label text-cool-steel">Total</span>
-          <span className={["favo-subhead", currentOrder.isStaffDiscount ? "text-[var(--color-success)] line-through" : "text-porcelain"].join(" ")}>
+          <span className={["favo-subhead", currentOrder.isStaffDiscount ? "text-[var(--color-success)] line-through" : "text-coffee-bean"].join(" ")}>
             {currentOrder.isStaffDiscount ? "FREE (staff)" : formatZar(currentOrder.totalZar)}
           </span>
         </div>
@@ -180,7 +180,7 @@ export default function ActiveOrder({ order }: Props) {
             <button
               type="button"
               onClick={() => setShowDiscount(true)}
-              className="flex items-center gap-[var(--spacing-s)] text-cool-steel hover:text-porcelain min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+              className="flex items-center gap-[var(--spacing-s)] text-cool-steel hover:text-coffee-bean min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
             >
               <Tag size={14} strokeWidth={2.25} />
               <span className="favo-small">Apply staff discount</span>
@@ -196,7 +196,7 @@ export default function ActiveOrder({ order }: Props) {
                 value={discountStaffId}
                 onChange={(e) => setDiscountStaffId(e.target.value)}
                 placeholder="e.g. staff_barista_sam"
-                className="rounded-[var(--radius-btn)] border border-cool-steel/30 bg-porcelain/10 px-[var(--spacing-m)] py-[var(--spacing-s)] text-porcelain placeholder:text-cool-steel favo-small min-h-[44px] focus:border-crimson-carrot focus:outline-none"
+                className="rounded-[var(--radius-btn)] border border-cool-steel/30 bg-porcelain/10 px-[var(--spacing-m)] py-[var(--spacing-s)] text-coffee-bean placeholder:text-cool-steel favo-small min-h-[44px] focus:border-crimson-carrot focus:outline-none"
               />
               {discountMsg && (
                 <p className={["favo-small", discountMsg.startsWith("✓") ? "text-[var(--color-success)]" : "text-[var(--color-error)]"].join(" ")} role="status">
@@ -233,7 +233,7 @@ export default function ActiveOrder({ order }: Props) {
             Yes, cancel
           </button>
           <button type="button" onClick={() => setCancelConfirm(false)}
-            className="favo-small text-cool-steel hover:text-porcelain min-h-[44px] px-[var(--spacing-m)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
+            className="favo-small text-cool-steel hover:text-coffee-bean min-h-[44px] px-[var(--spacing-m)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
             Keep
           </button>
         </div>
@@ -279,7 +279,7 @@ export default function ActiveOrder({ order }: Props) {
       {isDone && (
         <div className="flex flex-col items-center gap-[var(--spacing-m)] py-[var(--spacing-m)]" role="status">
           <CheckCircle size={40} strokeWidth={2} className="text-[var(--color-success)]" />
-          <p className="favo-subhead text-porcelain">
+          <p className="favo-subhead text-coffee-bean">
             {currentOrder.state === "collected" ? "Order collected ✓" : "Order cancelled"}
           </p>
         </div>
