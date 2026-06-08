@@ -37,13 +37,18 @@ export default function MonthlyReportsManager({
 
   async function generate() {
     setGenerating(true);
-    const res = await generateMonthlyPnL(`${month}-01`);
-    setGenerating(false);
-    if (res.ok) {
-      toast.success("Draft report generated.");
-      void refresh();
-    } else {
-      toast.error(res.message);
+    try {
+      const res = await generateMonthlyPnL(`${month}-01`);
+      if (res.ok) {
+        toast.success("Draft report generated.");
+        void refresh();
+      } else {
+        toast.error(res.message);
+      }
+    } catch {
+      toast.error("Failed to generate report. Please try again.");
+    } finally {
+      setGenerating(false);
     }
   }
 
