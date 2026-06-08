@@ -52,8 +52,9 @@ export default function NumbersStrip() {
             className={i > 0 ? "landing-numbers-cell-border" : ""}
             style={{
               borderLeft: i > 0 ? "1px solid var(--color-porcelain-soft)" : "none",
-              paddingLeft: i > 0 ? 28 : 0,
+              paddingLeft: 20,
               paddingRight: 20,
+              textAlign: "center",
             }}
           >
             <p style={S.number}>{f.number}</p>
