@@ -59,11 +59,17 @@ const UNIT_DRINKS: Drink[] = [
 // Trade units per day, indexed by k (k=0 = today, k=6 = six days ago).
 const UNITS_PER_DAY = [2, 1, 2, 3, 2, 3, 2]; // 15 units → 90 orders total
 
+// One expense on every day of the window (including today, dayK=0) so the
+// dashboard's "today" Expenses tile is never zero. New ids insert cleanly
+// alongside any previously-seeded rows (onConflictDoNothing).
 const EXPENSES: { id: string; category: "rent" | "utilities" | "staff" | "maintenance" | "marketing" | "other"; amountZar: number; dayK: number }[] = [
-  { id: "demo_exp_utilities",   category: "utilities",   amountZar: 48000, dayK: 5 }, // R480
-  { id: "demo_exp_maintenance", category: "maintenance", amountZar: 65000, dayK: 4 }, // R650
-  { id: "demo_exp_marketing",   category: "marketing",   amountZar: 35000, dayK: 2 }, // R350
-  { id: "demo_exp_supplies",    category: "other",       amountZar: 22000, dayK: 1 }, // R220
+  { id: "demo_exp_today_supplies", category: "other",       amountZar: 28000, dayK: 0 }, // R280 (today)
+  { id: "demo_exp_supplies",       category: "other",       amountZar: 22000, dayK: 1 }, // R220
+  { id: "demo_exp_marketing",      category: "marketing",   amountZar: 35000, dayK: 2 }, // R350
+  { id: "demo_exp_d3_utilities",   category: "utilities",   amountZar: 45000, dayK: 3 }, // R450
+  { id: "demo_exp_maintenance",    category: "maintenance", amountZar: 65000, dayK: 4 }, // R650
+  { id: "demo_exp_utilities",      category: "utilities",   amountZar: 48000, dayK: 5 }, // R480
+  { id: "demo_exp_d6_marketing",   category: "marketing",   amountZar: 30000, dayK: 6 }, // R300
 ];
 
 /** SAST (UTC+2) calendar date components for `daysAgo` days before today. */
