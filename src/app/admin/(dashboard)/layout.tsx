@@ -33,7 +33,7 @@ export default async function AdminDashboardLayout({
   return (
     <div data-admin-portal className="flex min-h-screen bg-surface text-text-strong">
       <Sidebar role={session.role} />
-      <main className="flex-1 overflow-y-auto p-6 pt-14 lg:pt-6">
+      <main className="flex-1 min-h-0 overflow-y-auto p-6 pt-14 lg:pt-6">
         {/* L10: emergency purchases awaiting approval surface on every admin page. */}
         <PendingApprovalsBanner canApprove={canApprove} />
         {children}
