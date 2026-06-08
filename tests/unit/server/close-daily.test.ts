@@ -88,7 +88,7 @@ describe("closeDaily — reconciliation", () => {
         where: vi.fn().mockResolvedValue([{ total: 100000 }]),
       }),
     } as unknown as ReturnType<typeof db.select>);
-    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "100000" }] as unknown as ReturnType<typeof db.execute>);
+    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "100000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
 
     const { closeDaily } = await import("@/server/crons/close-daily");
     const result = await closeDaily(new Date("2026-06-08T10:00:00Z"));
@@ -105,7 +105,7 @@ describe("closeDaily — reconciliation", () => {
       }),
     } as unknown as ReturnType<typeof db.select>);
     // Payments only 80% of revenue → 20% variance
-    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "80000" }] as unknown as ReturnType<typeof db.execute>);
+    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "80000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
 
     const { closeDaily } = await import("@/server/crons/close-daily");
     const result = await closeDaily(new Date("2026-06-08T10:00:00Z"));
@@ -122,7 +122,7 @@ describe("closeDaily — reconciliation", () => {
         where: vi.fn().mockResolvedValue([{ total: 50000 }]),
       }),
     } as unknown as ReturnType<typeof db.select>);
-    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "50000" }] as unknown as ReturnType<typeof db.execute>);
+    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "50000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
 
     const { closeDaily } = await import("@/server/crons/close-daily");
     await closeDaily(new Date("2026-06-08T10:00:00Z"));
@@ -138,7 +138,7 @@ describe("closeDaily — reconciliation", () => {
         where: vi.fn().mockResolvedValue([{ total: 100000 }]),
       }),
     } as unknown as ReturnType<typeof db.select>);
-    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "93000" }] as unknown as ReturnType<typeof db.execute>);
+    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "93000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
 
     const { closeDaily } = await import("@/server/crons/close-daily");
     const result = await closeDaily(new Date("2026-06-08T10:00:00Z"));
@@ -154,7 +154,7 @@ describe("closeDaily — reconciliation", () => {
         where: vi.fn().mockResolvedValue([{ total: 0 }]),
       }),
     } as unknown as ReturnType<typeof db.select>);
-    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "0" }] as unknown as ReturnType<typeof db.execute>);
+    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "0" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
 
     const { closeDaily } = await import("@/server/crons/close-daily");
     await closeDaily(new Date("2026-06-08T10:00:00Z"));
