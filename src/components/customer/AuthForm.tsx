@@ -30,7 +30,7 @@ const COPY: Record<Mode, {
     cta: "Sign in",
     submitting: "Signing in…",
     altText: "New to FAVO?",
-    altHref: "/signup",
+    altHref: "/signup" as Route,
     altLabel: "Create an account",
   },
   signup: {
@@ -39,7 +39,7 @@ const COPY: Record<Mode, {
     cta: "Create account",
     submitting: "Creating account…",
     altText: "Already have an account?",
-    altHref: "/login",
+    altHref: "/login" as Route,
     altLabel: "Sign in",
   },
 };
