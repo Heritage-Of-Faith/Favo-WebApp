@@ -408,8 +408,8 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                           onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); } }}
                           className="relative flex flex-col items-start rounded-[2px] p-2 min-h-[52px] text-left transition-all active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot disabled:cursor-not-allowed"
                           style={{ background: "rgba(245,86,12,0.1)", border: "1px solid rgba(245,86,12,0.25)", opacity: oos ? 0.4 : 1 }}>
-                          <span className="text-porcelain font-semibold leading-tight" style={{ fontSize: 12 }}>{item.name}</span>
-                          <span className="text-cool-steel mt-auto" style={{ fontSize: 11 }}>{formatZar(item.currentPriceZar)}</span>
+                          <span className="text-coffee-bean font-semibold leading-tight" style={{ fontSize: 12 }}>{item.name}</span>
+                          <span className="text-coffee-bean/70 mt-auto" style={{ fontSize: 11 }}>{formatZar(item.currentPriceZar)}</span>
                           {stock !== "ok" && (
                             <span className="absolute top-1 right-1"><StockBadge state={stock} /></span>
                           )}
@@ -437,8 +437,8 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                           disabled={oos}
                           onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); } }}
                           className="relative flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-porcelain/5">
-                          <span className="favo-small text-porcelain font-semibold leading-tight">{item.name}</span>
-                          <span className="favo-caption text-cool-steel mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
+                          <span className="favo-small text-coffee-bean font-semibold leading-tight">{item.name}</span>
+                          <span className="favo-caption text-coffee-bean/70 mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
                           {stock !== "ok" && (
                             <span className="absolute top-1.5 right-1.5"><StockBadge state={stock} /></span>
                           )}

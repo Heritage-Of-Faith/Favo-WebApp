@@ -52,7 +52,7 @@ export default function ActiveBeanCard({ refreshKey = 0 }: Props) {
     >
       <Coffee size={16} strokeWidth={2.25} className="text-cool-steel shrink-0" />
       <div className="min-w-0">
-        <p className="text-porcelain font-semibold leading-tight truncate" style={{ fontSize: 12 }}>
+        <p className="text-coffee-bean font-semibold leading-tight truncate" style={{ fontSize: 12 }}>
           {origin}
         </p>
         <p className="text-cool-steel leading-tight truncate" style={{ fontSize: 10 }}>

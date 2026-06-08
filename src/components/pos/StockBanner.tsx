@@ -30,7 +30,7 @@ export default function StockBanner({ outOfStockItems }: Props) {
       className="flex items-center gap-2 border-b border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-4 py-2"
     >
       <AlertCircle size={14} strokeWidth={2} className="text-[var(--color-error)] shrink-0" />
-      <span className="favo-small text-porcelain flex-1">
+      <span className="favo-small text-coffee-bean flex-1">
         Out of stock: <strong>{outOfStockItems.join(", ")}</strong>
       </span>
       <button
