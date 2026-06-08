@@ -122,7 +122,7 @@ export default function CustomerPage() {
           style={{
             position: "relative",
             width: "100%",
-            aspectRatio: "4 / 3",
+            aspectRatio: "4 / 5",
             borderRadius: 2,
             overflow: "hidden",
             backgroundColor: "rgba(247,246,242,0.05)",
@@ -133,7 +133,7 @@ export default function CustomerPage() {
             alt="A FAVO barista tamping fresh espresso grounds"
             fill
             sizes="(max-width: 640px) 100vw, 620px"
-            style={{ objectFit: "cover", objectPosition: "center 35%" }}
+            style={{ objectFit: "cover", objectPosition: "center 30%" }}
           />
         </div>
 
