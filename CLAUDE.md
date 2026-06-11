@@ -63,8 +63,9 @@ All Server Actions return `{ ok: true, data } | { ok: false, code, message }` �
 | `FAVO_PRD_v3.md` | Anything ambiguous — PRD is the source of truth |
 
 ## How to start a task
+0. **Read `TASK_PROTOCOL.md`** — mandatory before executing any Jira task (gate checklist, status flow, handover comments, Definition of Done).
 1. **Read `PLANNING.md`** — find the task card (Task ID, owner, branch, files, acceptance).
 2. **Read the specialist files** listed in that card (typically 2–3).
-3. **Branch off latest `main`** using `feat/<initial>-<task-id>-<kebab-name>`.
+3. **Branch off latest `main`** using `feat/<initial>-<jira-key>-<task-id>-<kebab-name>` (see `TASK_PROTOCOL.md` §1).
 4. **Confirm the DB tables and Server Actions** in scope per the task card.
 5. **Build to the acceptance criteria.** Write tests. CI green. PR with WI key.
