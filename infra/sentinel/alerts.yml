@@ -1,0 +1,265 @@
+# Sentinel alert rules — AT-84 (G26)
+# Format: Grafana Unified Alerting provisioning YAML (Grafana 9+).
+# Import via: Grafana → Alerting → Alert rules → Import
+# Or place in Grafana provisioning directory: /etc/grafana/provisioning/alerting/
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: discord-favo-ops
+    receivers:
+      - uid: discord-favo-ops
+        type: discord
+        settings:
+          # DISCORD_WEBHOOK_URL is set via Grafana env / Infisical
+          url: "${DISCORD_WEBHOOK_URL}"
+          message: |
+            **[FAVO Alert]** {{ template "default.message" . }}
+          avatar_url: "https://favo.hofmi.org/icon.png"
+
+  - orgId: 1
+    name: oncall-pager
+    receivers:
+      - uid: oncall-pager
+        type: discord
+        settings:
+          url: "${DISCORD_ONCALL_WEBHOOK_URL}"
+          message: |
+            🚨 **P0 ALERT — ACTION REQUIRED**
+            **{{ .GroupLabels.alertname }}**
+            {{ template "default.message" . }}
+
+policies:
+  - orgId: 1
+    receiver: discord-favo-ops
+    group_by: ["alertname"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      - receiver: oncall-pager
+        matchers:
+          - severity = critical
+
+groups:
+  - orgId: 1
+    name: FAVO Alerts
+    folder: FAVO
+    interval: 1m
+    rules:
+
+      # ── Alert 1: Push latency p95 > 10 s (P1) ──────────────────────────────
+      # Push delivery latency p95 > 10 seconds over a 5-minute window.
+      # This violates the PRD promise that orders are pushed to the customer
+      # device within 10 seconds of barista pressing Done.
+      - uid: favo-push-latency-p95
+        title: "Push latency p95 > 10 s"
+        orgId: 1
+        condition: C
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "${DS_POSTGRES}"
+            model:
+              rawSql: |
+                SELECT PERCENTILE_CONT(0.95) WITHIN GROUP (
+                  ORDER BY EXTRACT(EPOCH FROM (push.at - ready.at))
+                ) AS value
+                FROM audit_log ready
+                JOIN audit_log push
+                  ON ready.entity_id = push.entity_id
+                  AND ready.entity_kind = 'orders'
+                  AND push.entity_kind = 'orders'
+                WHERE ready.action = 'order.transition'
+                  AND ready.after->>'toState' = 'ready'
+                  AND push.action = 'push.sent'
+                  AND ready.at >= NOW() - INTERVAL '5 minutes'
+              format: time_series
+          - refId: C
+            queryType: ""
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator: { params: [10], type: gt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+              type: classic_conditions
+        for: 5m
+        noDataState: OK
+        execErrState: Alerting
+        annotations:
+          summary: "Push latency p95 is {{ $values.A.Value | printf \"%.1f\" }}s (threshold: 10s)"
+          description: "FAVO push notifications are slow. Check VAPID credentials, Loki for push.sent errors, and the push notification service."
+          dashboard_uid: favo-ops-v1
+          panel_id: "4"
+          runbook_url: "https://favo.hofmi.org/admin/runbook/push-latency"
+        labels:
+          severity: critical
+          team: favo
+
+      # ── Alert 2: Deferred payment count > 0 (P2) ───────────────────────────
+      # Any payment in status=deferred means a barista took an order offline
+      # and the Yoco deferred retry cron hasn't resolved it yet.
+      # > 0 triggers a Discord ping so the manager can check.
+      - uid: favo-deferred-payments
+        title: "Deferred payments pending"
+        orgId: 1
+        condition: C
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange: { from: 60, to: 0 }
+            datasourceUid: "${DS_POSTGRES}"
+            model:
+              rawSql: "SELECT COUNT(*) AS value FROM payments WHERE status = 'deferred'"
+              format: time_series
+          - refId: C
+            queryType: ""
+            relativeTimeRange: { from: 60, to: 0 }
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator: { params: [0], type: gt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+              type: classic_conditions
+        for: 2m
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: "{{ $values.A.Value | printf \"%.0f\" }} deferred payment(s) pending"
+          description: "The Yoco deferred payment retry cron should resolve these within 5 minutes. If count stays high, check the cron endpoint and YOCO_SECRET_KEY."
+          dashboard_uid: favo-ops-v1
+          panel_id: "5"
+        labels:
+          severity: warning
+          team: favo
+
+      # ── Alert 3: Audit coverage gap > 0 (P0) ───────────────────────────────
+      # Any order created without a corresponding audit_log row is a P0 business
+      # rule violation (L08 + L12). This must never happen in production.
+      # If it fires, stop all new orders and investigate immediately.
+      - uid: favo-audit-coverage-gap
+        title: "Audit coverage gap (P0)"
+        orgId: 1
+        condition: C
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: "${DS_POSTGRES}"
+            model:
+              rawSql: |
+                SELECT COUNT(*) AS value
+                FROM orders o
+                WHERE o.created_at > NOW() - INTERVAL '30 minutes'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM audit_log a
+                    WHERE a.entity_kind = 'orders'
+                      AND a.entity_id = o.id
+                  )
+              format: time_series
+          - refId: C
+            queryType: ""
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator: { params: [0], type: gt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+              type: classic_conditions
+        for: 1m
+        noDataState: OK
+        execErrState: Alerting
+        annotations:
+          summary: "AUDIT GAP: {{ $values.A.Value | printf \"%.0f\" }} order(s) have no audit row"
+          description: "P0: This is a business rule violation. Every order must have an audit_log row. Halt new orders. Check writeAudit() call-sites and the database trigger. Escalate immediately."
+          dashboard_uid: favo-cogs-v1
+        labels:
+          severity: critical
+          team: favo
+          priority: P0
+
+      # ── Alert 4: Yoco webhook 4xx rate > 5% over 5 min (P2) ───────────────
+      # A sustained high 4xx rate on the webhook endpoint indicates HMAC
+      # signature failures — possible key mismatch or replay attack.
+      - uid: favo-yoco-webhook-4xx
+        title: "Yoco webhook 4xx rate > 5%"
+        orgId: 1
+        condition: C
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "${DS_LOKI}"
+            model:
+              expr: |
+                sum(rate({service="favo-webapp"} |= "/api/payments/yoco/webhook" |= "4" [5m]))
+                /
+                sum(rate({service="favo-webapp"} |= "/api/payments/yoco/webhook" [5m]))
+                * 100
+          - refId: C
+            queryType: ""
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator: { params: [5], type: gt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+              type: classic_conditions
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: "Yoco webhook 4xx rate is {{ $values.A.Value | printf \"%.1f\" }}% (threshold: 5%)"
+          description: "High 4xx rate on webhook endpoint. Possible causes: HMAC key mismatch (YOCO_WEBHOOK_SECRET wrong), replay attack, or Yoco sending malformed events. Check YOCO_WEBHOOK_SECRET and Loki logs."
+        labels:
+          severity: warning
+          team: favo
+
+      # ── Alert 5: PostgreSQL replication lag > 60 s (P1) ───────────────────
+      # Supabase provides a read replica; if replication lag exceeds 60s,
+      # read-heavy dashboard queries may return stale data.
+      # Prolonged lag (>5 min) indicates a replication issue requiring Supabase support.
+      - uid: favo-pg-replication-lag
+        title: "PostgreSQL replication lag > 60 s"
+        orgId: 1
+        condition: C
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange: { from: 120, to: 0 }
+            datasourceUid: "${DS_POSTGRES}"
+            model:
+              rawSql: |
+                SELECT EXTRACT(EPOCH FROM (NOW() - pg_last_xact_replay_timestamp())) AS value
+              format: time_series
+          - refId: C
+            queryType: ""
+            relativeTimeRange: { from: 120, to: 0 }
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator: { params: [60], type: gt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+              type: classic_conditions
+        for: 2m
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: "PG replication lag is {{ $values.A.Value | printf \"%.0f\" }}s (threshold: 60s)"
+          description: "PostgreSQL replication lag is elevated. Dashboard reads from the replica may be stale. If lag exceeds 5 minutes, contact Supabase support."
+        labels:
+          severity: warning
+          team: favo

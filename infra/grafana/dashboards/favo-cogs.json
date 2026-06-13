@@ -1,0 +1,163 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_POSTGRES",
+      "label": "FAVO Postgres",
+      "description": "Supabase / self-hosted PG connection",
+      "type": "datasource",
+      "pluginId": "postgres",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "table", "name": "Table", "version": "" }
+  ],
+  "annotations": { "list": [] },
+  "description": "Live COGS dashboard — mirrors the admin app for ops-team visibility outside the app",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Admin app COGS", "url": "https://favo.hofmi.org/admin/cogs", "type": "link" }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Today Revenue (ZAR)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyZAR",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1000 },
+              { "color": "green", "value": 5000 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(SUM(revenue_zar), 0)::float / 100 AS value FROM v_daily_revenue WHERE sast_date = CURRENT_DATE AT TIME ZONE 'Africa/Johannesburg'",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Today COGS (ZAR)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "currencyZAR", "decimals": 2 } },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(SUM(cogs_zar), 0)::float / 100 AS value FROM v_daily_cogs WHERE sast_date = CURRENT_DATE AT TIME ZONE 'Africa/Johannesburg'",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Today Gross Margin %",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 40 },
+              { "color": "green", "value": 55 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT CASE WHEN SUM(revenue_zar) > 0 THEN (1.0 - SUM(cogs_zar)::float / SUM(revenue_zar)) * 100 ELSE 0 END AS value FROM v_daily_revenue r JOIN v_daily_cogs c USING (sast_date) WHERE r.sast_date = CURRENT_DATE AT TIME ZONE 'Africa/Johannesburg'",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Today Net (Revenue − COGS − Expenses)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "currencyZAR", "decimals": 2 } },
+      "targets": [
+        {
+          "rawSql": "SELECT (COALESCE(r.revenue_zar,0) - COALESCE(c.cogs_zar,0) - COALESCE(e.expenses_zar,0))::float / 100 AS value FROM (SELECT COALESCE(SUM(revenue_zar),0) AS revenue_zar FROM v_daily_revenue WHERE sast_date = CURRENT_DATE AT TIME ZONE 'Africa/Johannesburg') r, (SELECT COALESCE(SUM(cogs_zar),0) AS cogs_zar FROM v_daily_cogs WHERE sast_date = CURRENT_DATE AT TIME ZONE 'Africa/Johannesburg') c, (SELECT COALESCE(SUM(amount_zar),0) AS expenses_zar FROM expenses WHERE DATE(at AT TIME ZONE 'Africa/Johannesburg') = CURRENT_DATE AT TIME ZONE 'Africa/Johannesburg') e",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Revenue, COGS & Expenses — last 30 days",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyZAR", "decimals": 2 },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "COGS" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Expenses" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT sast_date AS time, revenue_zar::float/100 AS \"Revenue\", cogs_zar::float/100 AS \"COGS\" FROM v_daily_revenue r JOIN v_daily_cogs c USING (sast_date) WHERE sast_date >= CURRENT_DATE - 30 ORDER BY sast_date",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Monthly P&L summary",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "sortBy": [{ "displayName": "Month", "desc": true }] },
+      "targets": [
+        {
+          "rawSql": "SELECT month, revenue_zar::float/100 AS \"Revenue (ZAR)\", cogs_zar::float/100 AS \"COGS (ZAR)\", expenses_zar::float/100 AS \"Expenses (ZAR)\", gross_margin_zar::float/100 AS \"Gross Margin (ZAR)\", net_zar::float/100 AS \"Net (ZAR)\", status FROM monthly_reports ORDER BY month DESC LIMIT 13",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["favo", "cogs", "finance"],
+  "time": { "from": "now-30d", "to": "now" },
+  "timepicker": {},
+  "title": "FAVO — COGS & P&L",
+  "uid": "favo-cogs-v1",
+  "version": 1
+}
