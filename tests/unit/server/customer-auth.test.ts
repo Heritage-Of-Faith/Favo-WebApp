@@ -173,7 +173,7 @@ describe("loginCustomer — INVALID_CREDENTIALS", () => {
       }),
     } as never);
     const bcrypt = await import("bcryptjs");
-    vi.mocked(bcrypt.default.compare).mockResolvedValueOnce(false);
+    vi.mocked(bcrypt.default.compare).mockResolvedValueOnce(false as never);
     const { loginCustomer } = await import("@/server/actions/customer-auth");
     const result = await loginCustomer({ email: "louis@favo.co.za", password: "wrongpassword" });
     expect(result.ok).toBe(false);

@@ -64,7 +64,7 @@ const validItem = {
   inventoryItemId: "inv_beans",
   quantity: 1000,
   totalZar: 15000,
-  unitCostZar: 15,
+  unitCostZar: "15",
 };
 
 // ─── recordPurchase — validation ──────────────────────────────────────────────
@@ -74,7 +74,7 @@ describe("recordPurchase — validation", () => {
 
   it("rejects empty items array", async () => {
     const { recordPurchase } = await import("@/server/actions/purchases");
-    const result = await recordPurchase({ sourceName: "Supplier", kind: "standard", items: [] });
+    const result = await recordPurchase({ sourceName: "Supplier", kind: "planned", items: [] });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
   });
@@ -83,7 +83,7 @@ describe("recordPurchase — validation", () => {
     const { recordPurchase } = await import("@/server/actions/purchases");
     const result = await recordPurchase({
       sourceName: "Supplier",
-      kind: "standard",
+      kind: "planned",
       items: [{ ...validItem, totalZar: 149.99 }],
     });
     expect(result.ok).toBe(false);
@@ -94,7 +94,7 @@ describe("recordPurchase — validation", () => {
     const { recordPurchase } = await import("@/server/actions/purchases");
     const result = await recordPurchase({
       sourceName: "Supplier",
-      kind: "standard",
+      kind: "planned",
       items: [{ ...validItem, totalZar: 0 }],
     });
     expect(result.ok).toBe(false);
@@ -105,7 +105,7 @@ describe("recordPurchase — validation", () => {
     const { recordPurchase } = await import("@/server/actions/purchases");
     const result = await recordPurchase({
       sourceName: "Supplier",
-      kind: "standard",
+      kind: "planned",
       items: [{ ...validItem, quantity: -50 }],
     });
     expect(result.ok).toBe(false);
@@ -116,7 +116,7 @@ describe("recordPurchase — validation", () => {
     const { recordPurchase } = await import("@/server/actions/purchases");
     const result = await recordPurchase({
       sourceName: "Supplier",
-      kind: "standard",
+      kind: "planned",
       items: [{ ...validItem, quantity: 0 }],
     });
     expect(result.ok).toBe(false);
@@ -135,7 +135,7 @@ describe("recordPurchase — RBAC", () => {
       ok: false, code: "UNAUTHORIZED", message: "Not authenticated.",
     });
     const { recordPurchase } = await import("@/server/actions/purchases");
-    const result = await recordPurchase({ sourceName: "Supplier", kind: "standard", items: [validItem] });
+    const result = await recordPurchase({ sourceName: "Supplier", kind: "planned", items: [validItem] });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("UNAUTHORIZED");
   });
@@ -201,7 +201,7 @@ describe("approveEmergencyPurchase — error paths", () => {
     vi.mocked(db.select).mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([
-          { id: "purch_1", inventoryLotId: "lot_1", kind: "standard", status: "active" },
+          { id: "purch_1", inventoryLotId: "lot_1", kind: "planned", status: "active" },
         ]),
       }),
     } as never);
