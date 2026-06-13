@@ -12,7 +12,7 @@
 import { parseArgs } from "util";
 
 const { values } = parseArgs({
-  args: Bun.argv.slice(2),
+  args: process.argv.slice(2),
   options: {
     sha:       { type: "string", default: process.env.GITHUB_SHA?.slice(0, 7) ?? "unknown" },
     smoke:     { type: "string", default: "unknown" }, // "pass" | "fail" | "skip"
