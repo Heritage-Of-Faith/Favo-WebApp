@@ -64,6 +64,13 @@
       "when": 1780908112912,
       "tag": "0008_ancient_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781364257804,
+      "tag": "0009_flat_proudstar",
+      "breakpoints": true
     }
   ]
 }
