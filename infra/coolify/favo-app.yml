@@ -1,0 +1,73 @@
+# Coolify application configuration — AT-83 (G25)
+# Coolify v4 (self-hosted on hofmi-eu-open).
+# Secrets are injected at runtime via Infisical — do NOT hardcode values here.
+# Apply via the Coolify web UI or `coolify apply` CLI (if available).
+
+version: "4"
+
+services:
+  favo-webapp:
+    image: "ghcr.io/heritage-of-faith/favo-webapp:${IMAGE_TAG:-latest}"
+    restart: unless-stopped
+
+    # ── Health check ──────────────────────────────────────────────────────────
+    # Coolify uses this to determine when the container is ready and to detect
+    # crashes. The extended /api/healthz checks Postgres + Yoco + Loki.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/healthz | python3 -c \"import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get('ok') else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    # ── Ports ─────────────────────────────────────────────────────────────────
+    ports:
+      - "3000:3000"
+
+    # ── Environment ───────────────────────────────────────────────────────────
+    # All values are resolved from Infisical at container start via the Coolify
+    # Infisical integration (project: hofmi/favo, environment: production).
+    # The list below documents WHICH variables are required — values are never
+    # committed to this file.
+    environment:
+      # Database
+      - DATABASE_URL            # Supabase Transaction pooler (port 6543, PgBouncer)
+      - DATABASE_URL_SESSION    # Supabase Session pooler (port 5432, for SSE/LISTEN)
+      # Auth
+      - AUTH_SECRET             # Auth.js signing secret (≥ 32 random bytes)
+      - AUTH_URL                # https://favo.hofmi.org
+      # Yoco payments
+      - YOCO_SECRET_KEY
+      - YOCO_WEBHOOK_SECRET
+      - NEXT_PUBLIC_YOCO_PUBLIC_KEY
+      # Web Push / VAPID
+      - VAPID_PUBLIC_KEY
+      - VAPID_PRIVATE_KEY
+      - NEXT_PUBLIC_VAPID_PUBLIC_KEY
+      # Cron routes
+      - CRON_SECRET
+      # Observability
+      - LOKI_URL                # http://loki.hofmi-internal:3100
+      # Timezone (required for Africa/Johannesburg wall-clock logic)
+      - TZ=Africa/Johannesburg
+      # Runtime base URL (used by scripts/preflight.sh and E2E tests)
+      - PUBLIC_BASE_URL=https://favo.hofmi.org
+
+    # ── Resource limits ───────────────────────────────────────────────────────
+    # Next.js with Turbopack is memory-hungry on first boot; 512 MB is the
+    # working set after warmup. Burst to 768 MB is allowed.
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 512M
+
+    # ── Logging ───────────────────────────────────────────────────────────────
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://loki.hofmi-internal:3100/loki/api/v1/push"
+        loki-batch-size: "400"
+        loki-timeout: "1s"
+        labels: "service=favo-webapp,env=production"
