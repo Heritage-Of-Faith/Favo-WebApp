@@ -77,18 +77,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Update Grype vulnerability database
+      - name: Install Grype (latest) and update vulnerability database
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
           grype db update
 
       - name: Scan for vulnerabilities (fail on critical)
-        uses: anchore/scan-action@v3
-        with:
-          path: "."
-          fail-build: true
-          severity-cutoff: critical
-          output-format: sarif
+        # Run grype directly — anchore/scan-action@v3 bundles grype v0.74.4
+        # which has a stale DB and no supported update-db param. Using our
+        # freshly-installed version with updated DB instead.
+        run: grype dir:. --fail-on critical -o sarif --file results.sarif
 
       - name: Upload Grype SARIF
         if: always()
