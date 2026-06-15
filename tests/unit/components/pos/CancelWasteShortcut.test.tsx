@@ -32,6 +32,12 @@ vi.mock("@/server/actions/recipes", () => ({
 vi.mock("@/server/actions/waste", () => ({ logWaste: vi.fn() }));
 // M10 staff-push chain — cut here so the component graph never pulls next-auth.
 vi.mock("@/lib/push/staff-subscribe", () => ({ enableStaffPush: vi.fn() }));
+// M16/M17 counter flows (wallet/packs) imported by POSWorkspace — keep next-auth out.
+vi.mock("@/server/actions/loyalty", () => ({
+  topUpWallet: vi.fn(),
+  purchasePack: vi.fn(),
+  redeemLoyalty: vi.fn(),
+}));
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
