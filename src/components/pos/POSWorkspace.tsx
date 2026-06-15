@@ -28,6 +28,7 @@ import StockBadge from "@/components/pos/StockBadge";
 import StockBanner from "@/components/pos/StockBanner";
 import WasteDialog from "@/components/pos/WasteDialog";
 import { useStockStatus } from "@/hooks/useStockStatus";
+import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
 import type { Customer, MenuItem, MenuCustomisation, Order, OrderState, InventoryLot } from "@/lib/types";
 import WasteLogModal from "@/components/pos/WasteLogModal";
@@ -100,6 +101,9 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
 
   // ── Inventory awareness (M9) ────────────────────────────────────────────────
   const { menuItemStock, outOfStockItems } = useStockStatus();
+
+  // ── Offline outbox — IndexedDB queue + auto-sync on reconnect ──────────────
+  const { pendingCount, syncing, queueOrder } = useOfflineOutbox(staffId);
 
   // ── Right panel — queue with full orders ───────────────────────────────────
   const { activeOrders, status } = useOrderStream();
@@ -191,7 +195,35 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
 
   async function handlePlaceOrder() {
     if (items.length === 0 || submitting) return;
-    setSubmitting(true); setOrderError(null);
+    setSubmitting(true);
+    setOrderError(null);
+
+    // Offline path — write to IndexedDB; will sync automatically on reconnect.
+    if (!navigator.onLine) {
+      try {
+        await queueOrder({
+          clientUuid: crypto.randomUUID(),
+          staffId,
+          customerId: customer?.id,
+          items: items.map(i => ({
+            menuItemId: i.menuItemId,
+            quantity: i.quantity,
+            modifications: i.modifications.map(m => m.id),
+          })),
+          paymentMode: "yoco_deferred",
+          clientTotalZar: totalZar,
+          clientTimestamp: new Date().toISOString(),
+        });
+        reset();
+        setOrderSuccess("Order saved — will sync when back online.");
+        setTimeout(() => setOrderSuccess(null), 5000);
+      } catch {
+        setOrderError("Failed to save order offline. Please retry.");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
     const r = await createOrder({
       customerId: customer?.id,
       items: items.map(i => ({ menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id) })),
@@ -338,6 +370,18 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
           )}
           <div className="shrink-0 hidden lg:block"><ActiveBeanCard /></div>
           <span className="favo-small text-cool-steel shrink-0 hidden lg:block">{staffName}</span>
+          {(pendingCount > 0 || syncing) && (
+            <span
+              role="status"
+              aria-live="polite"
+              className="shrink-0 flex items-center gap-1 rounded-[4px] bg-[var(--color-warning)]/15 px-2 py-1 favo-caption text-[var(--color-warning)]"
+            >
+              {syncing
+                ? <><Loader2 size={10} strokeWidth={2.5} className="animate-spin" /> Syncing…</>
+                : <><WifiOff size={10} strokeWidth={2.5} /> {pendingCount} offline</>
+              }
+            </span>
+          )}
         </div>
 
         {!showPayment ? (
