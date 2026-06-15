@@ -30,9 +30,9 @@ vi.mock("@/server/actions/recipes", () => ({
   listRecipes: vi.fn().mockResolvedValue({ ok: true, data: { recipes: [] } }),
 }));
 vi.mock("@/server/actions/waste", () => ({ logWaste: vi.fn() }));
-// M18 — POSWorkspace pulls in LoyaltyRedeemDialog → loyalty actions.
+// M17/M18 — POSWorkspace pulls in PackPurchaseDialog + LoyaltyRedeemDialog → loyalty actions.
 vi.mock("@/server/actions/loyalty", () => ({
-  redeemLoyalty: vi.fn(), topUpWallet: vi.fn(), purchasePack: vi.fn(),
+  topUpWallet: vi.fn(), purchasePack: vi.fn(), redeemLoyalty: vi.fn(),
 }));
 // M10 staff-push chain — cut here so the component graph never pulls next-auth.
 vi.mock("@/lib/push/staff-subscribe", () => ({ enableStaffPush: vi.fn() }));
