@@ -19,9 +19,10 @@ import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, X, Plus, Minus, Trash2, ChevronDown, ChevronUp,
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
-  CheckCircle, AlertCircle, Tag, Star, ShieldCheck, Wallet,
+  CheckCircle, AlertCircle, Tag, Star, ShieldCheck, Wallet, Package,
 } from "lucide-react";
 import WalletTopUpDialog from "@/components/pos/WalletTopUpDialog";
+import PackPurchaseDialog from "@/components/pos/PackPurchaseDialog";
 import { toast } from "sonner";
 import ActiveBeanCard from "@/components/pos/ActiveBeanCard";
 import StaffPushOptIn from "@/components/pos/StaffPushOptIn";
@@ -119,6 +120,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const [wasteOpen, setWasteOpen] = useState(false);
   const [wasteCategory, setWasteCategory] = useState<LogWasteInput["category"]>("spilled");
   const [walletTopUpOpen, setWalletTopUpOpen] = useState(false);
+  const [packOpen, setPackOpen] = useState(false);
 
   const sortedOrders = [...activeOrders].sort((a, b) => {
     const sp = STATE_PRIORITY[a.state] - STATE_PRIORITY[b.state];
@@ -375,6 +377,13 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
               className="shrink-0 flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-porcelain/10 hover:text-porcelain min-h-[32px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
               aria-label="Top up wallet">
               <Wallet size={12} strokeWidth={2.25} /> Top up
+            </button>
+          )}
+          {customer && (
+            <button type="button" onClick={() => setPackOpen(true)}
+              className="shrink-0 flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-porcelain/10 hover:text-porcelain min-h-[32px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+              aria-label="Buy coffee pack">
+              <Package size={12} strokeWidth={2.25} /> Pack
             </button>
           )}
           <div className="shrink-0 hidden lg:block"><ActiveBeanCard /></div>
@@ -903,6 +912,16 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
           customerId={customer.id}
           customerName={customer.name}
           onClose={() => setWalletTopUpOpen(false)}
+        />
+      )}
+
+      {/* ════════ COFFEE PACK PURCHASE (M17) ════════ */}
+      {packOpen && customer && (
+        <PackPurchaseDialog
+          customerId={customer.id}
+          customerName={customer.name}
+          coffeeItems={menu.filter((m) => m.category === "coffee")}
+          onClose={() => setPackOpen(false)}
         />
       )}
     </main>
