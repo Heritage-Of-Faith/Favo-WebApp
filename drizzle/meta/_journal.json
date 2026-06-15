@@ -71,6 +71,20 @@
       "when": 1781364257804,
       "tag": "0009_flat_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781450000000,
+      "tag": "0010_drop_magic_link_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1750000000000,
+      "tag": "0011_loyalty_earn_idempotency",
+      "breakpoints": true
     }
   ]
 }
