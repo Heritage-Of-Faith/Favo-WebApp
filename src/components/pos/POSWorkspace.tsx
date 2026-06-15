@@ -28,6 +28,8 @@ import StaffPushOptIn from "@/components/pos/StaffPushOptIn";
 import StockBadge from "@/components/pos/StockBadge";
 import StockBanner from "@/components/pos/StockBanner";
 import WasteDialog from "@/components/pos/WasteDialog";
+import CustomerCard from "@/components/pos/CustomerCard";
+import LoyaltyRedeemDialog from "@/components/pos/LoyaltyRedeemDialog";
 import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
@@ -90,6 +92,10 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const [showPayment, setShowPayment] = useState(false);
   const [_yocoSecret, setYocoSecret] = useState("");
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
+  // M18 — loyalty redemption on the payment step (order already in `ordered`).
+  const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
+  const [redeemOpen, setRedeemOpen] = useState(false);
+  const [redeemed, setRedeemed] = useState(false);
   const [showWasteModal, setShowWasteModal] = useState(false);
   const [activeBeanLot, setActiveBeanLot] = useState<InventoryLot | null>(null);
 
@@ -235,6 +241,8 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
       // Auto-expand the new order in the queue so barista sees it immediately
       setExpandedId(r.data.orderId);
       setYocoSecret(r.data.yocoClientSecret);
+      setPaymentOrderId(r.data.orderId);
+      setRedeemed(false);
       if (r.data.yocoClientSecret) {
         setShowPayment(true);
       } else {
@@ -517,6 +525,12 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
           {/* Order summary */}
             {items.length > 0 && (
               <div className="border-t border-cool-steel/20 px-4 py-3 shrink-0 bg-coffee-bean/5">
+                {/* M18 — loyalty standing for the attached customer */}
+                {customer && (
+                  <div className="mb-2">
+                    <CustomerCard customer={customer} onClear={() => setCustomer(null)} />
+                  </div>
+                )}
                 <p className="favo-label text-cool-steel mb-2">Order</p>
                 <div className="space-y-1.5 max-h-[160px] overflow-y-auto mb-3">
                   {items.map(item => (
@@ -592,11 +606,22 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
             <ShieldCheck size={40} strokeWidth={1.5} className="text-cool-steel opacity-60" />
             <div className="text-center">
               <p className="favo-label text-cool-steel mb-1">Amount due</p>
-              <p className="favo-h2 text-coffee-bean">{formatZar(totalZar)}</p>
-              <p className="favo-small text-cool-steel mt-1">Card handled securely by Yoco</p>
+              <p className="favo-h2 text-coffee-bean">{formatZar(redeemed ? 0 : totalZar)}</p>
+              <p className="favo-small text-cool-steel mt-1">
+                {redeemed ? "Paid with 100 loyalty points" : "Card handled securely by Yoco"}
+              </p>
             </div>
             <div className="flex flex-col gap-3 w-full max-w-[280px]">
-              <button type="button" onClick={() => { reset(); setShowPayment(false); setYocoSecret(""); }}
+              {/* M18 — full loyalty redemption (L06): 100 pts → R20 off, zeroes the order.
+                  Offered only at ≥100 pts and when the order is worth ≥ R20. */}
+              {customer && customer.loyaltyPoints >= 100 && totalZar >= 2000 && !redeemed && paymentOrderId && (
+                <button type="button" onClick={() => setRedeemOpen(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-crimson-carrot/50 py-3 min-h-[48px] favo-small text-crimson-carrot hover:bg-crimson-carrot/8 transition-colors">
+                  <Star size={14} strokeWidth={2.25} />
+                  Redeem 100 pts (R20 off)
+                </button>
+              )}
+              <button type="button" onClick={() => { reset(); setShowPayment(false); setYocoSecret(""); setPaymentOrderId(null); setRedeemed(false); }}
                 className="flex w-full items-center justify-center gap-2 rounded-[4px] py-4 min-h-[52px]"
                 style={{ background: "var(--color-success)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
                 <CheckCircle size={16} strokeWidth={2} className="mr-1" />
@@ -903,6 +928,21 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
           customerId={customer.id}
           customerName={customer.name}
           onClose={() => setWalletTopUpOpen(false)}
+        />
+      )}
+
+      {/* ════════ LOYALTY REDEMPTION (M18) ════════ */}
+      {redeemOpen && customer && paymentOrderId && (
+        <LoyaltyRedeemDialog
+          customerId={customer.id}
+          customerName={customer.name}
+          orderId={paymentOrderId}
+          loyaltyPoints={customer.loyaltyPoints}
+          onRedeemed={() => {
+            setRedeemed(true);
+            setCustomer({ ...customer, loyaltyPoints: customer.loyaltyPoints - 100 });
+          }}
+          onClose={() => setRedeemOpen(false)}
         />
       )}
     </main>
