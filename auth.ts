@@ -6,7 +6,12 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { staff } from "@db/schema";
 import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
+import { writeAudit } from "@/server/audit";
 import type { StaffRole } from "@/lib/types";
+
+// HOFMI SSO may only grant admin-capable roles. Baristas authenticate by PIN,
+// never via SSO — so an SSO token claiming "barista" (or anything else) is rejected.
+const ALLOWED_SSO_ROLES = new Set<StaffRole>(["admin", "finance", "owner"]);
 
 // Task G4 -- PIN provider (staff). HOFMI SSO provider is a follow-up (A3 needs it).
 // Role is resolved at authorize time and carried through the JWT so getSession()
@@ -138,12 +143,27 @@ export const authConfig: NextAuthConfig = {
       // Map the OIDC profile onto the Auth.js user object.
       // Adjust field names once the real SSO token shape is known.
       profile(profile: Record<string, unknown>) {
+        // Validate identity claims before trusting them for session/RBAC.
+        // An empty subject or an unrecognised role must never establish a session.
+        const id =
+          typeof profile.sub === "string" && profile.sub.length > 0
+            ? profile.sub
+            : typeof profile.id === "string" && profile.id.length > 0
+              ? profile.id
+              : null;
+        if (!id) throw new Error("HOFMI SSO: missing subject (sub) claim");
+
+        // `role` is a custom claim -- reject anything outside the admin-capable set.
+        const rawRole = typeof profile.role === "string" ? profile.role : null;
+        if (!rawRole || !ALLOWED_SSO_ROLES.has(rawRole as StaffRole)) {
+          throw new Error("HOFMI SSO: unauthorized or missing role claim");
+        }
+
         return {
-          id: String(profile.sub ?? profile.id ?? ""),
+          id,
           name: String(profile.name ?? profile.preferred_username ?? ""),
           email: typeof profile.email === "string" ? profile.email : undefined,
-          // `role` is a custom claim -- HOFMI SSO is expected to include it.
-          role: typeof profile.role === "string" ? (profile.role as StaffRole) : undefined,
+          role: rawRole as StaffRole,
         };
       },
     },
@@ -177,6 +197,22 @@ export const authConfig: NextAuthConfig = {
       if (url.startsWith(baseUrl)) return url;
       if (url.startsWith("/")) return `${baseUrl}${url}`;
       return `${baseUrl}/admin`;
+    },
+  },
+  events: {
+    // Audit successful HOFMI SSO logins, mirroring the PIN path's `login_success`
+    // row. The PIN flow audits inside loginWithPin; the SSO flow only completes in
+    // the OAuth callback, so the equivalent hook is Auth.js's signIn event.
+    async signIn({ user, account }) {
+      if (account?.provider !== "hofmi-sso") return;
+      await writeAudit({
+        entityKind: "staff",
+        entityId: user.id ?? "unknown",
+        action: "login_success",
+        actorId: user.id ?? undefined,
+        actorRole: (user as { role?: string }).role,
+        reason: "HOFMI SSO login",
+      });
     },
   },
 };
