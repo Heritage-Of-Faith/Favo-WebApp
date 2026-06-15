@@ -23,7 +23,7 @@ vi.mock("sonner", () => ({ toast: { success: (...a: unknown[]) => toastSuccess(.
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 
 function order(uuid: string, staffId = "s1", ts = "2026-06-15T10:00:00Z") {
-  return { clientUuid: uuid, staffId, items: [], paymentMode: "yoco_deferred", clientTotalZar: 3000, clientTimestamp: ts };
+  return { clientUuid: uuid, staffId, items: [], paymentMode: "yoco_deferred" as const, clientTotalZar: 3000, clientTimestamp: ts };
 }
 
 beforeEach(() => { vi.clearAllMocks(); rows = []; });
@@ -79,6 +79,14 @@ describe("useOfflineOutbox", () => {
     await act(async () => { await result.current.sync(); });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(deleteOrder).toHaveBeenCalledWith("mine");
     expect(deleteOrder).not.toHaveBeenCalledWith("theirs");
+  });
+
+  it("queueOrder writes through to the store and bumps the count", async () => {
+    const { result } = renderHook(() => useOfflineOutbox("s1"));
+    await act(async () => { await result.current.queueOrder(order("new")); });
+    expect(putOrder).toHaveBeenCalled();
+    expect(result.current.pendingCount).toBe(1);
   });
 });
