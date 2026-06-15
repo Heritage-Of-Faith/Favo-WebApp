@@ -1,0 +1,155 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_POSTGRES",
+      "label": "FAVO Postgres",
+      "type": "datasource",
+      "pluginId": "postgres",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0" },
+    { "type": "panel", "id": "table", "name": "Table", "version": "" },
+    { "type": "panel", "id": "barchart", "name": "Bar chart", "version": "" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" }
+  ],
+  "annotations": { "list": [] },
+  "description": "Weekly inventory variance per menu item — coloured by T01 tolerance bands from Phase 2 G13",
+  "editable": true,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [
+    { "title": "Admin Inventory", "url": "https://favo.hofmi.org/admin/inventory", "type": "link" }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Items Outside T01 Tolerance (this week)",
+      "description": "Count of menu items where actual usage vs expected > ±T01 band",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "WITH weekly_variance AS ( SELECT mi.name AS item, SUM(ABS(sm.delta)) AS actual_usage, SUM(ri.quantity_per_unit * o_count.cnt) AS expected_usage FROM stock_movements sm JOIN inventory_lots il ON sm.inventory_lot_id = il.id JOIN inventory_items ii ON il.inventory_item_id = ii.id JOIN recipe_ingredients ri ON ri.inventory_item_id = ii.id JOIN menu_items mi ON ri.menu_item_id = mi.id CROSS JOIN ( SELECT COUNT(*) AS cnt FROM orders WHERE placed_at >= DATE_TRUNC('week', NOW()) AND state NOT IN ('cancelled') ) o_count WHERE sm.at >= DATE_TRUNC('week', NOW()) AND sm.delta < 0 GROUP BY mi.name ) SELECT COUNT(*) AS value FROM weekly_variance WHERE actual_usage > expected_usage * 1.10 OR actual_usage < expected_usage * 0.90",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total Waste (ZAR) — this week",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "currencyZAR", "decimals": 2 } },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(SUM(wl.quantity * ii.cost_per_unit_zar), 0)::float / 100 AS value FROM waste_log wl JOIN inventory_lots il ON wl.inventory_lot_id = il.id JOIN inventory_items ii ON il.inventory_item_id = ii.id WHERE wl.at >= DATE_TRUNC('week', NOW())",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "barchart",
+      "title": "Weekly variance by menu item (%)",
+      "description": "Green = within T01 (±10%), yellow = ±20%, red = >±20%",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": {
+        "orientation": "horizontal",
+        "groupWidth": 0.7,
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 20 }
+            ]
+          },
+          "custom": { "thresholdsStyle": { "mode": "area" } }
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "WITH weekly_variance AS ( SELECT mi.name AS item, SUM(ABS(sm.delta)) AS actual_usage, GREATEST(SUM(ri.quantity_per_unit * o_count.cnt), 1) AS expected_usage FROM stock_movements sm JOIN inventory_lots il ON sm.inventory_lot_id = il.id JOIN inventory_items ii ON il.inventory_item_id = ii.id JOIN recipe_ingredients ri ON ri.inventory_item_id = ii.id JOIN menu_items mi ON ri.menu_item_id = mi.id CROSS JOIN ( SELECT COUNT(*) AS cnt FROM orders WHERE placed_at >= DATE_TRUNC('week', NOW()) AND state NOT IN ('cancelled') ) o_count WHERE sm.at >= DATE_TRUNC('week', NOW()) AND sm.delta < 0 GROUP BY mi.name ) SELECT item, ROUND(((actual_usage - expected_usage)::numeric / expected_usage * 100)::numeric, 1) AS \"Variance %\" FROM weekly_variance ORDER BY ABS(actual_usage - expected_usage) / expected_usage DESC LIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Variance detail — all items this week",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": {
+        "sortBy": [{ "displayName": "Variance %", "desc": true }],
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Variance %" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "yellow", "value": 10 },
+                    { "color": "red", "value": 20 }
+                  ]
+                }
+              },
+              { "id": "custom.displayMode", "value": "color-background" }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "rawSql": "WITH weekly_variance AS ( SELECT mi.name AS item, SUM(ABS(sm.delta)) AS actual_usage, GREATEST(SUM(ri.quantity_per_unit * o_count.cnt), 1) AS expected_usage FROM stock_movements sm JOIN inventory_lots il ON sm.inventory_lot_id = il.id JOIN inventory_items ii ON il.inventory_item_id = ii.id JOIN recipe_ingredients ri ON ri.inventory_item_id = ii.id JOIN menu_items mi ON ri.menu_item_id = mi.id CROSS JOIN ( SELECT COUNT(*) AS cnt FROM orders WHERE placed_at >= DATE_TRUNC('week', NOW()) AND state NOT IN ('cancelled') ) o_count WHERE sm.at >= DATE_TRUNC('week', NOW()) AND sm.delta < 0 GROUP BY mi.name ) SELECT item AS \"Item\", actual_usage AS \"Actual (units)\", expected_usage AS \"Expected (units)\", ROUND(((actual_usage - expected_usage)::numeric / expected_usage * 100)::numeric, 1) AS \"Variance %\", CASE WHEN ABS(actual_usage - expected_usage) / expected_usage < 0.10 THEN '✅ Within T01' WHEN ABS(actual_usage - expected_usage) / expected_usage < 0.20 THEN '⚠️ T01 breach' ELSE '❌ High variance' END AS \"Status\" FROM weekly_variance ORDER BY ABS(actual_usage - expected_usage) / expected_usage DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["favo", "inventory", "variance"],
+  "time": { "from": "now-7d", "to": "now" },
+  "timepicker": {},
+  "title": "FAVO — Inventory Variance",
+  "uid": "favo-variance-v1",
+  "version": 1
+}
