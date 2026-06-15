@@ -30,7 +30,7 @@ vi.mock("@/server/actions/recipes", () => ({
   listRecipes: vi.fn().mockResolvedValue({ ok: true, data: { recipes: [] } }),
 }));
 vi.mock("@/server/actions/waste", () => ({ logWaste: vi.fn() }));
-// M17 — POSWorkspace pulls in PackPurchaseDialog → loyalty actions.
+// M17/M18 — POSWorkspace pulls in PackPurchaseDialog + LoyaltyRedeemDialog → loyalty actions.
 vi.mock("@/server/actions/loyalty", () => ({
   topUpWallet: vi.fn(), purchasePack: vi.fn(), redeemLoyalty: vi.fn(),
 }));
