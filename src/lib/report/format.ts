@@ -41,10 +41,11 @@ export function formatNetMargin(revenue_zar: number, net_zar: number): string {
 
 /**
  * Formats a refund amount for receipt display.
- * A positive refund value is shown with a minus-sign prefix.
- * @param refund_zar - refund amount in cents (positive integer)
+ * The refund is always shown with a single minus-sign prefix, regardless of
+ * whether the caller passes the amount as positive or negative cents.
+ * @param refund_zar - refund amount in cents (sign-insensitive)
  * @returns e.g. "−R12,50"
  */
 export function formatRefundLine(refund_zar: number): string {
-  return `−${formatZar(refund_zar)}`;
+  return `−${formatZar(Math.abs(refund_zar))}`;
 }

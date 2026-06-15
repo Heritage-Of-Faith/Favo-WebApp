@@ -395,7 +395,7 @@ export default function MonthlyReportTemplate({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: `repeat(${Math.min(approvers.length, 3)}, 1fr)`,
+              gridTemplateColumns: `repeat(${Math.max(1, Math.min(approvers.length, 3))}, 1fr)`,
               gap: "24px",
             }}
           >

@@ -5,6 +5,25 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import MonthlyReportTemplate from "@/components/reports/MonthlyReportTemplate";
 import Receipt from "@/components/reports/Receipt";
+import { formatRefundLine } from "@/lib/report/format";
+
+// ── formatRefundLine ──────────────────────────────────────────────────────────
+
+describe("formatRefundLine", () => {
+  it("prefixes a single minus sign for a positive amount", () => {
+    const out = formatRefundLine(4500);
+    expect(out.startsWith("−")).toBe(true);
+    expect(out.startsWith("−−")).toBe(false);
+    expect(out).toContain("45,00");
+  });
+
+  it("does not double the sign when given a negative amount", () => {
+    // Regression: caller passing signed cents must not render "−−R…".
+    // A negative input is normalised to the same string as the positive input.
+    expect(formatRefundLine(-4500)).toBe(formatRefundLine(4500));
+    expect(formatRefundLine(-4500).startsWith("−−")).toBe(false);
+  });
+});
 
 // ── MonthlyReportTemplate ─────────────────────────────────────────────────────
 

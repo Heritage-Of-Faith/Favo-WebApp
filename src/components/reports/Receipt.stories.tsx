@@ -85,8 +85,8 @@ export const LargeOrder: Story = {
       { name: "Orange Juice", qty: 2, unit_price_zar: 3800 },
       { name: "Eggs Benedict", qty: 1, unit_price_zar: 12500 },
     ],
-    // Total: R55,700.00
-    total_zar: 55700,
+    // Total: R477.00 (4×R45 + 3×R32 + 2×R38 + 1×R125)
+    total_zar: 47700,
     // Refund: R9,600.00 (muffins)
     refund_zar: 9600,
     reason: "Muffins were stale — customer complaint",
