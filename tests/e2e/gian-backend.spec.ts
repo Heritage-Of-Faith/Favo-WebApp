@@ -342,7 +342,7 @@ test.describe("G5: order actions (smoke via POS UI)", () => {
     ).toBeVisible({ timeout: 3000 });
   });
 
-  test("cancel order button or option is accessible from an active order", async ({
+  test("draft order shows Clear affordance after adding an item", async ({
     page,
   }) => {
     // "Cancel order" on a DB order requires state=ordered (needs live payment).
