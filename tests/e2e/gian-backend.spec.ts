@@ -345,13 +345,12 @@ test.describe("G5: order actions (smoke via POS UI)", () => {
   test("cancel order button or option is accessible from an active order", async ({
     page,
   }) => {
-    // Verify the UI provides a cancel path (exercises cancelOrder server action).
-    // If a cancel button exists on the main POS or order view, it should be visible.
-    const cancelBtn = page.getByRole("button", { name: /cancel/i });
-    // It may not be on the landing state — navigate to order view if needed.
-    // This test confirms the route doesn't 500, not that the button is always visible.
+    // Cancel button only appears on an expanded active-order card.
+    // Without a live payment flow we can't create a real order here, so
+    // verify the POS route responds and the main workspace renders.
     const res = await page.context().request.get("/pos");
     expect(res.status()).not.toBe(500);
+    await expect(page.locator("main")).toBeVisible();
   });
 
   test("applyStaffDiscount: discount UI is reachable from an order view", async ({
@@ -380,7 +379,7 @@ test.describe("G2: audit log", () => {
     await loginAsAdmin(page);
     await page.goto("/admin/audit");
     await expect(
-      page.getByRole("table").or(page.getByText(/audit log/i))
+      page.getByRole("table").or(page.getByText(/audit log/i)).first()
     ).toBeVisible({ timeout: 5000 });
   });
 

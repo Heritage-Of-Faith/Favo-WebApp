@@ -103,7 +103,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const { menuItemStock, outOfStockItems } = useStockStatus();
 
   // ── Offline outbox — IndexedDB queue + auto-sync on reconnect ──────────────
-  const { pendingCount, syncing, queueOrder } = useOfflineOutbox();
+  const { pendingCount, syncing, queueOrder } = useOfflineOutbox(staffId);
 
   // ── Right panel — queue with full orders ───────────────────────────────────
   const { activeOrders, status } = useOrderStream();
@@ -195,6 +195,8 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
 
   async function handlePlaceOrder() {
     if (items.length === 0 || submitting) return;
+    setSubmitting(true);
+    setOrderError(null);
 
     // Offline path — write to IndexedDB; will sync automatically on reconnect.
     if (!navigator.onLine) {
@@ -217,11 +219,11 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
         setTimeout(() => setOrderSuccess(null), 5000);
       } catch {
         setOrderError("Failed to save order offline. Please retry.");
+      } finally {
+        setSubmitting(false);
       }
       return;
     }
-
-    setSubmitting(true); setOrderError(null);
     const r = await createOrder({
       customerId: customer?.id,
       items: items.map(i => ({ menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id) })),
