@@ -6,23 +6,24 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { staff } from "@db/schema";
 import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
+import type { StaffRole } from "@/lib/types";
 
-// Task G4 — PIN provider (staff). HOFMI SSO provider is a follow-up (A3 needs it).
+// Task G4 -- PIN provider (staff). HOFMI SSO provider is a follow-up (A3 needs it).
 // Role is resolved at authorize time and carried through the JWT so getSession()
 // and proxy.ts can gate routes without a DB round-trip on every request.
 //
 // Two credential modes:
 //
-// 1. attestation (fast path) — loginWithPin bcrypt-verified the PIN and minted a
+// 1. attestation (fast path) -- loginWithPin bcrypt-verified the PIN and minted a
 //    short-lived HMAC-SHA256 token (60 s). Auth.js verifies the token and does a
-//    single primary-key lookup — no bcrypt at all. The HMAC prevents a direct
+//    single primary-key lookup -- no bcrypt at all. The HMAC prevents a direct
 //    POST to /api/auth/callback/credentials from forging the fast path.
 //
-// 2. pin (fallback / direct) — full bcrypt scan. Used when signIn("credentials",
+// 2. pin (fallback / direct) -- full bcrypt scan. Used when signIn("credentials",
 //    { pin }) is called without an attestation (e.g. direct API testing). Normal
 //    POS/admin login always goes through loginWithPin first.
 
-// ─── Short-lived attestation token ───────────────────────────────────────────
+// --- Short-lived attestation token -------------------------------------------
 
 const ATTEST_TTL_MS = 60_000; // 60 seconds
 
@@ -67,7 +68,7 @@ function verifyLoginAttestation(token: string): string | null {
   }
 }
 
-// ─── Auth.js config ───────────────────────────────────────────────────────────
+// --- Auth.js config ----------------------------------------------------------
 
 export const authConfig: NextAuthConfig = {
   providers: [
@@ -83,7 +84,7 @@ export const authConfig: NextAuthConfig = {
           : "";
         const pin = typeof credentials?.pin === "string" ? credentials.pin : "";
 
-        // ── Fast path: HMAC-attested token from loginWithPin ─────────────────
+        // Fast path: HMAC-attested token from loginWithPin
         if (attestation) {
           const staffId = verifyLoginAttestation(attestation);
           if (!staffId) return null; // expired or tampered
@@ -97,7 +98,7 @@ export const authConfig: NextAuthConfig = {
           return { id: member.id, name: member.name, role: member.role };
         }
 
-        // ── Fallback: full bcrypt scan (direct signIn without attestation) ───
+        // Fallback: full bcrypt scan (direct signIn without attestation)
         if (!isValidPinFormat(pin)) return null;
 
         const activeStaff = await db
@@ -113,17 +114,52 @@ export const authConfig: NextAuthConfig = {
         return null;
       },
     }),
+
+    // -- HOFMI SSO provider (admin / owner / finance) --------------------------
+    // TODO (A3): Wire this provider once HOFMI SSO OAuth credentials are
+    // available. Required env vars:
+    //   HOFMI_SSO_CLIENT_ID     -- OAuth 2.0 client ID
+    //   HOFMI_SSO_CLIENT_SECRET -- OAuth 2.0 client secret
+    //   HOFMI_SSO_ISSUER        -- OIDC discovery URL (e.g. https://sso.hofmi.net)
+    //
+    // Left intentionally unconfigured (empty strings) so the build succeeds and
+    // the login page renders. The signIn("hofmi-sso") call will fail at runtime
+    // until these env vars are set.
+    //
+    // When wiring: confirm the SSO token/userinfo endpoint returns a `role` claim
+    // mapping to StaffRole, then adjust the profile() mapper below.
+    {
+      id: "hofmi-sso",
+      name: "HOFMI",
+      type: "oidc" as const,
+      issuer: process.env.HOFMI_SSO_ISSUER ?? "",
+      clientId: process.env.HOFMI_SSO_CLIENT_ID ?? "",
+      clientSecret: process.env.HOFMI_SSO_CLIENT_SECRET ?? "",
+      // Map the OIDC profile onto the Auth.js user object.
+      // Adjust field names once the real SSO token shape is known.
+      profile(profile: Record<string, unknown>) {
+        return {
+          id: String(profile.sub ?? profile.id ?? ""),
+          name: String(profile.name ?? profile.preferred_username ?? ""),
+          email: typeof profile.email === "string" ? profile.email : undefined,
+          // `role` is a custom claim -- HOFMI SSO is expected to include it.
+          role: typeof profile.role === "string" ? (profile.role as StaffRole) : undefined,
+        };
+      },
+    },
   ],
   session: { strategy: "jwt" },
   pages: {
     signIn: "/pos",
+    error: "/admin/login",
   },
   callbacks: {
-    jwt({ token, user }) {
+    jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
         token.role = (user as { role?: string }).role;
       }
+      void account; // retained for future reference
       return token;
     },
     session({ session, token }) {
@@ -132,6 +168,15 @@ export const authConfig: NextAuthConfig = {
         (session.user as { role?: string }).role = token.role as string;
       }
       return session;
+    },
+    // Post-login redirect: honour callbackUrl or fall back to /admin.
+    // Finance-specific routing (/admin/audit) is handled by the dashboard layout
+    // (src/app/admin/(dashboard)/layout.tsx) on first page load, since the
+    // session is not yet readable during this redirect phase.
+    redirect({ url, baseUrl }) {
+      if (url.startsWith(baseUrl)) return url;
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      return `${baseUrl}/admin`;
     },
   },
 };
