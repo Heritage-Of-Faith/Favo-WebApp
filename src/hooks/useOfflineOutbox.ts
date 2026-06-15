@@ -84,6 +84,8 @@ export function useOfflineOutbox(currentStaffId: string) {
           `${conflicts} order${conflicts > 1 ? "s" : ""} flagged for admin review`
         );
       }
+    } catch {
+      // IndexedDB or unexpected error — will retry on next online event
     } finally {
       syncingRef.current = false;
       setSyncing(false);

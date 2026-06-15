@@ -345,12 +345,13 @@ test.describe("G5: order actions (smoke via POS UI)", () => {
   test("cancel order button or option is accessible from an active order", async ({
     page,
   }) => {
-    // Cancel button only appears on an expanded active-order card.
-    // Without a live payment flow we can't create a real order here, so
-    // verify the POS route responds and the main workspace renders.
-    const res = await page.context().request.get("/pos");
-    expect(res.status()).not.toBe(500);
-    await expect(page.locator("main")).toBeVisible();
+    // "Cancel order" on a DB order requires state=ordered (needs live payment).
+    // Verify the draft-order cancel affordance: the "Clear" button that discards
+    // the in-progress build appears once an item is added.
+    await page.getByText("Cappuccino").click();
+    await expect(
+      page.getByRole("button", { name: /clear/i })
+    ).toBeVisible({ timeout: 3000 });
   });
 
   test("applyStaffDiscount: discount UI is reachable from an order view", async ({
