@@ -49,3 +49,33 @@ export async function createPaymentIntent(
   // initialise the hosted-fields payment form on the frontend.
   return { id: data.id, clientSecret: data.id };
 }
+
+export type YocoCheckoutStatus = "pending" | "succeeded" | "failed" | "expired";
+
+/**
+ * Poll a Yoco checkout for its current status. Used by the deferred-payment
+ * retry cron (G22) to resolve payments that were created while the POS was
+ * offline and whose webhooks may not have arrived.
+ */
+export async function getCheckoutStatus(
+  checkoutId: string
+): Promise<{ status: YocoCheckoutStatus }> {
+  const secretKey = process.env.YOCO_SECRET_KEY;
+  if (!secretKey) throw new Error("YOCO_SECRET_KEY is not configured.");
+
+  const res = await fetch(`${YOCO_API_BASE}/checkouts/${checkoutId}`, {
+    headers: { Authorization: `Bearer ${secretKey}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Yoco API error ${res.status} fetching checkout ${checkoutId}`);
+  }
+
+  const data = (await res.json()) as { status: string };
+  const VALID: YocoCheckoutStatus[] = ["pending", "succeeded", "failed", "expired"];
+  const status = VALID.includes(data.status as YocoCheckoutStatus)
+    ? (data.status as YocoCheckoutStatus)
+    : "pending";
+
+  return { status };
+}
