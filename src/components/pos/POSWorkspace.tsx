@@ -29,6 +29,8 @@ import StaffPushOptIn from "@/components/pos/StaffPushOptIn";
 import StockBadge from "@/components/pos/StockBadge";
 import StockBanner from "@/components/pos/StockBanner";
 import WasteDialog from "@/components/pos/WasteDialog";
+import ConnectivityPill from "@/components/pos/ConnectivityPill";
+import SyncDrawer from "@/components/pos/SyncDrawer";
 import CustomerCard from "@/components/pos/CustomerCard";
 import LoyaltyRedeemDialog from "@/components/pos/LoyaltyRedeemDialog";
 import { useStockStatus } from "@/hooks/useStockStatus";
@@ -111,7 +113,8 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const { menuItemStock, outOfStockItems } = useStockStatus();
 
   // ── Offline outbox — IndexedDB queue + auto-sync on reconnect ──────────────
-  const { pendingCount, syncing, queueOrder } = useOfflineOutbox(staffId);
+  const { pendingOrders, pendingCount, syncing, queueOrder, sync, syncOne, refresh } = useOfflineOutbox(staffId);
+  const [syncDrawerOpen, setSyncDrawerOpen] = useState(false);
 
   // ── Right panel — queue with full orders ───────────────────────────────────
   const { activeOrders, status } = useOrderStream();
@@ -396,18 +399,12 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
           )}
           <div className="shrink-0 hidden lg:block"><ActiveBeanCard /></div>
           <span className="favo-small text-cool-steel shrink-0 hidden lg:block">{staffName}</span>
-          {(pendingCount > 0 || syncing) && (
-            <span
-              role="status"
-              aria-live="polite"
-              className="shrink-0 flex items-center gap-1 rounded-[4px] bg-[var(--color-warning)]/15 px-2 py-1 favo-caption text-[var(--color-warning)]"
-            >
-              {syncing
-                ? <><Loader2 size={10} strokeWidth={2.5} className="animate-spin" /> Syncing…</>
-                : <><WifiOff size={10} strokeWidth={2.5} /> {pendingCount} offline</>
-              }
-            </span>
-          )}
+          {/* M15 — connectivity pill; tap opens the sync drawer */}
+          <ConnectivityPill
+            pendingCount={pendingCount}
+            syncing={syncing}
+            onClick={() => { refresh(); setSyncDrawerOpen(true); }}
+          />
         </div>
 
         {!showPayment ? (
@@ -964,6 +961,16 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
           onClose={() => setRedeemOpen(false)}
         />
       )}
+
+      {/* ════════ OFFLINE SYNC DRAWER (M15) ════════ */}
+      <SyncDrawer
+        open={syncDrawerOpen}
+        orders={pendingOrders}
+        syncing={syncing}
+        onSyncAll={sync}
+        onRetry={syncOne}
+        onClose={() => setSyncDrawerOpen(false)}
+      />
     </main>
   );
 }
