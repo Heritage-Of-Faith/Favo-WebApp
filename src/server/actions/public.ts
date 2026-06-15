@@ -173,8 +173,13 @@ export async function getPublicMenu(): Promise<
 
     return { ok: true, data };
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Failed to load the menu.";
-    return { ok: false, code: "INTERNAL_ERROR", message };
+    // Never forward raw error text to a public (unauthenticated) caller — it can
+    // leak DB/internal details. Log server-side, return a fixed user-safe message.
+    console.error("getPublicMenu failed", err);
+    return {
+      ok: false,
+      code: "INTERNAL_ERROR",
+      message: "Could not load the menu right now.",
+    };
   }
 }
