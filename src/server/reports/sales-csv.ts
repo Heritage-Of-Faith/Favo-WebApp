@@ -40,8 +40,8 @@ export async function buildSalesCsv(from: string, to: string): Promise<string> {
       o.state
     FROM orders o
     LEFT JOIN customers c ON o.customer_id = c.id
-    WHERE o.placed_at >= ${startUtc}
-      AND o.placed_at < ${endUtc}
+    WHERE o.placed_at >= ${startUtc.toISOString()}::timestamptz
+      AND o.placed_at < ${endUtc.toISOString()}::timestamptz
     ORDER BY o.placed_at
   `);
 

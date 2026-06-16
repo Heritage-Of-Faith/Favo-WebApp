@@ -75,8 +75,8 @@ export async function closeDaily(referenceDate?: Date): Promise<CloseDailyResult
     FROM payments p
     JOIN orders o ON p.order_id = o.id
     WHERE p.status = 'successful'
-      AND o.placed_at >= ${start}
-      AND o.placed_at < ${end}
+      AND o.placed_at >= ${start.toISOString()}::timestamptz
+      AND o.placed_at < ${end.toISOString()}::timestamptz
   `);
   const paymentsZar = parseInt(payRow?.total ?? "0", 10) || 0;
 
