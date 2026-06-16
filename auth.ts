@@ -9,9 +9,8 @@ import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
 import { writeAudit } from "@/server/audit";
 import type { StaffRole } from "@/lib/types";
 
-// HOFMI SSO may only grant admin-capable roles. Baristas authenticate by PIN,
-// never via SSO — so an SSO token claiming "barista" (or anything else) is rejected.
-const ALLOWED_SSO_ROLES = new Set<StaffRole>(["admin", "finance", "owner"]);
+// SSO can only authenticate admin role; baristas use PIN only
+const ALLOWED_SSO_ROLES = new Set<StaffRole>(["admin"]);
 
 // Task G4 -- PIN provider (staff). HOFMI SSO provider is a follow-up (A3 needs it).
 // Role is resolved at authorize time and carried through the JWT so getSession()
@@ -120,7 +119,7 @@ export const authConfig: NextAuthConfig = {
       },
     }),
 
-    // -- HOFMI SSO provider (admin / owner / finance) --------------------------
+    // -- HOFMI SSO provider (admin only) ---------------------------------------
     // TODO (A3): Wire this provider once HOFMI SSO OAuth credentials are
     // available. Required env vars:
     //   HOFMI_SSO_CLIENT_ID     -- OAuth 2.0 client ID
@@ -190,9 +189,6 @@ export const authConfig: NextAuthConfig = {
       return session;
     },
     // Post-login redirect: honour callbackUrl or fall back to /admin.
-    // Finance-specific routing (/admin/audit) is handled by the dashboard layout
-    // (src/app/admin/(dashboard)/layout.tsx) on first page load, since the
-    // session is not yet readable during this redirect phase.
     redirect({ url, baseUrl }) {
       if (url.startsWith(baseUrl)) return url;
       if (url.startsWith("/")) return `${baseUrl}${url}`;
