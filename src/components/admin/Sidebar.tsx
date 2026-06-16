@@ -35,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/menu", label: "Menu", hideFor: ["finance"] },
   { href: "/admin/staff", label: "Staff", hideFor: ["finance"] },
   { href: "/admin/customers" as Route, label: "Customers", hideFor: ["finance"] },
+  { href: "/admin/sync-conflicts" as Route, label: "Sync conflicts" },
   { href: "/admin/audit", label: "Audit log" },
 ];
 
