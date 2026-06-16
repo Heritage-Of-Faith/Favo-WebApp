@@ -1,12 +1,12 @@
-// Admin sidebar nav — owner: Mia (task A2), Phase 2 sections added by Gian.
-// Collapsible below 1024px. `hideFor` mirrors server-side RBAC (advisory only).
+// Admin sidebar nav — owner: Mia (task A2)
+// Collapsible below 1024px. Finance role hides "Menu" and "Staff" items.
 // Docs: docs/DESIGN.md → Admin Rules.
 "use client";
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
-import type { Route } from "next";
 import { usePathname, useRouter } from "next/navigation";
+import type { Route } from "next";
 import { LogOut } from "lucide-react";
 import type { StaffRole } from "@/lib/types";
 import { adminLayout } from "@/lib/admin-tokens";
@@ -16,7 +16,7 @@ import { signOut } from "@/server/actions/auth";
 export type Props = { role: StaffRole };
 
 type NavItem = {
-  href: Route;
+  href: string;
   label: string;
   // Roles for which this item is hidden (advisory; server enforces access).
   hideFor?: StaffRole[];
@@ -24,18 +24,8 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard" },
-  { href: "/admin/inventory", label: "Inventory" },
-  { href: "/admin/stock-takes", label: "Stock takes" },
-  { href: "/admin/purchases", label: "Purchases" },
-  { href: "/admin/expenses", label: "Expenses" },
-  // Monthly P&L is admin/finance/owner only (manager cannot read it).
-  { href: "/admin/reports/monthly", label: "Monthly P&L", hideFor: ["manager"] },
-  { href: "/admin/reports" as Route, label: "Reports", hideFor: ["manager"] },
-  { href: "/admin/hours" as Route, label: "Hours", hideFor: ["finance"] },
-  { href: "/admin/menu", label: "Menu", hideFor: ["finance"] },
   { href: "/admin/staff", label: "Staff", hideFor: ["finance"] },
-  { href: "/admin/customers" as Route, label: "Customers", hideFor: ["finance"] },
-  { href: "/admin/sync-conflicts" as Route, label: "Sync conflicts" },
+  { href: "/admin/menu", label: "Menu", hideFor: ["finance"] },
   { href: "/admin/audit", label: "Audit log" },
 ];
 
@@ -101,15 +91,15 @@ export default function Sidebar({ role }: Props) {
           {visibleItems.map((item) => (
             <li key={item.href}>
               <Link
-                href={item.href}
+                href={item.href as Route}
                 onClick={() => setOpen(false)}
                 aria-current={isActive(item.href) ? "page" : undefined}
                 className={cn(
                   "flex min-h-10 items-center rounded-md px-3 text-sm font-medium transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   isActive(item.href)
-                    ? "bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)] font-semibold border-l-2 border-[color:var(--color-accent)]"
-                    : "text-text-muted hover:bg-[color:var(--color-surface)] hover:text-text-strong"
+                    ? "bg-elevated text-text-strong"
+                    : "text-text-muted hover:bg-elevated hover:text-text-strong"
                 )}
               >
                 {item.label}
@@ -126,13 +116,13 @@ export default function Sidebar({ role }: Props) {
             disabled={signingOut}
             aria-label="Sign out"
             className={cn(
-              "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text-muted transition-colors",
-              "hover:bg-[color:var(--color-surface)] hover:text-text-strong",
+              "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-text-muted",
+              "transition-colors hover:bg-elevated hover:text-text-strong",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               "disabled:opacity-40 disabled:cursor-not-allowed"
             )}
           >
-            <LogOut size={13} strokeWidth={2.25} />
+            <LogOut size={13} strokeWidth={2} />
             {signingOut ? "Signing out…" : "Sign out"}
           </button>
         </div>

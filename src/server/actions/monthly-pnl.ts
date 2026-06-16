@@ -146,7 +146,7 @@ export async function generateMonthlyPnL(
     JOIN inventory_lots il ON sm.inventory_lot_id = il.id
     WHERE sm.kind = 'deduction'
       AND il.unit_cost_zar IS NOT NULL
-      AND sm.at >= ${start} AND sm.at < ${end}
+      AND sm.at >= ${start.toISOString()}::timestamptz AND sm.at < ${end.toISOString()}::timestamptz
   `);
   const cogsZar = parseInt(cogsRow?.total ?? "0", 10) || 0;
 
