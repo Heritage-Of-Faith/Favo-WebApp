@@ -12,6 +12,7 @@ import WalletCard from "@/components/customer/WalletCard";
 import PackList from "@/components/customer/PackList";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
 import OperatingHours from "@/components/shared/OperatingHours";
+import PushOptIn from "@/components/customer/PushOptIn";
 
 // Always render fresh data (hours/loyalty change at the counter): no static cache.
 export const dynamic = "force-dynamic";
@@ -119,6 +120,9 @@ export default async function CustomerDashboard() {
         </div>
 
         <OrderHistoryList orders={orders} />
+
+        {/* Push opt-in — only shows if permission not yet granted; hides after first dismissal. */}
+        {summary && <PushOptIn customerId={summary.customerId} />}
 
         <section aria-label="Opening hours">
           <p style={S.hoursLabel}>Opening hours</p>
