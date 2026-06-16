@@ -1,5 +1,5 @@
 // Customer sign-up — owner: Nikao (task N6)
-// Email magic-link account creation (frontend). Backend send wired by Gian (Phase 3).
+// Email + password account creation (PR #67). Magic-link auth dropped by team decision.
 
 import AuthForm from "@/components/customer/AuthForm";
 

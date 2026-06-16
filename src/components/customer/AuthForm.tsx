@@ -52,6 +52,7 @@ export default function AuthForm({ mode }: Props) {
   const router = useRouter();
 
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -72,7 +73,7 @@ export default function AuthForm({ mode }: Props) {
     try {
       const res =
         mode === "signup"
-          ? await registerCustomer({ name, email, password })
+          ? await registerCustomer({ name, email, phone, password })
           : await loginCustomer({ email, password });
 
       if (!res.ok) {
@@ -121,6 +122,28 @@ export default function AuthForm({ mode }: Props) {
               onChange={(e) => setName(e.target.value)}
               className={inputClass}
               placeholder="Thandeka Mokoena"
+            />
+          </div>
+        )}
+
+        {/* Phone — signup only. Captured so baristas can find the customer at
+            the POS counter (FAVO searches customers by phone). */}
+        {mode === "signup" && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="phone" className="favo-label text-cool-steel">
+              Mobile number
+            </label>
+            <input
+              id="phone"
+              name="phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              required
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className={inputClass}
+              placeholder="082 123 4567"
             />
           </div>
         )}
