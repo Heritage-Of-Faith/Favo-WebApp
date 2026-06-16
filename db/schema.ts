@@ -383,17 +383,16 @@ export const monthlyReports = pgTable(
       .notNull(),
     /** JSONB: { signerId, signerName, at } */
     adminSig: jsonb("admin_sig"),
-    financeSig: jsonb("finance_sig"),
     generatedAt: timestamp("generated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
     closedAt: timestamp("closed_at", { withTimezone: true }),
   },
   () => [
-    // L11: a report can only be closed when BOTH signatures are present.
+    // L11: a report can only be closed when the admin signature is present.
     check(
-      "monthly_report_closed_requires_both_sigs",
-      sql`status != 'closed' OR (admin_sig IS NOT NULL AND finance_sig IS NOT NULL)`
+      "monthly_report_closed_requires_admin_sig",
+      sql`status != 'closed' OR admin_sig IS NOT NULL`
     ),
   ]
 );

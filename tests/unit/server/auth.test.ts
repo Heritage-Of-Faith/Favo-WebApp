@@ -46,50 +46,35 @@ describe("pin: hashing", () => {
 });
 
 describe("rbac: hierarchy", () => {
-  it("ranks barista below manager below admin below owner", () => {
-    expect(roleAtLeast("manager", "barista")).toBe(true);
-    expect(roleAtLeast("admin", "manager")).toBe(true);
-    expect(roleAtLeast("owner", "admin")).toBe(true);
-    expect(roleAtLeast("barista", "manager")).toBe(false);
+  it("barista ranks below admin", () => {
+    expect(roleAtLeast("admin", "barista")).toBe(true);
+    expect(roleAtLeast("barista", "admin")).toBe(false);
   });
 
   it("treats equal ranks as at-least", () => {
     expect(roleAtLeast("barista", "barista")).toBe(true);
-    expect(roleAtLeast("roaster", "barista")).toBe(true); // same rank
+    expect(roleAtLeast("admin", "admin")).toBe(true);
   });
 });
 
 describe("rbac: capabilities", () => {
-  it("admin, owner, finance can reach the admin surface", () => {
+  it("only admin can reach the admin surface", () => {
     expect(canAccessAdmin("admin")).toBe(true);
-    expect(canAccessAdmin("owner")).toBe(true);
-    expect(canAccessAdmin("finance")).toBe(true);
-  });
-
-  it("barista, roaster, manager cannot reach the admin surface", () => {
     expect(canAccessAdmin("barista")).toBe(false);
-    expect(canAccessAdmin("roaster")).toBe(false);
-    expect(canAccessAdmin("manager")).toBe(false);
   });
 
-  it("POS is operable by barista/manager/admin/owner, not finance/roaster", () => {
+  it("POS is operable by both barista and admin", () => {
     expect(canProcessOrders("barista")).toBe(true);
-    expect(canProcessOrders("manager")).toBe(true);
-    expect(canProcessOrders("owner")).toBe(true);
-    expect(canProcessOrders("finance")).toBe(false);
-    expect(canProcessOrders("roaster")).toBe(false);
+    expect(canProcessOrders("admin")).toBe(true);
   });
 
-  it("only admin/owner can approve refunds (rule L02)", () => {
+  it("only admin can approve refunds (rule L02)", () => {
     expect(canApproveRefund("admin")).toBe(true);
-    expect(canApproveRefund("owner")).toBe(true);
-    expect(canApproveRefund("manager")).toBe(false);
-    expect(canApproveRefund("finance")).toBe(false);
     expect(canApproveRefund("barista")).toBe(false);
   });
 
   it("hasRole matches an explicit allow-list", () => {
-    expect(hasRole("barista", ["barista", "manager"])).toBe(true);
-    expect(hasRole("owner", ["barista", "manager"])).toBe(false);
+    expect(hasRole("barista", ["barista", "admin"])).toBe(true);
+    expect(hasRole("barista", ["admin"])).toBe(false);
   });
 });

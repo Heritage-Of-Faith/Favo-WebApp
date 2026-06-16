@@ -10,7 +10,7 @@ export const metadata = { title: "Purchases" };
 
 export default async function PurchasesPage() {
   const session = await getSession();
-  const canApprove = session?.role === "admin" || session?.role === "owner";
+  const canApprove = session?.role === "admin";
 
   const [purchasesRes, inventoryRes] = await Promise.all([listPurchases(), listInventory()]);
   const items = inventoryRes.ok

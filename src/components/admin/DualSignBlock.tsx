@@ -1,9 +1,9 @@
 "use client";
 
-// Dual-sign block — task A13 (L11).
-// Shows the admin + finance signature slots for a monthly report and lets the
-// permitted role sign (with an irreversible-action confirmation). When both
-// slots are signed the report closes (server auto-transitions).
+// Sign block — task A13 (L11).
+// Shows the admin signature slot for a monthly report and lets the admin sign
+// (with an irreversible-action confirmation). When signed the report closes
+// (server auto-transitions).
 
 import { useState } from "react";
 import { toast } from "sonner";
@@ -23,7 +23,6 @@ import type { MonthlyReport, MonthlyReportSig } from "@/lib/types";
 export interface DualSignBlockProps {
   report: MonthlyReport;
   canSignAdmin: boolean;
-  canSignFinance: boolean;
   onSigned: () => void;
 }
 
@@ -67,18 +66,17 @@ function SigSlot({
   );
 }
 
-export default function DualSignBlock({ report, canSignAdmin, canSignFinance, onSigned }: DualSignBlockProps) {
-  const [confirm, setConfirm] = useState<"admin" | "finance" | null>(null);
+export default function DualSignBlock({ report, canSignAdmin, onSigned }: DualSignBlockProps) {
+  const [confirm, setConfirm] = useState(false);
   const [signing, setSigning] = useState(false);
 
   async function doSign() {
-    if (!confirm) return;
     setSigning(true);
     try {
-      const res = await approveMonthlyPnL(report.id, confirm);
+      const res = await approveMonthlyPnL(report.id);
       if (res.ok) {
-        toast.success(`Signed as ${confirm}.`);
-        setConfirm(null);
+        toast.success("Signed as admin.");
+        setConfirm(false);
         onSigned();
       } else {
         toast.error(res.message);
@@ -94,25 +92,19 @@ export default function DualSignBlock({ report, canSignAdmin, canSignFinance, on
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2">
         <SigSlot
           title="Admin"
           sig={report.adminSig}
           canSign={canSignAdmin && !closed}
-          onSign={() => setConfirm("admin")}
-        />
-        <SigSlot
-          title="Finance"
-          sig={report.financeSig}
-          canSign={canSignFinance && !closed}
-          onSign={() => setConfirm("finance")}
+          onSign={() => setConfirm(true)}
         />
       </div>
 
-      <Dialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)}>
+      <Dialog open={confirm} onOpenChange={(o) => !o && setConfirm(false)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm {confirm} signature</DialogTitle>
+            <DialogTitle>Confirm admin signature</DialogTitle>
             <DialogDescription>
               Signing is irreversible. You are attesting these figures for {report.month.slice(0, 7)}.
             </DialogDescription>
@@ -124,14 +116,14 @@ export default function DualSignBlock({ report, canSignAdmin, canSignFinance, on
             <Figure label="Net" value={report.netZar} strong />
           </dl>
           <p className="favo-caption" style={{ color: "var(--color-text-muted)", textTransform: "none", letterSpacing: 0 }}>
-            When both admin and finance have signed, the report closes and can no longer be edited (L11).
+            When the admin signs, the report closes and can no longer be edited (L11).
           </p>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirm(null)}>
+            <Button type="button" variant="outline" onClick={() => setConfirm(false)}>
               Cancel
             </Button>
             <Button type="button" disabled={signing} onClick={() => void doSign()} className="min-h-10">
-              {signing ? "Signing…" : `Sign as ${confirm}`}
+              {signing ? "Signing…" : "Sign as admin"}
             </Button>
           </DialogFooter>
         </DialogContent>

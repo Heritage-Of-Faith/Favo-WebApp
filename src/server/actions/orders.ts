@@ -32,7 +32,7 @@ import type { ActionResult, Order, OrderState } from "@/lib/types";
 
 // Docs: docs/API.md · Business rules L01–L06, L14–L15.
 // Roles allowed to operate the POS:
-const POS_ROLES = ["barista", "manager", "admin", "owner"] as const;
+const POS_ROLES = ["barista", "admin"] as const;
 
 export type CreateOrderInput = {
   customerId?: string;

@@ -52,14 +52,6 @@ describe("menu RBAC", () => {
     expect(roleAtLeast("admin", "admin")).toBe(true);
   });
 
-  it("owner can set prices", () => {
-    expect(roleAtLeast("owner", "admin")).toBe(true);
-  });
-
-  it("manager cannot set prices", () => {
-    expect(roleAtLeast("manager", "admin")).toBe(false);
-  });
-
   it("barista cannot set prices", () => {
     expect(roleAtLeast("barista", "admin")).toBe(false);
   });

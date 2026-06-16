@@ -10,7 +10,7 @@ import { authorize } from "@/server/auth/guard";
 import { getCogsLive as computeCogsLive, todaySast } from "@/server/cogs/compute";
 import type { ActionResult, CogsLive } from "@/lib/types";
 
-const ADMIN_ROLES = ["admin", "owner"] as const;
+const ADMIN_ROLES = ["admin"] as const;
 
 // ─── getCogsLive ──────────────────────────────────────────────────────────────
 

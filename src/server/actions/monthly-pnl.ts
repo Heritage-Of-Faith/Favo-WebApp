@@ -1,12 +1,10 @@
 "use server";
 
 // Monthly P&L server actions — task G15
-// generateMonthlyPnL: admin+ only. Creates a draft for the previous closed month.
-// approveMonthlyPnL:  admin signs admin_sig; finance signs finance_sig;
-//                     owner can sign either side.
-//                     When both sigs are set, status auto-closes (L11).
-// listMonthlyReports: admin + finance read.
-// DB CHECK: closed requires both sigs — enforced by migration 0006 (L11).
+// generateMonthlyPnL: admin only. Creates a draft for the previous closed month.
+// approveMonthlyPnL:  admin signs admin_sig; when signed, status auto-closes (L11).
+// listMonthlyReports: admin read.
+// DB CHECK: closed requires admin sig — enforced by migration 0011 (L11).
 // Docs: FAVO_PRD_v3.md §04 §06 §07 · BUSINESS_RULES.md L11
 
 import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
@@ -21,8 +19,8 @@ import type {
 } from "@/lib/types";
 import type { DB } from "@/lib/db";
 
-const ADMIN_ROLES = ["admin", "owner"] as const;
-const READER_ROLES = ["admin", "finance", "owner"] as const;
+const ADMIN_ROLES = ["admin"] as const;
+const READER_ROLES = ["admin"] as const;
 
 // SAST offset for month boundary computation
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
@@ -51,7 +49,6 @@ function rowToReport(r: {
   netZar: number;
   status: string;
   adminSig: unknown;
-  financeSig: unknown;
   generatedAt: Date;
   closedAt: Date | null;
 }): MonthlyReport {
@@ -65,7 +62,6 @@ function rowToReport(r: {
     netZar: r.netZar,
     status: r.status as MonthlyReport["status"],
     adminSig: (r.adminSig as MonthlyReportSig | null) ?? null,
-    financeSig: (r.financeSig as MonthlyReportSig | null) ?? null,
     generatedAt: r.generatedAt.toISOString(),
     closedAt: r.closedAt?.toISOString() ?? null,
   };
@@ -200,26 +196,16 @@ export async function generateMonthlyPnL(
 // ─── approveMonthlyPnL ────────────────────────────────────────────────────────
 
 /**
- * Signs one side of the dual approval.
+ * Signs the admin approval for a monthly report.
  *
- * RBAC per L11:
- *   sigKind='admin'   → only admin or owner can sign
- *   sigKind='finance' → only finance or owner can sign
- *
- * When both sigs are present the status transitions to 'closed' automatically.
- * The DB CHECK in migration 0006 enforces this at the DB level too.
+ * RBAC per L11: only admin can sign.
+ * When signed, status transitions to 'closed' automatically.
+ * The DB CHECK in migration 0011 enforces this at the DB level too.
  */
 export async function approveMonthlyPnL(
-  reportId: string,
-  sigKind: "admin" | "finance"
+  reportId: string
 ): Promise<ActionResult> {
-  // Resolve who can sign which side
-  const allowedRoles =
-    sigKind === "admin"
-      ? (["admin", "owner"] as const)
-      : (["finance", "owner"] as const);
-
-  const auth = await authorize(...allowedRoles);
+  const auth = await authorize(...ADMIN_ROLES);
   if (!auth.ok) return auth;
   const session = auth.session;
 
@@ -236,13 +222,11 @@ export async function approveMonthlyPnL(
   }
 
   // Check the sig slot isn't already set
-  const existingSig =
-    sigKind === "admin" ? report.adminSig : report.financeSig;
-  if (existingSig !== null) {
+  if (report.adminSig !== null) {
     return {
       ok: false,
       code: "CONFLICT",
-      message: `${sigKind} signature already present.`,
+      message: "admin signature already present.",
     };
   }
 
@@ -252,46 +236,30 @@ export async function approveMonthlyPnL(
     at: new Date().toISOString(),
   };
 
-  // Determine new status
-  const otherSig =
-    sigKind === "admin" ? report.financeSig : report.adminSig;
-  const bothSigned = otherSig !== null;
-  const newStatus = bothSigned ? "closed" : "awaiting_signatures";
-
   await db.transaction(async (tx) => {
     const txDb = tx as unknown as DB;
 
-    const statusValue = newStatus as "draft" | "awaiting_signatures" | "closed";
-    const updates =
-      sigKind === "admin"
-        ? {
-            adminSig: sig,
-            status: statusValue,
-            closedAt: bothSigned ? new Date() : null,
-          }
-        : {
-            financeSig: sig,
-            status: statusValue,
-            closedAt: bothSigned ? new Date() : null,
-          };
-
     await tx
       .update(monthlyReports)
-      .set(updates)
+      .set({
+        adminSig: sig,
+        status: "closed",
+        closedAt: new Date(),
+      })
       .where(eq(monthlyReports.id, reportId));
 
     await writeAudit(
       {
         entityKind: "monthly_report",
         entityId: reportId,
-        action: `sign_${sigKind}`,
+        action: "sign_admin",
         actorId: session.id,
         actorRole: session.role,
         before: { status: report.status },
         after: {
-          status: newStatus,
-          [`${sigKind}Sig`]: sig,
-          closed: bothSigned,
+          status: "closed",
+          adminSig: sig,
+          closed: true,
         },
       },
       txDb

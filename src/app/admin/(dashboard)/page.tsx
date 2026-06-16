@@ -11,11 +11,10 @@ import CogsDashboard from "@/components/admin/CogsDashboard";
 
 export const metadata = { title: "Dashboard" };
 
-type Card = { href: Route; title: string; description: string; hideFor?: string[] };
+type Card = { href: Route; title: string; description: string };
 
-// Finance/manager fallback cards (admin/owner get the COGS dashboard instead).
 const CARDS: Card[] = [
-  { href: "/admin/reports/monthly", title: "Monthly P&L", description: "Review and co-sign monthly profit & loss reports.", hideFor: ["manager"] },
+  { href: "/admin/reports/monthly", title: "Monthly P&L", description: "Review and sign monthly profit & loss reports." },
   { href: "/admin/inventory", title: "Inventory", description: "Stock levels, lots, and costs." },
   { href: "/admin/stock-takes", title: "Stock takes", description: "Count lots and review variance." },
   { href: "/admin/purchases", title: "Purchases", description: "Record purchases and approve emergencies." },
@@ -25,9 +24,8 @@ const CARDS: Card[] = [
 
 export default async function AdminDashboardPage() {
   const session = await getSession();
-  const role = session?.role;
 
-  // Try to load COGS (admin/owner only). On success, render the dashboard.
+  // Try to load COGS. On success, render the dashboard.
   const [liveRes, historyRes] = await Promise.all([
     getCogsLive(),
     getCogsHistory({ days: 30 }),
@@ -56,7 +54,7 @@ export default async function AdminDashboardPage() {
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {CARDS.filter((card) => !(role && card.hideFor?.includes(role))).map((card) => (
+        {CARDS.map((card) => (
           <Link
             key={card.href}
             href={card.href}
