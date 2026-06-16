@@ -1,12 +1,7 @@
-// Admin login — PIN entry (task A3, backend wired by Gian).
+// Admin login — PIN entry + HOFMI SSO (task A3, backend wired by Gian).
 // Public (ungated) page: lives outside the (dashboard) gated layout and is
 // excluded from the proxy redirect (see proxy.ts) so it is reachable when signed
-// out. Staff authenticate with the same numeric PIN used at the POS; the Auth.js
-// Credentials provider carries the role in the JWT, and proxy.ts enforces that
-// only admin-capable roles (admin / owner / finance) may reach /admin/*.
-//
-// HOFMI SSO remains a future enhancement — until an OAuth provider is configured
-// in auth.ts, PIN is the available admin sign-in mechanism.
+// out. Staff authenticate by PIN (POS/admin) or HOFMI SSO (admin/owner/finance).
 // Docs: docs/DESIGN.md → Admin Rules · docs/API.md → loginWithPin
 
 import type { Metadata } from "next";
@@ -14,6 +9,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { canAccessAdmin } from "@/server/auth/rbac";
 import LoginForm from "@/components/pos/LoginForm";
+import SsoSignInButton from "@/components/admin/SsoSignInButton";
 
 export const metadata: Metadata = {
   title: "Sign in — FAVO Admin",
@@ -30,7 +26,22 @@ export default async function AdminLoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-porcelain px-[var(--spacing-m)]">
-      <LoginForm redirectTo="/admin" surface="admin" />
+      <div className="flex flex-col items-center gap-6 w-full max-w-sm">
+        <SsoSignInButton />
+
+        <div className="flex items-center gap-3 w-full max-w-xs">
+          <div className="flex-1 h-px bg-border-subtle" />
+          <span
+            className="favo-small"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            or PIN
+          </span>
+          <div className="flex-1 h-px bg-border-subtle" />
+        </div>
+
+        <LoginForm redirectTo="/admin" surface="admin" />
+      </div>
     </main>
   );
 }
