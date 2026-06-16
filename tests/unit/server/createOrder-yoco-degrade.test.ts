@@ -18,6 +18,7 @@ vi.mock("@/lib/db", () => ({
     select: () => ({ from: () => ({ where: () => Promise.resolve(menuRows) }) }),
     transaction: async (cb: (tx: unknown) => Promise<void>) =>
       cb({ insert: () => ({ values: () => Promise.resolve() }) }),
+    insert: () => ({ values: () => Promise.resolve() }),
   },
 }));
 
@@ -48,7 +49,7 @@ describe("createOrder — graceful Yoco degradation (P0 regression)", () => {
   });
 
   it("returns the real client secret when Yoco succeeds", async () => {
-    mockCreatePaymentIntent.mockResolvedValue({ clientSecret: "cs_live_123" });
+    mockCreatePaymentIntent.mockResolvedValue({ id: "ch_live_123", clientSecret: "cs_live_123" });
     const res = await createOrder(ORDER_INPUT);
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.data.yocoClientSecret).toBe("cs_live_123");

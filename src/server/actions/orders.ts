@@ -11,6 +11,7 @@ import {
   customers,
   loyaltyTransactions,
   staffEntitlementLog,
+  payments,
 } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { authorize } from "@/server/auth/guard";
@@ -185,6 +186,15 @@ export async function createOrder(
   ]);
 
   const yocoClientSecret = yocoResult?.clientSecret ?? "";
+
+  // Insert a payments row now that the order is committed and we optionally
+  // have the Yoco checkout ID. yocoPaymentId is null until the webhook fires.
+  await db.insert(payments).values({
+    orderId,
+    amountZar: totalZar,
+    status: "pending",
+    yocoCheckoutId: yocoResult?.id ?? null,
+  });
 
   // Notify the live queue board that a new order is waiting.
   notifyOrderChange({
@@ -522,18 +532,25 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
   const [o] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!o) return { ok: false, code: "NOT_FOUND", message: "Order not found." };
 
-  const itemRows = await db
-    .select({
-      id: orderItems.id,
-      menuItemId: orderItems.menuItemId,
-      menuItemName: menuItems.name,
-      quantity: orderItems.quantity,
-      unitPriceZar: orderItems.unitPriceZar,
-      modifications: orderItems.modifications,
-    })
-    .from(orderItems)
-    .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
-    .where(eq(orderItems.orderId, orderId));
+  const [itemRows, paymentRow] = await Promise.all([
+    db
+      .select({
+        id: orderItems.id,
+        menuItemId: orderItems.menuItemId,
+        menuItemName: menuItems.name,
+        quantity: orderItems.quantity,
+        unitPriceZar: orderItems.unitPriceZar,
+        modifications: orderItems.modifications,
+      })
+      .from(orderItems)
+      .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
+      .where(eq(orderItems.orderId, orderId)),
+    db
+      .select({ status: payments.status })
+      .from(payments)
+      .where(eq(payments.orderId, orderId))
+      .limit(1),
+  ]);
 
   const order: Order = {
     id: o.id,
@@ -545,6 +562,7 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
     completedAt: o.completedAt ? o.completedAt.toISOString() : null,
     totalZar: o.totalZar,
     isStaffDiscount: o.isStaffDiscount,
+    paymentStatus: paymentRow[0]?.status ?? null,
     items: itemRows.map((it) => ({
       id: it.id,
       menuItemId: it.menuItemId,
