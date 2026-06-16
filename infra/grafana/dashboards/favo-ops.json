@@ -1,0 +1,247 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_POSTGRES",
+      "label": "FAVO Postgres",
+      "type": "datasource",
+      "pluginId": "postgres",
+      "pluginName": "PostgreSQL"
+    },
+    {
+      "name": "DS_LOKI",
+      "label": "FAVO Loki",
+      "type": "datasource",
+      "pluginId": "loki",
+      "pluginName": "Loki"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0" },
+    { "type": "datasource", "id": "loki", "name": "Loki", "version": "1.0.0" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "gauge", "name": "Gauge", "version": "" }
+  ],
+  "annotations": { "list": [] },
+  "description": "Real-time operations dashboard — order throughput, order-to-cup time, push latency, SSE connections, deferred payments",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Admin POS queue", "url": "https://favo.hofmi.org/admin/queue", "type": "link" }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Orders last 1h",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS value FROM orders WHERE placed_at >= NOW() - INTERVAL '1 hour'",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "p50 Order-to-Cup (min)",
+      "description": "Median time from order placed to state = collected",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 8 },
+              { "color": "red", "value": 12 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (updated_at - placed_at)) / 60.0) AS value FROM orders WHERE state = 'collected' AND placed_at >= NOW() - INTERVAL '1 hour'",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "p95 Order-to-Cup (min)",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 12 },
+              { "color": "red", "value": 20 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (updated_at - placed_at)) / 60.0) AS value FROM orders WHERE state = 'collected' AND placed_at >= NOW() - INTERVAL '1 hour'",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Push Delivery Latency p95 (s)",
+      "description": "Time from order→ready to push notification sent (from audit_log timestamps)",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (push.at - ready.at))) AS value FROM audit_log ready JOIN audit_log push ON ready.entity_id = push.entity_id AND ready.entity_kind = 'orders' AND push.entity_kind = 'orders' WHERE ready.action = 'order.transition' AND ready.after->>'toState' = 'ready' AND push.action = 'push.sent' AND ready.at >= NOW() - INTERVAL '1 hour'",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Deferred Payments Pending",
+      "description": "Payments with status=deferred awaiting Yoco retry cron",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS value FROM payments WHERE status = 'deferred'",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "SSE Active Connections",
+      "description": "Active /api/queue/stream connections (approximate — from Loki log counts)",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({service=\"favo-webapp\"} |= \"queue/stream\" |= \"connected\" [1m]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Order throughput — rolling 5-min buckets",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "rawSql": "SELECT DATE_TRUNC('minute', placed_at) + (EXTRACT(MINUTE FROM placed_at)::int / 5 * 5 || ' minutes')::interval AS time, COUNT(*) AS \"Orders\" FROM orders WHERE placed_at >= $__timeFrom()::timestamptz AND placed_at <= $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Order-to-Cup time — p50 & p95 (rolling 15-min)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": { "defaults": { "unit": "m", "decimals": 1 } },
+      "targets": [
+        {
+          "rawSql": "SELECT DATE_TRUNC('minute', placed_at) AS time, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (updated_at - placed_at)) / 60.0) AS \"p50 (min)\", PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (updated_at - placed_at)) / 60.0) AS \"p95 (min)\" FROM orders WHERE state = 'collected' AND placed_at >= $__timeFrom()::timestamptz AND placed_at <= $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Application error rate (from Loki)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        {
+          "expr": "sum(rate({service=\"favo-webapp\"} |= \"error\" [5m]))",
+          "legendFormat": "Errors/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate({service=\"favo-webapp\"} |= \"warn\" [5m]))",
+          "legendFormat": "Warnings/s",
+          "refId": "B"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["favo", "ops", "realtime"],
+  "time": { "from": "now-3h", "to": "now" },
+  "refresh": "30s",
+  "timepicker": {},
+  "title": "FAVO — Operations",
+  "uid": "favo-ops-v1",
+  "version": 1
+}

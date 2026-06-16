@@ -4,7 +4,7 @@ Project: FAVO Café Web App · single-tenant café POS + admin
 Repo: `github.com/Heritage-Of-Faith/Favo-WebApp` · Deploy: `favo.hofmi.org`
 
 ## Stack snapshot
-Next.js 16 (App Router) · React 19 · TS 5.6 strict · Tailwind v4 + shadcn/ui · PG 17 (Supabase) + Drizzle ORM · Auth.js v5 · Yoco Online API · Web Push + VAPID · SSE via PG LISTEN/NOTIFY · Bun · Infisical · Cloudflare
+Next.js 16 (App Router) · React 19 · TS 5.6 strict · Tailwind v4 + shadcn/ui · PG 17 (Supabase) + Drizzle ORM · Auth.js v5 · Yoco Online API · Web Push + VAPID · SSE via PG LISTEN/NOTIFY · Bun · Cloudflare
 
 ## Repo map
 - `src/app/(customer)` — landing + customer PWA (Nikao)
@@ -31,7 +31,7 @@ All Server Actions return `{ ok: true, data } | { ok: false, code, message }` �
 
 **Seed for local testing:** test barista PIN `1234`; customer "Louis" (search `Lou`). Seed is already applied to Supabase (Flavo-Real).
 
-**Database:** Live on Supabase (Flavo-Real, eu-west-1, PG 17). Set `DATABASE_URL` (Transaction pooler, port 6543) via `.env.local` or Infisical. `db/index.ts` has `prepare: false` for PgBouncer compatibility — do not remove it.
+**Database:** Live on Supabase (Flavo-Real, eu-west-1, PG 17). Set `DATABASE_URL` (Transaction pooler, port 6543) via `.env.local` (local) or Vercel env vars (production). `db/index.ts` has `prepare: false` for PgBouncer compatibility — do not remove it.
 
 **Not built yet (don't assume these exist):** admin-support actions `listStaff` / `createStaff` / `setStaffPin` / `setMenuItemPrice` / `listAudit`; loyalty `redeem`/wallet/packs (Phase 3). End-to-end run needs Yoco/VAPID env vars — pure logic is fully testable without them.
 
@@ -44,7 +44,7 @@ All Server Actions return `{ ok: true, data } | { ok: false, code, message }` �
 `bun typecheck` · `bun lint` · `bun test:unit`
 
 ## Non-negotiables
-- **Secrets:** never committed. Read from Infisical via env. No `.env` in git.
+- **Secrets:** never committed. Use `.env.local` locally; Vercel env vars in production. No `.env` in git.
 - **Audit log:** append-only, trigger-enforced. Every mutation calls `writeAudit()` from `src/server/audit.ts`.
 - **Money:** integer cents in columns suffixed `_zar`. Never `numeric`. Format with `formatZar()` from `src/lib/format.ts`.
 - **Timezone:** `Africa/Johannesburg`. Wall-clock logic uses `formatDate()`.
@@ -63,8 +63,9 @@ All Server Actions return `{ ok: true, data } | { ok: false, code, message }` �
 | `FAVO_PRD_v3.md` | Anything ambiguous — PRD is the source of truth |
 
 ## How to start a task
+0. **Read `TASK_PROTOCOL.md`** — mandatory before executing any Jira task (gate checklist, status flow, handover comments, Definition of Done).
 1. **Read `PLANNING.md`** — find the task card (Task ID, owner, branch, files, acceptance).
 2. **Read the specialist files** listed in that card (typically 2–3).
-3. **Branch off latest `main`** using `feat/<initial>-<task-id>-<kebab-name>`.
+3. **Branch off latest `main`** using `feat/<initial>-<jira-key>-<task-id>-<kebab-name>` (see `TASK_PROTOCOL.md` §1).
 4. **Confirm the DB tables and Server Actions** in scope per the task card.
 5. **Build to the acceptance criteria.** Write tests. CI green. PR with WI key.

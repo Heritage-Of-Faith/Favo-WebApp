@@ -80,7 +80,7 @@ function MockOperatingHours({ hours, className }: MockOperatingHoursProps) {
                   ? "var(--color-coffee-bean, #1a0f00)"
                   : "var(--color-cool-steel, #7a8694)",
                 fontWeight: isToday ? 600 : 400,
-                fontFamily: "sans-serif",
+                fontFamily: "var(--font-sans)",
                 fontSize: 14,
               }}
             >

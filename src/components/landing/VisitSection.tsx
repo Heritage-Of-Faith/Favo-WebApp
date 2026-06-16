@@ -1,20 +1,11 @@
-﻿// Visit / hours section â€” owner: Nikao (task N3)
-// Split: hours table left, address + CTA right. Porcelain background.
-// TODO: replace placeholder address before launch.
+// Visit / hours section — owner: Nikao (task N3)
+// Split: address + CTA left, hours right. Porcelain background.
+// Responsive via .landing-visit-grid in globals.css.
 
 const S = {
   section: {
     backgroundColor: "var(--color-porcelain)",
-    padding: "88px 40px",
     borderTop: "1px solid var(--color-porcelain-soft)",
-  } satisfies React.CSSProperties,
-  inner: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 80,
-    alignItems: "flex-start",
   } satisfies React.CSSProperties,
   eyebrow: {
     fontFamily: "'DM Sans', sans-serif",
@@ -69,49 +60,64 @@ const S = {
     padding: "14px 28px",
     borderRadius: 2,
   } satisfies React.CSSProperties,
+  note: {
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 11,
+    letterSpacing: "0.10em",
+    textTransform: "uppercase" as const,
+    color: "var(--color-cool-steel)",
+    marginTop: 20,
+  } satisfies React.CSSProperties,
 } as const;
 
-// Static hours â€” shown when OperatingHours server component falls back.
-// Will be replaced by live data from N4/OperatingHours once G3 seeds the table.
-const STATIC_HOURS = [
-  { day: "Monday",    hours: "09:00 â€“ 17:00" },
-  { day: "Tuesday",   hours: "09:00 â€“ 17:00" },
-  { day: "Wednesday", hours: "09:00 â€“ 17:00" },
-  { day: "Thursday",  hours: "09:00 â€“ 17:00" },
-  { day: "Friday",    hours: "09:00 â€“ 17:00" },
-  { day: "Saturday",  hours: "Closed"         },
-  { day: "Sunday",    hours: "07:00 â€“ 15:00"  },
+const HOURS = [
+  { day: "Monday – Friday", hours: "After morning prayer", note: true },
+  { day: "Saturday",        hours: "Closed",               note: false },
+  { day: "Sunday",          hours: "07:50 – 09:15",        note: false },
+  { day: "Sunday (events)", hours: "16:00 – 16:45 · 18:00 – 19:00", note: false },
 ] as const;
 
 export default function VisitSection() {
   return (
-    <section style={S.section}>
-      <div style={S.inner}>
-        {/* â”€â”€ Left: address + CTA â”€â”€ */}
+    <section id="visit" style={{ ...S.section, scrollMarginTop: 64 }} className="landing-section-pad-l">
+      <div className="landing-visit-grid">
+        {/* Left: address + CTA */}
         <div>
           <p style={S.eyebrow}>Find us</p>
           <h2 style={S.heading}>Come in.<br />We&rsquo;ll be here.</h2>
-          {/* TODO: replace with actual address before launch */}
           <address style={{ display: "block" }}>
-            <p style={S.address}>12 Bean Street</p>
-            <p style={S.addressSub}>Cape Town, Western Cape Â· 8001</p>
+            <p style={S.address}>7 Duiker Street</p>
+            <p style={S.addressSub}>Reyno Ridge · Emalahleni · 1049</p>
           </address>
-          <a href="/login" style={S.cta}>
-            Join the loyalty programme â†’
+          <a
+            href="https://www.google.com/maps/dir/?api=1&destination=7+Duiker+Street+Reyno+Ridge+Emalahleni"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-block",
+              fontFamily: "var(--font-sans)",
+              fontWeight: 700,
+              fontSize: 12,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "var(--color-cool-steel)",
+              textDecoration: "none",
+              marginBottom: "var(--spacing-l)",
+            }}
+          >
+            Get directions ↗
           </a>
         </div>
 
-        {/* â”€â”€ Right: hours â”€â”€ */}
+        {/* Right: hours */}
         <div>
           <p style={S.eyebrow}>Opening hours</p>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <tbody>
-              {STATIC_HOURS.map((row) => (
+              {HOURS.map((row) => (
                 <tr
                   key={row.day}
-                  style={{
-                    borderBottom: "1px solid var(--color-porcelain-soft)",
-                  }}
+                  style={{ borderBottom: "1px solid var(--color-porcelain-soft)" }}
                 >
                   <td
                     style={{
@@ -119,7 +125,8 @@ export default function VisitSection() {
                       fontWeight: 400,
                       fontSize: 15,
                       color: "var(--color-coffee-bean)",
-                      padding: "10px 0",
+                      padding: "12px 0",
+                      verticalAlign: "top",
                     }}
                   >
                     {row.day}
@@ -131,27 +138,24 @@ export default function VisitSection() {
                       fontSize: 15,
                       color: row.hours === "Closed" ? "var(--color-cool-steel)" : "var(--color-coffee-bean)",
                       textAlign: "right",
-                      padding: "10px 0",
+                      padding: "12px 0",
                       letterSpacing: "0.02em",
+                      verticalAlign: "top",
                     }}
                   >
                     {row.hours}
+                    {row.note && (
+                      <span style={{ display: "block", fontSize: 11, color: "var(--color-cool-steel)", marginTop: 2 }}>
+                        Hours vary — not guaranteed
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p
-            style={{
-              fontFamily: "'DM Sans', sans-serif",
-              fontSize: 11,
-              letterSpacing: "0.10em",
-              textTransform: "uppercase",
-              color: "var(--color-cool-steel)",
-              marginTop: 20,
-            }}
-          >
-            Hours informational only
+          <p style={S.note}>
+            Sunday event hours apply to monthly church services only
           </p>
         </div>
       </div>

@@ -1,0 +1,31 @@
+# Semgrep ignore — exclude generated, test-fixture, and non-production paths.
+# Semgrep still scans src/, db/, and server-side route handlers.
+
+# Build artifacts
+.next/
+out/
+dist/
+build/
+
+# Dependencies (scanned by Grype separately)
+node_modules/
+
+# Generated migrations — SQL DDL only, no app logic
+drizzle/
+
+# Test files — fixtures may contain synthetic data patterns
+tests/
+
+# Storybook output
+storybook-static/
+
+# Seed scripts — contain synthetic/demo data
+db/seed/
+
+# Script utilities (build helpers, not production code)
+scripts/
+
+# Environment files (never committed, listed here for belt-and-suspenders)
+.env
+.env.local
+.env.*

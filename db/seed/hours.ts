@@ -1,6 +1,11 @@
 // Operating hours seed — task G3
 // Display-only (business rule L04 — system never rejects orders on time).
-// Mon–Fri 09:00–17:00 · Sun 07:00–15:00 · Sat closed.
+// FAVO is the café at Heritage of Faith Ministries, Reyno Ridge, Emalahleni.
+//
+// Sun 07:50–09:15 (before morning service). Monthly evening events: 16:00–16:45 & 18:00–19:00.
+// Mon–Fri: opens ~30 min after morning prayer (prayer ends ~08:30). Hours are not guaranteed.
+// Sat: closed.
+//
 // day_of_week: 0 = Sunday … 6 = Saturday.
 
 import { db } from "../index";
@@ -15,12 +20,18 @@ export type SeedHours = {
 };
 
 export const OPERATING_HOURS_SEED: SeedHours[] = [
-  { dayOfWeek: 0, openTime: "07:00", closeTime: "15:00", isClosed: false, note: "Sunday" },
-  { dayOfWeek: 1, openTime: "09:00", closeTime: "17:00", isClosed: false },
-  { dayOfWeek: 2, openTime: "09:00", closeTime: "17:00", isClosed: false },
-  { dayOfWeek: 3, openTime: "09:00", closeTime: "17:00", isClosed: false },
-  { dayOfWeek: 4, openTime: "09:00", closeTime: "17:00", isClosed: false },
-  { dayOfWeek: 5, openTime: "09:00", closeTime: "17:00", isClosed: false },
+  {
+    dayOfWeek: 0,
+    openTime: "07:50",
+    closeTime: "09:15",
+    isClosed: false,
+    note: "Before morning service. Monthly evening services: 16:00–16:45 & 18:00–19:00.",
+  },
+  { dayOfWeek: 1, openTime: "08:40", closeTime: "09:10", isClosed: false, note: "After morning prayer — hours not guaranteed" },
+  { dayOfWeek: 2, openTime: "08:40", closeTime: "09:10", isClosed: false, note: "After morning prayer — hours not guaranteed" },
+  { dayOfWeek: 3, openTime: "08:40", closeTime: "09:10", isClosed: false, note: "After morning prayer — hours not guaranteed" },
+  { dayOfWeek: 4, openTime: "08:40", closeTime: "09:10", isClosed: false, note: "After morning prayer — hours not guaranteed" },
+  { dayOfWeek: 5, openTime: "08:40", closeTime: "09:10", isClosed: false, note: "After morning prayer — hours not guaranteed" },
   { dayOfWeek: 6, openTime: "00:00", closeTime: "00:00", isClosed: true, note: "Closed Saturdays" },
 ];
 

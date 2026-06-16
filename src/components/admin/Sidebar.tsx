@@ -1,19 +1,22 @@
-// Admin sidebar nav — owner: Mia (task A2)
-// Collapsible below 1024px. Finance role hides "Menu" and "Staff" items.
+// Admin sidebar nav — owner: Mia (task A2), Phase 2 sections added by Gian.
+// Collapsible below 1024px. `hideFor` mirrors server-side RBAC (advisory only).
 // Docs: docs/DESIGN.md → Admin Rules.
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import type { Route } from "next";
+import { usePathname, useRouter } from "next/navigation";
+import { LogOut } from "lucide-react";
 import type { StaffRole } from "@/lib/types";
 import { adminLayout } from "@/lib/admin-tokens";
 import { cn } from "@/lib/utils";
+import { signOut } from "@/server/actions/auth";
 
 export type Props = { role: StaffRole };
 
 type NavItem = {
-  href: string;
+  href: Route;
   label: string;
   // Roles for which this item is hidden (advisory; server enforces access).
   hideFor?: StaffRole[];
@@ -21,8 +24,18 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard" },
-  { href: "/admin/staff", label: "Staff", hideFor: ["finance"] },
+  { href: "/admin/inventory", label: "Inventory" },
+  { href: "/admin/stock-takes", label: "Stock takes" },
+  { href: "/admin/purchases", label: "Purchases" },
+  { href: "/admin/expenses", label: "Expenses" },
+  // Monthly P&L is admin/finance/owner only (manager cannot read it).
+  { href: "/admin/reports/monthly", label: "Monthly P&L", hideFor: ["manager"] },
+  { href: "/admin/reports" as Route, label: "Reports", hideFor: ["manager"] },
+  { href: "/admin/hours" as Route, label: "Hours", hideFor: ["finance"] },
   { href: "/admin/menu", label: "Menu", hideFor: ["finance"] },
+  { href: "/admin/staff", label: "Staff", hideFor: ["finance"] },
+  { href: "/admin/customers" as Route, label: "Customers", hideFor: ["finance"] },
+  { href: "/admin/sync-conflicts" as Route, label: "Sync conflicts" },
   { href: "/admin/audit", label: "Audit log" },
 ];
 
@@ -30,7 +43,15 @@ export default function Sidebar({ role }: Props) {
   // Below 1024px the sidebar is hidden behind a toggle. `open` controls that
   // mobile drawer; on desktop the sidebar is always visible (lg: classes).
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleSignOut = useCallback(async () => {
+    setSigningOut(true);
+    await signOut();
+    router.push("/admin/login");
+  }, [router]);
 
   const visibleItems = NAV_ITEMS.filter((item) => !item.hideFor?.includes(role));
 
@@ -87,8 +108,8 @@ export default function Sidebar({ role }: Props) {
                   "flex min-h-10 items-center rounded-md px-3 text-sm font-medium transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   isActive(item.href)
-                    ? "bg-elevated text-text-strong"
-                    : "text-text-muted hover:bg-elevated hover:text-text-strong"
+                    ? "bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)] font-semibold border-l-2 border-[color:var(--color-accent)]"
+                    : "text-text-muted hover:bg-[color:var(--color-surface)] hover:text-text-strong"
                 )}
               >
                 {item.label}
@@ -97,8 +118,23 @@ export default function Sidebar({ role }: Props) {
           ))}
         </ul>
 
-        <div className="mt-auto px-3 pt-4 text-xs text-text-muted capitalize">
-          Signed in as {role}
+        <div className="mt-auto flex items-center justify-between px-3 pt-4">
+          <span className="text-xs text-text-muted capitalize">Signed in as {role}</span>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            aria-label="Sign out"
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text-muted transition-colors",
+              "hover:bg-[color:var(--color-surface)] hover:text-text-strong",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "disabled:opacity-40 disabled:cursor-not-allowed"
+            )}
+          >
+            <LogOut size={13} strokeWidth={2.25} />
+            {signingOut ? "Signing out…" : "Sign out"}
+          </button>
         </div>
       </nav>
     </>

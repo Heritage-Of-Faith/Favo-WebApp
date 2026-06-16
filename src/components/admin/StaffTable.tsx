@@ -1,7 +1,8 @@
 // Staff list table — owner: Mia (task A4)
-// shadcn Table. Lists staff with role + status; actions: reset PIN, deactivate.
+// shadcn Table. Lists staff with role + status; actions: reset PIN, deactivate, reactivate.
 "use client";
 
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   Table,
@@ -12,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { deactivateStaff } from "@/lib/staff-placeholders";
+import { deactivateStaff, reactivateStaff } from "@/server/actions/staff";
 import type { Staff } from "@/lib/types";
 
 export type Props = {
@@ -22,14 +23,48 @@ export type Props = {
 };
 
 export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
+  // Per-id set so concurrent row actions don't clobber each other's busy state.
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  const markBusy = (id: string) =>
+    setBusyIds((prev) => { const next = new Set(prev); next.add(id); return next; });
+  const clearBusy = (id: string) =>
+    setBusyIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+
   async function handleDeactivate(member: Staff) {
-    const res = await deactivateStaff(member.id);
-    if (!res.ok) {
-      toast.error(res.message);
+    if (!window.confirm(`Deactivate ${member.name}? They will lose POS access immediately.`)) {
       return;
     }
-    toast.success(`${member.name} deactivated.`);
-    onChanged();
+    markBusy(member.id);
+    try {
+      const res = await deactivateStaff(member.id);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      toast.success(`${member.name} deactivated.`);
+      onChanged();
+    } catch {
+      toast.error("Failed to deactivate staff member. Please try again.");
+    } finally {
+      clearBusy(member.id);
+    }
+  }
+
+  async function handleReactivate(member: Staff) {
+    markBusy(member.id);
+    try {
+      const res = await reactivateStaff(member.id);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      toast.success(`${member.name} reactivated.`);
+      onChanged();
+    } catch {
+      toast.error("Failed to reactivate staff member. Please try again.");
+    } finally {
+      clearBusy(member.id);
+    }
   }
 
   if (staff.length === 0) {
@@ -58,35 +93,53 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
             </TableCell>
             <TableCell className="capitalize">{member.role}</TableCell>
             <TableCell>
-              <span
-                className={
-                  member.active
-                    ? "text-[color:var(--color-success)]"
-                    : "text-text-muted"
-                }
-              >
-                {member.active ? "Active" : "Inactive"}
+              <span className="inline-flex items-center gap-1.5 favo-small">
+                <span
+                  aria-hidden
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    display: "inline-block",
+                    background: member.active
+                      ? "var(--color-success)"
+                      : "var(--color-text-muted)",
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ color: member.active ? "var(--color-success)" : "var(--color-text-muted)" }}>
+                  {member.active ? "Active" : "Inactive"}
+                </span>
               </span>
             </TableCell>
             <TableCell className="text-right">
               <div className="flex justify-end gap-2">
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="min-h-10"
+                  size="default"
                   onClick={() => onResetPin(member)}
                 >
                   Reset PIN
                 </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="min-h-10"
-                  disabled={!member.active}
-                  onClick={() => handleDeactivate(member)}
-                >
-                  Deactivate
-                </Button>
+                {member.active ? (
+                  <Button
+                    variant="destructive"
+                    size="default"
+                    disabled={busyIds.has(member.id)}
+                    onClick={() => handleDeactivate(member)}
+                  >
+                    {busyIds.has(member.id) ? "Deactivating…" : "Deactivate"}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="default"
+                    disabled={busyIds.has(member.id)}
+                    onClick={() => handleReactivate(member)}
+                  >
+                    {busyIds.has(member.id) ? "Reactivating…" : "Reactivate"}
+                  </Button>
+                )}
               </div>
             </TableCell>
           </TableRow>

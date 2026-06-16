@@ -1,0 +1,154 @@
+rules:
+
+  # ── Rule 1: pan-near-log ────────────────────────────────────────────────────
+  # Flags any console output that contains a literal string with a 13-19-digit
+  # sequence (the length range of all major card networks — Visa 16, Amex 15,
+  # Diners 14, etc.). Runtime values cannot be checked statically; this catches
+  # hardcoded test-card literals that accidentally land in production log calls.
+  # FAVO security invariant §05: PAN / CVV / expiry must NEVER appear in any log,
+  # audit row, or stored value.
+  - id: pan-near-log
+    message: >
+      Potential card/PAN number literal near a log call.
+      FAVO §05: card data (PAN, CVV, expiry) must never appear in logs, console
+      output, or audit rows. Remove the literal or use a masked representation.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      cwe: CWE-312
+      owasp: A02:2021 - Cryptographic Failures
+    patterns:
+      - pattern-either:
+          # Named logger methods (pino / custom logger)
+          - pattern: $LOGGER.info($X)
+          - pattern: $LOGGER.warn($X)
+          - pattern: $LOGGER.error($X)
+          - pattern: $LOGGER.debug($X)
+          - pattern: $LOGGER.fatal($X)
+          # console.* family
+          - pattern: console.log($X)
+          - pattern: console.warn($X)
+          - pattern: console.error($X)
+          - pattern: console.debug($X)
+          - pattern: console.info($X)
+      - metavariable-regex:
+          metavariable: $X
+          # Match string/template literals that contain a 13-19-digit run
+          regex: '["''`].*\b\d{13,19}\b.*["''`]'
+
+  # ── Rule 2: pan-in-audit ────────────────────────────────────────────────────
+  # Flags writeAudit calls whose `before` or `after` fields contain a literal
+  # 13-19-digit number — audit rows are append-only and visible to admin users,
+  # so PAN data must never reach them (FAVO §05).
+  - id: pan-in-audit
+    message: >
+      Potential card/PAN number literal in an audit row.
+      FAVO §05: writeAudit `before`/`after` fields must never contain card data.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      cwe: CWE-312
+      owasp: A02:2021 - Cryptographic Failures
+    patterns:
+      - pattern: writeAudit({..., $KEY: $X, ...})
+      - metavariable-regex:
+          metavariable: $X
+          regex: '["''`].*\b\d{13,19}\b.*["''`]'
+
+  # ── Rule 3: mutation-without-audit ──────────────────────────────────────────
+  # Flags exported async server functions that perform a Drizzle `insert`,
+  # `update`, or `delete` mutation but do not call `writeAudit` anywhere in the
+  # same function body. Every mutation must leave an audit trail (L08 + L12).
+  #
+  # False-positive notes:
+  #   • Read-path helpers (no mutation) are not flagged.
+  #   • Utility functions called from an audited action (e.g. deduction.ts) may
+  #     be flagged; annotate them with `// nosemgrep: mutation-without-audit`
+  #     and document the reason in docs/security-baseline.md.
+  - id: mutation-without-audit
+    message: >
+      DB mutation (insert/update/delete) in an exported async function that does
+      not appear to call writeAudit(). FAVO business rules L08 + L12: every
+      mutation must write an audit row. Add `await writeAudit({...})` or
+      suppress with `// nosemgrep: mutation-without-audit` + baseline entry.
+    severity: WARNING
+    languages: [typescript, javascript]
+    metadata:
+      category: correctness
+      cwe: CWE-778
+    pattern-either:
+      # db.insert without writeAudit in the same exported async function
+      - patterns:
+          - pattern: |
+              export async function $FUNC(...) {
+                ...
+                await db.insert($TABLE).values(...)
+                ...
+              }
+          - pattern-not: |
+              export async function $FUNC(...) {
+                ...
+                writeAudit(...)
+                ...
+              }
+      # db.update without writeAudit
+      - patterns:
+          - pattern: |
+              export async function $FUNC(...) {
+                ...
+                await db.update($TABLE).set(...)
+                ...
+              }
+          - pattern-not: |
+              export async function $FUNC(...) {
+                ...
+                writeAudit(...)
+                ...
+              }
+      # db.delete without writeAudit
+      - patterns:
+          - pattern: |
+              export async function $FUNC(...) {
+                ...
+                await db.delete($TABLE)
+                ...
+              }
+          - pattern-not: |
+              export async function $FUNC(...) {
+                ...
+                writeAudit(...)
+                ...
+              }
+      # tx.insert (transaction helper) without writeAudit
+      - patterns:
+          - pattern: |
+              export async function $FUNC(...) {
+                ...
+                await $TX.insert($TABLE).values(...)
+                ...
+              }
+          - pattern-not: |
+              export async function $FUNC(...) {
+                ...
+                writeAudit(...)
+                ...
+              }
+
+  # ── Rule 4: raw-sql-no-params ───────────────────────────────────────────────
+  # Flags `sql.raw(...)` which bypasses Drizzle's parameter binding and is
+  # therefore susceptible to SQL injection if any user-controlled value is
+  # interpolated. Use the safe tagged-template `sql\`...\`` instead.
+  - id: raw-sql-no-params
+    message: >
+      sql.raw() bypasses Drizzle's parameter binding and risks SQL injection.
+      Replace with the safe tagged template: sql`SELECT ... WHERE x = ${value}`.
+      The tagged template escapes all interpolated values automatically.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      cwe: CWE-89
+      owasp: A03:2021 - Injection
+    pattern: sql.raw(...)

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Audit log viewer — task A6 (Gian, taken over from Mia)
 // Paginated, filterable, read-only.
@@ -6,7 +6,8 @@
 
 import { useState, useTransition } from "react";
 import { formatDate } from "@/lib/format";
-import { listAudit, PAGE_SIZE } from "@/server/actions/audit";
+import { listAudit } from "@/server/actions/audit";
+const PAGE_SIZE = 50;
 import type { AuditLog } from "@/lib/types";
 
 const ENTITY_KINDS = [
@@ -236,7 +237,7 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
                   {hasDiff(row) ? (
                     <button
                       onClick={() => setDiffRow(row)}
-                      className="text-xs px-2 py-1 border border-border-subtle rounded-[var(--radius-btn)] text-text-muted hover:text-text-strong hover:border-accent transition-colors"
+                      className="min-h-9 min-w-[44px] text-xs px-2 py-1 border border-border-subtle rounded-[var(--radius-btn)] text-text-muted hover:text-text-strong hover:border-accent transition-colors"
                     >
                       View
                     </button>
@@ -287,7 +288,7 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
             {/* Modal header */}
             <div className="flex items-start justify-between px-5 py-4 border-b border-border-subtle shrink-0">
               <div>
-                <h2 className="favo-h3 text-text-strong">
+                <h2 className="admin-section-title">
                   {diffRow.entityKind} · {diffRow.action}
                 </h2>
                 <p className="favo-small text-text-muted mt-0.5">

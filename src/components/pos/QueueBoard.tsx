@@ -4,10 +4,12 @@
 // SSE consumer via useOrderStream hook. Shows live order cards by state.
 // Docs: docs/API.md → QueueEvent · docs/DESIGN.md → POS Rules
 
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Wifi, WifiOff, Loader2, RefreshCw, Coffee } from "lucide-react";
+import { Wifi, WifiOff, Loader2, RefreshCw, Coffee, LogOut } from "lucide-react";
 import { useOrderStream } from "@/hooks/useOrderStream";
 import { formatDate } from "@/lib/format";
+import { signOut } from "@/server/actions/auth";
 import type { OrderState } from "@/lib/types";
 
 const STATE_LABEL: Record<OrderState, string> = {
@@ -37,13 +39,37 @@ const STATE_DOT: Record<OrderState, string> = {
 export default function QueueBoard() {
   const router = useRouter();
   const { activeOrders, status } = useOrderStream();
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = useCallback(async () => {
+    setSigningOut(true);
+    await signOut();
+    router.push("/pos");
+  }, [router]);
 
   return (
     <div className="flex h-full flex-col gap-[var(--spacing-m)]">
       {/* Header bar */}
       <div className="flex items-center justify-between">
         <h1 className="favo-h3 text-porcelain">Queue</h1>
-        <StatusChip status={status} />
+        <div className="flex items-center gap-[var(--spacing-s)]">
+          <StatusChip status={status} />
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            aria-label="Sign out"
+            className={[
+              "flex items-center justify-center rounded-[var(--radius-btn)]",
+              "h-7 w-7 text-cool-steel",
+              "transition-colors hover:bg-porcelain/10 hover:text-porcelain",
+              "focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot",
+              "disabled:opacity-40 disabled:cursor-not-allowed",
+            ].join(" ")}
+          >
+            <LogOut size={15} strokeWidth={2.25} />
+          </button>
+        </div>
       </div>
 
       {/* Empty state */}

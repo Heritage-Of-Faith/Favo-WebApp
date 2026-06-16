@@ -1,7 +1,18 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;700;900&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,600;9..40,700&display=swap');
+/* shadcn/tailwind.css inlined — package "style" export condition not supported by PostCSS */
+@theme inline {
+  @keyframes accordion-down { from { height: 0; } to { height: var(--radix-accordion-content-height); } }
+  @keyframes accordion-up { from { height: var(--radix-accordion-content-height); } to { height: 0; } }
+  @keyframes collapsible-down { from { height: 0; } to { height: var(--radix-collapsible-content-height); } }
+  @keyframes collapsible-up { from { height: var(--radix-collapsible-content-height); } to { height: 0; } }
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-collapsible-down: collapsible-down 0.2s ease-out;
+  --animate-collapsible-up: collapsible-up 0.2s ease-out;
+}
+/* Google Fonts loaded via <link> in root layout — @import url() must come before
+   all CSS rules but PostCSS expansion makes it invalid here. */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -179,13 +190,50 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
   color: var(--color-crimson-carrot);
 }
 
+/* ─── Admin surface headings ───────────────────────────────────────────────── */
+/* FAVO brand font everywhere — Barlow Condensed for all page-level headings.  */
+
+.admin-page-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.5rem, 2.5vw, 2.25rem);
+  line-height: 1.0;
+  letter-spacing: var(--tracking-head);
+  text-transform: uppercase;
+  color: var(--color-text-strong);
+}
+
+/* ─── Admin portal: FAVO palette only + no link underlines ─────────────────── */
+/* Scoped to [data-admin-portal] (the admin dashboard shell) so POS/customer    */
+/* surfaces keep their conventional status colours. Remapping the status tokens */
+/* to brand hues recolours every admin component (charts, tiles, badges,        */
+/* banners, StatusBadge…) in one place — no green / gold / red / blue anywhere. */
+[data-admin-portal] {
+  --color-success: var(--color-dark-teal);
+  --color-warning: var(--color-crimson-carrot);
+  --color-error:   var(--color-crimson-carrot);
+  --color-info:    var(--color-dark-teal);
+}
+
+/* No lines under buttons / nav links anywhere in the admin portal. */
+[data-admin-portal] a {
+  text-decoration: none;
+}
+
+.admin-section-title {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 1.125rem;
+  line-height: 1.35;
+  color: var(--color-text-strong);
+}
+
 /* ─── shadcn/ui CSS variable layer ────────────────────────────────────────── */
 /* Maps shadcn's generic token names onto FAVO semantic tokens.               */
 /* Admin surface uses shadcn components; these keep them consistent.          */
 
 @theme inline {
   --font-heading: var(--font-display);
-  --font-sans: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -269,5 +317,117 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* ─── Landing page responsive grids ───────────────────────────────────────── */
+/* Inline styles can't use media queries — these classes fill that gap.        */
+
+.landing-section-pad   { padding: 80px 40px; }
+.landing-section-pad-l { padding: 88px 40px; }
+
+.landing-hero-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 56px;
+  align-items: center;
+}
+.landing-about-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 64px;
+  align-items: flex-start;
+}
+.landing-numbers-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 40px;
+}
+.landing-visit-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: flex-start;
+}
+.landing-footer-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  gap: 40px;
+  align-items: flex-start;
+}
+
+@media (max-width: 900px) {
+  .landing-section-pad   { padding: 56px 24px; }
+  .landing-section-pad-l { padding: 64px 24px; }
+
+  .landing-hero-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  /* café photo shows on mobile, capped height so it doesn't dominate */
+  .landing-hero-visual { aspect-ratio: 3 / 2; max-height: 320px; }
+
+  .landing-about-grid {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .landing-numbers-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    padding: 32px 24px;
+  }
+  .landing-numbers-cell-border { border-left: none !important; padding-left: 0 !important; }
+  .landing-visit-grid {
+    grid-template-columns: 1fr;
+    gap: 48px;
+  }
+  .landing-footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .landing-footer-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+  .landing-numbers-grid { grid-template-columns: 1fr; }
+}
+
+/* ─── Team strip ─────────────────────────────────────────────────────────── */
+/* 3-col portrait grid on desktop, single col on mobile (stacks vertically). */
+@media (max-width: 640px) {
+  .team-strip-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ─── Scroll reveals (Phase 2) — CSS scroll-driven, progressively enhanced ─── */
+/* Robust by design: with reduced-motion, or in browsers without               */
+/* animation-timeline support, elements are simply visible — no JS, never       */
+/* stuck hidden. Animates only opacity + transform (GPU-friendly).              */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    @keyframes favo-reveal {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .reveal,
+    .reveal-stagger > * {
+      animation: favo-reveal both linear;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+    /* Cascade row children in. */
+    .reveal-stagger > *:nth-child(2) { animation-range: entry 8% entry 63%; }
+    .reveal-stagger > *:nth-child(3) { animation-range: entry 16% entry 71%; }
+    .reveal-stagger > *:nth-child(4) { animation-range: entry 24% entry 79%; }
   }
 }

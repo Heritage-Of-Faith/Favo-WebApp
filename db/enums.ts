@@ -66,6 +66,7 @@ export const paymentStatus = pgEnum("payment_status", [
   "successful",
   "failed",
   "refunded",
+  "deferred",
 ]);
 
 export const refundStatus = pgEnum("refund_status", [
@@ -101,4 +102,28 @@ export const loyaltyKind = pgEnum("loyalty_kind", [
   "redeem",
   "adjustment",
   "expiry",
+]);
+
+export const chargeKind = pgEnum("charge_kind", [
+  "wallet_topup",
+  "coffee_pack",
+]);
+
+export const walletTxnKind = pgEnum("wallet_txn_kind", [
+  "topup",
+  "spend",
+  "refund",
+  "adjustment",
+]);
+
+export const syncConflictKind = pgEnum("sync_conflict_kind", [
+  "payment_mismatch",
+  "state_collision",
+  "duplicate_order",
+]);
+
+export const syncConflictStatus = pgEnum("sync_conflict_status", [
+  "open",
+  "resolved",
+  "dismissed",
 ]);

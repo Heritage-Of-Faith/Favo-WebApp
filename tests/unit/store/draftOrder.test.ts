@@ -1,7 +1,7 @@
 // Unit tests for draftOrder Zustand store (M2)
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { useDraftOrder } from "@/store/draftOrder";
+import { useDraftOrder, lineKey } from "@/store/draftOrder";
 
 const item1 = {
   menuItemId: "mi-1",
@@ -77,21 +77,31 @@ describe("draftOrder store", () => {
   it("removeItem deletes a line and recalculates total", () => {
     store().addItem(item1);
     store().addItem(item2);
-    store().removeItem("mi-1");
+    store().removeItem(lineKey(item1));
     expect(store().items).toHaveLength(1);
     expect(store().totalZar).toBe(1000);
   });
 
+  it("removeItem targets only the exact line (same item, different mods)", () => {
+    const mod = { id: "mod-1", name: "Oat Milk", priceDeltaZar: 500 };
+    store().addItem({ ...item1, modifications: [] });
+    store().addItem({ ...item1, modifications: [mod] });
+    // Remove only the plain cappuccino — oat-milk variant should remain
+    store().removeItem(lineKey({ ...item1, modifications: [] }));
+    expect(store().items).toHaveLength(1);
+    expect(store().items[0].modifications[0].id).toBe("mod-1");
+  });
+
   it("updateQuantity changes quantity and recalculates total", () => {
     store().addItem(item1);
-    store().updateQuantity("mi-1", 3);
+    store().updateQuantity(lineKey(item1), 3);
     expect(store().items[0].quantity).toBe(3);
     expect(store().totalZar).toBe(13500);
   });
 
   it("updateQuantity(0) removes the item", () => {
     store().addItem(item1);
-    store().updateQuantity("mi-1", 0);
+    store().updateQuantity(lineKey(item1), 0);
     expect(store().items).toHaveLength(0);
   });
 

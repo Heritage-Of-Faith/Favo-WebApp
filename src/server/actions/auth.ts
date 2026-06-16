@@ -7,6 +7,7 @@ import { staff } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
 import { signIn, signOut as nextSignOut } from "../../../auth";
+import { mintLoginAttestation } from "../../../auth";
 import type { ActionResult } from "@/lib/types";
 
 // Docs: docs/API.md → loginWithPin · Bcrypt-compare against staff.pin_hash.
@@ -47,6 +48,23 @@ export async function loginWithPin(
     return { ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect PIN." };
   }
 
+  // Mint a short-lived HMAC attestation token so Auth.js can take the fast
+  // path (single primary-key lookup) without re-running bcrypt.
+  const attestation = mintLoginAttestation(matched.id);
+
+  // Establish the Auth.js session. If signIn throws (e.g. AuthError when
+  // the authorize callback returns null), map it to a structured error — server
+  // actions must never throw across the client boundary.
+  try {
+    await signIn("credentials", { attestation, redirect: false });
+  } catch (err) {
+    // AuthError or unexpected failure — session was NOT created.
+    const message = err instanceof Error ? err.message : "Sign-in failed.";
+    return { ok: false, code: "AUTH_ERROR", message };
+  }
+
+  // Audit only after the session is confirmed — prevents a login_success row
+  // for a session that was never actually created.
   await writeAudit({
     entityKind: "staff",
     entityId: matched.id,
@@ -55,13 +73,18 @@ export async function loginWithPin(
     actorRole: matched.role,
   });
 
-  // Emit the Auth.js session via the Credentials provider.
-  await signIn("credentials", { pin, redirect: false });
-
   return { ok: true, data: { staffId: matched.id, name: matched.name } };
 }
 
 export async function signOut(): Promise<ActionResult> {
   await nextSignOut({ redirect: false });
   return { ok: true, data: undefined };
+}
+
+// AT-19: HOFMI SSO login — initiates the OAuth redirect flow.
+// Requires HOFMI_SSO_CLIENT_ID, HOFMI_SSO_CLIENT_SECRET, HOFMI_SSO_ISSUER env vars.
+// Called as a Next.js form action from SsoSignInButton; Auth.js throws
+// NEXT_REDIRECT before this function returns, so callers need not handle a return value.
+export async function loginWithHofmiSso(_formData?: FormData): Promise<void> {
+  await signIn("hofmi-sso", { redirectTo: "/admin" });
 }

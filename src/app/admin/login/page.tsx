@@ -1,45 +1,46 @@
-// Admin HOFMI SSO login page — owner: Mia (task A3)
-// Public (ungated) page that starts the HOFMI single-sign-on flow.
-// Lives OUTSIDE the (dashboard) gated layout so it is reachable when signed out.
-// Docs: docs/DESIGN.md → Admin Rules.
-//
-// ⚠️ Backend follow-up (Gian, not in scope for this frontend task):
-//   1. Add the "hofmi-sso" OAuth provider to auth.ts (G4 marks it TODO).
-//   2. Exclude "/admin/login" from the proxy.ts redirect so it is reachable
-//      while signed out (proxy currently bounces all /admin/* to "/").
-// Until both land, the button below renders correctly but the sign-in call
-// will fail at runtime because the provider does not yet exist.
+// Admin login — PIN entry + HOFMI SSO (task A3, backend wired by Gian).
+// Public (ungated) page: lives outside the (dashboard) gated layout and is
+// excluded from the proxy redirect (see proxy.ts) so it is reachable when signed
+// out. Staff authenticate by PIN (POS/admin) or HOFMI SSO (admin/owner/finance).
+// Docs: docs/DESIGN.md → Admin Rules · docs/API.md → loginWithPin
 
-import { signIn } from "../../../../auth";
-import { Button } from "@/components/ui/button";
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth/session";
+import { canAccessAdmin } from "@/server/auth/rbac";
+import LoginForm from "@/components/pos/LoginForm";
+import SsoSignInButton from "@/components/admin/SsoSignInButton";
 
-async function startHofmiSso() {
-  "use server";
-  await signIn("hofmi-sso", { redirectTo: "/admin" });
-}
+export const metadata: Metadata = {
+  title: "Sign in — FAVO Admin",
+  robots: { index: false, follow: false },
+};
 
-export default function AdminLoginPage() {
+export default async function AdminLoginPage() {
+  const session = await getSession();
+
+  // Already signed in with an admin-capable role — skip the login screen.
+  if (session && canAccessAdmin(session.role)) {
+    redirect("/admin");
+  }
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-surface p-6">
-      <div className="w-full max-w-sm rounded-lg border border-border-subtle bg-elevated p-8 text-center">
-        <h1 className="text-2xl font-semibold text-text-strong">FAVO Admin</h1>
-        <p className="mt-2 text-sm text-text-muted">
-          Sign in with your Heritage of Faith account to manage the café.
-        </p>
+    <main className="flex min-h-screen items-center justify-center bg-porcelain px-[var(--spacing-m)]">
+      <div className="flex flex-col items-center gap-6 w-full max-w-sm">
+        <SsoSignInButton />
 
-        <form action={startHofmiSso} className="mt-6">
-          <Button type="submit" size="lg" className="min-h-10 w-full">
-            Sign in with HOFMI
-          </Button>
-        </form>
+        <div className="flex items-center gap-3 w-full max-w-xs">
+          <div className="flex-1 h-px bg-border-subtle" />
+          <span
+            className="favo-small"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            or PIN
+          </span>
+          <div className="flex-1 h-px bg-border-subtle" />
+        </div>
 
-        <p className="mt-4 text-xs text-text-muted">
-          Staff using the till should use the{" "}
-          <a href="/pos" className="underline">
-            POS PIN login
-          </a>{" "}
-          instead.
-        </p>
+        <LoginForm redirectTo="/admin" surface="admin" />
       </div>
     </main>
   );

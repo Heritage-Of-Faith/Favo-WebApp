@@ -175,4 +175,23 @@ describe("LoginForm", () => {
     pressDigits("4");
     expect(status).toHaveAccessibleName("4 digits entered");
   });
+
+  it("shows the Point of Sale sub-label by default", () => {
+    render(<LoginForm />);
+    expect(screen.getByText("Point of Sale")).toBeInTheDocument();
+  });
+
+  it("shows the Admin sub-label on the admin surface", () => {
+    render(<LoginForm surface="admin" />);
+    expect(screen.getByText("Admin")).toBeInTheDocument();
+    expect(screen.queryByText("Point of Sale")).toBeNull();
+  });
+
+  it("redirects to the provided target on successful login", async () => {
+    mockLoginWithPin.mockResolvedValue({ ok: true, data: { staffId: "s1", name: "Mia" } });
+    render(<LoginForm redirectTo="/admin" surface="admin" />);
+    pressDigits("4", "3", "2", "1");
+    fireEvent.click(getSubmitButton());
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/admin"));
+  });
 });

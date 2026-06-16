@@ -1,19 +1,27 @@
-﻿// Landing hero â€” owner: Nikao (task N3)
-// Full-bleed Dark Teal. Barlow Condensed 900 headline. Specific cafÃ© copy.
+// Landing hero — owner: Nikao (task N3)
+// Full-bleed Dark Teal. Barlow Condensed 900 headline + café photo.
+// Responsive via .landing-hero-grid in globals.css.
+
+import Image from "next/image";
 
 const S = {
   section: {
+    position: "relative" as const,
+    overflow: "hidden",
     backgroundColor: "var(--color-dark-teal)",
     color: "var(--color-porcelain)",
-    padding: "80px 40px 96px",
   } satisfies React.CSSProperties,
-  inner: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "1.2fr 1fr",
-    gap: 56,
-    alignItems: "center",
+  // Faint hand-drawn watermark — bleeds off the bottom-left, behind content.
+  watermark: {
+    position: "absolute" as const,
+    left: "-3%",
+    bottom: "-12%",
+    width: "clamp(280px, 34vw, 520px)",
+    aspectRatio: "1000 / 1039",
+    opacity: 0.07,
+    filter: "invert(1)",
+    pointerEvents: "none" as const,
+    zIndex: 0,
   } satisfies React.CSSProperties,
   eyebrow: {
     fontFamily: "'DM Sans', 'Helvetica Neue', Arial, sans-serif",
@@ -62,73 +70,57 @@ const S = {
     borderRadius: 2,
   } satisfies React.CSSProperties,
   visual: {
-    display: "flex",
-    flexDirection: "column" as const,
-    justifyContent: "center",
-    alignItems: "flex-start",
-    paddingLeft: 16,
-    borderLeft: "2px solid rgba(247,246,242,0.12)",
-    gap: 0,
-  } satisfies React.CSSProperties,
-  lotLabel: {
-    fontFamily: "'DM Sans', sans-serif",
-    fontWeight: 300,
-    fontSize: 11,
-    letterSpacing: "0.18em",
-    textTransform: "uppercase" as const,
-    color: "var(--color-crimson-carrot)",
-    marginBottom: 12,
-  } satisfies React.CSSProperties,
-  lotName: {
-    fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-    fontWeight: 900,
-    fontSize: "clamp(3rem, 6vw, 6rem)",
-    lineHeight: 0.88,
-    letterSpacing: "0.04em",
-    textTransform: "uppercase" as const,
-    color: "var(--color-crimson-carrot)",
-    marginBottom: 16,
-  } satisfies React.CSSProperties,
-  lotDetail: {
-    fontFamily: "'DM Sans', sans-serif",
-    fontWeight: 400,
-    fontSize: 13,
-    lineHeight: 1.8,
-    color: "var(--color-porcelain)",
-    opacity: 0.75,
+    position: "relative" as const,
+    width: "100%",
+    aspectRatio: "4 / 5",
+    borderRadius: 2,
+    overflow: "hidden",
+    backgroundColor: "var(--color-dark-teal-deep)",
   } satisfies React.CSSProperties,
 } as const;
 
 export default function Hero() {
   return (
-    <section style={S.section}>
-      <div style={S.inner}>
-        {/* â”€â”€ Left column â”€â”€ */}
-        <div>
-          <p style={S.eyebrow}>Speciality coffee Â· Cape Town</p>
+    <section style={S.section} className="landing-section-pad">
+      {/* Subtle café-theme watermark */}
+      <div style={S.watermark} aria-hidden="true">
+        <Image
+          src="/illustrations/coffee-machine.png"
+          alt=""
+          fill
+          sizes="520px"
+          style={{ objectFit: "contain" }}
+        />
+      </div>
+
+      <div className="landing-hero-grid" style={{ position: "relative", zIndex: 1 }}>
+        {/* Left column */}
+        <div className="reveal">
+          <p style={S.eyebrow}>Heritage of Faith · Emalahleni</p>
           <h1 style={S.headline}>
-            Single&#8209;origin.<br />
-            No shortcuts.
+            Coffee for<br />
+            the family.
           </h1>
           <p style={S.body}>
-            Every cup names the farm, the harvest, and the roast date.
-            We pull espresso at 93&deg;C and brew filter to order &mdash;
-            nothing sits on a burner.
+            FAVO is the café at Heritage of Faith Ministries.
+            Our baristas are iXchange interns — people learning to serve
+            the community, one drink at a time. Come as you are.
           </p>
-          <a href="/login" style={S.cta}>
-            Join the loyalty programme â†’
+          <a href="/signup" style={S.cta}>
+            Join the loyalty programme →
           </a>
         </div>
 
-        {/* â”€â”€ Right column â€” current lot â”€â”€ */}
-        <div style={S.visual}>
-          <p style={S.lotLabel}>Current lot Â· Colombia</p>
-          <p style={S.lotName}>El JordÃ¡n</p>
-          <p style={S.lotDetail}>
-            Caturra, washed<br />
-            1,750 m Â· Huila<br />
-            Blackberry jam, dark cane sugar
-          </p>
+        {/* Right column — café photo (shown on mobile too via .landing-hero-visual) */}
+        <div style={S.visual} className="landing-hero-visual">
+          <Image
+            src="/images/hero-barista.jpg"
+            alt="A FAVO barista pulling a shot on the espresso machine"
+            fill
+            priority
+            sizes="(max-width: 900px) 100vw, 40vw"
+            style={{ objectFit: "cover" }}
+          />
         </div>
       </div>
     </section>

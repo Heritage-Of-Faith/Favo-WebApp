@@ -1,12 +1,12 @@
-﻿// Numbers strip â€” owner: Nikao (task N3)
-// Four cafÃ© facts set large in Barlow Condensed on a paper background.
-// These are decorative data points â€” specific, not generic.
+// Numbers strip — owner: Nikao (task N3)
+// Four real facts about FAVO set large in Barlow Condensed.
+// Responsive via .landing-numbers-grid in globals.css.
 
 const facts = [
-  { number: "09:00",  label: "Mon â€“ Fri open",       sub: "Saturdays closed" },
-  { number: "93Â°C",   label: "Espresso temperature",  sub: "9 bar Â· 28 second extraction" },
-  { number: "1,750",  label: "Metres elevation",       sub: "Current lot Â· El JordÃ¡n, Huila" },
-  { number: "62%",    label: "Paid to producer",       sub: "On this lot Â· nothing hidden" },
+  { number: "07:50",   label: "Opens Sundays",           sub: "Before morning service · 07:50–09:15" },
+  { number: "5",       label: "Drinks on the menu",       sub: "Cappuccino, Americano, Mocha & more" },
+  { number: "Mon–Fri", label: "Open on weekdays",         sub: "After morning prayer · hours vary" },
+  { number: "3",       label: "iXchangers serving",       sub: "Interns learning to serve you" },
 ] as const;
 
 const S = {
@@ -15,22 +15,10 @@ const S = {
     borderTop: "1px solid var(--color-porcelain-soft)",
     borderBottom: "1px solid var(--color-porcelain-soft)",
   } satisfies React.CSSProperties,
-  grid: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
-    padding: "40px 40px",
-  } satisfies React.CSSProperties,
-  cell: (i: number) => ({
-    borderLeft: i > 0 ? "1px solid var(--color-porcelain-soft)" : "none",
-    paddingLeft: i > 0 ? 28 : 0,
-    paddingRight: 20,
-  } satisfies React.CSSProperties),
   number: {
     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
     fontWeight: 900,
-    fontSize: "clamp(2.5rem, 4vw, 4rem)",
+    fontSize: "clamp(2rem, 3.5vw, 3.5rem)",
     letterSpacing: "0.04em",
     color: "var(--color-coffee-bean)",
     lineHeight: 1,
@@ -57,9 +45,18 @@ const S = {
 export default function NumbersStrip() {
   return (
     <section style={S.section} aria-label="Key facts about FAVO">
-      <div style={S.grid}>
+      <div className="landing-numbers-grid reveal-stagger">
         {facts.map((f, i) => (
-          <div key={f.number} style={S.cell(i)}>
+          <div
+            key={f.number}
+            className={i > 0 ? "landing-numbers-cell-border" : ""}
+            style={{
+              borderLeft: i > 0 ? "1px solid var(--color-porcelain-soft)" : "none",
+              paddingLeft: 20,
+              paddingRight: 20,
+              textAlign: "center",
+            }}
+          >
             <p style={S.number}>{f.number}</p>
             <p style={S.label}>{f.label}</p>
             <p style={S.sub}>{f.sub}</p>

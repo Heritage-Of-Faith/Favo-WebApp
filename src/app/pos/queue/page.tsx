@@ -1,18 +1,10 @@
-// POS queue board page — owner: Mine (M5)
-// Protected: redirects to /pos if not authenticated.
-// Server component — auth check server-side; QueueBoard is a client component.
-
+// POS workspace — single screen with order builder + live queue
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
-import QueueBoard from "@/components/pos/QueueBoard";
+import POSWorkspace from "@/components/pos/POSWorkspace";
 
-export default async function QueuePage() {
+export default async function POSWorkspacePage() {
   const session = await getSession();
   if (!session) redirect("/pos");
-
-  return (
-    <main className="flex h-screen flex-col p-[var(--spacing-m)]">
-      <QueueBoard />
-    </main>
-  );
+  return <POSWorkspace staffName={session.name} staffId={session.id} />;
 }

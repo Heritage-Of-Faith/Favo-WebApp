@@ -7,8 +7,10 @@ import {
   jsonb,
   serial,
   unique,
+  uniqueIndex,
   index,
   check,
+  numeric,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -26,6 +28,10 @@ import {
   purchaseKind,
   expenseCategory,
   loyaltyKind,
+  chargeKind,
+  walletTxnKind,
+  syncConflictKind,
+  syncConflictStatus,
 } from "./enums";
 
 const TENANT = "hofmi";
@@ -42,6 +48,9 @@ export const staff = pgTable("staff", {
   pinHash: text("pin_hash").notNull(),
   active: boolean("active").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // Web Push subscription stored by M10 (POS opt-in). Used by G14 cron to
+  // send low-stock alerts to barista devices.
+  pushSubscription: jsonb("push_subscription"),
 });
 
 // ─── Customers ────────────────────────────────────────────────────────────────
@@ -52,8 +61,10 @@ export const customers = pgTable("customers", {
   email: text("email").unique(),
   name: text("name").notNull(),
   phone: text("phone"),
+  passwordHash: text("password_hash"),
   pushSubscription: jsonb("push_subscription"),
   loyaltyPoints: integer("loyalty_points").default(0).notNull(),
+  walletZar: integer("wallet_zar").default(0).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -126,6 +137,15 @@ export const inventoryLots = pgTable("inventory_lots", {
   receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
   state: lotState("state").default("active").notNull(),
   origin: text("origin"),
+  // Exception to the integer-cents rule: per-unit production cost is a RATE,
+  // not a money amount. When unit=g or unit=ml the cost per gram/ml is
+  // sub-cent (e.g. R450/kg → 0.45 ¢/g). Using integer would force it to 0
+  // and break COGS entirely. numeric(10,4) gives 4-decimal cent precision.
+  // G13 COGS sums (delta × unit_cost_zar) → cast to integer cents at
+  // the order level. Admin recosts via A8 after launch (R10 mitigation).
+  unitCostZar: numeric("unit_cost_zar", { precision: 10, scale: 4 }),
+  // Quantity received when this lot was booked in (in the item's unit).
+  quantityReceived: numeric("quantity_received", { precision: 10, scale: 2 }),
 });
 
 export const stockMovements = pgTable("stock_movements", {
@@ -153,9 +173,12 @@ export const stockTakeLines = pgTable("stock_take_lines", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   stockTakeId: text("stock_take_id").notNull().references(() => stockTakes.id),
   inventoryLotId: text("inventory_lot_id").notNull().references(() => inventoryLots.id),
+  /** Running-stock at take-creation time (SUM of movements up to startedAt). */
   expected: integer("expected").notNull(),
-  counted: integer("counted").notNull(),
-  variance: integer("variance").notNull(),
+  /** Null until the admin physically counts this lot (walk-lots flow in A9). */
+  counted: integer("counted"),
+  /** Null until counted. Raw delta: counted − expected (integer units). */
+  variance: integer("variance"),
 });
 
 export const stockAlertRecipients = pgTable("stock_alert_recipients", {
@@ -178,6 +201,10 @@ export const orders = pgTable("orders", {
   totalZar: integer("total_zar").notNull(),
   yocoPaymentId: text("yoco_payment_id"),
   isStaffDiscount: boolean("is_staff_discount").default(false).notNull(),
+  // Tracks how offline orders were tendered. null = normal Yoco flow.
+  paymentMode: text("payment_mode", {
+    enum: ["yoco", "wallet", "yoco_deferred", "free"],
+  }),
 });
 
 export const orderItems = pgTable("order_items", {
@@ -214,15 +241,26 @@ export const refunds = pgTable("refunds", {
 
 // ─── Loyalty ──────────────────────────────────────────────────────────────────
 
-export const loyaltyTransactions = pgTable("loyalty_transactions", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: tenantId(),
-  customerId: text("customer_id").notNull().references(() => customers.id),
-  orderId: text("order_id").references(() => orders.id),
-  delta: integer("delta").notNull(),
-  kind: loyaltyKind("kind").notNull(),
-  at: now(),
-});
+export const loyaltyTransactions = pgTable(
+  "loyalty_transactions",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    customerId: text("customer_id").notNull().references(() => customers.id),
+    orderId: text("order_id").references(() => orders.id),
+    delta: integer("delta").notNull(),
+    kind: loyaltyKind("kind").notNull(),
+    at: now(),
+  },
+  (t) => [
+    // Idempotency guard (AT-60): prevent double-accrual if transitionOrder is
+    // retried on the same in_progress -> ready transition. Only one earn row is
+    // allowed per order_id -- redeem rows are unrestricted.
+    uniqueIndex("loyalty_txn_earn_order_unique")
+      .on(t.orderId)
+      .where(sql`kind = 'earn'`),
+  ]
+);
 
 // ─── Staff Entitlement ────────────────────────────────────────────────────────
 
@@ -263,11 +301,19 @@ export const purchases = pgTable(
     totalZar: integer("total_zar").notNull(),
     kind: purchaseKind("kind").notNull(),
     adminApprovedBy: text("admin_approved_by").references(() => staff.id),
+    // L10: emergency purchases by non-admins wait here until an admin approves.
+    // 'active' = lots can be used; 'pending_admin_approval' = lots quarantined.
+    status: text("status", { enum: ["active", "pending_admin_approval"] })
+      .default("active")
+      .notNull(),
   },
   () => [
     check(
       "emergency_requires_approval",
-      sql`kind != 'emergency' OR admin_approved_by IS NOT NULL`
+      // Allows: emergency + pending (adminApprovedBy still null) OR
+      //         emergency + active  (adminApprovedBy must be set)    OR
+      //         planned  (no restriction)
+      sql`kind != 'emergency' OR status = 'pending_admin_approval' OR admin_approved_by IS NOT NULL`
     ),
   ]
 );
@@ -314,3 +360,152 @@ export const auditLog = pgTable("audit_log", {
   index("audit_log_actor_idx").on(t.actorId),
   index("audit_log_at_idx").on(t.at),
 ]);
+
+// ─── Monthly reports (G15 dual-sign) ─────────────────────────────────────────
+
+export const monthlyReports = pgTable(
+  "monthly_reports",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    /** First day of the month (YYYY-MM-DD). UNIQUE — one report per month. */
+    month: text("month").notNull().unique(),
+    revenueZar: integer("revenue_zar").notNull(),
+    cogsZar: integer("cogs_zar").notNull(),
+    expensesZar: integer("expenses_zar").notNull(),
+    grossMarginZar: integer("gross_margin_zar").notNull(),
+    netZar: integer("net_zar").notNull(),
+    /** draft → awaiting_signatures → closed */
+    status: text("status", {
+      enum: ["draft", "awaiting_signatures", "closed"],
+    })
+      .default("draft")
+      .notNull(),
+    /** JSONB: { signerId, signerName, at } */
+    adminSig: jsonb("admin_sig"),
+    financeSig: jsonb("finance_sig"),
+    generatedAt: timestamp("generated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  () => [
+    // L11: a report can only be closed when BOTH signatures are present.
+    check(
+      "monthly_report_closed_requires_both_sigs",
+      sql`status != 'closed' OR (admin_sig IS NOT NULL AND finance_sig IS NOT NULL)`
+    ),
+  ]
+);
+
+// ─── Low-stock pings (G14 dedup) ─────────────────────────────────────────────
+
+export const lowStockPings = pgTable("low_stock_pings", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  inventoryItemId: text("inventory_item_id").notNull().references(() => inventoryItems.id),
+  staffId: text("staff_id").notNull().references(() => staff.id),
+  firedAt: timestamp("fired_at", { withTimezone: true }).defaultNow().notNull(),
+  /** Stock level (integer base units) at the time the ping was sent. */
+  stockAtFire: integer("stock_at_fire").notNull(),
+});
+
+// ─── Weekly reports (G14 cron) ────────────────────────────────────────────────
+
+export const weeklyReports = pgTable("weekly_reports", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  /** ISO date of Monday that starts the week (SAST). */
+  weekStarting: text("week_starting").notNull().unique(),
+  revenueZar: integer("revenue_zar").notNull(),
+  cogsZar: integer("cogs_zar").notNull(),
+  expensesZar: integer("expenses_zar").notNull(),
+  grossMarginZar: integer("gross_margin_zar").notNull(),
+  netZar: integer("net_zar").notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── Pending charges (G9 — wallet top-ups + coffee packs via Yoco) ────────────
+
+export const pendingCharges = pgTable("pending_charges", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  yocoCheckoutId: text("yoco_checkout_id").notNull().unique(),
+  kind: chargeKind("kind").notNull(),
+  customerId: text("customer_id").notNull().references(() => customers.id),
+  amountZar: integer("amount_zar").notNull(),
+  status: paymentStatus("status").default("pending").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── Coffee packs (G9 — L16: barista-sold, 90-day expiry) ─────────────────────
+
+export const coffeePacks = pgTable("coffee_packs", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  customerId: text("customer_id").notNull().references(() => customers.id),
+  menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
+  qtyOriginal: integer("qty_original").notNull(),
+  qtyRemaining: integer("qty_remaining").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  pendingChargeId: text("pending_charge_id").notNull().references(() => pendingCharges.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── Wallet transactions (G17 — append-only ledger) ──────────────────────────
+
+export const walletTransactions = pgTable("wallet_transactions", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  customerId: text("customer_id").notNull().references(() => customers.id),
+  /** Signed integer cents: positive = credit, negative = debit. */
+  deltaZar: integer("delta_zar").notNull(),
+  kind: walletTxnKind("kind").notNull(),
+  relatedOrderId: text("related_order_id").references(() => orders.id),
+  relatedPendingChargeId: text("related_pending_charge_id").references(() => pendingCharges.id),
+  description: text("description"),
+  at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── Sync conflicts (G17 — offline sync conflict log) ────────────────────────
+
+export const syncConflicts = pgTable("sync_conflicts", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  kind: syncConflictKind("kind").notNull(),
+  orderId: text("order_id").references(() => orders.id),
+  clientPayload: jsonb("client_payload").notNull(),
+  serverState: jsonb("server_state"),
+  status: syncConflictStatus("status").default("open").notNull(),
+  openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolvedBy: text("resolved_by").references(() => staff.id),
+  resolutionNote: text("resolution_note"),
+});
+
+// ─── Outbox log (G17 — offline POS order queue) ───────────────────────────────
+
+export const outboxLog = pgTable("outbox_log", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  /** UUID generated by the POS client — idempotency key. */
+  clientUuid: text("client_uuid").notNull().unique(),
+  customerId: text("customer_id").references(() => customers.id),
+  staffId: text("staff_id").notNull().references(() => staff.id),
+  payload: jsonb("payload").notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+  appliedAt: timestamp("applied_at", { withTimezone: true }),
+  conflictId: text("conflict_id").references(() => syncConflicts.id),
+});
+
+// ─── Magic link tokens (G16 — customer email auth) ───────────────────────────
+
+export const magicLinkTokens = pgTable("magic_link_tokens", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  email: text("email").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+});

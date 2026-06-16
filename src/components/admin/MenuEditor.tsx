@@ -4,6 +4,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Table,
@@ -27,10 +28,10 @@ import { Label } from "@/components/ui/label";
 import { formatZar, formatDate } from "@/lib/format";
 import {
   getMenu,
-  getPriceHistory,
+  getMenuItemPriceHistory,
   setMenuItemPrice,
-  type PriceHistoryEntry,
-} from "@/lib/menu-placeholders";
+  type PriceHistoryRow,
+} from "@/server/actions/menu";
 import type { MenuItem } from "@/lib/types";
 
 type DialogState =
@@ -96,6 +97,13 @@ export default function MenuEditor() {
                   >
                     History
                   </Button>
+                  <Link
+                    href={`/admin/menu/${item.id}/recipe`}
+                    className="inline-flex min-h-10 items-center rounded-[var(--radius-btn)] px-3 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
+                    style={{ color: "var(--color-text-strong)" }}
+                  >
+                    Recipe
+                  </Link>
                 </div>
               </TableCell>
             </TableRow>
@@ -141,15 +149,20 @@ function EditPriceDialog({
       return;
     }
     setSubmitting(true);
-    const res = await setMenuItemPrice(item.id, cents);
-    setSubmitting(false);
-    if (!res.ok) {
-      toast.error(res.message);
-      return;
+    try {
+      const res = await setMenuItemPrice({ menuItemId: item.id, newPriceZar: cents });
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      toast.success(`${item.name} price updated to ${formatZar(cents)}.`);
+      onSaved();
+      onClose();
+    } catch {
+      toast.error("Failed to update price. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
-    toast.success(`${item.name} price updated to ${formatZar(cents)}.`);
-    onSaved();
-    onClose();
   }
 
   return (
@@ -196,12 +209,15 @@ function HistoryDialog({
   item: MenuItem;
   onClose: () => void;
 }) {
-  const [rows, setRows] = useState<PriceHistoryEntry[] | null>(null);
+  const [rows, setRows] = useState<PriceHistoryRow[] | null>(null);
 
   useEffect(() => {
-    getPriceHistory(item.id).then((res) => {
-      if (res.ok) setRows(res.data);
-    });
+    getMenuItemPriceHistory(item.id)
+      .then((res) => {
+        if (res.ok) setRows(res.data);
+        else setRows([]);
+      })
+      .catch(() => setRows([]));
   }, [item.id]);
 
   return (
@@ -226,8 +242,8 @@ function HistoryDialog({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row, i) => (
-                <TableRow key={i}>
+              {rows.map((row) => (
+                <TableRow key={row.id}>
                   <TableCell className="text-right tabular-nums">
                     {formatZar(row.priceZar)}
                   </TableCell>

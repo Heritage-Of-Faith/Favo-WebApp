@@ -1,8 +1,9 @@
 "use client";
-// Push notification opt-in — owner: Nikao (task N5)
+// Push notification opt-in — owner: Nikao (task N14, AT-66)
 // Requests browser push permission, creates a PushSubscription,
-// and POSTs it to /api/push/subscribe with the customerId.
+// and POSTs it to /api/push/subscribe with the authenticated customerId.
 // Only renders on browsers that support Push API.
+// Persists a per-device "asked once" flag to avoid re-prompting on every visit.
 
 import { useState, useEffect } from "react";
 
@@ -13,6 +14,13 @@ interface PushOptInProps {
 type PermissionState = "default" | "granted" | "denied" | "unsupported";
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+
+// localStorage key tracks whether the user has been shown the prompt on this device.
+// Value "granted" means we stored confirmation that push was once granted (detects revocation).
+// Value "1" means asked but not yet granted.
+function askedKey(customerId: string) {
+  return `favo_push_asked_${customerId}`;
+}
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -96,6 +104,9 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
   const [permission, setPermission] = useState<PermissionState>("default");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // true when user has been prompted before and dismissed without granting (hides the card).
+  // Reset to false when permission is "granted" so we can detect subsequent revocation.
+  const [hiddenByFlag, setHiddenByFlag] = useState(false);
 
   useEffect(() => {
     // Check truthiness so tests can simulate absence by setting window.Notification = undefined
@@ -103,10 +114,24 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
       setPermission("unsupported");
       return;
     }
-    setPermission(window.Notification.permission as PermissionState);
-  }, []);
+    const perm = window.Notification.permission as PermissionState;
+    setPermission(perm);
+
+    const stored = localStorage.getItem(askedKey(customerId));
+    if (perm === "granted") {
+      // Record that we once had grant — lets us detect future revocation.
+      localStorage.setItem(askedKey(customerId), "granted");
+    } else if (perm === "default") {
+      // Hide if asked before, UNLESS permission was previously granted and then revoked.
+      // Revocation: stored was "granted" but perm is now "default" → show again.
+      if (stored === "1") setHiddenByFlag(true);
+    }
+  }, [customerId]);
 
   async function handleEnable() {
+    // Always record "asked" on first click — even if VAPID isn't configured — so the card
+    // doesn't re-appear on every visit after the user interacts with it once.
+    localStorage.setItem(askedKey(customerId), "1");
     if (!VAPID_KEY) {
       setError("Push not configured — NEXT_PUBLIC_VAPID_PUBLIC_KEY missing.");
       return;
@@ -121,9 +146,8 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
         return;
       }
       setPermission("granted");
+      localStorage.setItem(askedKey(customerId), "granted");
 
-      // Phase 1: no service worker registered yet (SW ships in Phase 3).
-      // getRegistration() returns undefined instead of hanging forever like .ready would.
       const reg = await navigator.serviceWorker.getRegistration();
       if (!reg) {
         setError(
@@ -157,6 +181,8 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
   }
 
   if (permission === "unsupported") return null;
+  // Hide after user has been prompted once and hasn't granted (dismissal without action).
+  if (permission === "default" && hiddenByFlag) return null;
 
   return (
     <div style={S.wrap}>
