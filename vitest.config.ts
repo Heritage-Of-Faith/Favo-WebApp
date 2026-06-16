@@ -17,6 +17,11 @@ export default defineConfig({
     coverage: {
       reporter: ["text", "lcov"],
     },
+    server: {
+      deps: {
+        inline: ["zod"],
+      },
+    },
   },
   resolve: {
     alias: {

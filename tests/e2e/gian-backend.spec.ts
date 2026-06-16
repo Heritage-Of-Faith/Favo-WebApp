@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Gian's backend vertical — E2E / API-contract tests
  * Covers: G4 (auth), G6 (Yoco webhook + SSE queue), G7 (push subscribe)
  *
@@ -28,33 +28,27 @@ function signWebhook(payload: string, secret: string): string {
 
 /** Log in as the seeded barista (PIN 1234). */
 async function loginAsBarista(page: Page): Promise<void> {
-  await page.goto("/pos", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: /enter your pin/i })).toBeVisible();
-  // Wait for React hydration — digit buttons must be enabled before clicking
-  await expect(page.getByLabel("Digit 1")).toBeEnabled({ timeout: 15_000 });
+  await page.goto("/pos");
+  await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible();
   for (const digit of "1234") {
-    await page.getByLabel(`Digit ${digit}`).click();
+    await page.getByRole("button", { name: digit, exact: true }).click();
   }
-  await expect(page.getByLabel("Confirm PIN")).toBeEnabled({ timeout: 5_000 });
-  await page.getByLabel("Confirm PIN").click();
-  // 30s timeout — Turbopack lazily compiles server actions on cold start
-  await expect(page.getByRole("heading", { name: /enter your pin/i })).not.toBeVisible({
-    timeout: 30_000,
+  await page.getByRole("button", { name: /sign in/i }).click();
+  await expect(page.getByRole("heading", { name: /sign in/i })).not.toBeVisible({
+    timeout: 5000,
   });
 }
 
 /** Log in as the seeded admin (PIN 4321). */
 async function loginAsAdmin(page: Page): Promise<void> {
-  await page.goto("/pos", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: /enter your pin/i })).toBeVisible();
-  await expect(page.getByLabel("Digit 4")).toBeEnabled({ timeout: 15_000 });
+  await page.goto("/pos");
+  await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible();
   for (const digit of "4321") {
-    await page.getByLabel(`Digit ${digit}`).click();
+    await page.getByRole("button", { name: digit, exact: true }).click();
   }
-  await expect(page.getByLabel("Confirm PIN")).toBeEnabled({ timeout: 5_000 });
-  await page.getByLabel("Confirm PIN").click();
-  await expect(page.getByRole("heading", { name: /enter your pin/i })).not.toBeVisible({
-    timeout: 30_000,
+  await page.getByRole("button", { name: /sign in/i }).click();
+  await expect(page.getByRole("heading", { name: /sign in/i })).not.toBeVisible({
+    timeout: 5000,
   });
 }
 
@@ -80,17 +74,17 @@ test.describe("healthz", () => {
 test.describe("G4: auth", () => {
   test("correct PIN (1234) clears the login screen", async ({ page }) => {
     await loginAsBarista(page);
-    await expect(page.getByRole("heading", { name: /enter your pin/i })).not.toBeVisible();
+    await expect(page.getByRole("heading", { name: /sign in/i })).not.toBeVisible();
   });
 
   test("wrong PIN shows an alert and stays on login", async ({ page }) => {
-    await page.goto("/pos", { waitUntil: "domcontentloaded" });
+    await page.goto("/pos");
     for (const digit of "0000") {
-      await page.getByLabel(`Digit ${digit}`).click();
+      await page.getByRole("button", { name: digit, exact: true }).click();
     }
-    await page.getByLabel("Confirm PIN").click();
+    await page.getByRole("button", { name: /sign in/i }).click();
     await expect(page.getByRole("alert")).toBeVisible();
-    await expect(page.getByRole("heading", { name: /enter your pin/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible();
   });
 
   test("unauthenticated GET /api/queue/stream → 401", async ({ request }) => {
@@ -109,35 +103,18 @@ test.describe("G4: auth", () => {
 test.describe("G6: SSE queue", () => {
   test("authenticated → 200 + text/event-stream headers", async ({ page }) => {
     await loginAsBarista(page);
-    // Use page.evaluate + fetch with AbortController — the SSE endpoint streams
-    // forever so page.context().request.get() would hang waiting for a body end.
-    const { status, contentType } = await page.evaluate(async () => {
-      const ctrl = new AbortController();
-      const res = await fetch("/api/queue/stream", { signal: ctrl.signal }).catch(
-        (e) => { throw e; }
-      );
-      const status = res.status;
-      const contentType = res.headers.get("content-type") ?? "";
-      ctrl.abort(); // abort immediately after reading headers
-      return { status, contentType };
-    });
-    expect(status).toBe(200);
-    expect(contentType).toContain("text/event-stream");
+    // page.context().request shares the session cookie from the browser login.
+    const res = await page.context().request.get("/api/queue/stream");
+    expect(res.status()).toBe(200);
+    const ct = res.headers()["content-type"];
+    expect(ct).toContain("text/event-stream");
   });
 
   test("cache-control is no-cache (prevents proxy buffering)", async ({ page }) => {
     await loginAsBarista(page);
-    // Same approach — abort after reading headers to avoid hanging on the stream.
-    const cacheControl = await page.evaluate(async () => {
-      const ctrl = new AbortController();
-      const res = await fetch("/api/queue/stream", { signal: ctrl.signal }).catch(
-        (e) => { throw e; }
-      );
-      const cc = res.headers.get("cache-control") ?? "";
-      ctrl.abort();
-      return cc;
-    });
-    expect(cacheControl).toContain("no-cache");
+    const res = await page.context().request.get("/api/queue/stream");
+    const cc = res.headers()["cache-control"] ?? "";
+    expect(cc).toContain("no-cache");
   });
 
   test("stream sends :connected comment immediately (via EventSource)", async ({
@@ -307,7 +284,7 @@ test.describe("G7: push/subscribe", () => {
     expect(res.status()).toBe(400);
   });
 
-  test("valid subscription → 200 { ok: true } (or 500 if VAPID not configured)", async ({ page }) => {
+  test("valid subscription → 200 { ok: true }", async ({ page }) => {
     await loginAsBarista(page);
     const res = await page.context().request.post("/api/push/subscribe", {
       data: {
@@ -321,12 +298,8 @@ test.describe("G7: push/subscribe", () => {
         },
       },
     });
-    // 200 when VAPID keys are configured; 500 when absent (dev env without push credentials).
-    if (res.status() === 200) {
-      expect((await res.json()).ok).toBe(true);
-    } else {
-      expect([400, 500]).toContain(res.status());
-    }
+    expect(res.status()).toBe(200);
+    expect((await res.json()).ok).toBe(true);
   });
 });
 
@@ -338,46 +311,47 @@ test.describe("G5: order actions (smoke via POS UI)", () => {
   });
 
   test("searchCustomer: 'Lou' finds Louis", async ({ page }) => {
-    await page.getByPlaceholder(/customer name or phone/i).fill("Lou");
+    await page.getByPlaceholder(/search customer/i).fill("Lou");
     await expect(page.getByText("Louis")).toBeVisible({ timeout: 5000 });
   });
 
   test("menu is loaded and contains Cappuccino (createOrder prerequisite)", async ({
     page,
   }) => {
-    await expect(page.getByText("Cappuccino").first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Cappuccino")).toBeVisible({ timeout: 5000 });
   });
 
   test("adding Cappuccino shows it in the order summary", async ({ page }) => {
-    await page.getByText("Cappuccino").first().click();
-    await expect(page.getByText("Cappuccino").first()).toBeVisible();
+    await page.getByText("Cappuccino").click();
+    await expect(
+      page.getByRole("region", { name: /order/i }).getByText("Cappuccino")
+    ).toBeVisible();
   });
 
   test("order total is displayed in ZAR (R##,##)", async ({ page }) => {
-    await page.getByText("Cappuccino").first().click();
-    await expect(page.getByText(/R\s*\d+[,.]\d{2}/).first()).toBeVisible();
+    await page.getByText("Cappuccino").click();
+    await expect(page.getByText(/R\s*\d+[,.]\d{2}/)).toBeVisible();
   });
 
   test("checkout button appears after adding an item (createOrder trigger)", async ({
     page,
   }) => {
-    await page.getByText("Cappuccino").first().click();
-    await page.getByRole("button", { name: /add to order/i }).click();
+    await page.getByText("Cappuccino").click();
     await expect(
-      page.getByRole("button", { name: /place order/i })
-    ).toBeVisible({ timeout: 5000 });
+      page.getByRole("button", { name: /pay|charge|checkout/i })
+    ).toBeVisible({ timeout: 3000 });
   });
 
-  test("cancel order button or option is accessible from an active order", async ({
+  test("draft order shows Clear affordance after adding an item", async ({
     page,
   }) => {
-    // Verify the UI provides a cancel path (exercises cancelOrder server action).
-    // If a cancel button exists on the main POS or order view, it should be visible.
-    // It may not be on the landing state — navigate to order view if needed.
-    // This test confirms the route doesn't 500, not that the button is always visible.
-    void page.getByRole("button", { name: /cancel/i }); // presence checked by M6 tests
-    const res = await page.context().request.get("/pos");
-    expect(res.status()).not.toBe(500);
+    // "Cancel order" on a DB order requires state=ordered (needs live payment).
+    // Verify the draft-order cancel affordance: the "Clear" button that discards
+    // the in-progress build appears once an item is added.
+    await page.getByText("Cappuccino").click();
+    await expect(
+      page.getByRole("button", { name: /clear/i })
+    ).toBeVisible({ timeout: 3000 });
   });
 
   test("applyStaffDiscount: discount UI is reachable from an order view", async ({
@@ -404,15 +378,17 @@ test.describe("G5: transitionOrder — invalid transition guarded", () => {
 test.describe("G2: audit log", () => {
   test("admin can reach /admin/audit and see entries", async ({ page }) => {
     await loginAsAdmin(page);
-    await page.goto("/admin/audit", { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("table")).toBeVisible({ timeout: 15000 });
+    await page.goto("/admin/audit");
+    await expect(
+      page.getByRole("table").or(page.getByText(/audit log/i)).first()
+    ).toBeVisible({ timeout: 5000 });
   });
 
   test("audit table renders at least one row (login_success writes a row)", async ({
     page,
   }) => {
     await loginAsAdmin(page);
-    await page.goto("/admin/audit", { waitUntil: "domcontentloaded" });
+    await page.goto("/admin/audit");
     // Every login writes an audit row — so at minimum the login_success we just
     // performed should appear.
     await expect(page.getByRole("row").first()).toBeVisible({ timeout: 5000 });

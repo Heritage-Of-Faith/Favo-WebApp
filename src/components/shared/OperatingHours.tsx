@@ -66,15 +66,92 @@ function isOpenNow(row: OperatingHour, todayDow: number, nowMinutes: number): bo
   return nowMinutes >= timeToMinutes(row.opensAt) && nowMinutes < timeToMinutes(row.closesAt);
 }
 
+/** Wall-clock parts for the open/closed computation (Africa/Johannesburg). */
+export interface NowParts {
+  dayOfWeek: number;
+  minutes: number;
+}
+
+export interface OpenStatus {
+  isOpen: boolean;
+  /**
+   * Hospitable, informational label. Describes whether the café is physically
+   * open — NEVER implies the system blocks ordering on time (rule L04).
+   */
+  label: string;
+}
+
+/**
+ * Pure open/closed status for the café, given the week's hours and the current
+ * wall-clock parts. Exported so it can be unit-tested against a synthetic clock
+ * (the live component injects the real SAST parts).
+ *
+ * Copy is purely informational about the physical café — no "ordering
+ * unavailable" / time-gate language (L04).
+ */
+export function computeOpenStatus(hours: OperatingHour[], now: NowParts): OpenStatus {
+  const byDay = new Map<number, OperatingHour>(hours.map((h) => [h.dayOfWeek, h]));
+  const today = byDay.get(now.dayOfWeek);
+
+  if (today && !today.isClosed) {
+    const opensAt = timeToMinutes(today.opensAt);
+    const closesAt = timeToMinutes(today.closesAt);
+    if (now.minutes >= opensAt && now.minutes < closesAt) {
+      return { isOpen: true, label: `Open now · until ${today.closesAt}` };
+    }
+    if (now.minutes < opensAt) {
+      return { isOpen: false, label: `Opens today at ${today.opensAt}` };
+    }
+  }
+
+  // Closed for the rest of today — find the next day we open within a week.
+  for (let i = 1; i <= 7; i++) {
+    const dow = (now.dayOfWeek + i) % 7;
+    const row = byDay.get(dow);
+    if (row && !row.isClosed) {
+      const dayWord = i === 1 ? "tomorrow" : DAY_NAMES[dow];
+      return { isOpen: false, label: `Opens ${dayWord} at ${row.opensAt}` };
+    }
+  }
+
+  return { isOpen: false, label: "Hours vary — pop in and say hi" };
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export default async function OperatingHours({ className }: OperatingHoursProps) {
   const result = await getOperatingHours();
   const data = result.ok ? result.data : FALLBACK_HOURS;
   const byDay = new Map<number, OperatingHour>(data.map((r) => [r.dayOfWeek, r]));
   const { dayOfWeek: todayDow, minutes: nowMinutes } = getCurrentJhbParts();
+  const status = computeOpenStatus(data, { dayOfWeek: todayDow, minutes: nowMinutes });
 
   return (
     <section className={className} aria-label="Operating hours">
+      {/* Open/closed status — informational only (L04: never a time gate). */}
+      <p
+        role="status"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+          margin: "0 0 0.5rem",
+          fontWeight: 600,
+          color: status.isOpen ? "var(--color-success)" : "var(--color-cool-steel)",
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            display: "inline-block",
+            width: "0.5rem",
+            height: "0.5rem",
+            borderRadius: "50%",
+            backgroundColor: status.isOpen ? "var(--color-success)" : "var(--color-cool-steel)",
+            flexShrink: 0,
+          }}
+        />
+        {status.label}
+      </p>
       <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
         {DISPLAY_ORDER.map((dow) => {
           const row     = byDay.get(dow);

@@ -28,12 +28,26 @@ function validatePassword(password: string): string | null {
   return password.length >= 8 ? password : null;
 }
 
+/**
+ * Validate a phone number. Lenient on punctuation/spacing (we store what the
+ * customer typed, trimmed), but requires a plausible digit count so the POS
+ * barista screen has a real number to search on (AT-64 / Phase 1 M2).
+ */
+function validatePhone(phone: string): string | null {
+  const trimmed = phone.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15 ? trimmed : null;
+}
+
 // ── Register ──────────────────────────────────────────────────────────────────
 
 export async function registerCustomer(input: {
   name: string;
   email: string;
   password: string;
+  /** Optional at the API layer; the signup form makes it required so the POS
+   *  barista screen can find the customer by phone (AT-64). */
+  phone?: string;
 }): Promise<ActionResult<{ customerId: string; name: string }>> {
   const name = input.name.trim();
   const email = validateEmail(input.email);
@@ -47,6 +61,17 @@ export async function registerCustomer(input: {
   }
   if (!password) {
     return { ok: false, code: "VALIDATION", message: "Password must be at least 8 characters." };
+  }
+
+  // Phone is validated only when supplied; when present it must be a plausible
+  // number so baristas can search on it at the counter.
+  let phone: string | undefined;
+  if (input.phone !== undefined && input.phone.trim() !== "") {
+    const validated = validatePhone(input.phone);
+    if (!validated) {
+      return { ok: false, code: "VALIDATION", message: "Please enter a valid phone number." };
+    }
+    phone = validated;
   }
 
   // Check for existing account
@@ -63,7 +88,7 @@ export async function registerCustomer(input: {
 
   const [customer] = await db
     .insert(customers)
-    .values({ tenantId: TENANT_ID, name, email, passwordHash })
+    .values({ tenantId: TENANT_ID, name, email, phone, passwordHash })
     .returning({ id: customers.id, name: customers.name });
 
   if (!customer) {

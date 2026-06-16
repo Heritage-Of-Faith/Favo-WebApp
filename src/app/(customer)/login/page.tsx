@@ -1,6 +1,5 @@
 // Customer sign-in — owner: Nikao (task N6)
-// Email magic-link sign-in (frontend). Replaces the old static placeholder.
-// Backend magic-link send wired by Gian (Phase 3). Tailwind/tokens only.
+// Email + password sign-in (PR #67). Magic-link auth dropped by team decision.
 
 import AuthForm from "@/components/customer/AuthForm";
 
