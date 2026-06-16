@@ -26,7 +26,7 @@ export type SyncConflictRow = {
 export async function listSyncConflicts(): Promise<
   ActionResult<{ open: SyncConflictRow[]; resolvedThisWeek: SyncConflictRow[] }>
 > {
-  const auth = await authorize("admin", "owner", "manager");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -68,7 +68,7 @@ export async function resolveSyncConflict(
   id: string,
   note: string
 ): Promise<ActionResult<SyncConflictRow>> {
-  const auth = await authorize("admin", "owner", "manager");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const [existing] = await db

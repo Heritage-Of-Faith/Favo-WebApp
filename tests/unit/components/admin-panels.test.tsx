@@ -33,7 +33,6 @@ function draftReport(over: Partial<MonthlyReport> = {}): MonthlyReport {
     netZar: 60000,
     status: "awaiting_signatures",
     adminSig: null,
-    financeSig: null,
     generatedAt: "2026-06-01T08:00:00+02:00",
     closedAt: null,
     ...over,

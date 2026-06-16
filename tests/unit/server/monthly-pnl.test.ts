@@ -1,5 +1,5 @@
 // Monthly P&L unit tests — task G15
-// Tests RBAC, validation, and the dual-sign state machine.
+// Tests RBAC, validation, and the admin sign state machine.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -49,7 +49,7 @@ vi.mock("@db/index", () => {
 vi.mock("@/server/auth/guard", () => ({
   authorize: vi.fn().mockResolvedValue({
     ok: true,
-    session: { id: "staff_manager_mia", name: "Mia Manager", role: "admin" },
+    session: { id: "staff_admin_gian", name: "Gian Admin", role: "admin" },
   }),
 }));
 
@@ -140,7 +140,6 @@ describe("approveMonthlyPnL — admin-only close", () => {
         where: vi.fn().mockResolvedValue([{
           id: "mr_001", month: "2026-04-01",
           status: "closed", adminSig: { signerId: "x", signerName: "X", at: "" },
-          financeSig: null,
         }]),
       }),
     } as never);
@@ -158,8 +157,7 @@ describe("approveMonthlyPnL — admin-only close", () => {
         where: vi.fn().mockResolvedValue([{
           id: "mr_001", month: "2026-04-01",
           status: "awaiting_signatures",
-          adminSig: { signerId: "staff_mia", signerName: "Mia", at: "2026-05-01T09:00:00Z" },
-          financeSig: null,
+          adminSig: { signerId: "staff_gian", signerName: "Gian", at: "2026-05-01T09:00:00Z" },
         }]),
       }),
     } as never);
@@ -187,11 +185,7 @@ describe("approveMonthlyPnL — admin-only close", () => {
   });
 });
 
-// ─── monthBounds (pure helper via weekBounds equivalent) ─────────────────────
-
-// The monthBounds function is not exported, but its correctness is verified
-// through the generateMonthlyPnL acceptance tests on staging.
-// We validate the YYYY-MM-01 format check here.
+// ─── generateMonthlyPnL — month format accepted ───────────────────────────────
 
 describe("generateMonthlyPnL — month format accepted", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -199,7 +193,7 @@ describe("generateMonthlyPnL — month format accepted", () => {
   it("accepts valid first-of-month date", async () => {
     const { authorize } = await import("@/server/auth/guard");
     vi.mocked(authorize).mockResolvedValue({
-      ok: true, session: { id: "staff_manager_mia", name: "Mia Manager", role: "admin" },
+      ok: true, session: { id: "staff_admin_gian", name: "Gian Admin", role: "admin" },
     });
 
     const { generateMonthlyPnL } = await import("@/server/actions/monthly-pnl");

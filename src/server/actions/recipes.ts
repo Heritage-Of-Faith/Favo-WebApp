@@ -24,7 +24,7 @@ import type {
 } from "@/lib/types";
 import type { DB } from "@/lib/db";
 
-const ADMIN_ROLES = ["admin", "owner"] as const;
+const ADMIN_ROLES = ["admin"] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -9,7 +9,7 @@ export const metadata = { title: "Expenses" };
 
 export default async function ExpensesPage() {
   const session = await getSession();
-  const canLog = session?.role === "admin" || session?.role === "owner";
+  const canLog = session?.role === "admin";
   const res = await listExpenses();
 
   return (

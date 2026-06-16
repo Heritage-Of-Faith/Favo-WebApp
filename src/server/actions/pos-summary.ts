@@ -12,7 +12,7 @@ import { authorize } from "@/server/auth/guard";
 import { todaySast } from "@/server/cogs/compute";
 import type { ActionResult, PosTodaySummary } from "@/lib/types";
 
-const POS_ROLES = ["barista", "roaster", "manager", "admin", "owner"] as const;
+const POS_ROLES = ["barista", "admin"] as const;
 
 /**
  * Today's barista-facing volume summary for the current SAST day.

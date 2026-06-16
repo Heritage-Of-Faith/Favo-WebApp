@@ -9,7 +9,7 @@ import type { Order } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const POS_ROLES = ["barista", "manager", "admin", "owner"] as const;
+const POS_ROLES = ["barista", "admin"] as const;
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorize(...POS_ROLES);

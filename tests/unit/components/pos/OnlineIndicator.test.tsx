@@ -67,7 +67,7 @@ describe("OnlineIndicatorInline", () => {
 describe("RoleGuard", () => {
   it("renders children when role is allowed", () => {
     render(
-      <RoleGuard roles={["barista", "manager"]} userRole="barista">
+      <RoleGuard roles={["barista", "admin"]} userRole="barista">
         <span>allowed content</span>
       </RoleGuard>
     );
@@ -93,12 +93,12 @@ describe("RoleGuard", () => {
     expect(screen.queryByText("secret")).toBeNull();
   });
 
-  it("renders children for owner role", () => {
+  it("renders children for admin role", () => {
     render(
-      <RoleGuard roles={["barista", "manager", "admin", "owner"]} userRole="owner">
-        <span>owner content</span>
+      <RoleGuard roles={["barista", "admin"]} userRole="admin">
+        <span>admin content</span>
       </RoleGuard>
     );
-    expect(screen.getByText("owner content")).toBeDefined();
+    expect(screen.getByText("admin content")).toBeDefined();
   });
 });

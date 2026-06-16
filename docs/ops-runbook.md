@@ -124,19 +124,9 @@ The system will calculate the variance from what it expected and flag anything o
 1. Go to `/admin/reports/monthly`
 2. Select the **previous** month from the dropdown
 3. The report will show revenue, COGS, gross profit, and all expenses
-4. Click **Sign as Admin** — your signature is the first of two required
+4. Click **Sign as Admin** — this closes and archives the report immediately
 
-**Business rule:** L11 — the monthly P&L requires both an admin signature and a finance signature before it is finalised. After you sign, route the report to the finance team for their signature.
-
----
-
-### Route to finance for co-sign
-
-After you sign the P&L:
-
-1. Send a message to `#favo-finance` (or email finance@hofmi.org) saying "Monthly P&L for [month] is ready for your signature at `/admin/reports/monthly`"
-2. The finance team will log in with their PIN and apply the finance signature
-3. Once both signatures are on the report, it is archived and cannot be changed
+**Business rule:** L11 — the monthly P&L requires admin sign-off to close. Once signed the report is archived and cannot be changed.
 
 ---
 
@@ -191,16 +181,13 @@ Review who has which roles in the system:
 
 1. Go to `/admin/staff`
 2. Check each person's role — does it still match their actual responsibilities?
-3. If someone's role needs changing (e.g. a barista promoted to manager), contact Gian
+3. If someone's role needs changing (e.g. a barista promoted to admin), contact Gian
 
 **Roles explained:**
 | Role | What they can do |
 |---|---|
 | **barista** | Take orders, search customers, see today's orders |
-| **manager** | Everything barista can do + see COGS dashboard, approve stock takes |
-| **admin** | Everything manager can do + monthly P&L, staff management |
-| **finance** | Read-only access to financial reports + can co-sign the monthly P&L |
-| **owner** | Full access |
+| **admin** | Everything barista can do + COGS dashboard, stock takes, monthly P&L, staff management, all financial reports |
 
 ---
 

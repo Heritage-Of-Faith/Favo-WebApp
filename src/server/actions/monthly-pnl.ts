@@ -1,12 +1,10 @@
 "use server";
 
 // Monthly P&L server actions — task G15
-// generateMonthlyPnL: admin+ only. Creates a draft for the previous closed month.
-// approveMonthlyPnL:  admin signs admin_sig; finance signs finance_sig;
-//                     owner can sign either side.
-//                     When both sigs are set, status auto-closes (L11).
-// listMonthlyReports: admin + finance read.
-// DB CHECK: closed requires both sigs — enforced by migration 0006 (L11).
+// generateMonthlyPnL: admin only. Creates a draft for the previous closed month.
+// approveMonthlyPnL:  admin signs admin_sig; when signed, status auto-closes (L11).
+// listMonthlyReports: admin read.
+// DB CHECK: closed requires admin sig — enforced by migration 0011 (L11).
 // Docs: FAVO_PRD_v3.md §04 §06 §07 · BUSINESS_RULES.md L11
 
 import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
@@ -21,8 +19,8 @@ import type {
 } from "@/lib/types";
 import type { DB } from "@/lib/db";
 
-const ADMIN_ROLES = ["admin", "owner"] as const;
-const READER_ROLES = ["admin", "finance", "owner"] as const;
+const ADMIN_ROLES = ["admin"] as const;
+const READER_ROLES = ["admin"] as const;
 
 // SAST offset for month boundary computation
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
@@ -51,7 +49,6 @@ function rowToReport(r: {
   netZar: number;
   status: string;
   adminSig: unknown;
-  financeSig: unknown;
   generatedAt: Date;
   closedAt: Date | null;
 }): MonthlyReport {
@@ -65,7 +62,6 @@ function rowToReport(r: {
     netZar: r.netZar,
     status: r.status as MonthlyReport["status"],
     adminSig: (r.adminSig as MonthlyReportSig | null) ?? null,
-    financeSig: (r.financeSig as MonthlyReportSig | null) ?? null,
     generatedAt: r.generatedAt.toISOString(),
     closedAt: r.closedAt?.toISOString() ?? null,
   };

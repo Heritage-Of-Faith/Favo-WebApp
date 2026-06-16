@@ -29,7 +29,7 @@ export async function redeemLoyalty(
   customerId: string,
   orderId: string
 ): Promise<ActionResult> {
-  const auth = await authorize("barista", "admin", "owner");
+  const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
   const session = auth.session;
 
@@ -137,7 +137,7 @@ export async function topUpWallet(
   customerId: string,
   amountZar: number
 ): Promise<ActionResult<{ yocoClientSecret: string }>> {
-  const auth = await authorize("barista", "admin", "owner");
+  const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
   const session = auth.session;
 
@@ -197,7 +197,7 @@ export async function purchasePack(
   menuItemId: string,
   qty: number
 ): Promise<ActionResult<{ yocoClientSecret: string }>> {
-  const auth = await authorize("barista", "admin", "owner");
+  const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
   const session = auth.session;
 

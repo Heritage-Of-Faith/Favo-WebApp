@@ -36,13 +36,11 @@ export async function buildMonthlyPnlCsv(from: string, to: string): Promise<stri
     "Net (ZAR)",
     "Status",
     "Admin Signed",
-    "Finance Signed",
   ];
   const lines = [headers.map(csvCell).join(",")];
 
   for (const r of rows) {
     const adminSig = r.adminSig as { signerName?: string; at?: string } | null;
-    const financeSig = r.financeSig as { signerName?: string; at?: string } | null;
     lines.push(
       [
         r.month,
@@ -53,7 +51,6 @@ export async function buildMonthlyPnlCsv(from: string, to: string): Promise<stri
         formatZar(r.netZar),
         r.status,
         adminSig ? `${adminSig.signerName ?? "yes"} (${adminSig.at ?? ""})` : "",
-        financeSig ? `${financeSig.signerName ?? "yes"} (${financeSig.at ?? ""})` : "",
       ]
         .map(csvCell)
         .join(",")

@@ -7,12 +7,16 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customers } from "@db/schema";
 import { getSession } from "@/lib/auth/session";
+import { getCustomerSession } from "@/server/auth/customer-session";
 import { isValidPushSubscription } from "@/server/push/payload";
 import { writeAudit } from "@/server/audit";
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
+  // Support both staff (P1 barista-side opt-in) and customer (P3 self opt-in).
+  const staffSession = await getSession();
+  const customerSessionId = await getCustomerSession();
+
+  if (!staffSession && !customerSessionId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -23,10 +27,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { customerId, subscription } = (body ?? {}) as {
+  const { customerId: bodyCustomerId, subscription } = (body ?? {}) as {
     customerId?: string;
     subscription?: unknown;
   };
+
+  // When the caller is a customer, ignore the body's customerId and use the
+  // session instead — prevents a customer from overwriting another's subscription.
+  const customerId = customerSessionId ?? bodyCustomerId;
 
   if (!customerId || !isValidPushSubscription(subscription)) {
     return NextResponse.json(
@@ -44,8 +52,8 @@ export async function POST(request: Request) {
     entityKind: "customer",
     entityId: customerId,
     action: "push_subscribe",
-    actorId: session.id,
-    actorRole: session.role,
+    actorId: staffSession?.id ?? customerId,
+    actorRole: staffSession?.role ?? "customer",
   });
 
   return NextResponse.json({ ok: true });

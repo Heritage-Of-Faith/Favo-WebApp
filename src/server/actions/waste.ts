@@ -14,7 +14,7 @@ import type { ActionResult } from "@/lib/types";
 import type { DB } from "@/lib/db";
 
 // All roles that can log waste (barista and above)
-const WASTE_ROLES = ["barista", "roaster", "manager", "admin", "owner"] as const;
+const WASTE_ROLES = ["barista", "admin"] as const;
 
 export type LogWasteInput = {
   /** Waste category from the waste_category enum. */

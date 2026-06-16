@@ -50,9 +50,7 @@ Void by inserting a follow-up row, never by edit.
 |---|---|
 | customer | SELECT own `orders`, `loyalty_transactions`. No writes. |
 | barista | RW orders, order_items, waste_log, staff_entitlement_log. RO customers(name, phone). No DELETE. |
-| admin | + price_history, operating_hours, stock_alert_recipients, refund approval, emergency purchase approval, monthly_reports admin_sig |
-| finance | SELECT-only except `monthly_reports.finance_sig` |
-| owner | admin + finance |
+| admin | + price_history, operating_hours, stock_alert_recipients, refund approval, emergency purchase approval, monthly_reports admin_sig, all financial reports |
 
 Tenant isolation: every row keyed/policied to `tenant_id = 'hofmi'` (PRD L13).
 

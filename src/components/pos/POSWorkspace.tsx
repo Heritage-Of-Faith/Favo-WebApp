@@ -33,6 +33,8 @@ import ConnectivityPill from "@/components/pos/ConnectivityPill";
 import SyncDrawer from "@/components/pos/SyncDrawer";
 import CustomerCard from "@/components/pos/CustomerCard";
 import LoyaltyRedeemDialog from "@/components/pos/LoyaltyRedeemDialog";
+import OfflineBanner from "@/components/pos/OfflineBanner";
+import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
@@ -99,6 +101,9 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [redeemed, setRedeemed] = useState(false);
+  // M19 — offline deferred-payment mode on the payment panel.
+  const [offlineDeferred, setOfflineDeferred] = useState(false);
+  const [queueing, setQueueing] = useState(false);
   const [showWasteModal, setShowWasteModal] = useState(false);
   const [activeBeanLot, setActiveBeanLot] = useState<InventoryLot | null>(null);
 
@@ -211,30 +216,12 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
     setSubmitting(true);
     setOrderError(null);
 
-    // Offline path — write to IndexedDB; will sync automatically on reconnect.
+    // Offline path (M19) — show the deferred-payment notice; the barista takes
+    // payment in person and confirms, which writes to the outbox.
     if (!navigator.onLine) {
-      try {
-        await queueOrder({
-          clientUuid: crypto.randomUUID(),
-          staffId,
-          customerId: customer?.id,
-          items: items.map(i => ({
-            menuItemId: i.menuItemId,
-            quantity: i.quantity,
-            modifications: i.modifications.map(m => m.id),
-          })),
-          paymentMode: "yoco_deferred",
-          clientTotalZar: totalZar,
-          clientTimestamp: new Date().toISOString(),
-        });
-        reset();
-        setOrderSuccess("Order saved — will sync when back online.");
-        setTimeout(() => setOrderSuccess(null), 5000);
-      } catch {
-        setOrderError("Failed to save order offline. Please retry.");
-      } finally {
-        setSubmitting(false);
-      }
+      setSubmitting(false);
+      setOfflineDeferred(true);
+      setShowPayment(true);
       return;
     }
     const r = await createOrder({
@@ -258,6 +245,36 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
       }
     } else {
       setOrderError(r.message);
+    }
+  }
+
+  // M19 — confirm the offline order: write to the outbox with a deferred charge.
+  async function confirmDeferredQueue() {
+    if (queueing) return;
+    setQueueing(true);
+    try {
+      await queueOrder({
+        clientUuid: crypto.randomUUID(),
+        staffId,
+        customerId: customer?.id,
+        items: items.map(i => ({
+          menuItemId: i.menuItemId,
+          quantity: i.quantity,
+          modifications: i.modifications.map(m => m.id),
+        })),
+        paymentMode: "yoco_deferred",
+        clientTotalZar: totalZar,
+        clientTimestamp: new Date().toISOString(),
+      });
+      reset();
+      setShowPayment(false);
+      setOfflineDeferred(false);
+      setOrderSuccess("Order queued — charge reconciles when back online.");
+      setTimeout(() => setOrderSuccess(null), 5000);
+    } catch {
+      setOrderError("Failed to save order offline. Please retry.");
+    } finally {
+      setQueueing(false);
     }
   }
 
@@ -335,6 +352,9 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
 
   return (
     <main className="flex flex-col h-screen overflow-hidden">
+
+      {/* ════════ OFFLINE BANNER (M19) ════════ */}
+      <OfflineBanner pendingCount={pendingCount} />
 
       {/* ════════ OUT-OF-STOCK BANNER (M9) ════════ */}
       <StockBanner outOfStockItems={outOfStockItems} />
@@ -606,6 +626,14 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
               </div>
             )}
           </>
+        ) : offlineDeferred ? (
+          /* M19 — offline deferred payment: take payment in person, queue order */
+          <DeferredPaymentNotice
+            totalZar={totalZar}
+            queueing={queueing}
+            onConfirm={confirmDeferredQueue}
+            onCancel={() => { setShowPayment(false); setOfflineDeferred(false); }}
+          />
         ) : (
           /* Payment confirmation */
           <div className="flex flex-1 flex-col items-center justify-center gap-6 px-8">

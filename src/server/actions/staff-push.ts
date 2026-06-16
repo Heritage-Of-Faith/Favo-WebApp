@@ -15,7 +15,7 @@ import { writeAudit } from "@/server/audit";
 import { isValidPushSubscription } from "@/server/push/payload";
 import type { ActionResult } from "@/lib/types";
 
-const STAFF_ROLES = ["barista", "roaster", "manager", "admin", "finance", "owner"] as const;
+const STAFF_ROLES = ["barista", "admin"] as const;
 
 /**
  * Save the current staff member's push subscription.

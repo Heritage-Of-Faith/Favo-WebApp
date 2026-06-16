@@ -10,7 +10,7 @@ import { isValidPinFormat } from "@/server/auth/pin";
 // ── Schema (mirrors staff.ts internal schema) ─────────────────────────────────
 const createStaffSchema = z.object({
   name: z.string().min(2).max(100),
-  role: z.enum(["barista", "roaster", "manager", "finance", "admin", "owner"]),
+  role: z.enum(["barista", "admin"]),
   pin: z.string().regex(/^\d{4,6}$/, "PIN must be 4–6 digits"),
 });
 
@@ -37,6 +37,13 @@ describe("createStaff: input validation", () => {
     expect(r.success).toBe(false);
   });
 
+  it("rejects removed roles (manager, finance, owner, roaster)", () => {
+    for (const role of ["manager", "finance", "owner", "roaster"]) {
+      const r = createStaffSchema.safeParse({ name: "Jo Bloggs", role, pin: "1234" });
+      expect(r.success).toBe(false);
+    }
+  });
+
   it("rejects 3-digit PIN", () => {
     const r = createStaffSchema.safeParse({ name: "Jo Bloggs", role: "barista", pin: "123" });
     expect(r.success).toBe(false);
@@ -58,7 +65,7 @@ describe("createStaff: input validation", () => {
   });
 
   it("accepts all valid roles", () => {
-    const roles = ["barista", "roaster", "manager", "finance", "admin", "owner"] as const;
+    const roles = ["barista", "admin"] as const;
     for (const role of roles) {
       const r = createStaffSchema.safeParse({ name: "Test User", role, pin: "1234" });
       expect(r.success).toBe(true);
@@ -88,25 +95,13 @@ describe("staff RBAC", () => {
     expect(roleAtLeast("admin", "admin")).toBe(true);
   });
 
-  it("owner can manage staff", () => {
-    expect(roleAtLeast("owner", "admin")).toBe(true);
-  });
-
-  it("manager cannot manage staff (below admin rank)", () => {
-    expect(roleAtLeast("manager", "admin")).toBe(false);
-  });
-
   it("barista cannot manage staff", () => {
     expect(roleAtLeast("barista", "admin")).toBe(false);
   });
 
-  it("finance can access admin surface but staff mutations use explicit role list", () => {
-    // finance shares rank 3 with admin — roleAtLeast passes — but createStaff,
-    // setStaffPin, deactivateStaff call authorize("admin","owner") explicitly,
-    // so finance is excluded at the action level, not at the rank level.
-    expect(canAccessAdmin("finance")).toBe(true);
-    expect(roleAtLeast("finance", "admin")).toBe(true); // same rank
-    // The authorize() call in each mutation action lists only "admin" | "owner".
+  it("only admin can access admin surface", () => {
+    expect(canAccessAdmin("admin")).toBe(true);
+    expect(canAccessAdmin("barista")).toBe(false);
   });
 });
 

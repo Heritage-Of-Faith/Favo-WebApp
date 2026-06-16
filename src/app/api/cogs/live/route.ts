@@ -9,7 +9,7 @@ import type { NextRequest } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { getCogsLive as computeCogsLive, todaySast } from "@/server/cogs/compute";
 
-const ALLOWED_ROLES = new Set(["admin", "owner"]);
+const ALLOWED_ROLES = new Set(["admin"]);
 
 export async function GET(req: NextRequest) {
   // ── Auth ────────────────────────────────────────────────────────────────────

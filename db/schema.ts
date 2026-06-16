@@ -383,7 +383,6 @@ export const monthlyReports = pgTable(
       .notNull(),
     /** JSONB: { signerId, signerName, at } */
     adminSig: jsonb("admin_sig"),
-    financeSig: jsonb("finance_sig"),
     generatedAt: timestamp("generated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
