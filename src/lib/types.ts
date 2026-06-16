@@ -22,7 +22,7 @@ export type MenuCategory =
 
 export type LoyaltyKind = "earn" | "redeem" | "adjustment" | "expiry";
 
-export type PaymentStatus = "pending" | "successful" | "failed" | "refunded";
+export type PaymentStatus = "pending" | "successful" | "failed" | "refunded" | "deferred";
 
 // ─── Domain Types ─────────────────────────────────────────────────────────────
 
@@ -75,6 +75,7 @@ export type Order = {
   completedAt: string | null;
   totalZar: number;
   isStaffDiscount: boolean;
+  paymentStatus: PaymentStatus | null;
   items: OrderItem[];
 };
 

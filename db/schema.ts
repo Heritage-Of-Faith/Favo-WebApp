@@ -222,7 +222,11 @@ export const payments = pgTable("payments", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: tenantId(),
   orderId: text("order_id").notNull().references(() => orders.id),
-  yocoPaymentId: text("yoco_payment_id").unique().notNull(),
+  // Checkout ID from Yoco's POST /checkouts response — stored at order creation.
+  // Different from yocoPaymentId which arrives later via the webhook.
+  yocoCheckoutId: text("yoco_checkout_id"),
+  // Payment ID from Yoco's webhook — null until the webhook fires.
+  yocoPaymentId: text("yoco_payment_id").unique(),
   amountZar: integer("amount_zar").notNull(),
   status: paymentStatus("status").default("pending").notNull(),
   webhookReceivedAt: timestamp("webhook_received_at", { withTimezone: true }),
