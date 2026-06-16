@@ -14,7 +14,7 @@
 | L08 | Every inventory adjustment writes an audit row. | Trigger |
 | L09 | Stock reconciles before daily close. `closeDaily()` blocks + pages Discord on mismatch. | Cron |
 | L10 | Emergency purchase requires admin approval (`admin_approved_by` not null). | DB CHECK |
-| L11 | Monthly P&L requires admin + finance co-sign. | DB CHECK |
+| L11 | Monthly P&L requires admin sign-off to close. | DB CHECK |
 | L12 | `audit_log` is append-only. UPDATE/DELETE trigger-denied forever. | Trigger |
 | L13 | Data tenant-isolated to `hofmi`. | RLS |
 | L14 | Staff entitlement: DB-enforced. Weekdays only. Cappuccinos only. | DB UNIQUE + app validation |

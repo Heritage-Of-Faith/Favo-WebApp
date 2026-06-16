@@ -20,7 +20,7 @@ Plus the locked rules that this phase activates:
 - L08 — every inventory adjustment writes an audit row
 - L09 — stock reconciles with sales before daily close
 - L10 — emergency purchases require admin approval
-- L11 — monthly P&L requires admin + finance co-sign
+- L11 — monthly P&L requires admin sign-off to close
 
 ---
 
@@ -197,9 +197,9 @@ Owns: schema additions, deduction, COGS computation, crons, P&L approval, all ne
   - `src/server/actions/alert-recipients.ts`
   - `tests/server/expenses.test.ts`
 - **Claude prompt:**
-  > Read `API.md`, `DATA_MODEL.md` (`expenses`, `stock_alert_recipients`), `BUSINESS_RULES.md` (L08). Implement `logExpense({ category, amountZar, incurredAt })` — admin+ only. `incurredAt` defaults to `now()` in `Africa/Johannesburg`. Money validated as integer cents. `listExpenses({ from, to, category })` — admin and finance read. `addStockAlertRecipient({ inventoryItemId, staffId })`: `inventoryItemId` nullable = global recipient. UNIQUE on `(inventory_item_id, staff_id)` — reject duplicates. `removeStockAlertRecipient(id)` soft-deletes is not required — hard delete is fine; the cron is fed by current rows only. Every mutation `writeAudit`. Tests: (a) expense with float Rand value rejected; (b) duplicate recipient rejected; (c) finance can list but not insert.
+  > Read `API.md`, `DATA_MODEL.md` (`expenses`, `stock_alert_recipients`), `BUSINESS_RULES.md` (L08). Implement `logExpense({ category, amountZar, incurredAt })` — admin only. `incurredAt` defaults to `now()` in `Africa/Johannesburg`. Money validated as integer cents. `listExpenses({ from, to, category })` — admin read. `addStockAlertRecipient({ inventoryItemId, staffId })`: `inventoryItemId` nullable = global recipient. UNIQUE on `(inventory_item_id, staff_id)` — reject duplicates. `removeStockAlertRecipient(id)` soft-deletes is not required — hard delete is fine; the cron is fed by current rows only. Every mutation `writeAudit`. Tests: (a) expense with float Rand value rejected; (b) duplicate recipient rejected; (c) barista is 403.
 - **Acceptance criteria:**
-  - Admin can log expenses; finance can read; barista is 403
+  - Admin can log and read expenses; barista is 403
   - Recipient list reflects mutations within one txn
   - Audit rows present for every mutation
 - **Dependency:** G8
@@ -215,16 +215,16 @@ Owns: schema additions, deduction, COGS computation, crons, P&L approval, all ne
 - **API endpoints:** `GET /api/cogs/live`
 - **Files to create:**
   - `drizzle/0003_cogs_views/*` — SQL views: `v_daily_revenue`, `v_daily_cogs`, `v_daily_expenses`, `v_weekly_variance` (the last used by Phase 4 Grafana)
-  - `src/app/api/cogs/live/route.ts` — admin/owner-gated handler
+  - `src/app/api/cogs/live/route.ts` — admin-gated handler
   - `src/server/cogs/compute.ts` — `getCogsLive({ tz: 'Africa/Johannesburg' })`
   - `src/server/queue/notify.ts` — add channel `cogs_changes`; G9 and G12 fire pings here on every mutation
   - `tests/server/cogs.test.ts`
 - **Claude prompt:**
-  > Read `FAVO_PRD_v3.md` §04 §07 §10 R10, `BUSINESS_RULES.md` (L07 — midnight SAST is day boundary). Write SQL views in a Drizzle raw migration. `v_daily_revenue`: `SUM(orders.total_zar) WHERE state IN ('in_progress','ready','collected') AND (placed_at AT TIME ZONE 'Africa/Johannesburg')::date = current SAST day` (parameterise the date). `v_daily_cogs`: `SUM(-stock_movements.delta * inventory_lots.unit_cost_zar) WHERE kind='deduction' AND DATE(at AT TIME ZONE 'Africa/Johannesburg') = ?`. `v_daily_expenses`: SAST-day SUM. Implement `getCogsLive({ date })` returning `{ date, revenue_zar, cogs_zar, expenses_zar, gross_margin_zar, net_zar, profit: boolean, cost_estimated_warning: boolean }`. The warning is true if any lot used in today's COGS has `cost_estimated=true` in its audit history (R10). Implement `GET /api/cogs/live?date=YYYY-MM-DD` — admin/owner only via `getSession()`. Cache-Control: no-store. Add a `pg_notify('cogs_changes', ...)` ping from G9 (deduction) and G12 (expenses) — A7 (Mia) consumes this to refresh the dashboard within 5 s of a mutation per §04. Tests: (a) revenue computed from seeded orders; (b) midnight SAST cuts cleanly; (c) `cost_estimated_warning` flips when a lot is recosted.
+  > Read `FAVO_PRD_v3.md` §04 §07 §10 R10, `BUSINESS_RULES.md` (L07 — midnight SAST is day boundary). Write SQL views in a Drizzle raw migration. `v_daily_revenue`: `SUM(orders.total_zar) WHERE state IN ('in_progress','ready','collected') AND (placed_at AT TIME ZONE 'Africa/Johannesburg')::date = current SAST day` (parameterise the date). `v_daily_cogs`: `SUM(-stock_movements.delta * inventory_lots.unit_cost_zar) WHERE kind='deduction' AND DATE(at AT TIME ZONE 'Africa/Johannesburg') = ?`. `v_daily_expenses`: SAST-day SUM. Implement `getCogsLive({ date })` returning `{ date, revenue_zar, cogs_zar, expenses_zar, gross_margin_zar, net_zar, profit: boolean, cost_estimated_warning: boolean }`. The warning is true if any lot used in today's COGS has `cost_estimated=true` in its audit history (R10). Implement `GET /api/cogs/live?date=YYYY-MM-DD` — admin only via `getSession()`. Cache-Control: no-store. Add a `pg_notify('cogs_changes', ...)` ping from G9 (deduction) and G12 (expenses) — A7 (Mia) consumes this to refresh the dashboard within 5 s of a mutation per §04. Tests: (a) revenue computed from seeded orders; (b) midnight SAST cuts cleanly; (c) `cost_estimated_warning` flips when a lot is recosted.
 - **Acceptance criteria:**
   - `GET /api/cogs/live` returns within 200 ms on staging
   - Placing a test order produces a delta visible on the next request within 1 s
-  - Endpoint rejects barista/finance requests with 403
+  - Endpoint rejects barista requests with 403
   - Views are migration-reversible
 - **Dependency:** G8, G9, G12
 
@@ -253,21 +253,21 @@ Owns: schema additions, deduction, COGS computation, crons, P&L approval, all ne
 
 ---
 
-#### G15 — Monthly P&L dual-sign approval
+#### G15 — Monthly P&L admin sign-off
 
 - **Owner:** Gian
 - **Branch:** `feat/g-g15-monthly-pnl`
-- **PRD sections:** §04 (monthly P&L dual approval), §06, §07 (`approveMonthlyPnL`), §08 L11
+- **PRD sections:** §04 (monthly P&L approval), §06, §07 (`approveMonthlyPnL`), §08 L11
 - **DB tables touched:** `monthly_reports` (new), `audit_log`
-- **Server actions:** `generateMonthlyPnL`, `approveMonthlyPnL(id, sigKind)`
+- **Server actions:** `generateMonthlyPnL`, `approveMonthlyPnL(id)`
 - **Files to create:**
-  - `drizzle/0004_monthly_reports/*` — table with DB `CHECK (status != 'closed' OR (admin_sig IS NOT NULL AND finance_sig IS NOT NULL))`
+  - `drizzle/0004_monthly_reports/*` — table with DB `CHECK (status != 'closed' OR admin_sig IS NOT NULL)`
   - `src/server/actions/monthly-pnl.ts`
   - `tests/server/monthly-pnl.test.ts`
 - **Claude prompt:**
-  > Read `FAVO_PRD_v3.md` §04 §06 §07, `BUSINESS_RULES.md` (L11). Add `monthly_reports` table: id, month (date — first of month), revenue_zar, cogs_zar, expenses_zar, gross_margin_zar, net_zar, status (enum: draft, awaiting_signatures, closed), admin_sig (jsonb: signer_id + at), finance_sig (jsonb), generated_at, closed_at. DB CHECK: closed requires both sigs non-null (L11). Implement `generateMonthlyPnL(month)` admin+ — produces a draft. `approveMonthlyPnL(id, sigKind)` — `sigKind: 'admin' | 'finance'`. RBAC: only admin can set `admin_sig`, only finance can set `finance_sig` (owner can do either). On second sig, status auto-transitions to `closed` and `closed_at = now()`. `writeAudit` on every sig. Tests: (a) closing without both sigs is DB-blocked; (b) admin cannot set finance_sig; (c) double-signing same role is rejected (sig is already set); (d) owner can sign either side.
+  > Read `FAVO_PRD_v3.md` §04 §06 §07, `BUSINESS_RULES.md` (L11). Add `monthly_reports` table: id, month (date — first of month), revenue_zar, cogs_zar, expenses_zar, gross_margin_zar, net_zar, status (enum: draft, closed), admin_sig (jsonb: signer_id + at), generated_at, closed_at. DB CHECK: closed requires admin_sig non-null (L11). Implement `generateMonthlyPnL(month)` admin — produces a draft. `approveMonthlyPnL(id)` — sets admin_sig and immediately transitions to closed with `closed_at = now()`. `writeAudit` on every sig. Tests: (a) closing without admin_sig is DB-blocked; (b) barista cannot sign; (c) double-signing is rejected (sig already set).
 - **Acceptance criteria:**
-  - DB CHECK is enforced — direct UPDATE to status='closed' without sigs fails
+  - DB CHECK is enforced — direct UPDATE to status='closed' without admin_sig fails
   - Approval flow is fully audited
   - Tests cover all RBAC paths
 - **Dependency:** G13
@@ -423,10 +423,9 @@ Owns: every Phase 2 admin screen. Builds against GY stubs immediately; swaps to 
   - `src/components/admin/MonthlyReportRow.tsx`
   - `src/components/admin/DualSignBlock.tsx`
 - **Claude prompt:**
-  > Read `FAVO_PRD_v3.md` §04 §08 L11, `API.md`. List monthly reports at `/admin/reports/monthly` — admin AND finance read. Columns: month, revenue, COGS, expenses, net, status. "Generate" button visible to admin only — creates a draft for the previous closed month. Per-row dual-sign block: shows admin_sig and finance_sig states with signer name + at, plus a "Sign as admin" button (visible to admin/owner) and "Sign as finance" button (visible to finance/owner). When both are signed the row auto-flips to closed with a green badge. Confirmation modal on each sign with the report numbers — irreversible. Test: a finance-role user cannot see the admin sign button.
+  > Read `FAVO_PRD_v3.md` §04 §08 L11, `API.md`. List monthly reports at `/admin/reports/monthly` — admin read. Columns: month, revenue, COGS, expenses, net, status. "Generate" button visible to admin only — creates a draft for the previous closed month. Per-row sign block: shows admin_sig state with signer name + at, plus a "Sign as Admin" button (visible to admin). Signing immediately closes the report with a green badge. Confirmation modal with the report numbers — irreversible. Test: a barista cannot see the sign button.
 - **Acceptance criteria:**
-  - Dual-sign closes the report; status flips to closed with timestamp
-  - Buttons respect role (admin sees admin, finance sees finance, owner sees both)
+  - Admin sign closes the report; status flips to closed with timestamp
   - DB CHECK in G15 visibly prevents direct edits
 - **Dependency:** A2, GY (real impl from G15)
 
@@ -623,7 +622,7 @@ Owns: design primitives Mia and Mine consume.
   - `src/components/shared/report/Receipt.tsx` — a small receipt template for refund records
   - `src/lib/report/format.ts` — money + date helpers specific to print
 - **Claude prompt:**
-  > Read `FAVO_PRD_v3.md` §04 §07, `DESIGN.md`. Design React components that render print-clean (A4) for the monthly P&L (used by Phase 3 export) and for refund receipts. No interactivity. Use only semantic tokens; no scripts. The template includes FAVO branding, period, revenue/COGS/expenses/net, signatures block (admin + finance with signer name + at timestamp). The receipt shows order id, line items, total, refund amount, reason, requested_by, approved_by. Storybook stories with sample data; Playwright snapshot test renders the page and asserts visible strings.
+  > Read `FAVO_PRD_v3.md` §04 §07, `DESIGN.md`. Design React components that render print-clean (A4) for the monthly P&L (used by Phase 3 export) and for refund receipts. No interactivity. Use only semantic tokens; no scripts. The template includes FAVO branding, period, revenue/COGS/expenses/net, admin signature block (signer name + at timestamp). The receipt shows order id, line items, total, refund amount, reason, requested_by, approved_by. Storybook stories with sample data; Playwright snapshot test renders the page and asserts visible strings.
 - **Acceptance criteria:**
   - Page renders cleanly in print preview at A4
   - All numbers formatted in ZAR with comma decimal
@@ -669,7 +668,7 @@ Run on Sun 31 May evening, after all PRs are in `main`.
 | 11. Manually trigger `generateWeeklyPnL` in staging | Gian | Gian |
 | 12. Discord ping arrives in `#favo-ops` with the embed | Gian | Gian |
 | 13. Admin starts a stock-take, walks 3 lots, closes — variance row inserted; band correct per T01 | Mia | Mia |
-| 14. Admin generates a draft monthly P&L; admin signs, finance signs, status flips to closed | Mia | Mia |
+| 14. Admin generates a draft monthly P&L; admin signs, status flips to closed | Mia | Mia |
 | 15. Audit coverage query returns 0 | Gian (SQL) | Gian |
 
 Codified as Playwright spec `tests/e2e/phase2-acceptance.spec.ts` (owner: Gian).
@@ -679,7 +678,7 @@ Codified as Playwright spec `tests/e2e/phase2-acceptance.spec.ts` (owner: Gian).
 ## 7. Quality bars (per PRD §11)
 
 - ≥ 35 Vitest unit tests cumulative (Phase 1 + Phase 2). Of the Phase 2 increment: Gian ~10, Mia ~4, Mine ~3, Nikao ~3.
-- ≥ 14 Playwright E2E tests cumulative. Phase 2 adds: order flow with deduction, OUT_OF_STOCK rejection, stock-take walkthrough, COGS live refresh, low-stock push, weekly cron Discord ping, monthly dual-sign.
+- ≥ 14 Playwright E2E tests cumulative. Phase 2 adds: order flow with deduction, OUT_OF_STOCK rejection, stock-take walkthrough, COGS live refresh, low-stock push, weekly cron Discord ping, monthly P&L admin sign-off.
 - Audit coverage query returns 0 at end of Phase 2.
 - No raw card data in any new logging path.
 

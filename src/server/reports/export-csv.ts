@@ -38,8 +38,8 @@ export async function buildReportRows(from: string, to: string): Promise<ReportR
       COALESCE(SUM(total_zar), 0)::bigint AS revenue
     FROM orders
     WHERE state IN ('in_progress', 'ready', 'collected')
-      AND placed_at >= ${startUtc}
-      AND placed_at < ${endUtc}
+      AND placed_at >= ${startUtc.toISOString()}::timestamptz
+      AND placed_at < ${endUtc.toISOString()}::timestamptz
     GROUP BY sast_date
     ORDER BY sast_date
   `);
@@ -53,8 +53,8 @@ export async function buildReportRows(from: string, to: string): Promise<ReportR
     JOIN inventory_lots il ON sm.inventory_lot_id = il.id
     WHERE sm.kind = 'deduction'
       AND il.unit_cost_zar IS NOT NULL
-      AND sm.at >= ${startUtc}
-      AND sm.at < ${endUtc}
+      AND sm.at >= ${startUtc.toISOString()}::timestamptz
+      AND sm.at < ${endUtc.toISOString()}::timestamptz
     GROUP BY sast_date
     ORDER BY sast_date
   `);

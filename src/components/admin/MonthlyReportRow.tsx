@@ -12,7 +12,6 @@ import type { MonthlyReport } from "@/lib/types";
 export interface MonthlyReportRowProps {
   report: MonthlyReport;
   canSignAdmin: boolean;
-  canSignFinance: boolean;
   onChanged: () => void;
 }
 
@@ -35,7 +34,7 @@ function monthLabel(monthIso: string): string {
   return `${months[m - 1]} ${y}`;
 }
 
-export default function MonthlyReportRow({ report, canSignAdmin, canSignFinance, onChanged }: MonthlyReportRowProps) {
+export default function MonthlyReportRow({ report, canSignAdmin, onChanged }: MonthlyReportRowProps) {
   const [open, setOpen] = useState(report.status !== "closed");
 
   return (
@@ -78,7 +77,6 @@ export default function MonthlyReportRow({ report, canSignAdmin, canSignFinance,
           <DualSignBlock
             report={report}
             canSignAdmin={canSignAdmin}
-            canSignFinance={canSignFinance}
             onSigned={onChanged}
           />
         </div>

@@ -52,7 +52,7 @@ export type SetOperatingHoursInput = z.input<typeof setHoursSchema>;
 export async function setOperatingHours(
   input: SetOperatingHoursInput
 ): Promise<ActionResult<OperatingHour>> {
-  const auth = await authorize("admin", "owner");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
   const session = auth.session;
 

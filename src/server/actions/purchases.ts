@@ -24,18 +24,9 @@ import type {
 } from "@/lib/types";
 import type { DB } from "@/lib/db";
 
-const READER_ROLES = ["manager", "admin", "finance", "owner"] as const;
-const ADMIN_ROLES = ["admin", "owner"] as const;
-// Any authenticated staff member can record a purchase (barista may record
-// standard restocks; emergency kind is then held for admin approval).
-const RECORDER_ROLES = [
-  "barista",
-  "roaster",
-  "manager",
-  "admin",
-  "finance",
-  "owner",
-] as const;
+const READER_ROLES = ["admin"] as const;
+const ADMIN_ROLES = ["admin"] as const;
+const RECORDER_ROLES = ["barista", "admin"] as const;
 
 // Input types (PurchaseLotItem, RecordPurchaseInput) now live in @/lib/types so
 // both this action and the admin PurchaseForm share one definition.
@@ -125,7 +116,7 @@ export async function recordPurchase(
     }
   }
 
-  const isAdmin = (["admin", "owner"] as string[]).includes(session.role);
+  const isAdmin = session.role === "admin";
   const isEmergency = input.kind === "emergency";
   const pendingApproval = isEmergency && !isAdmin;
   const lotState = pendingApproval ? "quarantined" : "active";

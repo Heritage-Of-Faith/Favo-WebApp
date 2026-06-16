@@ -10,13 +10,7 @@ export type OrderState =
   | "collected"
   | "cancelled";
 
-export type StaffRole =
-  | "barista"
-  | "roaster"
-  | "manager"
-  | "admin"
-  | "finance"
-  | "owner";
+export type StaffRole = "barista" | "admin";
 
 export type MenuCategory =
   | "coffee"
@@ -377,7 +371,6 @@ export type MonthlyReport = {
   netZar: number;
   status: MonthlyReportStatus;
   adminSig: MonthlyReportSig | null;
-  financeSig: MonthlyReportSig | null;
   generatedAt: string; // ISO 8601
   closedAt: string | null;
 };

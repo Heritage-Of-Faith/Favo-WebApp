@@ -27,8 +27,8 @@ import {
 import type { ActionResult, StockTake, StockTakeLine, StockTakeKind } from "@/lib/types";
 import type { DB } from "@/lib/db";
 
-const ADMIN_ROLES = ["manager", "admin", "owner"] as const;
-const READER_ROLES = ["manager", "admin", "finance", "owner"] as const;
+const ADMIN_ROLES = ["admin"] as const;
+const READER_ROLES = ["admin"] as const;
 
 // T01: variance % above this threshold triggers a corrective stock_movement
 const VARIANCE_ADJUSTMENT_THRESHOLD_PCT = 5;

@@ -28,7 +28,7 @@ export default async function AdminDashboardLayout({
     redirect("/admin/login");
   }
 
-  const canApprove = session.role === "admin" || session.role === "owner";
+  const canApprove = session.role === "admin";
 
   return (
     <div data-admin-portal className="flex min-h-screen bg-surface text-text-strong">

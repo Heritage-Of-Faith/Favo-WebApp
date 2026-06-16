@@ -33,7 +33,6 @@ function draftReport(over: Partial<MonthlyReport> = {}): MonthlyReport {
     netZar: 60000,
     status: "awaiting_signatures",
     adminSig: null,
-    financeSig: null,
     generatedAt: "2026-06-01T08:00:00+02:00",
     closedAt: null,
     ...over,
@@ -43,17 +42,15 @@ function draftReport(over: Partial<MonthlyReport> = {}): MonthlyReport {
 describe("DualSignBlock — A13 role gating", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("a finance user cannot see the admin sign button", () => {
+  it("barista (canSignAdmin=false) does not see the admin sign button", () => {
     render(
       <DualSignBlock
         report={draftReport()}
         canSignAdmin={false}
-        canSignFinance={true}
         onSigned={() => {}}
       />
     );
     expect(screen.queryByRole("button", { name: /sign as admin/i })).toBeNull();
-    expect(screen.getByRole("button", { name: /sign as finance/i })).toBeInTheDocument();
   });
 
   it("an admin user sees the admin sign button", () => {
@@ -61,7 +58,6 @@ describe("DualSignBlock — A13 role gating", () => {
       <DualSignBlock
         report={draftReport()}
         canSignAdmin={true}
-        canSignFinance={false}
         onSigned={() => {}}
       />
     );
@@ -75,7 +71,6 @@ describe("DualSignBlock — A13 role gating", () => {
           adminSig: { signerId: "s1", signerName: "Gian", at: "2026-06-02T09:00:00+02:00" },
         })}
         canSignAdmin={true}
-        canSignFinance={true}
         onSigned={() => {}}
       />
     );

@@ -34,14 +34,7 @@ export type Props = {
   onSaved: () => void;
 };
 
-const ROLES: StaffRole[] = [
-  "barista",
-  "roaster",
-  "manager",
-  "admin",
-  "finance",
-  "owner",
-];
+const ROLES: StaffRole[] = ["barista", "admin"];
 
 export default function StaffForm({ staffId, staffName, onClose, onSaved }: Props) {
   const isEdit = Boolean(staffId);
