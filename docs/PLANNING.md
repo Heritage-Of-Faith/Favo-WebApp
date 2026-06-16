@@ -5,7 +5,7 @@
 | Phase | Dates | Scope |
 |---|---|---|
 | P1 — POS Core + Auth + Payment | Thu 28 – Fri 29 May | Schema (24 tables), seed, PIN + SSO, customer lookup, order flow, Yoco, state machine, ready→push, SSE queue, staff discount, audit on all mutations |
-| P2 — Inventory + Live COGS | Sat 30 – Sun 31 May | Recipe deduction on transition, lots + origin, waste log, stock takes, low-stock push, live COGS dashboard, weekly archival, monthly dual-sign |
+| P2 — Inventory + Live COGS | Sat 30 – Sun 31 May | Recipe deduction on transition, lots + origin, waste log, stock takes, low-stock push, live COGS dashboard, weekly archival, monthly P&L admin sign-off |
 | P3 — Customer PWA + Loyalty + Offline | Mon 1 – Tue 2 Jun | Magic link, customer dashboard, loyalty earn/redeem, hours display, Service Worker offline, wallet + packs, exports |
 | P4 — QA + Deploy | Wed 3 Jun | E2E suite, smoke, deploy to favo.hofmi.org |
 

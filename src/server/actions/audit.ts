@@ -37,7 +37,7 @@ export type ListAuditResult = {
 export async function listAudit(
   input: ListAuditInput
 ): Promise<ActionResult<ListAuditResult>> {
-  const auth = await authorize("admin", "finance", "owner");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const parsed = listAuditSchema.safeParse(input);

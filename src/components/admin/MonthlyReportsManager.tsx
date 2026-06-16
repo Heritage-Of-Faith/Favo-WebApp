@@ -14,7 +14,6 @@ export interface MonthlyReportsManagerProps {
   initialReports: MonthlyReport[];
   canGenerate: boolean;
   canSignAdmin: boolean;
-  canSignFinance: boolean;
   /** Previous month as YYYY-MM (default for the generate picker). */
   defaultMonth: string;
 }
@@ -23,7 +22,6 @@ export default function MonthlyReportsManager({
   initialReports,
   canGenerate,
   canSignAdmin,
-  canSignFinance,
   defaultMonth,
 }: MonthlyReportsManagerProps) {
   const [reports, setReports] = useState<MonthlyReport[]>(initialReports);
@@ -102,7 +100,6 @@ export default function MonthlyReportsManager({
               key={r.id}
               report={r}
               canSignAdmin={canSignAdmin}
-              canSignFinance={canSignFinance}
               onChanged={refresh}
             />
           ))}

@@ -8,14 +8,14 @@
 | Styling | Tailwind v4 + shadcn/ui |
 | DB | PostgreSQL 17 (Supabase, project `Flavo-Real`, eu-west-1) |
 | ORM | Drizzle ORM (`prepare: false` in `db/index.ts` — required for PgBouncer Transaction pooler) |
-| Auth | Auth.js v5 — PIN provider (staff) + HOFMI SSO (admin/finance/owner, TODO) + email magic link (customers, Phase 3) |
+| Auth | Auth.js v5 — PIN provider (staff) + HOFMI SSO (admin, TODO) + email magic link (customers, Phase 3) |
 | Payments | Yoco Online API (hosted fields, tokenisation) |
 | Real-time | Postgres LISTEN/NOTIFY → SSE |
 | Push | Web Push API + VAPID (`web-push`) |
 | Offline | IndexedDB (`idb`) + Service Worker (Phase 3) |
 | Storage | Cloudflare R2 (`hofmi-favo`) |
 | Hosting | TBD — app hosting not yet set up; DB on Supabase |
-| CDN | Cloudflare (`favo.hofmi.org`); Cloudflare Access gates `/admin/*` + `/finance/*` |
+| CDN | Cloudflare (`favo.hofmi.org`); Cloudflare Access gates `/admin/*` |
 | Secrets | `.env.local` (local) · Vercel env vars (production) |
 | Logs | Pino → Loki |
 | Tracing | Raindrop |

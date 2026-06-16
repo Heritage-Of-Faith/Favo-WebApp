@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, code: "UNAUTHORIZED" }, { status: 401 });
   }
 
-  const ALLOWED_ROLES = ["barista", "manager", "admin", "owner"] as const;
+  const ALLOWED_ROLES = ["barista", "admin"] as const;
   if (!ALLOWED_ROLES.includes(session.role as typeof ALLOWED_ROLES[number])) {
     return NextResponse.json({ ok: false, code: "FORBIDDEN" }, { status: 403 });
   }

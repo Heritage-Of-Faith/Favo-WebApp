@@ -11,7 +11,7 @@ import type { StaffRole } from "@/lib/types";
 
 // HOFMI SSO may only grant admin-capable roles. Baristas authenticate by PIN,
 // never via SSO — so an SSO token claiming "barista" (or anything else) is rejected.
-const ALLOWED_SSO_ROLES = new Set<StaffRole>(["admin", "finance", "owner"]);
+const ALLOWED_SSO_ROLES = new Set<StaffRole>(["admin"]);
 
 // Task G4 -- PIN provider (staff). HOFMI SSO provider is a follow-up (A3 needs it).
 // Role is resolved at authorize time and carried through the JWT so getSession()
@@ -120,7 +120,7 @@ export const authConfig: NextAuthConfig = {
       },
     }),
 
-    // -- HOFMI SSO provider (admin / owner / finance) --------------------------
+    // -- HOFMI SSO provider (admin only via SSO) --------------------------
     // TODO (A3): Wire this provider once HOFMI SSO OAuth credentials are
     // available. Required env vars:
     //   HOFMI_SSO_CLIENT_ID     -- OAuth 2.0 client ID

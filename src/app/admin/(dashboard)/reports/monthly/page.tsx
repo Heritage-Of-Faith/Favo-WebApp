@@ -19,9 +19,8 @@ function previousMonth(): string {
 export default async function MonthlyReportsPage() {
   const session = await getSession();
   const role = session?.role;
-  const canGenerate = role === "admin" || role === "owner";
-  const canSignAdmin = role === "admin" || role === "owner";
-  const canSignFinance = role === "finance" || role === "owner";
+  const canGenerate = role === "admin";
+  const canSignAdmin = role === "admin";
 
   const res = await listMonthlyReports();
 
@@ -32,7 +31,7 @@ export default async function MonthlyReportsPage() {
           Monthly P&amp;L
         </h1>
         <p className="mt-1 favo-small" style={{ color: "var(--color-text-muted)" }}>
-          Profit &amp; loss by month. Closing a report needs both an admin and a finance signature (L11).
+          Profit &amp; loss by month. Admin signs to close each month.
         </p>
       </header>
 
@@ -41,7 +40,6 @@ export default async function MonthlyReportsPage() {
           initialReports={res.data.reports}
           canGenerate={canGenerate}
           canSignAdmin={canSignAdmin}
-          canSignFinance={canSignFinance}
           defaultMonth={previousMonth()}
         />
       ) : (

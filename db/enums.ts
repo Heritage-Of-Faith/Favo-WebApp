@@ -8,14 +8,7 @@ export const orderState = pgEnum("order_state", [
   "cancelled",
 ]);
 
-export const staffRole = pgEnum("staff_role", [
-  "barista",
-  "roaster",
-  "manager",
-  "admin",
-  "finance",
-  "owner",
-]);
+export const staffRole = pgEnum("staff_role", ["barista", "admin"]);
 
 export const menuCategory = pgEnum("menu_category", [
   "coffee",

@@ -22,11 +22,7 @@ const ENTITY_KINDS = [
 
 const ACTOR_ROLES = [
   "barista",
-  "roaster",
-  "manager",
-  "finance",
   "admin",
-  "owner",
 ] as const;
 
 type Props = {

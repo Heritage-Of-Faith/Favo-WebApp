@@ -14,7 +14,7 @@ const MAX_RESULTS = 10;
 export async function searchCustomer(
   query: string
 ): Promise<ActionResult<Customer[]>> {
-  const auth = await authorize("barista", "manager", "admin", "owner");
+  const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
 
   const q = query.trim();
@@ -56,7 +56,7 @@ export async function listCustomers(opts?: {
   query?: string;
   limit?: number;
 }): Promise<ActionResult<CustomerListItem[]>> {
-  const auth = await authorize("manager", "admin", "owner");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const limit = Math.min(opts?.limit ?? 100, 500);
@@ -138,7 +138,7 @@ export type CustomerDetail = {
 export async function getCustomerDetail(
   customerId: string
 ): Promise<ActionResult<CustomerDetail>> {
-  const auth = await authorize("manager", "admin", "owner");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const [customer] = await db

@@ -14,8 +14,8 @@ import { writeAudit } from "@/server/audit";
 import type { ActionResult, AlertRecipient } from "@/lib/types";
 import type { DB } from "@/lib/db";
 
-const ADMIN_ROLES = ["admin", "manager", "owner"] as const;
-const READER_ROLES = ["admin", "manager", "owner"] as const;
+const ADMIN_ROLES = ["admin"] as const;
+const READER_ROLES = ["admin"] as const;
 
 // AlertRecipient now lives in @/lib/types (shared with the admin RecipientsEditor).
 
