@@ -8,14 +8,14 @@
 | Styling | Tailwind v4 + shadcn/ui |
 | DB | PostgreSQL 16 (self-hosted on `hofmi-eu-open`) |
 | ORM | Drizzle ORM |
-| Auth | Auth.js v6 — PIN provider (staff) + HOFMI SSO (admin/finance/owner) + email magic link (customers, Phase 3) |
+| Auth | Auth.js v6 — PIN provider (staff) + HOFMI SSO (admin, TODO) + email magic link (customers, Phase 3) |
 | Payments | Yoco Online API (hosted fields, tokenisation) |
 | Real-time | Postgres LISTEN/NOTIFY → SSE |
 | Push | Web Push API + VAPID (`web-push`) |
 | Offline | IndexedDB (`idb`) + Service Worker (Phase 3) |
 | Storage | Cloudflare R2 (`hofmi-favo`) |
 | Hosting | Coolify on `hofmi-eu-open` |
-| CDN | Cloudflare (`favo.hofmi.org`); Cloudflare Access gates `/admin/*` + `/finance/*` |
+| CDN | Cloudflare (`favo.hofmi.org`); Cloudflare Access gates `/admin/*` |
 | Secrets | `.env.local` (local) · Vercel env vars (production) |
 | Logs | Pino → Loki |
 | Tracing | Raindrop |

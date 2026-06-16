@@ -24,7 +24,7 @@
 | Deploy target | `favo.hofmi.org` · Coolify on `hofmi-eu-open` (Hetzner DE) · Cloudflare in front |
 | Tenancy | Single-tenant within `hofmi`; one café location for v1; multi-location is an explicit non-goal |
 | Source language | English (UI), ZAR (currency), Africa/Johannesburg (timezone, UTC+2) |
-| Distribution | Public-facing app. The customer PWA is publicly accessible. Admin and finance routes are gated via Cloudflare Access (HOFMI SSO required). |
+| Distribution | Public-facing app. The customer PWA is publicly accessible. Admin routes are gated via Cloudflare Access (HOFMI SSO required). |
 
 ---
 
@@ -83,7 +83,7 @@ The concrete cost is that **nobody knows the true cost of a cappuccino**. Beans 
 | Offline counter mode | 0 lost orders in a simulated 1-hour ISP outage | Phase 3 chaos drill: disable WAN for 60 minutes, take orders via IndexedDB outbox, reconcile on reconnect. Order count must match. |
 | Audit coverage | 100% | `SELECT COUNT(*) FROM orders o LEFT JOIN audit_log a ON a.entity_id = o.id WHERE a.id IS NULL AND o.completed_at IS NOT NULL` must always return 0. |
 | Staff entitlement enforcement | Max 1 per staff per weekday | `SELECT staff_id, day FROM staff_entitlement_log GROUP BY staff_id, day HAVING COUNT(*) > 1` must always return empty. |
-| Monthly P&L dual approval | 100% co-signed before close | `monthly_reports.status = 'closed'` requires both `admin_sig` AND `finance_sig` non-null. DB CHECK constraint. |
+| Monthly P&L admin sign-off | 100% signed before close | `monthly_reports.status = 'closed'` requires `admin_sig` non-null. DB CHECK constraint. |
 
 ---
 
@@ -103,7 +103,7 @@ The concrete cost is that **nobody knows the true cost of a cappuccino**. Beans 
 | Push notifications | `Web Push API + VAPID + web-push lib` | Works on PWA without app store. VAPID enforces server identity. |
 | File storage | `Cloudflare R2 · bucket: hofmi-favo` | Receipts, exports. Already used for Warden memory backups. |
 | Hosting | `Coolify on hofmi-eu-open` | Same deploy pipeline as the rest of HOFMI. `git push` triggers rebuild. |
-| CDN / DNS | `Cloudflare · favo.hofmi.org` | Cloudflare Access gates admin and finance routes. WAF in front of all public routes. |
+| CDN / DNS | `Cloudflare · favo.hofmi.org` | Cloudflare Access gates admin routes. WAF in front of all public routes. |
 | CI / CD | `GitHub Actions → Coolify webhook` | Typecheck, lint, test on every PR. Deploy on merge to `main`. |
 | Tracing | `Raindrop` | Standard across the HOFMI agent fleet. |
 | Logs | `Pino → Loki` | Sentinel already watches the Loki instance on `hofmi-eu-open`. |
@@ -156,7 +156,7 @@ Twenty-four core tables. Schema lives in `db/schema.ts` (Drizzle). Migrations in
 | `stock_alert_recipients` | Staff who receive low-stock push alerts. | `id`, `inventory_item_id` (nullable — null = global), `staff_id` |
 | `customers` | Registered customer accounts. | `id`, `email`, `name`, `phone` (nullable — used for POS search), `push_subscription` (jsonb), `loyalty_points` (integer, default 0), `created_at` |
 | `loyalty_transactions` | Loyalty point earn and redemption log. | `id`, `customer_id`, `order_id`, `delta` (signed), `kind` (enum: earn, redeem), `at` |
-| `staff` | Baristas, admin, finance, owner. | `id`, `name`, `role` (enum: barista, admin, finance, owner), `pin_hash`, `active`. Note: `barista` covers both POS operation and coffee preparation. |
+| `staff` | Baristas and admins. | `id`, `name`, `role` (enum: barista, admin), `pin_hash`, `active`. Note: `barista` covers both POS operation and coffee preparation. |
 | `staff_entitlement_log` | Free coffee claims — barista-applied. | `id`, `staff_id` (receiving the discount), `applied_by_staff_id` (barista on duty), `order_id`, `day` (date) |
 | `payments` | Yoco transaction records. | `id`, `order_id`, `yoco_payment_id`, `amount_zar`, `status` (enum: pending, success, failed), `webhook_received_at` |
 | `refunds` | Refund records — full amount only. | `id`, `order_id`, `amount_zar`, `reason`, `requested_by`, `approved_by`, `status` |
@@ -171,9 +171,7 @@ Twenty-four core tables. Schema lives in `db/schema.ts` (Drizzle). Migrations in
 
 - **Customers** can SELECT their own `orders`, `loyalty_transactions`. No write access to orders.
 - **Barista** can SELECT/INSERT `orders`, `order_items`, `waste_log`, `staff_entitlement_log`. Can search `customers` by name or phone (read-only, name + phone fields only). Cannot DELETE anything.
-- **Admin** can write to `price_history`, `operating_hours`, `stock_alert_recipients`, approve `refunds`, approve emergency `purchases`, sign `monthly_reports`. `audit_log` remains INSERT-only even for Admin.
-- **Finance** is SELECT-only on every table except setting `monthly_reports.finance_sig`.
-- **Owner** has full access equivalent to Admin + Finance combined.
+- **Admin** can write to `price_history`, `operating_hours`, `stock_alert_recipients`, approve `refunds`, approve emergency `purchases`, sign `monthly_reports`, access all financial reports. `audit_log` remains INSERT-only even for Admin.
 
 > **Invariant:** Never DELETE or UPDATE records in `stock_movements`, `loyalty_transactions`, `audit_log`, or `price_history`. Mark as voided with a follow-up INSERT. Trigger-enforced on `audit_log`; policy-enforced on the others.
 
@@ -192,22 +190,22 @@ Server Actions for mutations. Route handlers for queries and webhooks. SSE for t
 | `applyStaffDiscount(orderId, beneficiaryStaffId)` | Server action | barista | Sets `orders.is_staff_discount = true`, `total_zar = 0`, inserts `staff_entitlement_log`. Cappuccinos only. Weekdays only. Barista can apply for themselves. |
 | `POST /api/payments/yoco/webhook` | Route handler | HMAC | Verify signature with `YOCO_WEBHOOK_SECRET`. Match payment → order. Idempotency on `yoco_payment_id`. |
 | `GET /api/queue/stream` | SSE | barista | Postgres LISTEN on channel `order_changes`. Pushes JSON events to the POS tablet queue view. Client reconnects automatically on close. |
-| `GET /api/cogs/live` | Route handler | admin / owner | Returns current day: total revenue (ZAR), total COGS, total expenses, gross margin, and profit flag. Computed live from DB — no batch step. |
+| `GET /api/cogs/live` | Route handler | admin | Returns current day: total revenue (ZAR), total COGS, total expenses, gross margin, and profit flag. Computed live from DB — no batch step. |
 | `logWaste(input)` | Server action | barista | Inserts `waste_log` + `stock_movements(kind='waste')` atomically. |
 | `runStockTake(kind)` | Server action | admin+ | Creates `stock_takes` row; UI walks each lot; close computes and stores variance. |
 | `checkLowStock()` | Cron · every 15 min | system | Queries `inventory_items` where stock ≤ threshold. Sends Web Push to all matching `stock_alert_recipients`. |
 | `requestRefund(orderId, reason)` | Server action | any staff | Creates pending `refunds` row. Requires admin approval before Yoco is triggered. |
-| `approveRefund(id)` | Server action | admin / owner | Triggers Yoco refund. Inserts audit row. Full amount only. |
+| `approveRefund(id)` | Server action | admin | Triggers Yoco refund. Inserts audit row. Full amount only. |
 | `setMenuItemPrice(id, priceZar)` | Server action | admin | Closes current `price_history` row; inserts new row. Applies to new orders only. |
 | `redeemLoyalty(customerId, orderId)` | Server action | barista | Validates ≥ 100 points. Deducts points, sets `total_zar = 0`. Full redemption only. |
 | `topUpWallet(customerId, amountZar)` | Server action | barista | Creates Yoco payment intent. Webhook credits wallet on success. Counter-only — barista processes on behalf of customer. |
 | `purchasePack(customerId, menuItemId, qty)` | Server action | barista | Creates Yoco payment intent. On success, inserts `coffee_packs` with `expires_at = now() + 90 days`. Counter-only. |
 | `closeDaily()` | Cron · 23:59 SAST | system | Reconciles payments vs stock movements. Blocks close and pages Admin via Discord if mismatches exist. |
 | `generateWeeklyPnL()` | Cron · Sun 23:59 | system | Aggregates revenue, COGS, expenses; writes archival report row; Discord ping to `#favo-ops`. Secondary to the live dashboard. |
-| `approveMonthlyPnL(id, sigKind)` | Server action | admin / finance | Sets `admin_sig` or `finance_sig`. Status transitions to `closed` only when both are non-null. |
-| `GET /api/reports/export?format=csv\|pdf` | Route handler | admin / finance | Exports sales, COGS, and inventory summary in CSV or PDF format. |
+| `approveMonthlyPnL(id)` | Server action | admin | Sets `admin_sig`. Report status transitions to `closed` immediately. |
+| `GET /api/reports/export?format=csv\|pdf` | Route handler | admin | Exports sales, COGS, and inventory summary in CSV or PDF format. |
 
-> **Security invariant:** Never bypass the RBAC permission check in any API route or Server Action. Enforcement at the server layer — not just the UI. Admin and Finance routes are additionally blocked at the Cloudflare Access layer.
+> **Security invariant:** Never bypass the RBAC permission check in any API route or Server Action. Enforcement at the server layer — not just the UI. Admin routes are additionally blocked at the Cloudflare Access layer.
 
 ---
 
@@ -235,7 +233,7 @@ Server Actions for mutations. Route handlers for queries and webhooks. SSE for t
 
 **L10 — Emergency purchases require admin approval.** `purchases.kind = 'emergency'` requires `admin_approved_by` non-null at insert.
 
-**L11 — Monthly P&L requires Admin + Finance co-sign.** DB CHECK constraint enforced.
+**L11 — Monthly P&L requires Admin sign-off to close.** DB CHECK constraint enforced.
 
 **L12 — Audit log is append-only.** Trigger denies UPDATE and DELETE. Cannot be disabled by any role.
 
@@ -277,7 +275,7 @@ Four phases. Seven days. Launch Wednesday 3 June 2026. Four developers + Claude 
 ### Phase 1 — POS Core + Auth + Payment
 **Days 1–2 · Thu 28 – Fri 29 May · `HOFMI-FAVO-P1`**
 
-**Scope:** Full DB schema migrated (all 24 tables). Menu seeded: 5 items + size variants, customisations (Macadami Milk, Extra Shot, single/double shot). Staff auth: PIN login (barista role), HOFMI SSO (admin, finance, owner). Customer lookup: POS search by name or phone → select from results → or create guest order. Order flow: select customer or guest → add items with modifications → Yoco hosted-fields payment → order created → queue updated via SSE. State machine: ordered → in_progress → ready → collected. Transition to *ready* fires Web Push to customer's registered device. Staff discount: barista applies 100% to an order (cappuccinos only, weekdays only, including for themselves) via `applyStaffDiscount()`. Live queue on POS: SSE stream from Postgres LISTEN/NOTIFY. Audit log writing on all mutations.
+**Scope:** Full DB schema migrated (all 24 tables). Menu seeded: 5 items + size variants, customisations (Macadami Milk, Extra Shot, single/double shot). Staff auth: PIN login (barista and admin roles), HOFMI SSO (admin, TODO). Customer lookup: POS search by name or phone → select from results → or create guest order. Order flow: select customer or guest → add items with modifications → Yoco hosted-fields payment → order created → queue updated via SSE. State machine: ordered → in_progress → ready → collected. Transition to *ready* fires Web Push to customer's registered device. Staff discount: barista applies 100% to an order (cappuccinos only, weekdays only, including for themselves) via `applyStaffDiscount()`. Live queue on POS: SSE stream from Postgres LISTEN/NOTIFY. Audit log writing on all mutations.
 
 **Acceptance:** Barista logs in via PIN. Searches customer "Louis" — finds match. Places a cappuccino order with Extra Shot. Yoco test-card payment succeeds. Barista taps Done. Customer device receives push notification within 10 seconds. Audit log row created.
 
@@ -290,7 +288,7 @@ Four phases. Seven days. Launch Wednesday 3 June 2026. Four developers + Claude 
 ### Phase 2 — Inventory + Live COGS Dashboard
 **Days 3–4 · Sat 30 – Sun 31 May · `HOFMI-FAVO-P2`**
 
-**Scope:** Recipe ingredients linked to inventory items. Auto-deduction on `transitionOrder(→ in_progress)`. Inventory lots with origin tracking (bean variety + source name). Waste logging UI: category + reason + quantity. Stock take flow: admin starts, UI walks each lot, variance computed and stored. Low stock threshold: when stock ≤ threshold, `checkLowStock()` cron pushes alert to named recipients in `stock_alert_recipients`. Admin UI to configure recipients per item or globally. Live COGS dashboard (`GET /api/cogs/live`): current day revenue, running COGS, expenses, gross margin, profit indicator — real-time, updates on order completion. Secondary: `generateWeeklyPnL()` cron runs Sunday 23:59 for archival snapshot + Discord ping. Monthly P&L report with dual-sign approval flow. Emergency purchase flag with admin approval gate.
+**Scope:** Recipe ingredients linked to inventory items. Auto-deduction on `transitionOrder(→ in_progress)`. Inventory lots with origin tracking (bean variety + source name). Waste logging UI: category + reason + quantity. Stock take flow: admin starts, UI walks each lot, variance computed and stored. Low stock threshold: when stock ≤ threshold, `checkLowStock()` cron pushes alert to named recipients in `stock_alert_recipients`. Admin UI to configure recipients per item or globally. Live COGS dashboard (`GET /api/cogs/live`): current day revenue, running COGS, expenses, gross margin, profit indicator — real-time, updates on order completion. Secondary: `generateWeeklyPnL()` cron runs Sunday 23:59 for archival snapshot + Discord ping. Monthly P&L report with admin sign-off approval flow. Emergency purchase flag with admin approval gate.
 
 **Acceptance:** Admin opens COGS dashboard. Barista places an order — COGS updates within 5 seconds. Milk stock drops below threshold → named staff receive push notification. Admin logs an expense → gross margin recalculates. Weekly cron fires Sunday 23:59 → Discord ping received in `#favo-ops`.
 

@@ -12,20 +12,20 @@ Server Actions for mutations (`src/server/actions/*`). Route handlers for querie
 | `applyStaffDiscount(orderId, beneficiaryStaffId)` | Server action | barista | Cappuccino + weekday only. 100% off. Inserts `staff_entitlement_log` (UNIQUE per day). |
 | `POST /api/payments/yoco/webhook` | Route handler | HMAC | Verify `YOCO_WEBHOOK_SECRET`. Idempotent on `yoco_payment_id`. |
 | `GET /api/queue/stream` | SSE | barista | `LISTEN order_changes`. Heartbeat every 30 s. Client auto-reconnects. |
-| `GET /api/cogs/live` | Route handler | admin/owner | Live revenue, COGS, expenses, margin, profit flag. |
+| `GET /api/cogs/live` | Route handler | admin | Live revenue, COGS, expenses, margin, profit flag. |
 | `logWaste(input)` | Server action | barista | Insert `waste_log` + `stock_movements(kind='waste')` atomically. |
 | `runStockTake(kind)` | Server action | admin+ | Create `stock_takes`; walk lots; compute variance on close. |
 | `checkLowStock()` | Cron 15 m | system | Push to `stock_alert_recipients` when stock ≤ threshold. |
 | `requestRefund(orderId, reason)` | Server action | any staff | Insert pending refund. |
-| `approveRefund(id)` | Server action | admin/owner | Trigger Yoco refund. Full amount only. |
+| `approveRefund(id)` | Server action | admin | Trigger Yoco refund. Full amount only. |
 | `setMenuItemPrice(id, priceZar)` | Server action | admin | Close current `price_history` row; insert new. |
 | `redeemLoyalty(customerId, orderId)` | Server action | barista | Require ≥ 100 pts. Full redemption only — `total_zar = 0`. |
 | `topUpWallet(customerId, amountZar)` | Server action | barista | Yoco intent; webhook credits wallet. |
 | `purchasePack(customerId, menuItemId, qty)` | Server action | barista | Yoco intent; on success insert `coffee_packs` (90 d expiry). |
 | `closeDaily()` | Cron 23:59 SAST | system | Reconcile payments vs stock. Block + Discord ping on mismatch. |
 | `generateWeeklyPnL()` | Cron Sun 23:59 | system | Archival report + Discord ping. |
-| `approveMonthlyPnL(id, sigKind)` | Server action | admin/finance | Set admin_sig or finance_sig. Closed only when both non-null. |
-| `GET /api/reports/export?format=csv\|pdf` | Route handler | admin/finance | Sales, COGS, inventory variance. |
+| `approveMonthlyPnL(id)` | Server action | admin | Set admin_sig. Report closed immediately. |
+| `GET /api/reports/export?format=csv\|pdf` | Route handler | admin | Sales, COGS, inventory variance. |
 | `POST /api/push/subscribe` | Route handler | barista (P1) → customer (P3) | Store `PushSubscription` on customer. |
 
 ## Conventions
