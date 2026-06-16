@@ -389,7 +389,9 @@ export const monthlyReports = pgTable(
     closedAt: timestamp("closed_at", { withTimezone: true }),
   },
   () => [
-    // L11: a report can only be closed when the admin signature is present.
+    // L11 (post role-simplification): a report can only be closed once the
+    // admin has signed. The prior finance co-signature was dropped along with
+    // the finance role.
     check(
       "monthly_report_closed_requires_admin_sig",
       sql`status != 'closed' OR admin_sig IS NOT NULL`

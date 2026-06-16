@@ -103,15 +103,15 @@ describe("generateMonthlyPnL — validation", () => {
   });
 });
 
-// ─── approveMonthlyPnL — RBAC ─────────────────────────────────────────────────
+// ─── approveMonthlyPnL — admin-only close ─────────────────────────────────────
 
-describe("approveMonthlyPnL — RBAC", () => {
+describe("approveMonthlyPnL — admin-only close", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("barista role cannot sign", async () => {
+  it("rejects a non-admin caller (FORBIDDEN)", async () => {
     const { authorize } = await import("@/server/auth/guard");
     vi.mocked(authorize).mockResolvedValueOnce({
-      ok: false, code: "FORBIDDEN", message: "Must be admin.",
+      ok: false, code: "FORBIDDEN", message: "Admin only.",
     });
     const { approveMonthlyPnL } = await import("@/server/actions/monthly-pnl");
     const result = await approveMonthlyPnL("mr_001");
@@ -150,7 +150,7 @@ describe("approveMonthlyPnL — RBAC", () => {
     if (!result.ok) expect(result.code).toBe("CONFLICT");
   });
 
-  it("rejects double-signing (admin sig already present)", async () => {
+  it("rejects re-signing an already-signed report", async () => {
     const { db } = await import("@db/index");
     vi.mocked(db.select).mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
@@ -166,6 +166,22 @@ describe("approveMonthlyPnL — RBAC", () => {
     const result = await approveMonthlyPnL("mr_001");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("CONFLICT");
+  });
+
+  it("admin sign closes an unsigned draft", async () => {
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{
+          id: "mr_001", month: "2026-04-01",
+          status: "draft", adminSig: null, financeSig: null,
+        }]),
+      }),
+    } as never);
+
+    const { approveMonthlyPnL } = await import("@/server/actions/monthly-pnl");
+    const result = await approveMonthlyPnL("mr_001");
+    expect(result.ok).toBe(true);
   });
 });
 

@@ -1,9 +1,9 @@
 "use client";
 
-// Sign block — task A13 (L11).
-// Shows the admin signature slot for a monthly report and lets the admin sign
-// (with an irreversible-action confirmation). When signed the report closes
-// (server auto-transitions).
+// Sign-off block — task A13 (L11), simplified post role-simplification.
+// Shows the admin signature slot for a monthly report and lets an admin sign.
+// Signing is irreversible and closes the report immediately (the prior finance
+// co-signature was removed along with the finance role).
 
 import { useState } from "react";
 import { toast } from "sonner";
@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { approveMonthlyPnL } from "@/server/actions/monthly-pnl";
 import { formatZar, formatDate } from "@/lib/format";
-import type { MonthlyReport, MonthlyReportSig } from "@/lib/types";
+import type { MonthlyReport } from "@/lib/types";
 
 export interface DualSignBlockProps {
   report: MonthlyReport;
@@ -26,56 +26,18 @@ export interface DualSignBlockProps {
   onSigned: () => void;
 }
 
-function SigSlot({
-  title,
-  sig,
-  canSign,
-  onSign,
-}: {
-  title: string;
-  sig: MonthlyReportSig | null;
-  canSign: boolean;
-  onSign: () => void;
-}) {
-  return (
-    <div
-      className="flex flex-col gap-1 rounded-[var(--radius-card)] border p-3"
-      style={{ borderColor: "var(--color-border-subtle)" }}
-    >
-      <span className="favo-label">{title}</span>
-      {sig ? (
-        <span className="favo-small inline-flex items-center gap-1.5" style={{ color: "var(--color-success)" }}>
-          ✓ {sig.signerName}
-          <span style={{ color: "var(--color-text-muted)" }}>· {formatDate(sig.at)}</span>
-        </span>
-      ) : canSign ? (
-        <button
-          type="button"
-          onClick={onSign}
-          className="self-start min-h-10 rounded-[var(--radius-btn)] px-3 favo-cta"
-          style={{ background: "var(--color-accent)", color: "var(--color-text-inverse)" }}
-        >
-          Sign as {title.toLowerCase()}
-        </button>
-      ) : (
-        <span className="favo-small" style={{ color: "var(--color-text-muted)" }}>
-          Awaiting {title.toLowerCase()}
-        </span>
-      )}
-    </div>
-  );
-}
-
 export default function DualSignBlock({ report, canSignAdmin, onSigned }: DualSignBlockProps) {
   const [confirm, setConfirm] = useState(false);
   const [signing, setSigning] = useState(false);
+
+  const closed = report.status === "closed";
 
   async function doSign() {
     setSigning(true);
     try {
       const res = await approveMonthlyPnL(report.id);
       if (res.ok) {
-        toast.success("Signed as admin.");
+        toast.success("Report signed and closed.");
         setConfirm(false);
         onSigned();
       } else {
@@ -88,23 +50,38 @@ export default function DualSignBlock({ report, canSignAdmin, onSigned }: DualSi
     }
   }
 
-  const closed = report.status === "closed";
-
   return (
     <div className="space-y-3">
-      <div className="grid gap-2">
-        <SigSlot
-          title="Admin"
-          sig={report.adminSig}
-          canSign={canSignAdmin && !closed}
-          onSign={() => setConfirm(true)}
-        />
+      <div
+        className="flex flex-col gap-1 rounded-[var(--radius-card)] border p-3"
+        style={{ borderColor: "var(--color-border-subtle)" }}
+      >
+        <span className="favo-label">Admin sign-off</span>
+        {report.adminSig ? (
+          <span className="favo-small inline-flex items-center gap-1.5" style={{ color: "var(--color-success)" }}>
+            ✓ {report.adminSig.signerName}
+            <span style={{ color: "var(--color-text-muted)" }}>· {formatDate(report.adminSig.at)}</span>
+          </span>
+        ) : canSignAdmin && !closed ? (
+          <button
+            type="button"
+            onClick={() => setConfirm(true)}
+            className="self-start min-h-10 rounded-[var(--radius-btn)] px-3 favo-cta"
+            style={{ background: "var(--color-accent)", color: "var(--color-text-inverse)" }}
+          >
+            Sign &amp; close report
+          </button>
+        ) : (
+          <span className="favo-small" style={{ color: "var(--color-text-muted)" }}>
+            Awaiting admin sign-off
+          </span>
+        )}
       </div>
 
       <Dialog open={confirm} onOpenChange={(o) => !o && setConfirm(false)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm admin signature</DialogTitle>
+            <DialogTitle>Confirm sign-off</DialogTitle>
             <DialogDescription>
               Signing is irreversible. You are attesting these figures for {report.month.slice(0, 7)}.
             </DialogDescription>
@@ -116,14 +93,14 @@ export default function DualSignBlock({ report, canSignAdmin, onSigned }: DualSi
             <Figure label="Net" value={report.netZar} strong />
           </dl>
           <p className="favo-caption" style={{ color: "var(--color-text-muted)", textTransform: "none", letterSpacing: 0 }}>
-            When the admin signs, the report closes and can no longer be edited (L11).
+            Once signed, the report closes and can no longer be edited (L11).
           </p>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setConfirm(false)}>
               Cancel
             </Button>
             <Button type="button" disabled={signing} onClick={() => void doSign()} className="min-h-10">
-              {signing ? "Signing…" : "Sign as admin"}
+              {signing ? "Signing…" : "Sign & close"}
             </Button>
           </DialogFooter>
         </DialogContent>

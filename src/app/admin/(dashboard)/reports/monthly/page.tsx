@@ -1,6 +1,7 @@
 // Monthly P&L — task A13 (L11).
-// Admin AND finance read; admin generates drafts; admin + finance co-sign to
-// close. Docs: FAVO_PRD_v3.md §04 §08 L11, API.md.
+// Admins read, generate drafts, and sign to close (single admin sign-off — the
+// finance co-signature was removed with the staff-role simplification).
+// Docs: FAVO_PRD_v3.md §04 §08 L11, API.md.
 import { getSession } from "@/lib/auth/session";
 import { listMonthlyReports } from "@/server/actions/monthly-pnl";
 import { revenueDay } from "@/lib/format";
@@ -31,7 +32,7 @@ export default async function MonthlyReportsPage() {
           Monthly P&amp;L
         </h1>
         <p className="mt-1 favo-small" style={{ color: "var(--color-text-muted)" }}>
-          Profit &amp; loss by month. Admin signs to close each month.
+          Profit &amp; loss by month. An admin signs to close a report (L11).
         </p>
       </header>
 

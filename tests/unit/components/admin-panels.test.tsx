@@ -39,21 +39,10 @@ function draftReport(over: Partial<MonthlyReport> = {}): MonthlyReport {
   };
 }
 
-describe("DualSignBlock — A13 role gating", () => {
+describe("DualSignBlock — A13 admin-only sign-off", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("barista (canSignAdmin=false) does not see the admin sign button", () => {
-    render(
-      <DualSignBlock
-        report={draftReport()}
-        canSignAdmin={false}
-        onSigned={() => {}}
-      />
-    );
-    expect(screen.queryByRole("button", { name: /sign as admin/i })).toBeNull();
-  });
-
-  it("an admin user sees the admin sign button", () => {
+  it("shows the sign button when canSignAdmin=true and report is unsigned", () => {
     render(
       <DualSignBlock
         report={draftReport()}
@@ -61,10 +50,22 @@ describe("DualSignBlock — A13 role gating", () => {
         onSigned={() => {}}
       />
     );
-    expect(screen.getByRole("button", { name: /sign as admin/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign & close report/i })).toBeInTheDocument();
   });
 
-  it("shows a signer name instead of a button once signed", () => {
+  it("hides the sign button when canSignAdmin=false", () => {
+    render(
+      <DualSignBlock
+        report={draftReport()}
+        canSignAdmin={false}
+        onSigned={() => {}}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /sign & close report/i })).toBeNull();
+    expect(screen.getByText(/awaiting admin sign-off/i)).toBeInTheDocument();
+  });
+
+  it("shows the signer name instead of the button once signed", () => {
     render(
       <DualSignBlock
         report={draftReport({
@@ -74,6 +75,7 @@ describe("DualSignBlock — A13 role gating", () => {
         onSigned={() => {}}
       />
     );
+    expect(screen.queryByRole("button", { name: /sign & close report/i })).toBeNull();
     expect(screen.getByText(/Gian/)).toBeInTheDocument();
   });
 });

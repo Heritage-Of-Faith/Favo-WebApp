@@ -196,16 +196,14 @@ export async function generateMonthlyPnL(
 // ─── approveMonthlyPnL ────────────────────────────────────────────────────────
 
 /**
- * Signs the admin approval for a monthly report.
+ * Close a monthly report with the admin sign-off.
  *
- * RBAC per L11: only admin can sign.
- * When signed, status transitions to 'closed' automatically.
- * The DB CHECK in migration 0011 enforces this at the DB level too.
+ * RBAC (post role-simplification): only an admin may sign. Signing is
+ * irreversible and closes the report immediately — the prior finance
+ * co-signature was removed along with the finance role.
  */
-export async function approveMonthlyPnL(
-  reportId: string
-): Promise<ActionResult> {
-  const auth = await authorize(...ADMIN_ROLES);
+export async function approveMonthlyPnL(reportId: string): Promise<ActionResult> {
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
   const session = auth.session;
 
@@ -220,14 +218,8 @@ export async function approveMonthlyPnL(
   if (report.status === "closed") {
     return { ok: false, code: "CONFLICT", message: "Report is already closed." };
   }
-
-  // Check the sig slot isn't already set
   if (report.adminSig !== null) {
-    return {
-      ok: false,
-      code: "CONFLICT",
-      message: "admin signature already present.",
-    };
+    return { ok: false, code: "CONFLICT", message: "Report is already signed." };
   }
 
   const sig: MonthlyReportSig = {
@@ -241,11 +233,7 @@ export async function approveMonthlyPnL(
 
     await tx
       .update(monthlyReports)
-      .set({
-        adminSig: sig,
-        status: "closed",
-        closedAt: new Date(),
-      })
+      .set({ adminSig: sig, status: "closed", closedAt: new Date() })
       .where(eq(monthlyReports.id, reportId));
 
     await writeAudit(
@@ -256,11 +244,7 @@ export async function approveMonthlyPnL(
         actorId: session.id,
         actorRole: session.role,
         before: { status: report.status },
-        after: {
-          status: "closed",
-          adminSig: sig,
-          closed: true,
-        },
+        after: { status: "closed", adminSig: sig, closed: true },
       },
       txDb
     );

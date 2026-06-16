@@ -78,6 +78,13 @@
       "when": 1781584525364,
       "tag": "0010_loyalty_earn_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1781631252992,
+      "tag": "0011_tricky_scalphunter",
+      "breakpoints": true
     }
   ]
 }

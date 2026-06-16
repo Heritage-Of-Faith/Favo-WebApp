@@ -1,0 +1,2 @@
+ALTER TABLE "monthly_reports" DROP CONSTRAINT "monthly_report_closed_requires_both_sigs";--> statement-breakpoint
+ALTER TABLE "monthly_reports" ADD CONSTRAINT "monthly_report_closed_requires_admin_sig" CHECK (status != 'closed' OR admin_sig IS NOT NULL);
