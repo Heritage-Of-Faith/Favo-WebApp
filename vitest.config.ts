@@ -19,7 +19,7 @@ export default defineConfig({
     },
     server: {
       deps: {
-        inline: ["zod"],
+        inline: ["zod", "next-auth", "@auth/core"],
       },
     },
   },
