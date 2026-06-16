@@ -81,6 +81,7 @@ export default function AuthForm({ mode }: Props) {
         return;
       }
 
+      router.refresh();
       router.push("/customer");
     } catch {
       setError("Something went wrong. Please try again.");
