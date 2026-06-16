@@ -7,6 +7,7 @@ import {
   jsonb,
   serial,
   unique,
+  uniqueIndex,
   index,
   check,
   numeric,
@@ -240,15 +241,26 @@ export const refunds = pgTable("refunds", {
 
 // ─── Loyalty ──────────────────────────────────────────────────────────────────
 
-export const loyaltyTransactions = pgTable("loyalty_transactions", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: tenantId(),
-  customerId: text("customer_id").notNull().references(() => customers.id),
-  orderId: text("order_id").references(() => orders.id),
-  delta: integer("delta").notNull(),
-  kind: loyaltyKind("kind").notNull(),
-  at: now(),
-});
+export const loyaltyTransactions = pgTable(
+  "loyalty_transactions",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    customerId: text("customer_id").notNull().references(() => customers.id),
+    orderId: text("order_id").references(() => orders.id),
+    delta: integer("delta").notNull(),
+    kind: loyaltyKind("kind").notNull(),
+    at: now(),
+  },
+  (t) => [
+    // Idempotency guard (AT-60): prevent double-accrual if transitionOrder is
+    // retried on the same in_progress -> ready transition. Only one earn row is
+    // allowed per order_id -- redeem rows are unrestricted.
+    uniqueIndex("loyalty_txn_earn_order_unique")
+      .on(t.orderId)
+      .where(sql`kind = 'earn'`),
+  ]
+);
 
 // ─── Staff Entitlement ────────────────────────────────────────────────────────
 

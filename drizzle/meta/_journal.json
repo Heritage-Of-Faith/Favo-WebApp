@@ -71,6 +71,13 @@
       "when": 1781364257804,
       "tag": "0009_flat_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781584525364,
+      "tag": "0010_loyalty_earn_idempotency",
+      "breakpoints": true
     }
   ]
 }
