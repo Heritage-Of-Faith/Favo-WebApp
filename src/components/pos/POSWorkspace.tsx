@@ -19,7 +19,7 @@ import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, X, Plus, Minus, Trash2, ChevronDown, ChevronUp,
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
-  CheckCircle, AlertCircle, Tag, Star, ShieldCheck, Wallet, Package,
+  CheckCircle, AlertCircle, Tag, Star, ShieldCheck, Wallet, Package, CreditCard,
 } from "lucide-react";
 import WalletTopUpDialog from "@/components/pos/WalletTopUpDialog";
 import PackPurchaseDialog from "@/components/pos/PackPurchaseDialog";
@@ -36,6 +36,7 @@ import LoyaltyRedeemDialog from "@/components/pos/LoyaltyRedeemDialog";
 import OfflineBanner from "@/components/pos/OfflineBanner";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import YocoOrderForm from "@/components/pos/YocoOrderForm";
+import ChargeOrderDialog from "@/components/pos/ChargeOrderDialog";
 import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
@@ -139,6 +140,18 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const [wasteCategory, setWasteCategory] = useState<LogWasteInput["category"]>("spilled");
   const [walletTopUpOpen, setWalletTopUpOpen] = useState(false);
   const [packOpen, setPackOpen] = useState(false);
+  // Charge-after-order: which queued order is being charged, and a session-local
+  // set of orders confirmed paid in person (cash / card machine) — card payments
+  // are confirmed by the backend via paymentStatus instead.
+  const [chargeOrder, setChargeOrder] = useState<Order | null>(null);
+  const [paidLocally, setPaidLocally] = useState<Set<string>>(() => new Set());
+
+  // Mark a queued order paid → lets it advance, and drop the cached copy so the
+  // next expand refetches the authoritative paymentStatus.
+  function handleOrderPaid(orderId: string) {
+    setPaidLocally(prev => { const n = new Set(prev); n.add(orderId); return n; });
+    setFullOrders(prev => { const n = { ...prev }; delete n[orderId]; return n; });
+  }
 
   const sortedOrders = [...activeOrders].sort((a, b) => {
     const sp = STATE_PRIORITY[a.state] - STATE_PRIORITY[b.state];
@@ -780,6 +793,15 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
             const nextState = STATE_NEXT[o.state];
             const isDone = o.state === "collected" || o.state === "cancelled";
             const isReady = o.state === "ready";
+            // L01: an order must be paid before it can start being made. Free /
+            // staff-discounted / already-charged orders pass; cash/in-person ones
+            // pass once confirmed locally.
+            const needsPayment = !!full
+              && o.state === "ordered"
+              && full.totalZar > 0
+              && !full.isStaffDiscount
+              && full.paymentStatus !== "successful"
+              && !paidLocally.has(o.orderId);
 
             return (
               <div key={o.orderId}
@@ -849,6 +871,21 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                             {full.isStaffDiscount ? "FREE (staff)" : formatZar(full.totalZar)}
                           </span>
                         </div>
+                        {/* Payment status — only meaningful before collection */}
+                        {!isDone && (
+                          <div className="flex justify-between items-center">
+                            <span className="favo-caption text-cool-steel">PAYMENT</span>
+                            {needsPayment ? (
+                              <span className="favo-caption rounded-[999px] px-2 py-0.5" style={{ background: "color-mix(in srgb, var(--color-warning) 16%, transparent)", color: "var(--color-warning)" }}>
+                                Unpaid
+                              </span>
+                            ) : (
+                              <span className="favo-caption rounded-[999px] px-2 py-0.5 flex items-center gap-1" style={{ background: "color-mix(in srgb, var(--color-success) 16%, transparent)", color: "var(--color-success)" }}>
+                                <CheckCircle size={10} strokeWidth={2.5} /> Paid
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </>
                     )}
 
@@ -933,8 +970,17 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
                       </div>
                     )}
 
-                    {/* ── TRANSITION BUTTON — the main action ── */}
-                    {!isDone && nextState && (
+                    {/* ── TAKE PAYMENT — blocks making until the order is paid (L01) ── */}
+                    {needsPayment && (
+                      <button type="button" onClick={() => full && setChargeOrder(full)}
+                        className="w-full flex items-center justify-center gap-2 rounded-[2px] min-h-[52px] transition-all active:scale-[0.99]"
+                        style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-sub)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                        <CreditCard size={18} strokeWidth={2} /> Take payment — {formatZar(full!.totalZar)}
+                      </button>
+                    )}
+
+                    {/* ── TRANSITION BUTTON — the main action (only once paid) ── */}
+                    {!isDone && nextState && !needsPayment && (
                       <button type="button" onClick={() => full && handleAdvance(o.orderId, full)}
                         disabled={busy || !full}
                         className={["w-full flex items-center justify-center gap-2 rounded-[2px] transition-all active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed",
@@ -1071,6 +1117,15 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
         onRetry={syncOne}
         onClose={() => setSyncDrawerOpen(false)}
       />
+
+      {/* ════════ CHARGE EXISTING ORDER ════════ */}
+      {chargeOrder && (
+        <ChargeOrderDialog
+          order={chargeOrder}
+          onPaid={handleOrderPaid}
+          onClose={() => setChargeOrder(null)}
+        />
+      )}
     </main>
   );
 }
