@@ -1,7 +1,7 @@
 // Queue-card payment gate: an unpaid order shows "Take payment" and cannot start
 // making; a paid order shows "Start Making". (Rule L01.)
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
