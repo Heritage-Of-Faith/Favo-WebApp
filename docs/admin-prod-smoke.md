@@ -5,7 +5,7 @@
 **When:** Launch day · 11:00–13:00 SAST · after G26 (Coolify deploy) confirms green  
 **Target:** `https://favo.hofmi.org/admin`
 
-> **Note on HOFMI SSO:** SSO is a future enhancement (auth.ts comment). Admin login uses PIN on launch day. Use the staff PIN from the production seed or Gian's launch prep.
+> **Admin auth:** PIN only. Use the staff PIN from the production seed or Gian's launch prep.
 
 ---
 

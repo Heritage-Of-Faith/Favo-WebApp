@@ -24,7 +24,7 @@
 | Deploy target | `favo.hofmi.org` · Coolify on `hofmi-eu-open` (Hetzner DE) · Cloudflare in front |
 | Tenancy | Single-tenant within `hofmi`; one café location for v1; multi-location is an explicit non-goal |
 | Source language | English (UI), ZAR (currency), Africa/Johannesburg (timezone, UTC+2) |
-| Distribution | Public-facing app. The customer PWA is publicly accessible. Admin routes are gated via Cloudflare Access (HOFMI SSO required). |
+| Distribution | Public-facing app. The customer PWA is publicly accessible. Admin routes require staff PIN authentication. |
 
 ---
 
@@ -96,7 +96,7 @@ The concrete cost is that **nobody knows the true cost of a cappuccino**. Beans 
 | Styling | `Tailwind v4 + shadcn/ui` | Same as other HOFMI projects. Components are pre-audited. |
 | Database | `PostgreSQL 16` | Self-hosted on `hofmi-eu-open`. Backed up nightly via Warden R2 snapshot. |
 | ORM | `Drizzle ORM` | HOFMI standard. Typed schema, predictable migrations. |
-| Authentication | `Auth.js v6 (NextAuth)` | Staff: PIN provider (custom). Customers: email magic link. Admin/Finance: HOFMI SSO. |
+| Authentication | `Auth.js v5 (NextAuth)` | Staff: PIN provider (custom). Customers: email magic link (Phase 3). |
 | Payments | `Yoco Online API` | SA-native. PCI-DSS managed by Yoco. Hosted fields + tokenisation. No PAN data stored. |
 | Real-time queue | `Postgres LISTEN/NOTIFY + SSE` | One fewer moving part than WebSockets. SSE proxies cleanly through Cloudflare. |
 | Offline POS | `IndexedDB (idb) + Service Worker` | Counter-only writes go to an outbox; sync queue replays on reconnect with LWW + audit. |
@@ -275,7 +275,7 @@ Four phases. Seven days. Launch Wednesday 3 June 2026. Four developers + Claude 
 ### Phase 1 — POS Core + Auth + Payment
 **Days 1–2 · Thu 28 – Fri 29 May · `HOFMI-FAVO-P1`**
 
-**Scope:** Full DB schema migrated (all 24 tables). Menu seeded: 5 items + size variants, customisations (Macadami Milk, Extra Shot, single/double shot). Staff auth: PIN login (barista and admin roles), HOFMI SSO (admin, TODO). Customer lookup: POS search by name or phone → select from results → or create guest order. Order flow: select customer or guest → add items with modifications → Yoco hosted-fields payment → order created → queue updated via SSE. State machine: ordered → in_progress → ready → collected. Transition to *ready* fires Web Push to customer's registered device. Staff discount: barista applies 100% to an order (cappuccinos only, weekdays only, including for themselves) via `applyStaffDiscount()`. Live queue on POS: SSE stream from Postgres LISTEN/NOTIFY. Audit log writing on all mutations.
+**Scope:** Full DB schema migrated (all 24 tables). Menu seeded: 5 items + size variants, customisations (Macadami Milk, Extra Shot, single/double shot). Staff auth: PIN login (barista and admin roles). Customer lookup: POS search by name or phone → select from results → or create guest order. Order flow: select customer or guest → add items with modifications → Yoco hosted-fields payment → order created → queue updated via SSE. State machine: ordered → in_progress → ready → collected. Transition to *ready* fires Web Push to customer's registered device. Staff discount: barista applies 100% to an order (cappuccinos only, weekdays only, including for themselves) via `applyStaffDiscount()`. Live queue on POS: SSE stream from Postgres LISTEN/NOTIFY. Audit log writing on all mutations.
 
 **Acceptance:** Barista logs in via PIN. Searches customer "Louis" — finds match. Places a cappuccino order with Extra Shot. Yoco test-card payment succeeds. Barista taps Done. Customer device receives push notification within 10 seconds. Audit log row created.
 

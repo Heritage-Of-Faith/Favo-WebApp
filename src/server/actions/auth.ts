@@ -81,10 +81,3 @@ export async function signOut(): Promise<ActionResult> {
   return { ok: true, data: undefined };
 }
 
-// AT-19: HOFMI SSO login — initiates the OAuth redirect flow.
-// Requires HOFMI_SSO_CLIENT_ID, HOFMI_SSO_CLIENT_SECRET, HOFMI_SSO_ISSUER env vars.
-// Called as a Next.js form action from SsoSignInButton; Auth.js throws
-// NEXT_REDIRECT before this function returns, so callers need not handle a return value.
-export async function loginWithHofmiSso(_formData?: FormData): Promise<void> {
-  await signIn("hofmi-sso", { redirectTo: "/admin" });
-}
