@@ -6,7 +6,6 @@
 // Docs: docs/DESIGN.md → POS Rules
 
 import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Delete } from "lucide-react";
 import { loginWithPin } from "@/server/actions/auth";
@@ -34,7 +33,6 @@ const SURFACE_LABEL: Record<NonNullable<Props["surface"]>, string> = {
 };
 
 export default function LoginForm({ redirectTo = "/pos/queue", surface = "pos" }: Props) {
-  const router = useRouter();
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,8 +55,9 @@ export default function LoginForm({ redirectTo = "/pos/queue", surface = "pos" }
     try {
       const result = await loginWithPin(pin);
       if (result.ok) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        router.push(redirectTo as any);
+        // Full navigation so the session cookie committed by the Server Action
+        // is included in the request — router.push fires before cookies settle.
+        window.location.href = redirectTo;
       } else {
         setError(result.message);
         setPin("");
@@ -69,7 +68,7 @@ export default function LoginForm({ redirectTo = "/pos/queue", surface = "pos" }
     } finally {
       setLoading(false);
     }
-  }, [pin, loading, router, redirectTo]);
+  }, [pin, loading, redirectTo]);
 
   const canSubmit = pin.length >= MIN_PIN && !loading;
 
