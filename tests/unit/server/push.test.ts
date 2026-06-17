@@ -31,7 +31,7 @@ describe("push: order-ready payload", () => {
   it("includes the order id and a navigable url in data", () => {
     const payload = buildOrderReadyPayload("ord_1");
     expect(payload.data.orderId).toBe("ord_1");
-    expect(payload.data.url).toBe("/");
+    expect(payload.data.url).toBe("/customer");
     expect(payload.title.length).toBeGreaterThan(0);
   });
 
