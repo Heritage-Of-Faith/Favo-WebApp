@@ -375,24 +375,32 @@ export async function transitionOrder(
       .then((alive) => {
         if (!alive && pushCustomerId) {
           const custId = pushCustomerId;
-          db.update(customers)
-            .set({ pushSubscription: null })
-            .where(
-              and(
-                eq(customers.id, custId),
-                eq(customers.pushSubscription, pushSubscription as Record<string, unknown>)
+          db.transaction(async (tx) => {
+            const txDb = tx as unknown as DB;
+            const cleared = await tx
+              .update(customers)
+              .set({ pushSubscription: null })
+              .where(
+                and(
+                  eq(customers.id, custId),
+                  eq(customers.pushSubscription, pushSubscription as Record<string, unknown>)
+                )
               )
-            )
-            .then(() =>
-              writeAudit({
+              .returning({ id: customers.id });
+
+            if (cleared.length === 0) return;
+
+            await writeAudit(
+              {
                 entityKind: "customer",
                 entityId: custId,
                 action: "push_unsubscribe",
                 actorId: custId,
                 actorRole: "customer",
-              })
-            )
-            .catch(() => {});
+              },
+              txDb
+            );
+          }).catch(() => {});
         }
       })
       .catch((err: unknown) => {

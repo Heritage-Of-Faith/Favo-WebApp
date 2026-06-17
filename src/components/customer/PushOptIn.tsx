@@ -177,7 +177,11 @@ export default function PushOptIn({ customerId, serverHasSubscription }: PushOpt
       setDbHasSub(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
-      setPermission("default");
+      setPermission(
+        typeof Notification !== "undefined"
+          ? (Notification.permission as PermissionState)
+          : "default"
+      );
     } finally {
       setLoading(false);
     }

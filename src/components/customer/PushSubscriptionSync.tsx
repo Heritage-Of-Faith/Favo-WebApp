@@ -14,13 +14,6 @@ interface PushSubscriptionSyncProps {
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = atob(base64);
-  return new Uint8Array(rawData.split("").map((c) => c.charCodeAt(0)));
-}
-
 export default function PushSubscriptionSync({ customerId }: PushSubscriptionSyncProps) {
   useEffect(() => {
     if (
@@ -40,13 +33,10 @@ export default function PushSubscriptionSync({ customerId }: PushSubscriptionSyn
         // serviceWorker.ready hangs indefinitely before first activation — avoid it.
         const reg = await navigator.serviceWorker.getRegistration();
         if (!reg) return;
-        // Reuse the existing subscription if present; subscribe() creates one otherwise.
-        const sub =
-          (await reg.pushManager.getSubscription()) ??
-          (await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(VAPID_KEY),
-          }));
+        // Only sync an existing browser subscription — never silently re-subscribe,
+        // which would undo an explicit user opt-out.
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) return;
         await fetch("/api/push/subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
