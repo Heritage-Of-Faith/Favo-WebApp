@@ -18,8 +18,13 @@ export default function ServiceWorkerRegister() {
       });
     };
 
-    window.addEventListener("load", register);
-    return () => window.removeEventListener("load", register);
+    // If load already fired (React mounts after load), register immediately.
+    if (document.readyState === "complete") {
+      register();
+    } else {
+      window.addEventListener("load", register);
+      return () => window.removeEventListener("load", register);
+    }
   }, []);
 
   return null;
