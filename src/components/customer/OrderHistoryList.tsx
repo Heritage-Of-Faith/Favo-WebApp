@@ -42,8 +42,8 @@ export default function OrderHistoryList({ orders }: OrderHistoryListProps) {
         <p style={sectionLabel}>Recent orders</p>
         <div
           style={{
-            backgroundColor: "rgba(247,246,242,0.05)",
-            border: "1px solid rgba(247,246,242,0.1)",
+            backgroundColor: "rgba(28,5,1,0.05)",
+            border: "1px solid rgba(28,5,1,0.12)",
             borderRadius: 2,
             padding: 24,
           }}
@@ -54,7 +54,7 @@ export default function OrderHistoryList({ orders }: OrderHistoryListProps) {
               fontWeight: 400,
               fontSize: 15,
               lineHeight: 1.7,
-              color: "var(--color-porcelain)",
+              color: "var(--color-coffee-bean)",
               opacity: 0.75,
               margin: 0,
             }}
@@ -78,8 +78,8 @@ export default function OrderHistoryList({ orders }: OrderHistoryListProps) {
             <li
               key={order.id}
               style={{
-                backgroundColor: "rgba(247,246,242,0.05)",
-                border: "1px solid rgba(247,246,242,0.1)",
+                backgroundColor: "rgba(28,5,1,0.05)",
+                border: "1px solid rgba(28,5,1,0.12)",
                 borderRadius: 2,
                 padding: "16px 20px",
                 display: "flex",
@@ -93,7 +93,7 @@ export default function OrderHistoryList({ orders }: OrderHistoryListProps) {
                     fontFamily: "'DM Sans', sans-serif",
                     fontWeight: 700,
                     fontSize: 13,
-                    color: "var(--color-porcelain)",
+                    color: "var(--color-coffee-bean)",
                   }}
                 >
                   {formatDate(order.placedAt)}
@@ -103,7 +103,7 @@ export default function OrderHistoryList({ orders }: OrderHistoryListProps) {
                     fontFamily: "'DM Sans', sans-serif",
                     fontWeight: 700,
                     fontSize: 15,
-                    color: "var(--color-porcelain)",
+                    color: "var(--color-coffee-bean)",
                     whiteSpace: "nowrap",
                   }}
                 >
@@ -117,7 +117,7 @@ export default function OrderHistoryList({ orders }: OrderHistoryListProps) {
                     fontWeight: 400,
                     fontSize: 14,
                     lineHeight: 1.5,
-                    color: "var(--color-porcelain)",
+                    color: "var(--color-coffee-bean)",
                     opacity: 0.7,
                   }}
                 >

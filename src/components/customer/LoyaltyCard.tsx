@@ -13,8 +13,8 @@ export interface LoyaltyCardProps {
 }
 
 const card: CSSProperties = {
-  backgroundColor: "rgba(247,246,242,0.05)",
-  border: "1px solid rgba(247,246,242,0.1)",
+  backgroundColor: "rgba(28,5,1,0.05)",
+  border: "1px solid rgba(28,5,1,0.12)",
   borderRadius: 2,
   padding: 24,
   display: "flex",
@@ -51,7 +51,7 @@ export default function LoyaltyCard({ points }: LoyaltyCardProps) {
           fontSize: "clamp(3rem, 12vw, 5rem)",
           lineHeight: 0.9,
           letterSpacing: "0.02em",
-          color: "var(--color-porcelain)",
+          color: "var(--color-coffee-bean)",
           margin: 0,
         }}
       >
@@ -64,7 +64,7 @@ export default function LoyaltyCard({ points }: LoyaltyCardProps) {
         style={{
           height: 6,
           borderRadius: 999,
-          backgroundColor: "rgba(247,246,242,0.12)",
+          backgroundColor: "rgba(28,5,1,0.1)",
           overflow: "hidden",
         }}
       >
@@ -83,7 +83,7 @@ export default function LoyaltyCard({ points }: LoyaltyCardProps) {
           fontWeight: 400,
           fontSize: 14,
           lineHeight: 1.6,
-          color: "var(--color-porcelain)",
+          color: "var(--color-coffee-bean)",
           opacity: 0.75,
           margin: 0,
         }}

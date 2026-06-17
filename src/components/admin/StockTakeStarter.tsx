@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { Route } from "next";
 import { toast } from "sonner";
 import { runStockTake } from "@/server/actions/stock-takes";
 import type { StockTakeKind } from "@/lib/types";
@@ -17,7 +18,7 @@ export default function StockTakeStarter() {
     setStarting(kind);
     const res = await runStockTake(kind);
     if (res.ok) {
-      router.push(`/admin/stock-takes/${res.data.stockTakeId}`);
+      router.push(`/admin/stock-takes/${res.data.stockTakeId}` as Route);
     } else {
       toast.error(res.message);
       setStarting(null);

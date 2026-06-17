@@ -2,6 +2,7 @@
 // Items table with editable thresholds + a lot drawer for recosting (R10).
 // Docs: DATA_MODEL.md, API.md, BUSINESS_RULES.md T04.
 import Link from "next/link";
+import type { Route } from "next";
 import { listInventory } from "@/server/actions/inventory";
 import InventoryManager from "@/components/admin/InventoryManager";
 
@@ -20,7 +21,7 @@ export default async function InventoryPage() {
           </p>
         </div>
         <Link
-          href="/admin/inventory/recipients"
+          href={"/admin/inventory/recipients" as Route}
           className="inline-flex min-h-10 items-center rounded-[var(--radius-btn)] border px-3 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
           style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
         >

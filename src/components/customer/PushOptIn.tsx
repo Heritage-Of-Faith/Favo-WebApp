@@ -37,7 +37,6 @@ const S = {
     display: "flex",
     flexDirection: "column" as const,
     gap: 20,
-    maxWidth: 480,
   },
   eyebrow: {
     fontFamily: "'DM Sans', sans-serif",
@@ -189,7 +188,7 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
       <p style={S.eyebrow}>Order notifications</p>
       <h2 style={S.heading}>Know the moment<br />it&rsquo;s ready</h2>
       <p style={S.body}>
-        When the barista marks your order ready, you&rsquo;ll get a push
+        When the barista marks your order ready, you&rsquo;ll get a
         notification on this device — no need to watch the queue.
       </p>
 
