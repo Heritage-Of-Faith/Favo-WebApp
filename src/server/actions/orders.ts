@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   orders,
@@ -375,24 +375,32 @@ export async function transitionOrder(
       .then((alive) => {
         if (!alive && pushCustomerId) {
           const custId = pushCustomerId;
-          db.update(customers)
-            .set({ pushSubscription: null })
-            .where(
-              and(
-                eq(customers.id, custId),
-                eq(customers.pushSubscription, pushSubscription as Record<string, unknown>)
+          db.transaction(async (tx) => {
+            const txDb = tx as unknown as DB;
+            const cleared = await tx
+              .update(customers)
+              .set({ pushSubscription: null })
+              .where(
+                and(
+                  eq(customers.id, custId),
+                  eq(customers.pushSubscription, pushSubscription as Record<string, unknown>)
+                )
               )
-            )
-            .then(() =>
-              writeAudit({
+              .returning({ id: customers.id });
+
+            if (cleared.length === 0) return;
+
+            await writeAudit(
+              {
                 entityKind: "customer",
                 entityId: custId,
                 action: "push_unsubscribe",
                 actorId: custId,
                 actorRole: "customer",
-              })
-            )
-            .catch(() => {});
+              },
+              txDb
+            );
+          }).catch(() => {});
         }
       })
       .catch((err: unknown) => {
@@ -602,4 +610,25 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
     })),
   };
   return { ok: true, data: order };
+}
+
+/** Bootstrap the POS queue on page load — returns all non-terminal orders. */
+export async function listActiveOrders(): Promise<ActionResult<{ orderId: string; state: OrderState; lastUpdatedAt: string }[]>> {
+  const auth = await authorize(...POS_ROLES);
+  if (!auth.ok) return auth;
+
+  const rows = await db
+    .select({ id: orders.id, state: orders.state, placedAt: orders.placedAt })
+    .from(orders)
+    .where(notInArray(orders.state, ["collected", "cancelled"]))
+    .orderBy(orders.placedAt);
+
+  return {
+    ok: true,
+    data: rows.map((r) => ({
+      orderId: r.id,
+      state: r.state,
+      lastUpdatedAt: r.placedAt.toISOString(),
+    })),
+  };
 }

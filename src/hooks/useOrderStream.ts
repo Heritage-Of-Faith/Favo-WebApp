@@ -20,8 +20,12 @@ const STREAM_URL = "/api/queue/stream";
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
 
-export function useOrderStream() {
-  const [orders, setOrders] = useState<Map<string, LiveOrder>>(new Map());
+export function useOrderStream(initialOrders?: LiveOrder[]) {
+  const [orders, setOrders] = useState<Map<string, LiveOrder>>(() => {
+    const m = new Map<string, LiveOrder>();
+    for (const o of initialOrders ?? []) m.set(o.orderId, o);
+    return m;
+  });
   const [status, setStatus] = useState<StreamStatus>("connecting");
   const esRef = useRef<EventSource | null>(null);
   const backoffRef = useRef(INITIAL_BACKOFF_MS);

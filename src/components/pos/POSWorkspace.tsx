@@ -83,9 +83,14 @@ const CATEGORY_LABEL: Record<string, string> = {
   food: "Food", merchandise: "Merch", other: "Other",
 };
 
-type Props = { staffName: string; staffId: string };
+type Props = {
+  staffName: string;
+  staffId: string;
+  initialOrders?: { orderId: string; state: import("@/lib/types").OrderState; lastUpdatedAt: string }[];
+};
 
-export default function POSWorkspace({ staffName, staffId }: Props) {
+export default function POSWorkspace({ staffName, staffId, initialOrders }: Props) {
+  const yocoConfigured = !!process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
   const router = useRouter();
 
   // ── Left panel ─────────────────────────────────────────────────────────────
@@ -127,7 +132,7 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const [syncDrawerOpen, setSyncDrawerOpen] = useState(false);
 
   // ── Right panel — queue with full orders ───────────────────────────────────
-  const { activeOrders, status } = useOrderStream();
+  const { activeOrders, status } = useOrderStream(initialOrders);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [fullOrders, setFullOrders] = useState<Record<string, Order>>({});
   const [advancing, setAdvancing] = useState<Record<string, boolean>>({});
@@ -271,10 +276,11 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
       if (r.data.yocoClientSecret) {
         setShowPayment(true);
       } else {
-        // No Yoco key (dev mode / offline) — order is in the DB, inform barista.
-        setOrderSuccess("Order placed — accept cash or card manually.");
+        // No Yoco configured — treat as paid so "Start Making" is immediately available.
+        setPaidLocally((prev) => { const n = new Set(prev); n.add(r.data.orderId); return n; });
+        setOrderSuccess("Order placed.");
         reset();
-        setTimeout(() => setOrderSuccess(null), 4000);
+        setTimeout(() => setOrderSuccess(null), 3000);
       }
     } else {
       setOrderError(r.message);
@@ -793,10 +799,10 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
             const nextState = STATE_NEXT[o.state];
             const isDone = o.state === "collected" || o.state === "cancelled";
             const isReady = o.state === "ready";
-            // L01: an order must be paid before it can start being made. Free /
-            // staff-discounted / already-charged orders pass; cash/in-person ones
-            // pass once confirmed locally.
-            const needsPayment = !!full
+            // L01: payment gate — only enforced when Yoco is configured.
+            // Without Yoco keys the gate is bypassed so baristas can start making immediately.
+            const needsPayment = yocoConfigured
+              && !!full
               && o.state === "ordered"
               && full.totalZar > 0
               && !full.isStaffDiscount

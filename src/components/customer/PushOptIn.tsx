@@ -148,11 +148,17 @@ export default function PushOptIn({ customerId, serverHasSubscription }: PushOpt
       setPermission("granted");
       localStorage.setItem(askedKey(customerId), "granted");
 
-      const reg = await navigator.serviceWorker.getRegistration();
+      let reg = await navigator.serviceWorker.getRegistration();
       if (!reg) {
-        setError("Notifications require the app to be installed. Add FAVO to your home screen, then try again.");
-        setLoading(false);
-        return;
+        // SW not yet controlling this page (load event fired before React mounted).
+        // Register it now so we can subscribe immediately.
+        try {
+          reg = await navigator.serviceWorker.register("/sw.js");
+        } catch {
+          setError("Could not set up notifications. Please refresh the page and try again.");
+          setLoading(false);
+          return;
+        }
       }
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
@@ -171,7 +177,11 @@ export default function PushOptIn({ customerId, serverHasSubscription }: PushOpt
       setDbHasSub(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
-      setPermission("default");
+      setPermission(
+        typeof Notification !== "undefined"
+          ? (Notification.permission as PermissionState)
+          : "default"
+      );
     } finally {
       setLoading(false);
     }

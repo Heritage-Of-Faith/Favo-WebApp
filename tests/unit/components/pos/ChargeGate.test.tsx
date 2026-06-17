@@ -1,7 +1,7 @@
 // Queue-card payment gate: an unpaid order shows "Take payment" and cannot start
 // making; a paid order shows "Start Making". (Rule L01.)
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -49,6 +49,12 @@ function fullOrder(paymentStatus: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
+  // L01 gate is only active when Yoco is configured — simulate that here.
+  process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY = "pk_test_key";
+});
+
+afterEach(() => {
+  delete process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
 });
 
 async function expandCard() {
@@ -58,6 +64,14 @@ async function expandCard() {
 }
 
 describe("queue payment gate (L01)", () => {
+  it("without Yoco key, order can start without Take payment", async () => {
+    delete process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => fullOrder("pending") }) as unknown as typeof fetch;
+    await expandCard();
+    expect(await screen.findByRole("button", { name: /start making/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /take payment/i })).toBeNull();
+  });
+
   it("unpaid order shows Take payment and hides Start Making", async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => fullOrder("pending") }) as unknown as typeof fetch;
     await expandCard();

@@ -22,11 +22,11 @@ beforeEach(() => {
 });
 
 describe("ReportExportForm", () => {
-  it("renders all four report kind options", () => {
+  it("renders all report kind options", () => {
     render(<ReportExportForm />);
     const kindSelect = screen.getByLabelText("Report type") as HTMLSelectElement;
     const options = Array.from(kindSelect.options).map((o) => o.value);
-    expect(options).toEqual(["sales", "cogs", "inventory", "monthly_pnl"]);
+    expect(options).toEqual(["sales", "cogs", "inventory"]);
   });
 
   it("renders CSV and PDF format options", () => {
@@ -129,8 +129,8 @@ describe("ReportExportForm", () => {
     });
   });
 
-  it("includes kind in the fetch URL for all four kinds", async () => {
-    const kinds = ["sales", "cogs", "inventory", "monthly_pnl"] as const;
+  it("includes kind in the fetch URL for all kinds", async () => {
+    const kinds = ["sales", "cogs", "inventory"] as const;
     for (const k of kinds) {
       vi.mocked(global.fetch).mockClear();
       const { unmount } = render(<ReportExportForm />);

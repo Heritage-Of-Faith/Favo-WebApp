@@ -1,3 +1,4 @@
+/* eslint-env serviceworker */
 // FAVO POS service worker — owner: Mine (task M14 / Phase 3)
 // Scoped to /pos/ only. Registered with { scope: "/pos/" } from
 // POSServiceWorkerRegister; a root-level script may always claim a deeper
@@ -145,7 +146,8 @@ self.addEventListener("notificationclick", (event) => {
   let safeUrl = new URL("/pos/queue", self.location.origin).href;
   try {
     const parsed = new URL(url, self.location.origin);
-    if (parsed.origin === self.location.origin && parsed.pathname.startsWith("/pos")) {
+    const isPosPath = parsed.pathname === "/pos" || parsed.pathname.startsWith("/pos/");
+    if (parsed.origin === self.location.origin && isPosPath) {
       safeUrl = parsed.href;
     }
   } catch {
