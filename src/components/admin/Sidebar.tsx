@@ -24,11 +24,11 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard" },
-  { href: "/admin/inventory", label: "Inventory" },
-  { href: "/admin/stock-takes", label: "Stock takes" },
-  { href: "/admin/purchases", label: "Purchases" },
-  { href: "/admin/expenses", label: "Expenses" },
-  { href: "/admin/reports/monthly", label: "Monthly P&L" },
+  { href: "/admin/inventory" as Route, label: "Inventory" },
+  { href: "/admin/stock-takes" as Route, label: "Stock takes" },
+  { href: "/admin/purchases" as Route, label: "Purchases" },
+  { href: "/admin/expenses" as Route, label: "Expenses" },
+  { href: "/admin/reports/monthly" as Route, label: "Monthly P&L" },
   { href: "/admin/reports" as Route, label: "Reports" },
   { href: "/admin/hours" as Route, label: "Hours" },
   { href: "/admin/menu", label: "Menu" },

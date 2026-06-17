@@ -2,6 +2,7 @@
 // List past + in-progress takes with a "Start take" CTA. Tap a take to resume
 // counting or view its variance summary. Docs: API.md, BUSINESS_RULES.md T01.
 import Link from "next/link";
+import type { Route } from "next";
 import { listStockTakes } from "@/server/actions/stock-takes";
 import { varianceBand } from "@/lib/status/variance-band";
 import StatusBadge, { varianceVariant } from "@/components/shared/StatusBadge";
@@ -58,7 +59,7 @@ export default async function StockTakesPage() {
           return (
             <li key={take.id}>
               <Link
-                href={`/admin/stock-takes/${take.id}`}
+                href={`/admin/stock-takes/${take.id}` as Route}
                 className="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border p-4 transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
                 style={{ borderColor: "var(--color-border-subtle)" }}
               >

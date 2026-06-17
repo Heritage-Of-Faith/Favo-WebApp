@@ -2,6 +2,7 @@
 // Resolves a take by id and hands it to the client runner. Docs: API.md.
 
 import Link from "next/link";
+import type { Route } from "next";
 import { getStockTake } from "@/server/actions/stock-takes";
 import StockTakeRunner from "@/components/admin/StockTakeRunner";
 
@@ -20,7 +21,7 @@ export default async function StockTakeDetailPage({
           {res.message}
         </p>
         <Link
-          href="/admin/stock-takes"
+          href={"/admin/stock-takes" as Route}
           className="inline-flex min-h-10 items-center rounded-[var(--radius-btn)] border px-4 favo-small"
           style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
         >
@@ -33,7 +34,7 @@ export default async function StockTakeDetailPage({
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <Link
-        href="/admin/stock-takes"
+        href={"/admin/stock-takes" as Route}
         className="inline-flex items-center gap-1 favo-small transition-colors hover:opacity-80"
         style={{ color: "var(--color-text-muted)" }}
       >

@@ -14,11 +14,11 @@ export const metadata = { title: "Dashboard" };
 type Card = { href: Route; title: string; description: string };
 
 const CARDS: Card[] = [
-  { href: "/admin/reports/monthly", title: "Monthly P&L", description: "Review and sign monthly profit & loss reports." },
-  { href: "/admin/inventory", title: "Inventory", description: "Stock levels, lots, and costs." },
-  { href: "/admin/stock-takes", title: "Stock takes", description: "Count lots and review variance." },
-  { href: "/admin/purchases", title: "Purchases", description: "Record purchases and approve emergencies." },
-  { href: "/admin/expenses", title: "Expenses", description: "Log and review operating expenses." },
+  { href: "/admin/reports/monthly" as Route, title: "Monthly P&L", description: "Review and sign monthly profit & loss reports." },
+  { href: "/admin/inventory" as Route, title: "Inventory", description: "Stock levels, lots, and costs." },
+  { href: "/admin/stock-takes" as Route, title: "Stock takes", description: "Count lots and review variance." },
+  { href: "/admin/purchases" as Route, title: "Purchases", description: "Record purchases and approve emergencies." },
+  { href: "/admin/expenses" as Route, title: "Expenses", description: "Log and review operating expenses." },
   { href: "/admin/audit", title: "Audit log", description: "Review every change made across the system." },
 ];
 

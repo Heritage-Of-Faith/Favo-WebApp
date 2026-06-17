@@ -7,6 +7,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import type { Route } from "next";
 import { toast } from "sonner";
 import { recordStockTakeLine, closeStockTake, getStockTake } from "@/server/actions/stock-takes";
 import StockTakeCounter from "@/components/admin/StockTakeCounter";
@@ -85,7 +86,7 @@ export default function StockTakeRunner({ initialTake }: StockTakeRunnerProps) {
         </div>
         <VarianceSummary take={take} />
         <Link
-          href="/admin/stock-takes"
+          href={"/admin/stock-takes" as Route}
           className="inline-flex min-h-10 items-center rounded-[var(--radius-btn)] border px-4 favo-small"
           style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
         >

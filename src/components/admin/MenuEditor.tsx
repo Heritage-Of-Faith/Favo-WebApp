@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import type { Route } from "next";
 import { toast } from "sonner";
 import {
   Table,
@@ -128,7 +129,7 @@ export default function MenuEditor() {
                     History
                   </Button>
                   <Link
-                    href={`/admin/menu/${item.id}/recipe`}
+                    href={`/admin/menu/${item.id}/recipe` as Route}
                     className="inline-flex min-h-10 items-center rounded-[var(--radius-btn)] px-3 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
                     style={{ color: "var(--color-text-strong)" }}
                   >
