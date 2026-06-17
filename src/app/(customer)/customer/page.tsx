@@ -11,7 +11,6 @@ import LoyaltyCard from "@/components/customer/LoyaltyCard";
 import WalletCard from "@/components/customer/WalletCard";
 import PackList from "@/components/customer/PackList";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
-import OperatingHours from "@/components/shared/OperatingHours";
 import PushOptIn from "@/components/customer/PushOptIn";
 
 // Always render fresh data (hours/loyalty change at the counter): no static cache.
@@ -75,15 +74,6 @@ const S: Record<string, CSSProperties> = {
     gridTemplateColumns: "1fr 1fr",
     gap: 16,
   },
-  hoursLabel: {
-    fontFamily: "'DM Sans', sans-serif",
-    fontWeight: 300,
-    fontSize: 11,
-    letterSpacing: "0.14em",
-    textTransform: "uppercase",
-    color: "var(--color-cool-steel)",
-    margin: "0 0 12px",
-  },
 };
 
 export default async function CustomerDashboard() {
@@ -129,10 +119,6 @@ export default async function CustomerDashboard() {
           />
         )}
 
-        <section aria-label="Opening hours">
-          <p style={S.hoursLabel}>Opening hours</p>
-          <OperatingHours className="" />
-        </section>
       </main>
     </div>
   );
