@@ -7,11 +7,6 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
-const mockPush = vi.fn();
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush }),
-}));
-
 vi.mock("next/image", () => ({
   default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
     <img {...props} alt={props.alt ?? ""} />
@@ -46,6 +41,19 @@ function getDeleteButton() {
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
+
+let lastHref = "";
+beforeEach(() => {
+  lastHref = "";
+  // window.location.href is not writable in jsdom by default — replace with a stub.
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    value: {
+      get href() { return lastHref; },
+      set href(v: string) { lastHref = v; },
+    },
+  });
+});
 
 describe("LoginForm", () => {
   beforeEach(() => {
@@ -101,7 +109,7 @@ describe("LoginForm", () => {
     render(<LoginForm />);
     pressDigits("1","2","3","4");
     fireEvent.click(getSubmitButton());
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/pos/queue"));
+    await waitFor(() => expect(lastHref).toBe("/pos/queue"));
   });
 
   it("respects a custom redirectTo prop", async () => {
@@ -109,7 +117,7 @@ describe("LoginForm", () => {
     render(<LoginForm redirectTo="/pos/order/123" />);
     pressDigits("1","2","3","4");
     fireEvent.click(getSubmitButton());
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/pos/order/123"));
+    await waitFor(() => expect(lastHref).toBe("/pos/order/123"));
   });
 
   it("displays an error message on failed login and clears the PIN", async () => {
@@ -192,6 +200,6 @@ describe("LoginForm", () => {
     render(<LoginForm redirectTo="/admin" surface="admin" />);
     pressDigits("4", "3", "2", "1");
     fireEvent.click(getSubmitButton());
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/admin"));
+    await waitFor(() => expect(lastHref).toBe("/admin"));
   });
 });
