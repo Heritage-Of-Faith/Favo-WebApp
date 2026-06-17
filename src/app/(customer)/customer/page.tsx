@@ -11,6 +11,7 @@ import LoyaltyCard from "@/components/customer/LoyaltyCard";
 import WalletCard from "@/components/customer/WalletCard";
 import PackList from "@/components/customer/PackList";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
+import OperatingHours from "@/components/shared/OperatingHours";
 import PushOptIn from "@/components/customer/PushOptIn";
 
 // Always render fresh data (hours/loyalty change at the counter): no static cache.

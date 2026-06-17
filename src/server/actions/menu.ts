@@ -304,16 +304,20 @@ export async function createMenuItem(input: {
   const { name, category, priceZar } = parsed.data;
   const now = new Date();
 
-  const [created] = await db
-    .insert(menuItems)
-    .values({ name, category, currentPriceZar: priceZar, active: true })
-    .returning();
+  const [created] = await db.transaction(async (tx) => {
+    const [item] = await tx
+      .insert(menuItems)
+      .values({ name, category, currentPriceZar: priceZar, active: true })
+      .returning();
 
-  await db.insert(priceHistory).values({
-    menuItemId: created!.id,
-    priceZar,
-    effectiveFrom: now,
-    effectiveUntil: null,
+    await tx.insert(priceHistory).values({
+      menuItemId: item!.id,
+      priceZar,
+      effectiveFrom: now,
+      effectiveUntil: null,
+    });
+
+    return [item];
   });
 
   await writeAudit({

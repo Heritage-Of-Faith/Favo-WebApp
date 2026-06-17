@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   orders,
@@ -374,9 +374,24 @@ export async function transitionOrder(
     sendOrderReadyPush(pushSubscription, orderId, pushCustomerName ?? undefined)
       .then((alive) => {
         if (!alive && pushCustomerId) {
+          const custId = pushCustomerId;
           db.update(customers)
             .set({ pushSubscription: null })
-            .where(eq(customers.id, pushCustomerId))
+            .where(
+              and(
+                eq(customers.id, custId),
+                eq(customers.pushSubscription, pushSubscription as Record<string, unknown>)
+              )
+            )
+            .then(() =>
+              writeAudit({
+                entityKind: "customer",
+                entityId: custId,
+                action: "push_unsubscribe",
+                actorId: custId,
+                actorRole: "customer",
+              })
+            )
             .catch(() => {});
         }
       })
