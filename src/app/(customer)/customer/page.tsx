@@ -11,7 +11,6 @@ import LoyaltyCard from "@/components/customer/LoyaltyCard";
 import WalletCard from "@/components/customer/WalletCard";
 import PackList from "@/components/customer/PackList";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
-import OperatingHours from "@/components/shared/OperatingHours";
 import PushOptIn from "@/components/customer/PushOptIn";
 
 // Always render fresh data (hours/loyalty change at the counter): no static cache.
@@ -19,7 +18,7 @@ export const dynamic = "force-dynamic";
 
 const S: Record<string, CSSProperties> = {
   page: {
-    backgroundColor: "var(--color-coffee-bean)",
+    backgroundColor: "var(--color-porcelain)",
     minHeight: "100dvh",
     display: "flex",
     flexDirection: "column",
@@ -29,7 +28,7 @@ const S: Record<string, CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "20px clamp(20px, 5vw, 40px)",
-    borderBottom: "1px solid rgba(247,246,242,0.1)",
+    borderBottom: "1px solid rgba(28,5,1,0.1)",
   },
   wordmark: {
     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
@@ -37,7 +36,7 @@ const S: Record<string, CSSProperties> = {
     fontSize: 22,
     letterSpacing: "0.22em",
     textTransform: "uppercase",
-    color: "var(--color-porcelain)",
+    color: "var(--color-coffee-bean)",
     textDecoration: "none",
     lineHeight: 1,
   },
@@ -63,11 +62,11 @@ const S: Record<string, CSSProperties> = {
   greeting: {
     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
     fontWeight: 900,
-    fontSize: "clamp(1.75rem, 4vw, 2.75rem)",
+    fontSize: "clamp(4rem, 14vw, 7rem)",
     lineHeight: 0.95,
     letterSpacing: "0.06em",
     textTransform: "uppercase",
-    color: "var(--color-porcelain)",
+    color: "var(--color-coffee-bean)",
     margin: 0,
   },
   twoCol: {
@@ -123,11 +122,6 @@ export default async function CustomerDashboard() {
 
         {/* Push opt-in — only shows if permission not yet granted; hides after first dismissal. */}
         {summary && <PushOptIn customerId={summary.customerId} />}
-
-        <section aria-label="Opening hours">
-          <p style={S.hoursLabel}>Opening hours</p>
-          <OperatingHours className="" />
-        </section>
       </main>
     </div>
   );
