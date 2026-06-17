@@ -14,7 +14,7 @@ type Props = { params: Promise<{ id: string }> };
 
 export default async function ActiveOrderPage({ params }: Props) {
   const session = await getSession();
-  if (!session) redirect("/pos");
+  if (!session) redirect("/staff/login");
 
   const { id } = await params;
 

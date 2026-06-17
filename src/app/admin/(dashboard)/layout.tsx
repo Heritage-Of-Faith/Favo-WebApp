@@ -25,7 +25,7 @@ export default async function AdminDashboardLayout({
 
   // Not signed in, or signed in without an admin-capable role → bounce to login.
   if (!session || !canAccessAdmin(session.role)) {
-    redirect("/admin/login");
+    redirect("/staff/login");
   }
 
   const canApprove = session.role === "admin";

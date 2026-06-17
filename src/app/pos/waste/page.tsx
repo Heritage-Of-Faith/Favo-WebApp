@@ -6,6 +6,6 @@ import WasteStandalone from "@/components/pos/WasteStandalone";
 
 export default async function WastePage() {
   const session = await getSession();
-  if (!session) redirect("/pos");
+  if (!session) redirect("/staff/login");
   return <WasteStandalone />;
 }

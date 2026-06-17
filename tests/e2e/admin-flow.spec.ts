@@ -27,8 +27,8 @@ import { test, expect, type Page } from "@playwright/test";
 
 async function loginAsAdmin(page: Page): Promise<void> {
   await page.goto("/admin", { waitUntil: "domcontentloaded" });
-  // Redirected to /admin/login
-  await expect(page).toHaveURL(/\/admin\/login/, { timeout: 10_000 });
+  // Redirected to the unified staff login.
+  await expect(page).toHaveURL(/\/staff\/login/, { timeout: 10_000 });
   await expect(page.getByRole("heading", { name: /enter your pin/i })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByLabel("Digit 4")).toBeEnabled({ timeout: 15_000 });
   for (const digit of "4321") {
@@ -42,13 +42,13 @@ async function loginAsAdmin(page: Page): Promise<void> {
 // ─── 1. Admin authentication ──────────────────────────────────────────────────
 
 test.describe("1. Admin authentication", () => {
-  test("unauthenticated /admin redirects to /admin/login", async ({ page }) => {
+  test("unauthenticated /admin redirects to /staff/login", async ({ page }) => {
     await page.goto("/admin", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/admin\/login/, { timeout: 10_000 });
+    await expect(page).toHaveURL(/\/staff\/login/, { timeout: 10_000 });
   });
 
-  test("admin login page renders PIN keypad", async ({ page }) => {
-    await page.goto("/admin/login", { waitUntil: "domcontentloaded" });
+  test("staff login page renders PIN keypad", async ({ page }) => {
+    await page.goto("/staff/login", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: /enter your pin/i })).toBeVisible({ timeout: 15_000 });
     for (const digit of ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]) {
       await expect(page.getByLabel(`Digit ${digit}`)).toBeVisible();

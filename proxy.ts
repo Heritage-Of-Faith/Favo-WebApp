@@ -14,20 +14,20 @@ export async function proxy(request: NextRequest) {
   const session = await auth();
   const { pathname } = request.nextUrl;
 
-  // Admin routes require an admin-capable role (admin / owner / finance).
-  // The login page itself is exempt so it is reachable while signed out.
+  // Admin routes require an admin-capable role. The legacy /admin/login route
+  // is exempt so it can resolve (it now just redirects to /staff/login).
   if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
     const role = (session?.user as SessionUser | undefined)?.role;
     if (!session || !role || !canAccessAdmin(role)) {
-      // Send unauthenticated/under-privileged users to the admin login.
-      return NextResponse.redirect(new URL("/admin/login", request.url));
+      // Send unauthenticated/under-privileged users to the unified staff login.
+      return NextResponse.redirect(new URL("/staff/login", request.url));
     }
   }
 
-  // POS routes require any authenticated session
+  // POS routes require any authenticated session.
   if (pathname.startsWith("/pos")) {
     if (!session) {
-      return NextResponse.redirect(new URL("/pos", request.url));
+      return NextResponse.redirect(new URL("/staff/login", request.url));
     }
   }
 

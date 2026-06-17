@@ -106,7 +106,7 @@ export default function Footer() {
           <div>
             <p style={S.colHead}>More</p>
             <a href="/login" style={S.link}>Sign in</a>
-            <a href="/pos" style={S.link}>Staff sign in</a>
+            <a href="/staff/login" style={S.link}>Staff sign in</a>
             <a href="/privacy" style={S.link}>Privacy policy</a>
             <a
               href="https://hofmi.net/"

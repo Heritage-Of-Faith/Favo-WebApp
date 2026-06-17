@@ -5,6 +5,6 @@ import TodayCard from "@/components/pos/TodayCard";
 
 export default async function TodayPage() {
   const session = await getSession();
-  if (!session) redirect("/pos");
+  if (!session) redirect("/staff/login");
   return <TodayCard />;
 }
