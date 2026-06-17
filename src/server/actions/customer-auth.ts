@@ -1,18 +1,16 @@
 "use server";
 
-// Customer email + password auth — register, login, logout.
-// Uses bcryptjs (same dep as staff PIN hashing) and a signed cookie session.
+// Customer email + password auth — register, login, logout via Supabase Auth.
+// Supabase handles password hashing, session cookies, and password-reset emails.
 // Intentionally separate from the staff Auth.js/PIN flow.
 
-import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customers } from "@db/schema";
 import { writeAudit } from "@/server/audit";
-import { setCustomerSession, clearCustomerSession } from "@/server/auth/customer-session";
+import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/lib/types";
 
-const BCRYPT_ROUNDS = 12;
 const TENANT_ID = "hofmi-favo";
 
 // ── Validation helpers ────────────────────────────────────────────────────────
@@ -28,11 +26,6 @@ function validatePassword(password: string): string | null {
   return password.length >= 8 ? password : null;
 }
 
-/**
- * Validate a phone number. Lenient on punctuation/spacing (we store what the
- * customer typed, trimmed), but requires a plausible digit count so the POS
- * barista screen has a real number to search on (AT-64 / Phase 1 M2).
- */
 function validatePhone(phone: string): string | null {
   const trimmed = phone.trim();
   const digits = trimmed.replace(/\D/g, "");
@@ -45,8 +38,6 @@ export async function registerCustomer(input: {
   name: string;
   email: string;
   password: string;
-  /** Optional at the API layer; the signup form makes it required so the POS
-   *  barista screen can find the customer by phone (AT-64). */
   phone?: string;
 }): Promise<ActionResult<{ customerId: string; name: string }>> {
   const name = input.name.trim();
@@ -63,8 +54,6 @@ export async function registerCustomer(input: {
     return { ok: false, code: "VALIDATION", message: "Password must be at least 8 characters." };
   }
 
-  // Phone is validated only when supplied; when present it must be a plausible
-  // number so baristas can search on it at the counter.
   let phone: string | undefined;
   if (input.phone !== undefined && input.phone.trim() !== "") {
     const validated = validatePhone(input.phone);
@@ -74,24 +63,36 @@ export async function registerCustomer(input: {
     phone = validated;
   }
 
-  // Check for existing account
-  const [existing] = await db
-    .select({ id: customers.id })
-    .from(customers)
-    .where(eq(customers.email, email));
+  const supabase = await createClient();
 
-  if (existing) {
-    return { ok: false, code: "EMAIL_TAKEN", message: "An account with that email already exists." };
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { name, phone } },
+  });
+
+  if (error) {
+    if (error.message.toLowerCase().includes("already registered") ||
+        error.message.toLowerCase().includes("already exists")) {
+      return { ok: false, code: "EMAIL_TAKEN", message: "An account with that email already exists." };
+    }
+    return { ok: false, code: "AUTH_ERROR", message: error.message };
   }
 
-  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  const user = data.user;
+  if (!user) {
+    return { ok: false, code: "AUTH_ERROR", message: "Could not create your account. Please try again." };
+  }
 
+  // Insert the customers row, linking to the Supabase auth user via authId
   const [customer] = await db
     .insert(customers)
-    .values({ tenantId: TENANT_ID, name, email, phone, passwordHash })
+    .values({ tenantId: TENANT_ID, name, email, phone, authId: user.id })
     .returning({ id: customers.id, name: customers.name });
 
   if (!customer) {
+    // Roll back Supabase user to avoid orphan auth entries
+    await supabase.auth.admin?.deleteUser(user.id).catch(() => null);
     return { ok: false, code: "DB_ERROR", message: "Could not create your account. Please try again." };
   }
 
@@ -103,8 +104,6 @@ export async function registerCustomer(input: {
     entityId: customer.id,
     after: { email },
   });
-
-  await setCustomerSession(customer.id);
 
   return { ok: true, data: { customerId: customer.id, name: customer.name } };
 }
@@ -124,20 +123,22 @@ export async function loginCustomer(input: {
     return { ok: false, code: "VALIDATION", message: "Please enter your password." };
   }
 
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password: input.password });
+
+  if (error || !data.user) {
+    return { ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect email or password." };
+  }
+
   const [customer] = await db
-    .select({ id: customers.id, name: customers.name, passwordHash: customers.passwordHash })
+    .select({ id: customers.id, name: customers.name })
     .from(customers)
-    .where(eq(customers.email, email));
+    .where(eq(customers.authId, data.user.id));
 
-  // Generic error — don't reveal whether the email exists
-  const WRONG = { ok: false as const, code: "INVALID_CREDENTIALS", message: "Incorrect email or password." };
-
-  if (!customer || !customer.passwordHash) return WRONG;
-
-  const match = await bcrypt.compare(input.password, customer.passwordHash);
-  if (!match) return WRONG;
-
-  await setCustomerSession(customer.id);
+  if (!customer) {
+    return { ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect email or password." };
+  }
 
   return { ok: true, data: { customerId: customer.id, name: customer.name } };
 }
@@ -145,6 +146,26 @@ export async function loginCustomer(input: {
 // ── Logout ────────────────────────────────────────────────────────────────────
 
 export async function logoutCustomer(): Promise<ActionResult<null>> {
-  await clearCustomerSession();
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  return { ok: true, data: null };
+}
+
+// ── Forgot password ───────────────────────────────────────────────────────────
+
+export async function requestPasswordReset(
+  email: string
+): Promise<ActionResult<null>> {
+  const validated = validateEmail(email);
+  if (!validated) {
+    return { ok: false, code: "VALIDATION", message: "Please enter a valid email address." };
+  }
+
+  const supabase = await createClient();
+  // No-leak: always return ok regardless of whether the email exists
+  await supabase.auth.resetPasswordForEmail(validated, {
+    redirectTo: `${process.env.PUBLIC_BASE_URL}/reset-password`,
+  });
+
   return { ok: true, data: null };
 }
