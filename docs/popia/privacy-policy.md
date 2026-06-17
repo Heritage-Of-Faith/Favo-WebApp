@@ -54,7 +54,6 @@ FAVO operates strict role-based access control (RBAC). No staff member can acces
 |---|---|
 | **Barista** | Your name and phone number (to find your account at the counter). Cannot view wallet amounts or order history. |
 | **Manager / Admin** | Full customer profile, order history, loyalty and wallet records, for support purposes. |
-| **Finance** | Aggregate financial reports only. No individual customer records. |
 | **Owner** | Full access for oversight and compliance purposes. |
 
 Your data is stored on Supabase (eu-west-1, Frankfurt, Germany) under a tenant-isolated database. No data is shared with third parties except Yoco for payment processing.
@@ -96,4 +95,4 @@ For privacy enquiries, subject access requests, or complaints:
 **Post:** Heritage of Faith Ministries, 7 Duiker Street, Reyno Ridge, Emalahleni, 1049
 
 For complaints to the regulator:  
-**Information Regulator of South Africa** — inforeg.org.za
+**Information Regulator of South Africa** — [inforegulator.org.za](https://inforegulator.org.za)

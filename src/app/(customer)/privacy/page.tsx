@@ -219,7 +219,6 @@ export default function PrivacyPage() {
             {[
               ["Barista", "Your name and phone number only (to find your account at the counter)"],
               ["Manager / Admin", "Full profile, order history, loyalty and wallet records (for support)"],
-              ["Finance", "Aggregate financial reports only — no individual customer records"],
               ["Owner", "Full access for oversight and compliance"],
             ].map(([role, access]) => (
               <tr key={role}>
@@ -268,12 +267,12 @@ export default function PrivacyPage() {
             Reyno Ridge, Emalahleni, 1049, South Africa<br />
             <strong>Information Regulator:</strong>{" "}
             <a
-              href="https://www.inforeg.org.za"
+              href="https://inforegulator.org.za"
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: "var(--color-crimson-carrot)" }}
             >
-              inforeg.org.za ↗
+              inforegulator.org.za ↗
             </a>
           </p>
         </div>
