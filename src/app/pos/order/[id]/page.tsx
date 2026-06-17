@@ -3,6 +3,7 @@
 // Rule L15: Done button must be the most visually dominant action.
 
 import { redirect, notFound } from "next/navigation";
+import type { Route } from "next";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, orderItems, menuItems, payments } from "@db/schema";
@@ -14,7 +15,7 @@ type Props = { params: Promise<{ id: string }> };
 
 export default async function ActiveOrderPage({ params }: Props) {
   const session = await getSession();
-  if (!session) redirect("/staff/login");
+  if (!session) redirect("/staff/login" as Route);
 
   const { id } = await params;
 

@@ -4,6 +4,7 @@
 // in-surface defence-in-depth layer. Docs: docs/DESIGN.md → Admin Rules.
 
 import type { Metadata } from "next";
+import type { Route } from "next";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { canAccessAdmin } from "@/server/auth/rbac";
@@ -25,7 +26,7 @@ export default async function AdminDashboardLayout({
 
   // Not signed in, or signed in without an admin-capable role → bounce to login.
   if (!session || !canAccessAdmin(session.role)) {
-    redirect("/staff/login");
+    redirect("/staff/login" as Route);
   }
 
   const canApprove = session.role === "admin";
