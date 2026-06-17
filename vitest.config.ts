@@ -17,6 +17,16 @@ export default defineConfig({
     coverage: {
       reporter: ["text", "lcov"],
     },
+    server: {
+      deps: {
+        // Inline these so Vite's resolver (which honours package `exports`
+        // maps) handles them. next-auth/@auth/core import "next/server" via
+        // next's exports map; left externalised, Node's raw ESM resolver
+        // treats it as a missing file path and any suite that transitively
+        // loads the NextAuth root config fails to load (e.g. operating-hours).
+        inline: ["zod", "next-auth", "@auth/core"],
+      },
+    },
   },
   resolve: {
     alias: {

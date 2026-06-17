@@ -1,5 +1,5 @@
 // Monthly P&L unit tests — task G15
-// Tests RBAC, validation, and the dual-sign state machine.
+// Tests RBAC, validation, and the admin sign state machine.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -49,7 +49,7 @@ vi.mock("@db/index", () => {
 vi.mock("@/server/auth/guard", () => ({
   authorize: vi.fn().mockResolvedValue({
     ok: true,
-    session: { id: "staff_manager_mia", name: "Mia Manager", role: "admin" },
+    session: { id: "staff_admin_gian", name: "Gian Admin", role: "admin" },
   }),
 }));
 
@@ -103,29 +103,18 @@ describe("generateMonthlyPnL — validation", () => {
   });
 });
 
-// ─── approveMonthlyPnL — RBAC ─────────────────────────────────────────────────
+// ─── approveMonthlyPnL — admin-only close ─────────────────────────────────────
 
-describe("approveMonthlyPnL — RBAC", () => {
+describe("approveMonthlyPnL — admin-only close", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("finance role cannot sign admin_sig", async () => {
+  it("rejects a non-admin caller (FORBIDDEN)", async () => {
     const { authorize } = await import("@/server/auth/guard");
     vi.mocked(authorize).mockResolvedValueOnce({
-      ok: false, code: "FORBIDDEN", message: "Must be admin or owner.",
+      ok: false, code: "FORBIDDEN", message: "Admin only.",
     });
     const { approveMonthlyPnL } = await import("@/server/actions/monthly-pnl");
-    const result = await approveMonthlyPnL("mr_001", "admin");
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe("FORBIDDEN");
-  });
-
-  it("admin role cannot sign finance_sig", async () => {
-    const { authorize } = await import("@/server/auth/guard");
-    vi.mocked(authorize).mockResolvedValueOnce({
-      ok: false, code: "FORBIDDEN", message: "Must be finance or owner.",
-    });
-    const { approveMonthlyPnL } = await import("@/server/actions/monthly-pnl");
-    const result = await approveMonthlyPnL("mr_001", "finance");
+    const result = await approveMonthlyPnL("mr_001");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("FORBIDDEN");
   });
@@ -139,7 +128,7 @@ describe("approveMonthlyPnL — RBAC", () => {
     } as never);
 
     const { approveMonthlyPnL } = await import("@/server/actions/monthly-pnl");
-    const result = await approveMonthlyPnL("mr_nonexistent", "admin");
+    const result = await approveMonthlyPnL("mr_nonexistent");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("NOT_FOUND");
   });
@@ -151,42 +140,52 @@ describe("approveMonthlyPnL — RBAC", () => {
         where: vi.fn().mockResolvedValue([{
           id: "mr_001", month: "2026-04-01",
           status: "closed", adminSig: { signerId: "x", signerName: "X", at: "" },
-          financeSig: { signerId: "y", signerName: "Y", at: "" },
         }]),
       }),
     } as never);
 
     const { approveMonthlyPnL } = await import("@/server/actions/monthly-pnl");
-    const result = await approveMonthlyPnL("mr_001", "admin");
+    const result = await approveMonthlyPnL("mr_001");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("CONFLICT");
   });
 
-  it("rejects double-signing the same role", async () => {
+  it("rejects re-signing an already-signed report", async () => {
     const { db } = await import("@db/index");
     vi.mocked(db.select).mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([{
           id: "mr_001", month: "2026-04-01",
           status: "awaiting_signatures",
-          adminSig: { signerId: "staff_mia", signerName: "Mia", at: "2026-05-01T09:00:00Z" },
-          financeSig: null,
+          adminSig: { signerId: "staff_gian", signerName: "Gian", at: "2026-05-01T09:00:00Z" },
         }]),
       }),
     } as never);
 
     const { approveMonthlyPnL } = await import("@/server/actions/monthly-pnl");
-    const result = await approveMonthlyPnL("mr_001", "admin");
+    const result = await approveMonthlyPnL("mr_001");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("CONFLICT");
   });
+
+  it("admin sign closes an unsigned draft", async () => {
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{
+          id: "mr_001", month: "2026-04-01",
+          status: "draft", adminSig: null, financeSig: null,
+        }]),
+      }),
+    } as never);
+
+    const { approveMonthlyPnL } = await import("@/server/actions/monthly-pnl");
+    const result = await approveMonthlyPnL("mr_001");
+    expect(result.ok).toBe(true);
+  });
 });
 
-// ─── monthBounds (pure helper via weekBounds equivalent) ─────────────────────
-
-// The monthBounds function is not exported, but its correctness is verified
-// through the generateMonthlyPnL acceptance tests on staging.
-// We validate the YYYY-MM-01 format check here.
+// ─── generateMonthlyPnL — month format accepted ───────────────────────────────
 
 describe("generateMonthlyPnL — month format accepted", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -194,7 +193,7 @@ describe("generateMonthlyPnL — month format accepted", () => {
   it("accepts valid first-of-month date", async () => {
     const { authorize } = await import("@/server/auth/guard");
     vi.mocked(authorize).mockResolvedValue({
-      ok: true, session: { id: "staff_manager_mia", name: "Mia Manager", role: "admin" },
+      ok: true, session: { id: "staff_admin_gian", name: "Gian Admin", role: "admin" },
     });
 
     const { generateMonthlyPnL } = await import("@/server/actions/monthly-pnl");

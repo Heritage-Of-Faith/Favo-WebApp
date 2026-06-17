@@ -140,13 +140,13 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 - **PRD sections:** §05 (Tech stack, env), §10 (R2 R8 mitigations)
 - **DB tables touched:** none direct (sets up prod Postgres connectivity)
 - **Files to create / modify:**
-  - `infra/cloudflare/access-policies.tf` (or JSON if no Terraform) — gates `/admin/*` and `/finance/*` to HOFMI SSO identities
+  - `infra/cloudflare/access-policies.tf` (or JSON if no Terraform) — gates `/admin/*` to HOFMI SSO identities
   - `infra/cloudflare/waf-rules.json` — block obvious abuse patterns, rate limit `/api/auth/*` and `/api/payments/yoco/webhook` (separate budgets — webhook allowance higher to allow Yoco retries)
   - `infra/coolify/favo-app.yaml` — production app config with Infisical service token + healthcheck endpoint
   - `src/app/api/healthz/route.ts` — extends Phase 1 with DB ping + Yoco ping + Loki reachable
   - `docs/production-env-checklist.md` — every env var, where it comes from, who owns it
 - **Claude prompt:**
-  > Read `ARCHITECTURAL.md` env section and `FAVO_PRD_v3.md` §05. Verify (and document) that every canonical env name is set in Infisical project `hofmi/favo` for the production environment. Generate Cloudflare Access policies that gate `/admin/*` (admin/finance/owner allowed) and `/finance/*` (finance/owner). Customer + POS + landing remain public. Add WAF rate limits: `/api/auth/*` 10 req/min/IP, `/api/payments/yoco/webhook` 60 req/min/IP (Yoco retry budget per R8), POST endpoints overall 100 req/min/IP. Extend `/api/healthz` to perform a real Postgres `SELECT 1`, a Yoco API ping, and a Loki reachability check; cache for 5 s. Build a `docs/production-env-checklist.md` table with every env var, source, owner, rotation cadence — Gian uses this as the deploy go/no-go.
+  > Read `ARCHITECTURAL.md` env section and `FAVO_PRD_v3.md` §05. Verify (and document) that every canonical env name is set in Infisical project `hofmi/favo` for the production environment. Generate Cloudflare Access policies that gate `/admin/*` (admin role, HOFMI SSO required). Customer + POS + landing remain public. Add WAF rate limits: `/api/auth/*` 10 req/min/IP, `/api/payments/yoco/webhook` 60 req/min/IP (Yoco retry budget per R8), POST endpoints overall 100 req/min/IP. Extend `/api/healthz` to perform a real Postgres `SELECT 1`, a Yoco API ping, and a Loki reachability check; cache for 5 s. Build a `docs/production-env-checklist.md` table with every env var, source, owner, rotation cadence — Gian uses this as the deploy go/no-go.
 - **Acceptance criteria:**
   - `https://favo.hofmi.org/api/healthz` returns 200 with all three sub-checks green
   - Anonymous request to `/admin` returns Cloudflare Access challenge (302 to SSO)
@@ -266,7 +266,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 - **Branch:** `chore/a-a19-admin-smokes`
 - **PRD sections:** §09 P4 acceptance ("admin can see live COGS")
 - **Files to create:**
-  - `tests/e2e/admin-flow.spec.ts` — pre-flight against staging: login, dashboard load, inventory view, stock take walkthrough, expense log, monthly P&L draft + dual-sign
+  - `tests/e2e/admin-flow.spec.ts` — pre-flight against staging: login, dashboard load, inventory view, stock take walkthrough, expense log, monthly P&L draft + admin sign-off
   - `docs/admin-prod-smoke.md` — Mia's launch-day walkthrough: log in via HOFMI SSO on prod, confirm dashboard renders live numbers, confirm one CSV export downloads, confirm one PDF export renders
 - **Claude prompt:**
   > Read `FAVO_PRD_v3.md` §09 P4. Build `admin-flow.spec.ts` as a Playwright spec covering the Phase 2 admin acceptance plus the Phase 3 admin extensions (hours editor, exports). Run as part of pre-flight (G23). On launch day after G27 completes, perform the read-only prod smoke: log into `favo.hofmi.org/admin` via SSO, confirm the COGS dashboard renders (numbers will be zero or near-zero on a fresh prod DB — that's fine, the assertion is that it renders without error), download one CSV and one PDF export. Document inline in `docs/admin-prod-smoke.md`.
@@ -286,7 +286,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 - **Files to create:**
   - `docs/ops-runbook.md`
 - **Claude prompt:**
-  > Read `BUSINESS_RULES.md` and the Phase 2 admin task cards (A7–A13). Write a single-document operations runbook covering the FAVO admin's recurring duties. **Daily:** open the COGS dashboard (morning check); investigate any flagged variance; respond to low-stock pushes; verify closeDaily cron landed at 23:59 (no Discord red ping). **Weekly:** Sunday — review `generateWeeklyPnL` Discord ping; investigate any variance > 5 % band (T01); run an inventory stock take. **Monthly:** generate the previous month's P&L; sign as admin; route to finance for co-sign per L11. **Quarterly:** review T-rule tunings (variance bands, freshness windows, low-stock thresholds, sunday rush window). **Annually:** rotate staff PINs; audit RBAC. Each section names the relevant admin screen path and links to the business rule. Plain language — assume the reader is Nkuli, not a developer.
+  > Read `BUSINESS_RULES.md` and the Phase 2 admin task cards (A7–A13). Write a single-document operations runbook covering the FAVO admin's recurring duties. **Daily:** open the COGS dashboard (morning check); investigate any flagged variance; respond to low-stock pushes; verify closeDaily cron landed at 23:59 (no Discord red ping). **Weekly:** Sunday — review `generateWeeklyPnL` Discord ping; investigate any variance > 5 % band (T01); run an inventory stock take. **Monthly:** generate the previous month's P&L; sign as admin to close per L11. **Quarterly:** review T-rule tunings (variance bands, freshness windows, low-stock thresholds, sunday rush window). **Annually:** rotate staff PINs; audit RBAC. Each section names the relevant admin screen path and links to the business rule. Plain language — assume the reader is Nkuli, not a developer.
 - **Acceptance criteria:**
   - Runbook covers every recurring admin duty implied by the locked + tunable rules
   - Each duty links to the admin screen that supports it

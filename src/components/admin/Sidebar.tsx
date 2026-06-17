@@ -28,10 +28,13 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/stock-takes", label: "Stock takes" },
   { href: "/admin/purchases", label: "Purchases" },
   { href: "/admin/expenses", label: "Expenses" },
-  // Monthly P&L is admin/finance/owner only (manager cannot read it).
-  { href: "/admin/reports/monthly", label: "Monthly P&L", hideFor: ["manager"] },
-  { href: "/admin/menu", label: "Menu", hideFor: ["finance"] },
-  { href: "/admin/staff", label: "Staff", hideFor: ["finance"] },
+  { href: "/admin/reports/monthly", label: "Monthly P&L" },
+  { href: "/admin/reports" as Route, label: "Reports" },
+  { href: "/admin/hours" as Route, label: "Hours" },
+  { href: "/admin/menu", label: "Menu" },
+  { href: "/admin/staff", label: "Staff" },
+  { href: "/admin/customers" as Route, label: "Customers" },
+  { href: "/admin/sync-conflicts" as Route, label: "Sync conflicts" },
   { href: "/admin/audit", label: "Audit log" },
 ];
 

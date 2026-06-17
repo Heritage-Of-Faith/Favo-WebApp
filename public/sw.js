@@ -89,3 +89,51 @@ self.addEventListener("fetch", (event) => {
 
   // Everything else: do not intercept.
 });
+
+// ─── Push notifications ───────────────────────────────────────────────────────
+// Triggered when the FAVO backend sends a push after an order goes "ready".
+// Payload JSON: { title: string; body?: string; icon?: string; data?: { url: string } }
+
+self.addEventListener("push", (event) => {
+  let payload = { title: "FAVO", body: "Your order is ready!", icon: "/icons/icon-192.png", data: { url: "/customer" } };
+  if (event.data) {
+    try {
+      const received = event.data.json();
+      payload = { ...payload, ...received };
+    } catch {
+      // Malformed payload — use defaults.
+    }
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: payload.icon ?? "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: payload.data ?? { url: "/customer" },
+    })
+  );
+});
+
+// ─── Notification click ───────────────────────────────────────────────────────
+// Opens or focuses the FAVO customer dashboard when the user taps the notification.
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url ?? "/customer";
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        // Focus an existing window if one is already open at the target URL.
+        for (const client of clientList) {
+          if (client.url.includes(targetUrl) && "focus" in client) {
+            return client.focus();
+          }
+        }
+        // Otherwise open a new window.
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(targetUrl);
+        }
+      })
+  );
+});

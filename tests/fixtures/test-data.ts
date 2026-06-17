@@ -36,6 +36,7 @@ export const testOrder: Order = {
   completedAt: null,
   totalZar: 4500,
   isStaffDiscount: false,
+  paymentStatus: null,
   items: [
     {
       id: "item_001",

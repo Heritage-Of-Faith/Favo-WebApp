@@ -16,7 +16,7 @@ import { encodeComment } from "@/server/queue/sse";
 
 export const dynamic = "force-dynamic";
 
-const ALLOWED_ROLES = new Set(["admin", "owner"]);
+const ALLOWED_ROLES = new Set(["admin"]);
 const HEARTBEAT_MS = 30_000;
 const CHANNELS = ["cogs_changes", "inventory_changes"] as const;
 

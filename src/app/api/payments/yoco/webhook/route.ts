@@ -3,7 +3,7 @@
 // Docs: docs/API.md → POST /api/payments/yoco/webhook
 
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { payments, orders, pendingCharges } from "@db/schema";
 import { writeAudit } from "@/server/audit";
@@ -40,9 +40,11 @@ export async function POST(request: Request) {
   }
 
   // Check if this payment id belongs to an order payment or a pending charge.
-  const [[existingPayment], [pendingCharge]] = await Promise.all([
+  // Run both lookups in parallel; the order-payment lookup may need a second
+  // attempt (orderId fallback) if the row was created before the webhook fired.
+  const [[paymentByYocoId], [pendingCharge]] = await Promise.all([
     db
-      .select({ id: payments.id, status: payments.status })
+      .select({ id: payments.id, status: payments.status, yocoPaymentId: payments.yocoPaymentId })
       .from(payments)
       .where(eq(payments.yocoPaymentId, event.paymentId)),
     db
@@ -50,6 +52,23 @@ export async function POST(request: Request) {
       .from(pendingCharges)
       .where(eq(pendingCharges.yocoCheckoutId, event.paymentId)),
   ]);
+
+  // Fallback: if no row has yocoPaymentId set yet, look up by orderId from the
+  // webhook metadata (Yoco echoes back metadata.orderId in the event payload).
+  // This covers the gap where createOrder inserted the payments row with only
+  // yocoCheckoutId and the webhook is the first time we see the paymentId.
+  let existingPayment = paymentByYocoId;
+  let needsPaymentIdUpdate = false;
+  if (!existingPayment && event.orderId) {
+    const [byOrderId] = await db
+      .select({ id: payments.id, status: payments.status, yocoPaymentId: payments.yocoPaymentId })
+      .from(payments)
+      .where(and(eq(payments.orderId, event.orderId), isNull(payments.yocoPaymentId)));
+    if (byOrderId) {
+      existingPayment = byOrderId;
+      needsPaymentIdUpdate = true;
+    }
+  }
 
   // ── Wallet / pack charge path ─────────────────────────────────────────────
   if (pendingCharge) {
@@ -87,16 +106,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, deduped: true });
   }
 
+  // All update WHERE clauses use payments.id so they work whether the row was
+  // found by yocoPaymentId or by the orderId fallback. When found via fallback,
+  // we also backfill yocoPaymentId so future lookups hit the fast path.
+  const paymentIdSet = needsPaymentIdUpdate ? { yocoPaymentId: event.paymentId } : {};
+
   if (outcome.action === "mark_paid") {
     await db
       .update(payments)
-      .set({ status: "successful", webhookReceivedAt: new Date() })
-      .where(eq(payments.yocoPaymentId, event.paymentId));
+      .set({ status: "successful", webhookReceivedAt: new Date(), ...paymentIdSet })
+      .where(eq(payments.id, existingPayment!.id));
   } else if (outcome.action === "fail_payment") {
     await db
       .update(payments)
-      .set({ status: "failed", webhookReceivedAt: new Date() })
-      .where(eq(payments.yocoPaymentId, event.paymentId));
+      .set({ status: "failed", webhookReceivedAt: new Date(), ...paymentIdSet })
+      .where(eq(payments.id, existingPayment!.id));
     // Rule L01: failed payment cancels the order (only while still 'ordered').
     if (outcome.orderId) {
       await db
@@ -107,8 +131,8 @@ export async function POST(request: Request) {
   } else if (outcome.action === "record_refund") {
     await db
       .update(payments)
-      .set({ status: "refunded", webhookReceivedAt: new Date() })
-      .where(eq(payments.yocoPaymentId, event.paymentId));
+      .set({ status: "refunded", webhookReceivedAt: new Date(), ...paymentIdSet })
+      .where(eq(payments.id, existingPayment!.id));
   }
 
   await writeAudit({

@@ -17,7 +17,7 @@ import type { ActionResult, Staff, StaffRole } from "@/lib/types";
 
 const createStaffSchema = z.object({
   name: z.string().min(2).max(100),
-  role: z.enum(["barista", "roaster", "manager", "finance", "admin", "owner"]),
+  role: z.enum(["barista", "admin"]),
   pin: z.string().regex(/^\d{4,6}$/, "PIN must be 4–6 digits"),
 });
 
@@ -44,7 +44,7 @@ function toStaff(row: typeof staff.$inferSelect): Staff {
  * Auth: admin, finance, owner.
  */
 export async function listStaff(): Promise<ActionResult<Staff[]>> {
-  const auth = await authorize("admin", "finance", "owner");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const rows = await db
@@ -64,7 +64,7 @@ export async function createStaff(input: {
   role: StaffRole;
   pin: string;
 }): Promise<ActionResult<Staff>> {
-  const auth = await authorize("admin", "owner");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const parsed = createStaffSchema.safeParse(input);
@@ -117,7 +117,7 @@ export async function setStaffPin(input: {
   staffId: string;
   newPin: string;
 }): Promise<ActionResult> {
-  const auth = await authorize("admin", "owner");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const parsed = setPinSchema.safeParse(input);
@@ -164,7 +164,7 @@ export async function setStaffPin(input: {
  * Auth: admin, owner only.
  */
 export async function deactivateStaff(staffId: string): Promise<ActionResult> {
-  const auth = await authorize("admin", "owner");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const [existing] = await db
@@ -208,7 +208,7 @@ export async function deactivateStaff(staffId: string): Promise<ActionResult> {
  * Auth: admin, owner only.
  */
 export async function reactivateStaff(staffId: string): Promise<ActionResult> {
-  const auth = await authorize("admin", "owner");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const [existing] = await db

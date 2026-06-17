@@ -7,6 +7,7 @@ import {
   jsonb,
   serial,
   unique,
+  uniqueIndex,
   index,
   check,
   numeric,
@@ -221,7 +222,11 @@ export const payments = pgTable("payments", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: tenantId(),
   orderId: text("order_id").notNull().references(() => orders.id),
-  yocoPaymentId: text("yoco_payment_id").unique().notNull(),
+  // Checkout ID from Yoco's POST /checkouts response — stored at order creation.
+  // Different from yocoPaymentId which arrives later via the webhook.
+  yocoCheckoutId: text("yoco_checkout_id"),
+  // Payment ID from Yoco's webhook — null until the webhook fires.
+  yocoPaymentId: text("yoco_payment_id").unique(),
   amountZar: integer("amount_zar").notNull(),
   status: paymentStatus("status").default("pending").notNull(),
   webhookReceivedAt: timestamp("webhook_received_at", { withTimezone: true }),
@@ -240,15 +245,26 @@ export const refunds = pgTable("refunds", {
 
 // ─── Loyalty ──────────────────────────────────────────────────────────────────
 
-export const loyaltyTransactions = pgTable("loyalty_transactions", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: tenantId(),
-  customerId: text("customer_id").notNull().references(() => customers.id),
-  orderId: text("order_id").references(() => orders.id),
-  delta: integer("delta").notNull(),
-  kind: loyaltyKind("kind").notNull(),
-  at: now(),
-});
+export const loyaltyTransactions = pgTable(
+  "loyalty_transactions",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    customerId: text("customer_id").notNull().references(() => customers.id),
+    orderId: text("order_id").references(() => orders.id),
+    delta: integer("delta").notNull(),
+    kind: loyaltyKind("kind").notNull(),
+    at: now(),
+  },
+  (t) => [
+    // Idempotency guard (AT-60): prevent double-accrual if transitionOrder is
+    // retried on the same in_progress -> ready transition. Only one earn row is
+    // allowed per order_id -- redeem rows are unrestricted.
+    uniqueIndex("loyalty_txn_earn_order_unique")
+      .on(t.orderId)
+      .where(sql`kind = 'earn'`),
+  ]
+);
 
 // ─── Staff Entitlement ────────────────────────────────────────────────────────
 
@@ -371,17 +387,18 @@ export const monthlyReports = pgTable(
       .notNull(),
     /** JSONB: { signerId, signerName, at } */
     adminSig: jsonb("admin_sig"),
-    financeSig: jsonb("finance_sig"),
     generatedAt: timestamp("generated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
     closedAt: timestamp("closed_at", { withTimezone: true }),
   },
   () => [
-    // L11: a report can only be closed when BOTH signatures are present.
+    // L11 (post role-simplification): a report can only be closed once the
+    // admin has signed. The prior finance co-signature was dropped along with
+    // the finance role.
     check(
-      "monthly_report_closed_requires_both_sigs",
-      sql`status != 'closed' OR (admin_sig IS NOT NULL AND finance_sig IS NOT NULL)`
+      "monthly_report_closed_requires_admin_sig",
+      sql`status != 'closed' OR admin_sig IS NOT NULL`
     ),
   ]
 );

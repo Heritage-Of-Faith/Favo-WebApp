@@ -222,7 +222,7 @@ Owns: customer auth, new schema, server actions for loyalty/wallet/packs/sync, e
   - `src/server/reports/pdf-renderer.ts` — renders Nikao's N10 template via Playwright PDF (server-side)
   - `tests/server/exports.test.ts`
 - **Claude prompt:**
-  > Read `API.md`, `FAVO_PRD_v3.md` §07 §09, and Nikao's N10 from Phase 2. Implement the export route. CSV: stream rows via `text/csv; charset=utf-8` with a BOM so Excel opens it cleanly. Headers per kind — sales: order_id, placed_at SAST, customer, total_zar (formatted as ZAR), state. COGS: date, revenue, cogs, expenses, net. Inventory: lot_id, item, origin, qty_remaining, last_movement_at. Monthly P&L: as per `monthly_reports`. PDF: render Nikao's N10 React template inside a headless Chromium via Playwright (`@playwright/test`'s `chromium.launch().newPage().setContent(...).pdf()`), A4, FAVO branding. Auth: admin OR finance. Audit row per export request. Tests: (a) CSV row count matches a SQL count; (b) PDF size > 1 KB; (c) barista request 403; (d) date range validation.
+  > Read `API.md`, `FAVO_PRD_v3.md` §07 §09, and Nikao's N10 from Phase 2. Implement the export route. CSV: stream rows via `text/csv; charset=utf-8` with a BOM so Excel opens it cleanly. Headers per kind — sales: order_id, placed_at SAST, customer, total_zar (formatted as ZAR), state. COGS: date, revenue, cogs, expenses, net. Inventory: lot_id, item, origin, qty_remaining, last_movement_at. Monthly P&L: as per `monthly_reports`. PDF: render Nikao's N10 React template inside a headless Chromium via Playwright (`@playwright/test`'s `chromium.launch().newPage().setContent(...).pdf()`), A4, FAVO branding. Auth: admin only. Audit row per export request. Tests: (a) CSV row count matches a SQL count; (b) PDF size > 1 KB; (c) barista request 403; (d) date range validation.
 - **Acceptance criteria:**
   - Admin downloads CSV — opens cleanly in Excel/Numbers with ZAR formatting intact
   - Admin downloads PDF — A4, branded, signed-block visible for monthly P&L
@@ -534,9 +534,9 @@ POS gains the heavyweight Phase 3 infra: Service Worker + IndexedDB outbox + syn
   - `src/app/admin/reports/page.tsx`
   - `src/components/admin/ReportExportForm.tsx`
 - **Claude prompt:**
-  > Read `API.md`. Build an exports page at `/admin/reports`. Form: kind (sales / COGS / inventory / monthly P&L), date range, format (CSV / PDF). Submit triggers a download (set `target="_blank"` or use a hidden anchor — server returns appropriate Content-Disposition). Finance can also access this page. After a successful download show "Exported {kind} ({format})". Test: form submit hits the right URL.
+  > Read `API.md`. Build an exports page at `/admin/reports`. Form: kind (sales / COGS / inventory / monthly P&L), date range, format (CSV / PDF). Submit triggers a download (set `target="_blank"` or use a hidden anchor — server returns appropriate Content-Disposition). Admin only. After a successful download show "Exported {kind} ({format})". Test: form submit hits the right URL.
 - **Acceptance criteria:**
-  - Admin and finance both can access; barista 403
+  - Admin can access; barista 403
   - All four kinds × two formats download successfully against staging
 - **Dependency:** Phase 1 A2, G21
 

@@ -2,75 +2,18 @@
   "version": "7",
   "dialect": "postgresql",
   "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1780301821022,
-      "tag": "0000_low_dragon_lord",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1780479937000,
-      "tag": "0001_luxuriant_donald_blake",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1780488684853,
-      "tag": "0002_goofy_marrow",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1780489102381,
-      "tag": "0003_legal_monster_badoon",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1780496000000,
-      "tag": "0004_cogs_views",
-      "breakpoints": false
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1780490027181,
-      "tag": "0005_wise_the_leader",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1780490256357,
-      "tag": "0006_remarkable_stingray",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1780762331672,
-      "tag": "0007_smooth_adam_warlock",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1780908112912,
-      "tag": "0008_ancient_siren",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1781364257804,
-      "tag": "0009_flat_proudstar",
-      "breakpoints": true
-    }
+    {"idx":0,"version":"7","when":1780301821022,"tag":"0000_low_dragon_lord","breakpoints":true},
+    {"idx":1,"version":"7","when":1780479937000,"tag":"0001_luxuriant_donald_blake","breakpoints":true},
+    {"idx":2,"version":"7","when":1780488684853,"tag":"0002_goofy_marrow","breakpoints":true},
+    {"idx":3,"version":"7","when":1780489102381,"tag":"0003_legal_monster_badoon","breakpoints":true},
+    {"idx":4,"version":"7","when":1780496000000,"tag":"0004_cogs_views","breakpoints":false},
+    {"idx":5,"version":"7","when":1780490027181,"tag":"0005_wise_the_leader","breakpoints":true},
+    {"idx":6,"version":"7","when":1780490256357,"tag":"0006_remarkable_stingray","breakpoints":true},
+    {"idx":7,"version":"7","when":1780762331672,"tag":"0007_smooth_adam_warlock","breakpoints":true},
+    {"idx":8,"version":"7","when":1780908112912,"tag":"0008_ancient_siren","breakpoints":true},
+    {"idx":9,"version":"7","when":1781364257804,"tag":"0009_flat_proudstar","breakpoints":true},
+    {"idx":10,"version":"7","when":1781584525364,"tag":"0010_loyalty_earn_idempotency","breakpoints":true},
+    {"idx":11,"version":"7","when":1781631252992,"tag":"0011_tricky_scalphunter","breakpoints":true},
+    {"idx":12,"version":"7","when":1781634310830,"tag":"0012_lush_major_mapleleaf","breakpoints":true}
   ]
 }

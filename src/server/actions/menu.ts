@@ -107,7 +107,7 @@ export async function setMenuItemPrice(input: {
   menuItemId: string;
   newPriceZar: number;
 }): Promise<ActionResult<MenuItem>> {
-  const auth = await authorize("admin", "owner");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const parsed = setPriceSchema.safeParse(input);
@@ -217,7 +217,7 @@ export async function setMenuItemPrice(input: {
 export async function getMenuItemPriceHistory(
   menuItemId: string
 ): Promise<ActionResult<PriceHistoryRow[]>> {
-  const auth = await authorize("admin", "finance", "owner");
+  const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
   const rows = await db

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "loyalty_txn_earn_order_unique" ON "loyalty_transactions" USING btree ("order_id") WHERE kind = 'earn';

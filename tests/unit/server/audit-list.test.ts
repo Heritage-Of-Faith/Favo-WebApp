@@ -87,24 +87,8 @@ describe("listAudit: RBAC gate (canAccessAdmin)", () => {
     expect(canAccessAdmin("admin")).toBe(true);
   });
 
-  it("owner can access audit log", () => {
-    expect(canAccessAdmin("owner")).toBe(true);
-  });
-
-  it("finance can access audit log", () => {
-    expect(canAccessAdmin("finance")).toBe(true);
-  });
-
   it("barista cannot access audit log", () => {
     expect(canAccessAdmin("barista")).toBe(false);
-  });
-
-  it("manager cannot access audit log", () => {
-    expect(canAccessAdmin("manager")).toBe(false);
-  });
-
-  it("roaster cannot access audit log", () => {
-    expect(canAccessAdmin("roaster")).toBe(false);
   });
 });
 

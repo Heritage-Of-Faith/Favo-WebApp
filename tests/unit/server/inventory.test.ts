@@ -88,7 +88,7 @@ describe("setItemThreshold — validation", () => {
 describe("setItemThreshold — RBAC", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("returns FORBIDDEN for manager (not in ADMIN_ROLES)", async () => {
+  it("returns FORBIDDEN for barista (not in ADMIN_ROLES)", async () => {
     const { authorize } = await import("@/server/auth/guard");
     vi.mocked(authorize).mockResolvedValueOnce(FORBIDDEN_RESULT);
     const { setItemThreshold } = await import("@/server/actions/inventory");

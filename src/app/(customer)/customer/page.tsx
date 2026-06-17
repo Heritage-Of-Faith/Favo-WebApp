@@ -1,40 +1,30 @@
-// Customer PWA home — owner: Nikao (task N5)
-// Push notification opt-in + Phase 1 staging customer form.
-// Route: /customer  (inside (customer) route group — inherits PWA layout + meta)
-"use client";
+// Customer dashboard — owner: Nikao (task N13, AT-65)
+// Route: /customer  (where login lands). Replaces the Phase 1 N5 staging stub.
+// Server component — renders identically with JavaScript disabled (acceptance).
+// Read-only surface (L05/L16): no buttons here mutate money/points.
+// Docs: API.md (getCustomerSummary, listCustomerOrders) · DESIGN.md · BUSINESS_RULES.md L05/L06/L16
 
-import { useState } from "react";
-import Image from "next/image";
+import type { CSSProperties } from "react";
+import { redirect } from "next/navigation";
+import { getCustomerSummary, listCustomerOrders } from "@/server/actions/customer";
+import LoyaltyCard from "@/components/customer/LoyaltyCard";
+import WalletCard from "@/components/customer/WalletCard";
+import PackList from "@/components/customer/PackList";
+import OrderHistoryList from "@/components/customer/OrderHistoryList";
+import OperatingHours from "@/components/shared/OperatingHours";
 import PushOptIn from "@/components/customer/PushOptIn";
-import StagingCustomerResume from "@/components/customer/StagingCustomerResume";
 
-const isStaging = process.env.NEXT_PUBLIC_STAGING === "true";
+// Always render fresh data (hours/loyalty change at the counter): no static cache.
+export const dynamic = "force-dynamic";
 
-const S = {
+const S: Record<string, CSSProperties> = {
   page: {
-    position: "relative" as const,
-    overflow: "hidden",
     backgroundColor: "var(--color-coffee-bean)",
     minHeight: "100dvh",
     display: "flex",
-    flexDirection: "column" as const,
+    flexDirection: "column",
   },
-  // Two-cups café watermark, bottom-right, bleeding off. filter:invert lifts
-  // the black line art to a warm light tone on the dark Coffee Bean page.
-  watermark: {
-    position: "absolute" as const,
-    right: "-4%",
-    bottom: "-6%",
-    width: "clamp(320px, 48vw, 620px)",
-    aspectRatio: "1393 / 1000",
-    opacity: 0.07,
-    filter: "invert(1)",
-    pointerEvents: "none" as const,
-    zIndex: 0,
-  } as React.CSSProperties,
   nav: {
-    position: "relative" as const,
-    zIndex: 1,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
@@ -46,209 +36,98 @@ const S = {
     fontWeight: 900,
     fontSize: 22,
     letterSpacing: "0.22em",
-    textTransform: "uppercase" as const,
+    textTransform: "uppercase",
     color: "var(--color-porcelain)",
     textDecoration: "none",
     lineHeight: 1,
-  } as React.CSSProperties,
+  },
   back: {
     fontFamily: "'DM Sans', sans-serif",
     fontWeight: 700,
     fontSize: 11,
     letterSpacing: "0.12em",
-    textTransform: "uppercase" as const,
+    textTransform: "uppercase",
     color: "var(--color-cool-steel)",
     textDecoration: "none",
-  } as React.CSSProperties,
+  },
   main: {
     flex: 1,
     width: "100%",
     maxWidth: 620,
     margin: "0 auto",
-    padding: "clamp(40px, 6vw, 72px) clamp(20px, 5vw, 40px)",
+    padding: "clamp(28px, 5vw, 48px) clamp(20px, 5vw, 40px)",
     display: "flex",
-    flexDirection: "column" as const,
-    gap: 40,
-    position: "relative" as const,
-    zIndex: 1,
+    flexDirection: "column",
+    gap: 28,
   },
   greeting: {
     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
     fontWeight: 900,
-    fontSize: "clamp(2rem, 4vw, 3.5rem)",
+    fontSize: "clamp(1.75rem, 4vw, 2.75rem)",
     lineHeight: 0.95,
     letterSpacing: "0.06em",
-    textTransform: "uppercase" as const,
+    textTransform: "uppercase",
     color: "var(--color-porcelain)",
     margin: 0,
   },
-  sub: {
+  twoCol: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 16,
+  },
+  hoursLabel: {
     fontFamily: "'DM Sans', sans-serif",
-    fontWeight: 400,
-    fontSize: 15,
-    lineHeight: 1.7,
-    color: "var(--color-porcelain)",
-    opacity: 0.7,
-    margin: 0,
+    fontWeight: 300,
+    fontSize: 11,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase",
+    color: "var(--color-cool-steel)",
+    margin: "0 0 12px",
   },
-} as const;
+};
 
-export default function CustomerPage() {
-  const [customerId, setCustomerId] = useState<string | null>(null);
+export default async function CustomerDashboard() {
+  const summaryRes = await getCustomerSummary();
+
+  // Not signed in → send to login. (Session is the source of truth, L05.)
+  if (!summaryRes.ok) {
+    if (summaryRes.code === "UNAUTHORIZED") redirect("/login");
+    // Any other failure: fall back to a minimal shell rather than crashing.
+  }
+
+  const summary = summaryRes.ok ? summaryRes.data : null;
+  const ordersRes = await listCustomerOrders(10);
+  const orders = ordersRes.ok ? ordersRes.data : [];
+
+  const firstName = summary?.name?.trim().split(/\s+/)[0] ?? "there";
 
   return (
     <div style={S.page}>
-      {/* Nav */}
       <nav style={S.nav}>
         <a href="/" style={S.wordmark}>FAVO</a>
-        <a href="/" style={S.back}>← Back</a>
+        <a href="/" style={S.back}>← Home</a>
       </nav>
 
-      {/* Two-cups café watermark */}
-      <div style={S.watermark} aria-hidden="true">
-        <Image
-          src="/illustrations/takeaway-cup.png"
-          alt=""
-          fill
-          sizes="620px"
-          style={{ objectFit: "contain" }}
-        />
-      </div>
-
-      {/* Main */}
       <main style={S.main}>
-        {/* Banner photo */}
-        <div
-          style={{
-            position: "relative",
-            width: "100%",
-            aspectRatio: "4 / 5",
-            borderRadius: 2,
-            overflow: "hidden",
-            backgroundColor: "rgba(247,246,242,0.05)",
-          }}
-        >
-          <Image
-            src="/images/loyalty-tamp.jpg"
-            alt="A FAVO barista tamping fresh espresso grounds"
-            fill
-            sizes="(max-width: 640px) 100vw, 620px"
-            style={{ objectFit: "cover", objectPosition: "center 30%" }}
-          />
+        <h1 style={S.greeting}>Hi {firstName}</h1>
+
+        {/* Loyalty is the hero card (largest number on the page). */}
+        <LoyaltyCard points={summary?.loyaltyPoints ?? 0} />
+
+        <div style={S.twoCol}>
+          <WalletCard balanceZar={summary?.walletBalanceZar ?? 0} />
+          <PackList activePackCount={summary?.activePackCount ?? 0} />
         </div>
 
-        {/* Greeting */}
-        <div>
-          <h1 style={S.greeting}>
-            {customerId ? "You're set." : "Your rewards."}
-          </h1>
-          <p style={S.sub}>
-            {customerId
-              ? "Notifications are being set up for this device."
-              : "Earn points with every order. Get notified when it's ready."}
-          </p>
-        </div>
+        <OrderHistoryList orders={orders} />
 
-        {/* Staging: select customer before showing push opt-in */}
-        {isStaging && !customerId && (
-          <StagingCustomerResume onCustomerSelected={setCustomerId} />
-        )}
+        {/* Push opt-in — only shows if permission not yet granted; hides after first dismissal. */}
+        {summary && <PushOptIn customerId={summary.customerId} />}
 
-        {/* Push opt-in — shown once we have a customerId */}
-        {customerId && (
-          <PushOptIn customerId={customerId} />
-        )}
-
-        {/* Production: loyalty portal not yet open — preview what's coming */}
-        {!isStaging && !customerId && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-            <div style={{
-              backgroundColor: "rgba(247,246,242,0.05)",
-              border: "1px solid rgba(247,246,242,0.1)",
-              padding: 24,
-              borderRadius: 2,
-            }}>
-              <p style={{
-                fontFamily: "'DM Sans', sans-serif",
-                fontWeight: 300,
-                fontSize: 11,
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                color: "var(--color-cool-steel)",
-                marginBottom: 8,
-              }}>
-                Opening soon
-              </p>
-              <p style={{
-                fontFamily: "'DM Sans', sans-serif",
-                fontWeight: 400,
-                fontSize: 15,
-                lineHeight: 1.7,
-                color: "var(--color-porcelain)",
-                opacity: 0.7,
-              }}>
-                Your loyalty dashboard is on its way. Here&rsquo;s what you&rsquo;ll get
-                once it opens.
-              </p>
-            </div>
-
-            {/* Feature preview */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              {[
-                { t: "Points on every cup", d: "Earn as you sip — every order counts." },
-                { t: "Rewards that add up", d: "100 points = R20 off your next coffee." },
-                { t: "Ready alerts", d: "We'll notify you the moment your order is up." },
-              ].map((f) => (
-                <div
-                  key={f.t}
-                  style={{
-                    display: "flex",
-                    gap: 16,
-                    alignItems: "flex-start",
-                    padding: "18px 0",
-                    borderBottom: "1px solid rgba(247,246,242,0.1)",
-                  }}
-                >
-                  <span
-                    aria-hidden
-                    style={{
-                      flexShrink: 0,
-                      width: 8,
-                      height: 8,
-                      marginTop: 7,
-                      borderRadius: 999,
-                      backgroundColor: "var(--color-crimson-carrot)",
-                    }}
-                  />
-                  <div>
-                    <p style={{
-                      fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-                      fontWeight: 700,
-                      fontSize: 18,
-                      letterSpacing: "0.04em",
-                      textTransform: "uppercase",
-                      color: "var(--color-porcelain)",
-                      margin: 0,
-                    }}>
-                      {f.t}
-                    </p>
-                    <p style={{
-                      fontFamily: "'DM Sans', sans-serif",
-                      fontWeight: 400,
-                      fontSize: 14,
-                      lineHeight: 1.6,
-                      color: "var(--color-porcelain)",
-                      opacity: 0.65,
-                      margin: "2px 0 0",
-                    }}>
-                      {f.d}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <section aria-label="Opening hours">
+          <p style={S.hoursLabel}>Opening hours</p>
+          <OperatingHours className="" />
+        </section>
       </main>
     </div>
   );

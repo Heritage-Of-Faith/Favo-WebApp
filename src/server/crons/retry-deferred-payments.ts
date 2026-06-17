@@ -32,7 +32,11 @@ export async function retryDeferredPayments(): Promise<DeferredRetryResult> {
   for (const payment of deferred) {
     let yocoStatus: string;
     try {
-      const result = await getCheckoutStatus(payment.yocoPaymentId);
+      // yocoCheckoutId is set at order creation; yocoPaymentId arrives via the
+      // webhook and may still be null on deferred rows. Prefer checkoutId.
+      const checkoutRef = payment.yocoCheckoutId ?? payment.yocoPaymentId;
+      if (!checkoutRef) { skipped++; continue; }
+      const result = await getCheckoutStatus(checkoutRef);
       yocoStatus = result.status;
     } catch {
       // Transient network error — leave for next cron run

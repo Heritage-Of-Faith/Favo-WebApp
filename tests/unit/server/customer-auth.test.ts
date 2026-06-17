@@ -127,6 +127,43 @@ describe("registerCustomer — email normalisation", () => {
   });
 });
 
+// ─── registerCustomer — phone (AT-64) ────────────────────────────────────────
+
+describe("registerCustomer — phone", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("rejects a malformed phone number when one is supplied", async () => {
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    } as never);
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({
+      name: "Louis", email: "louis@favo.co.za", password: "password1", phone: "123",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION");
+  });
+
+  it("persists a valid phone number on the new customer row", async () => {
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    } as never);
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({
+      name: "Louis", email: "louis@favo.co.za", password: "password1", phone: "082 123 4567",
+    });
+    expect(result.ok).toBe(true);
+    const insertResult = vi.mocked(db.insert).mock.results.at(-1)?.value as {
+      values: ReturnType<typeof vi.fn>;
+    };
+    expect(insertResult.values).toHaveBeenCalledWith(
+      expect.objectContaining({ phone: "082 123 4567" })
+    );
+  });
+});
+
 // ─── loginCustomer — validation ───────────────────────────────────────────────
 
 describe("loginCustomer — validation", () => {

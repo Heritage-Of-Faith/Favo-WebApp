@@ -71,6 +71,8 @@ describe("rowsToCsv — RFC 4180 output", () => {
 
 // ─── buildReportRows — DB integration (mocked) ────────────────────────────────
 
+import { PgDialect } from "drizzle-orm/pg-core";
+
 vi.mock("@db/index", () => ({
   db: {
     execute: vi.fn(),
@@ -133,5 +135,30 @@ describe("buildReportRows — date range enumeration", () => {
     expect(rows[0].revenueZar).toBe(0);
     expect(rows[0].cogsZar).toBe(0);
     expect(rows[0].grossMarginPct).toBe(0);
+  });
+
+  // Regression guard: date bounds must be bound as ISO strings with an explicit
+  // ::timestamptz cast — never raw JS Date params. Drizzle's `db.execute(sql`…`)`
+  // with a bound Date fails on the Supabase transaction pooler (prepare:false),
+  // which 500'd the Sales/COGS exports and the Monthly draft in production.
+  it("binds date bounds as ::timestamptz string params, not raw Date objects", async () => {
+    const { db } = await import("@db/index");
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce(emptyResult) // revenue
+      .mockResolvedValueOnce(emptyResult); // cogs
+
+    const { buildReportRows } = await import("@/server/reports/export-csv");
+    await buildReportRows("2026-06-08", "2026-06-08");
+
+    const dialect = new PgDialect();
+    for (const call of vi.mocked(db.execute).mock.calls) {
+      const { sql: text, params } = dialect.sqlToQuery(call[0] as Parameters<typeof dialect.sqlToQuery>[0]);
+      expect(text).toContain("::timestamptz");
+      // No bound parameter may be a JS Date — they must be ISO strings.
+      for (const p of params) {
+        expect(p).not.toBeInstanceOf(Date);
+        expect(typeof p).toBe("string");
+      }
+    }
   });
 });

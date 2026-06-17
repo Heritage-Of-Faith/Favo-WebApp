@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs";
 import { db } from "../index";
 import { staff } from "../schema";
 
-type StaffRole = "barista" | "roaster" | "manager" | "admin" | "finance" | "owner";
+type StaffRole = "barista" | "admin";
 
 export type SeedStaff = {
   id: string;
@@ -22,7 +22,7 @@ export const STAFF_SEED: SeedStaff[] = [
   { id: "staff_barista_sam", name: "Sam Barista", role: "barista", pin: "1234" },
   { id: "staff_barista_thandi", name: "Thandi Barista", role: "barista", pin: "2345" },
   { id: "staff_manager_mia", name: "Mia Manager", role: "admin", pin: "4321" },
-  { id: "staff_owner_olivia", name: "Olivia Owner", role: "owner", pin: "1111" },
+  { id: "staff_owner_olivia", name: "Olivia Owner", role: "admin", pin: "1111" },
 ];
 
 export async function seedStaff() {

@@ -13,8 +13,8 @@ import { writeAudit } from "@/server/audit";
 import type { ActionResult, Expense, ExpenseCategory } from "@/lib/types";
 import type { DB } from "@/lib/db";
 
-const ADMIN_ROLES = ["manager", "admin", "finance", "owner"] as const;
-const WRITER_ROLES = ["admin", "owner"] as const;
+const ADMIN_ROLES = ["admin"] as const;
+const WRITER_ROLES = ["admin"] as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

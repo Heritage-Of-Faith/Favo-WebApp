@@ -19,14 +19,22 @@ import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, X, Plus, Minus, Trash2, ChevronDown, ChevronUp,
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
-  CheckCircle, AlertCircle, Tag, Star, ShieldCheck,
+  CheckCircle, AlertCircle, Tag, Star, ShieldCheck, Wallet, Package,
 } from "lucide-react";
+import WalletTopUpDialog from "@/components/pos/WalletTopUpDialog";
+import PackPurchaseDialog from "@/components/pos/PackPurchaseDialog";
 import { toast } from "sonner";
 import ActiveBeanCard from "@/components/pos/ActiveBeanCard";
 import StaffPushOptIn from "@/components/pos/StaffPushOptIn";
 import StockBadge from "@/components/pos/StockBadge";
 import StockBanner from "@/components/pos/StockBanner";
 import WasteDialog from "@/components/pos/WasteDialog";
+import ConnectivityPill from "@/components/pos/ConnectivityPill";
+import SyncDrawer from "@/components/pos/SyncDrawer";
+import CustomerCard from "@/components/pos/CustomerCard";
+import LoyaltyRedeemDialog from "@/components/pos/LoyaltyRedeemDialog";
+import OfflineBanner from "@/components/pos/OfflineBanner";
+import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
@@ -89,6 +97,13 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const [showPayment, setShowPayment] = useState(false);
   const [_yocoSecret, setYocoSecret] = useState("");
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
+  // M18 — loyalty redemption on the payment step (order already in `ordered`).
+  const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
+  const [redeemOpen, setRedeemOpen] = useState(false);
+  const [redeemed, setRedeemed] = useState(false);
+  // M19 — offline deferred-payment mode on the payment panel.
+  const [offlineDeferred, setOfflineDeferred] = useState(false);
+  const [queueing, setQueueing] = useState(false);
   const [showWasteModal, setShowWasteModal] = useState(false);
   const [activeBeanLot, setActiveBeanLot] = useState<InventoryLot | null>(null);
 
@@ -103,7 +118,8 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const { menuItemStock, outOfStockItems } = useStockStatus();
 
   // ── Offline outbox — IndexedDB queue + auto-sync on reconnect ──────────────
-  const { pendingCount, syncing, queueOrder } = useOfflineOutbox(staffId);
+  const { pendingOrders, pendingCount, syncing, queueOrder, sync, syncOne, refresh } = useOfflineOutbox(staffId);
+  const [syncDrawerOpen, setSyncDrawerOpen] = useState(false);
 
   // ── Right panel — queue with full orders ───────────────────────────────────
   const { activeOrders, status } = useOrderStream();
@@ -117,6 +133,8 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
   const [wasteOpen, setWasteOpen] = useState(false);
   const [wasteCategory, setWasteCategory] = useState<LogWasteInput["category"]>("spilled");
+  const [walletTopUpOpen, setWalletTopUpOpen] = useState(false);
+  const [packOpen, setPackOpen] = useState(false);
 
   const sortedOrders = [...activeOrders].sort((a, b) => {
     const sp = STATE_PRIORITY[a.state] - STATE_PRIORITY[b.state];
@@ -198,30 +216,12 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
     setSubmitting(true);
     setOrderError(null);
 
-    // Offline path — write to IndexedDB; will sync automatically on reconnect.
+    // Offline path (M19) — show the deferred-payment notice; the barista takes
+    // payment in person and confirms, which writes to the outbox.
     if (!navigator.onLine) {
-      try {
-        await queueOrder({
-          clientUuid: crypto.randomUUID(),
-          staffId,
-          customerId: customer?.id,
-          items: items.map(i => ({
-            menuItemId: i.menuItemId,
-            quantity: i.quantity,
-            modifications: i.modifications.map(m => m.id),
-          })),
-          paymentMode: "yoco_deferred",
-          clientTotalZar: totalZar,
-          clientTimestamp: new Date().toISOString(),
-        });
-        reset();
-        setOrderSuccess("Order saved — will sync when back online.");
-        setTimeout(() => setOrderSuccess(null), 5000);
-      } catch {
-        setOrderError("Failed to save order offline. Please retry.");
-      } finally {
-        setSubmitting(false);
-      }
+      setSubmitting(false);
+      setOfflineDeferred(true);
+      setShowPayment(true);
       return;
     }
     const r = await createOrder({
@@ -233,6 +233,8 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
       // Auto-expand the new order in the queue so barista sees it immediately
       setExpandedId(r.data.orderId);
       setYocoSecret(r.data.yocoClientSecret);
+      setPaymentOrderId(r.data.orderId);
+      setRedeemed(false);
       if (r.data.yocoClientSecret) {
         setShowPayment(true);
       } else {
@@ -243,6 +245,36 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
       }
     } else {
       setOrderError(r.message);
+    }
+  }
+
+  // M19 — confirm the offline order: write to the outbox with a deferred charge.
+  async function confirmDeferredQueue() {
+    if (queueing) return;
+    setQueueing(true);
+    try {
+      await queueOrder({
+        clientUuid: crypto.randomUUID(),
+        staffId,
+        customerId: customer?.id,
+        items: items.map(i => ({
+          menuItemId: i.menuItemId,
+          quantity: i.quantity,
+          modifications: i.modifications.map(m => m.id),
+        })),
+        paymentMode: "yoco_deferred",
+        clientTotalZar: totalZar,
+        clientTimestamp: new Date().toISOString(),
+      });
+      reset();
+      setShowPayment(false);
+      setOfflineDeferred(false);
+      setOrderSuccess("Order queued — charge reconciles when back online.");
+      setTimeout(() => setOrderSuccess(null), 5000);
+    } catch {
+      setOrderError("Failed to save order offline. Please retry.");
+    } finally {
+      setQueueing(false);
     }
   }
 
@@ -321,6 +353,9 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   return (
     <main className="flex flex-col h-screen overflow-hidden">
 
+      {/* ════════ OFFLINE BANNER (M19) ════════ */}
+      <OfflineBanner pendingCount={pendingCount} />
+
       {/* ════════ OUT-OF-STOCK BANNER (M9) ════════ */}
       <StockBanner outOfStockItems={outOfStockItems} />
 
@@ -368,20 +403,28 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
               <Star size={10} strokeWidth={2} />{customer.name}
             </span>
           )}
+          {customer && (
+            <button type="button" onClick={() => setWalletTopUpOpen(true)}
+              className="shrink-0 flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-porcelain/10 hover:text-porcelain min-h-[32px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+              aria-label="Top up wallet">
+              <Wallet size={12} strokeWidth={2.25} /> Top up
+            </button>
+          )}
+          {customer && (
+            <button type="button" onClick={() => setPackOpen(true)}
+              className="shrink-0 flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-porcelain/10 hover:text-porcelain min-h-[32px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+              aria-label="Buy coffee pack">
+              <Package size={12} strokeWidth={2.25} /> Pack
+            </button>
+          )}
           <div className="shrink-0 hidden lg:block"><ActiveBeanCard /></div>
           <span className="favo-small text-cool-steel shrink-0 hidden lg:block">{staffName}</span>
-          {(pendingCount > 0 || syncing) && (
-            <span
-              role="status"
-              aria-live="polite"
-              className="shrink-0 flex items-center gap-1 rounded-[4px] bg-[var(--color-warning)]/15 px-2 py-1 favo-caption text-[var(--color-warning)]"
-            >
-              {syncing
-                ? <><Loader2 size={10} strokeWidth={2.5} className="animate-spin" /> Syncing…</>
-                : <><WifiOff size={10} strokeWidth={2.5} /> {pendingCount} offline</>
-              }
-            </span>
-          )}
+          {/* M15 — connectivity pill; tap opens the sync drawer */}
+          <ConnectivityPill
+            pendingCount={pendingCount}
+            syncing={syncing}
+            onClick={() => { refresh(); setSyncDrawerOpen(true); }}
+          />
         </div>
 
         {!showPayment ? (
@@ -508,6 +551,12 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
           {/* Order summary */}
             {items.length > 0 && (
               <div className="border-t border-cool-steel/20 px-4 py-3 shrink-0 bg-coffee-bean/5">
+                {/* M18 — loyalty standing for the attached customer */}
+                {customer && (
+                  <div className="mb-2">
+                    <CustomerCard customer={customer} onClear={() => setCustomer(null)} />
+                  </div>
+                )}
                 <p className="favo-label text-cool-steel mb-2">Order</p>
                 <div className="space-y-1.5 max-h-[160px] overflow-y-auto mb-3">
                   {items.map(item => (
@@ -577,17 +626,36 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
               </div>
             )}
           </>
+        ) : offlineDeferred ? (
+          /* M19 — offline deferred payment: take payment in person, queue order */
+          <DeferredPaymentNotice
+            totalZar={totalZar}
+            queueing={queueing}
+            onConfirm={confirmDeferredQueue}
+            onCancel={() => { setShowPayment(false); setOfflineDeferred(false); }}
+          />
         ) : (
           /* Payment confirmation */
           <div className="flex flex-1 flex-col items-center justify-center gap-6 px-8">
             <ShieldCheck size={40} strokeWidth={1.5} className="text-cool-steel opacity-60" />
             <div className="text-center">
               <p className="favo-label text-cool-steel mb-1">Amount due</p>
-              <p className="favo-h2 text-coffee-bean">{formatZar(totalZar)}</p>
-              <p className="favo-small text-cool-steel mt-1">Card handled securely by Yoco</p>
+              <p className="favo-h2 text-coffee-bean">{formatZar(redeemed ? 0 : totalZar)}</p>
+              <p className="favo-small text-cool-steel mt-1">
+                {redeemed ? "Paid with 100 loyalty points" : "Card handled securely by Yoco"}
+              </p>
             </div>
             <div className="flex flex-col gap-3 w-full max-w-[280px]">
-              <button type="button" onClick={() => { reset(); setShowPayment(false); setYocoSecret(""); }}
+              {/* M18 — full loyalty redemption (L06): 100 pts → R20 off, zeroes the order.
+                  Offered only at ≥100 pts and when the order is worth ≥ R20. */}
+              {customer && customer.loyaltyPoints >= 100 && totalZar >= 2000 && !redeemed && paymentOrderId && (
+                <button type="button" onClick={() => setRedeemOpen(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-crimson-carrot/50 py-3 min-h-[48px] favo-small text-crimson-carrot hover:bg-crimson-carrot/8 transition-colors">
+                  <Star size={14} strokeWidth={2.25} />
+                  Redeem 100 pts (R20 off)
+                </button>
+              )}
+              <button type="button" onClick={() => { reset(); setShowPayment(false); setYocoSecret(""); setPaymentOrderId(null); setRedeemed(false); }}
                 className="flex w-full items-center justify-center gap-2 rounded-[4px] py-4 min-h-[52px]"
                 style={{ background: "var(--color-success)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
                 <CheckCircle size={16} strokeWidth={2} className="mr-1" />
@@ -887,6 +955,50 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
 
       {/* ════════ STAFF PUSH OPT-IN (M10) ════════ */}
       <StaffPushOptIn />
+
+      {/* ════════ WALLET TOP-UP (M16) ════════ */}
+      {walletTopUpOpen && customer && (
+        <WalletTopUpDialog
+          customerId={customer.id}
+          customerName={customer.name}
+          onClose={() => setWalletTopUpOpen(false)}
+        />
+      )}
+
+      {/* ════════ COFFEE PACK PURCHASE (M17) ════════ */}
+      {packOpen && customer && (
+        <PackPurchaseDialog
+          customerId={customer.id}
+          customerName={customer.name}
+          coffeeItems={menu.filter((m) => m.category === "coffee")}
+          onClose={() => setPackOpen(false)}
+        />
+      )}
+
+      {/* ════════ LOYALTY REDEMPTION (M18) ════════ */}
+      {redeemOpen && customer && paymentOrderId && (
+        <LoyaltyRedeemDialog
+          customerId={customer.id}
+          customerName={customer.name}
+          orderId={paymentOrderId}
+          loyaltyPoints={customer.loyaltyPoints}
+          onRedeemed={() => {
+            setRedeemed(true);
+            setCustomer({ ...customer, loyaltyPoints: customer.loyaltyPoints - 100 });
+          }}
+          onClose={() => setRedeemOpen(false)}
+        />
+      )}
+
+      {/* ════════ OFFLINE SYNC DRAWER (M15) ════════ */}
+      <SyncDrawer
+        open={syncDrawerOpen}
+        orders={pendingOrders}
+        syncing={syncing}
+        onSyncAll={sync}
+        onRetry={syncOne}
+        onClose={() => setSyncDrawerOpen(false)}
+      />
     </main>
   );
 }
