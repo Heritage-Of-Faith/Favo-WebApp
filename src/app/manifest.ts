@@ -8,7 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "FAVO Café",
     short_name: "FAVO",
     description: "Order coffee. Earn rewards. Every visit counts.",
-    start_url: "/",
+    start_url: "/customer",
     display: "standalone",
     background_color: COFFEE_BEAN,
     theme_color: COFFEE_BEAN,
