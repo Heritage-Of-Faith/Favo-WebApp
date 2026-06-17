@@ -9,8 +9,8 @@ export default function MenuPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-text-strong">Menu</h1>
-        <p className="mt-1 text-sm text-text-muted">
+        <h1 className="admin-page-title">Menu</h1>
+        <p className="mt-1 favo-small text-text-muted">
           Edit item prices. Each change is recorded in the price history.
         </p>
       </header>

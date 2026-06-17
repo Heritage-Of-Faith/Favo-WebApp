@@ -13,10 +13,8 @@ export default async function HoursPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-text-strong">
-          Operating hours
-        </h1>
-        <p className="mt-1 text-sm text-text-muted">
+        <h1 className="admin-page-title">Operating Hours</h1>
+        <p className="mt-1 favo-small text-text-muted">
           Set the opening and closing times shown to customers. Hours are
           display-only and never block orders.
         </p>

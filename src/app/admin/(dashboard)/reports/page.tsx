@@ -8,10 +8,8 @@ export default function ReportsPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-text-strong">
-          Report exports
-        </h1>
-        <p className="mt-1 text-sm text-text-muted">
+        <h1 className="admin-page-title">Report Exports</h1>
+        <p className="mt-1 favo-small text-text-muted">
           Download sales, COGS, inventory, or monthly P&amp;L reports as CSV or
           PDF.
         </p>

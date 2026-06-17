@@ -30,7 +30,7 @@ export interface AreaChartProps {
   className?: string;
 }
 
-const PAD_LEFT = 8;
+const PAD_LEFT = 72;
 const PAD_RIGHT = 8;
 const PAD_TOP = 12;
 const PAD_BOTTOM = 26;
@@ -145,11 +145,12 @@ export default function AreaChart({
                 opacity={tv === 0 ? 0.9 : 0.4}
               />
               <text
-                x={PAD_LEFT}
-                y={y - 3}
+                x={PAD_LEFT - 6}
+                y={y + 3}
                 fontSize={10}
                 fill={chartColor.label}
                 fontFamily="var(--font-sans)"
+                textAnchor="end"
               >
                 {formatValue(Math.round(tv))}
               </text>
