@@ -1,57 +1,80 @@
 "use client";
 
 /**
- * DeferredPaymentNotice — task M19.
+ * DeferredPaymentNotice — offline payment fallback (rule R2: Yoco outage).
  *
- * Shown in place of the Yoco hosted-fields screen when the barista places an
- * order while offline. Yoco can't be reached, so payment is taken in person and
- * the order is queued with paymentMode='yoco_deferred'. The deferred-retry cron
- * (G22) reconciles the charge once WAN returns — flipping it to `success` or to
- * `sync_conflicts` for admin review.
+ * Shown on the payment screen instead of the Yoco card form when the device is
+ * offline. The barista takes payment on the standalone Yoco card machine, then
+ * taps Confirm; the order stays in `ordered` state and advances normally. If the
+ * order was never created online (offline at place-order), the parent's confirm
+ * handler queues it to the IndexedDB outbox instead.
  *
- * The confirm CTA calls back to the parent, which writes to the IndexedDB
- * outbox (see POSWorkspace.handlePlaceOrder offline path).
+ * Self-contained connectivity detection (online/offline event listeners) per
+ * spec — renders nothing while online. The parent also gates on connectivity,
+ * so this is a defensive second guard that keeps the notice honest if the
+ * connection flaps while it is mounted.
  */
 
-import { CloudOff, Loader2, HandCoins } from "lucide-react";
+import { useEffect, useState } from "react";
+import { WifiOff } from "lucide-react";
 import { formatZar } from "@/lib/format";
 
 export type Props = {
   totalZar: number;
-  queueing: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
+  onConfirmDeferred: () => void;
+  onBack: () => void;
 };
 
-export default function DeferredPaymentNotice({ totalZar, queueing, onConfirm, onCancel }: Props) {
+export default function DeferredPaymentNotice({ totalZar, onConfirmDeferred, onBack }: Props) {
+  const [online, setOnline] = useState(false);
+
+  useEffect(() => {
+    setOnline(navigator.onLine);
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  // Back online — let the parent re-mount the Yoco form.
+  if (online) return null;
+
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-8">
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-8 text-center">
       <div
         className="flex h-16 w-16 items-center justify-center rounded-full"
         style={{ background: "color-mix(in srgb, var(--color-warning) 16%, transparent)" }}
       >
-        <CloudOff size={30} strokeWidth={1.75} style={{ color: "var(--color-warning)" }} aria-hidden />
+        <WifiOff size={30} strokeWidth={1.75} style={{ color: "var(--color-warning)" }} aria-hidden />
       </div>
 
-      <div className="text-center">
-        <p className="favo-label text-cool-steel mb-1">Amount due</p>
-        <p className="favo-h2 text-coffee-bean">{formatZar(totalZar)}</p>
-        <p className="favo-small mt-2 max-w-[280px]" style={{ color: "var(--color-warning)" }}>
-          You&apos;re offline — take payment in person (cash or card machine).
-          The order queues and the card charge reconciles automatically on reconnect.
+      <div className="flex flex-col gap-1">
+        <h2 className="favo-h3 text-coffee-bean">No connection</h2>
+        <p className="favo-small text-cool-steel max-w-[300px]">
+          Take payment on the Yoco card machine, then tap Confirm.
         </p>
+        <p className="favo-label text-cool-steel mt-2">Amount due</p>
+        <p className="favo-subhead text-coffee-bean">{formatZar(totalZar)}</p>
       </div>
 
-      <div className="flex flex-col gap-3 w-full max-w-[280px]">
-        <button type="button" onClick={onConfirm} disabled={queueing}
-          className="flex w-full items-center justify-center gap-2 rounded-[var(--radius-btn)] py-4 min-h-[52px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
-          style={{ background: "var(--color-warning)", color: "var(--color-coffee-bean)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
-          {queueing
-            ? <><Loader2 size={16} strokeWidth={2.25} className="animate-spin" /> Queueing…</>
-            : <><HandCoins size={16} strokeWidth={2.25} /> Take payment &amp; queue order</>}
+      <div className="flex flex-col gap-3 w-full max-w-[300px]">
+        <button
+          type="button"
+          onClick={onConfirmDeferred}
+          className="flex w-full items-center justify-center gap-2 rounded-[var(--radius-btn)] py-4 min-h-[52px] transition-all hover:brightness-110 active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-porcelain"
+          style={{ background: "var(--color-warning)", color: "var(--color-coffee-bean)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}
+        >
+          Confirm — paid in person
         </button>
-        <button type="button" onClick={onCancel} disabled={queueing}
-          className="favo-small text-cool-steel underline underline-offset-2 hover:text-coffee-bean transition-colors disabled:opacity-40">
+        <button
+          type="button"
+          onClick={onBack}
+          className="favo-small text-cool-steel underline underline-offset-2 hover:text-coffee-bean transition-colors min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+        >
           ← Back to order
         </button>
       </div>

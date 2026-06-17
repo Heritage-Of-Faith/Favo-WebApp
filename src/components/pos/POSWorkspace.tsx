@@ -104,9 +104,10 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [redeemed, setRedeemed] = useState(false);
-  // M19 — offline deferred-payment mode on the payment panel.
-  const [offlineDeferred, setOfflineDeferred] = useState(false);
-  const [queueing, setQueueing] = useState(false);
+  // Connectivity — drives the offline banner gate and the payment-screen swap
+  // between the Yoco card form (online) and the deferred-payment notice (offline).
+  const [online, setOnline] = useState(true);
+  const deferredGuard = useRef(false);
   const [showWasteModal, setShowWasteModal] = useState(false);
   const [activeBeanLot, setActiveBeanLot] = useState<InventoryLot | null>(null);
 
@@ -158,6 +159,19 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
     getActiveBeanLot().then(r => {
       if (r.ok) setActiveBeanLot(r.data.lot);
     }).catch(() => { /* non-fatal */ });
+  }, []);
+
+  // Track connectivity for the offline banner + payment-screen swap.
+  useEffect(() => {
+    setOnline(navigator.onLine);
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
   }, []);
 
   // Customer search debounce
@@ -219,11 +233,14 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
     setSubmitting(true);
     setOrderError(null);
 
-    // Offline path (M19) — show the deferred-payment notice; the barista takes
-    // payment in person and confirms, which writes to the outbox.
+    // Offline at place-order — createOrder can't run. Go straight to the payment
+    // screen, which (being offline) shows the deferred-payment notice. There's no
+    // order in the DB yet, so confirming queues it to the outbox.
     if (!navigator.onLine) {
       setSubmitting(false);
-      setOfflineDeferred(true);
+      setPaymentOrderId(null);
+      setYocoCheckoutId("");
+      setRedeemed(false);
       setShowPayment(true);
       return;
     }
@@ -251,33 +268,40 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
     }
   }
 
-  // M19 — confirm the offline order: write to the outbox with a deferred charge.
-  async function confirmDeferredQueue() {
-    if (queueing) return;
-    setQueueing(true);
+  // Offline "paid in person" confirm from the DeferredPaymentNotice.
+  //  • Order already created online (then dropped offline mid-payment): it stays
+  //    in `ordered` state and advances normally — nothing to queue.
+  //  • Order never created (offline at place-order): queue it to the outbox so it
+  //    syncs when the connection returns.
+  async function handleDeferredConfirm() {
+    if (deferredGuard.current) return;
+    deferredGuard.current = true;
     try {
-      await queueOrder({
-        clientUuid: crypto.randomUUID(),
-        staffId,
-        customerId: customer?.id,
-        items: items.map(i => ({
-          menuItemId: i.menuItemId,
-          quantity: i.quantity,
-          modifications: i.modifications.map(m => m.id),
-        })),
-        paymentMode: "yoco_deferred",
-        clientTotalZar: totalZar,
-        clientTimestamp: new Date().toISOString(),
-      });
+      if (!paymentOrderId) {
+        await queueOrder({
+          clientUuid: crypto.randomUUID(),
+          staffId,
+          customerId: customer?.id,
+          items: items.map(i => ({
+            menuItemId: i.menuItemId,
+            quantity: i.quantity,
+            modifications: i.modifications.map(m => m.id),
+          })),
+          paymentMode: "yoco_deferred",
+          clientTotalZar: totalZar,
+          clientTimestamp: new Date().toISOString(),
+        });
+      }
       reset();
       setShowPayment(false);
-      setOfflineDeferred(false);
-      setOrderSuccess("Order queued — charge reconciles when back online.");
-      setTimeout(() => setOrderSuccess(null), 5000);
+      setPaymentOrderId(null);
+      setYocoCheckoutId("");
+      setRedeemed(false);
+      toast.success("Paid in person — order confirmed");
     } catch {
       setOrderError("Failed to save order offline. Please retry.");
     } finally {
-      setQueueing(false);
+      deferredGuard.current = false;
     }
   }
 
@@ -629,14 +653,6 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
               </div>
             )}
           </>
-        ) : offlineDeferred ? (
-          /* M19 — offline deferred payment: take payment in person, queue order */
-          <DeferredPaymentNotice
-            totalZar={totalZar}
-            queueing={queueing}
-            onConfirm={confirmDeferredQueue}
-            onCancel={() => { setShowPayment(false); setOfflineDeferred(false); }}
-          />
         ) : (
           /* Payment view */
           (() => {
@@ -654,6 +670,19 @@ export default function POSWorkspace({ staffName, staffId }: Props) {
               setOrderSuccess("Order paid — sent to the queue.");
               setTimeout(() => setOrderSuccess(null), 4000);
             };
+
+            // Offline on the payment screen (R2 — Yoco outage): take payment on
+            // the card machine and confirm in person. Free orders need no payment,
+            // so they fall through to the normal confirm below.
+            if (!online && !isFree) {
+              return (
+                <DeferredPaymentNotice
+                  totalZar={totalZar}
+                  onConfirmDeferred={handleDeferredConfirm}
+                  onBack={() => { setShowPayment(false); setPaymentOrderId(null); setYocoCheckoutId(""); }}
+                />
+              );
+            }
 
             return (
               <div className="flex flex-1 flex-col items-center justify-center gap-6 px-8">

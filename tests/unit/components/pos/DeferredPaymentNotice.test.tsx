@@ -1,25 +1,41 @@
-// M19 — DeferredPaymentNotice
+// Offline deferred-payment notice (R2). Self-detects connectivity, so tests set
+// navigator.onLine before mounting.
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 
+function setOnline(v: boolean) {
+  Object.defineProperty(navigator, "onLine", { value: v, configurable: true });
+}
+
+beforeEach(() => { vi.clearAllMocks(); setOnline(false); });
+
 describe("DeferredPaymentNotice", () => {
-  it("shows the amount due and the in-person payment guidance", () => {
-    render(<DeferredPaymentNotice totalZar={4500} queueing={false} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+  it("shows the no-connection guidance and amount when offline", () => {
+    render(<DeferredPaymentNotice totalZar={4500} onConfirmDeferred={vi.fn()} onBack={vi.fn()} />);
+    expect(screen.getByText(/no connection/i)).toBeDefined();
+    expect(screen.getByText(/take payment on the yoco card machine/i)).toBeDefined();
     expect(screen.getByText(/45,00/)).toBeDefined();
-    expect(screen.getByText(/take payment in person/i)).toBeDefined();
   });
 
-  it("confirm fires onConfirm", () => {
-    const onConfirm = vi.fn();
-    render(<DeferredPaymentNotice totalZar={4500} queueing={false} onConfirm={onConfirm} onCancel={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /take payment & queue order/i }));
-    expect(onConfirm).toHaveBeenCalledOnce();
+  it("renders nothing while online", () => {
+    setOnline(true);
+    const { container } = render(<DeferredPaymentNotice totalZar={4500} onConfirmDeferred={vi.fn()} onBack={vi.fn()} />);
+    expect(container.firstChild).toBeNull();
   });
 
-  it("disables actions while queueing", () => {
-    render(<DeferredPaymentNotice totalZar={4500} queueing={true} onConfirm={vi.fn()} onCancel={vi.fn()} />);
-    expect(screen.getByRole("button", { name: /queueing/i }).hasAttribute("disabled")).toBe(true);
+  it("confirm fires onConfirmDeferred", () => {
+    const onConfirmDeferred = vi.fn();
+    render(<DeferredPaymentNotice totalZar={4500} onConfirmDeferred={onConfirmDeferred} onBack={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /confirm — paid in person/i }));
+    expect(onConfirmDeferred).toHaveBeenCalledOnce();
+  });
+
+  it("back link fires onBack", () => {
+    const onBack = vi.fn();
+    render(<DeferredPaymentNotice totalZar={4500} onConfirmDeferred={vi.fn()} onBack={onBack} />);
+    fireEvent.click(screen.getByRole("button", { name: /back to order/i }));
+    expect(onBack).toHaveBeenCalledOnce();
   });
 });
