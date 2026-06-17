@@ -49,7 +49,7 @@ export default function Sidebar({ role }: Props) {
   const handleSignOut = useCallback(async () => {
     setSigningOut(true);
     await signOut();
-    router.push("/admin/login");
+    router.push("/staff/login");
   }, [router]);
 
   const visibleItems = NAV_ITEMS.filter((item) => !item.hideFor?.includes(role));

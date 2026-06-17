@@ -1,8 +1,10 @@
 "use client";
 
-// PIN login form — owner: Mine (M1)
-// Numeric PIN pad, 4–6 digits, masked dots, large keys (≥44×44px).
-// Calls loginWithPin server action then navigates to /pos/queue.
+// Staff PIN login form — owner: Mine (M1)
+// Single sign-in surface for all staff (barista + admin). Numeric PIN pad,
+// 4–6 digits, masked dots, large keys (≥44×44px). Calls loginWithPin then
+// routes by role: admin → /admin, barista → /pos/queue. An explicit
+// `redirectTo` prop overrides role-based routing (e.g. deep-link return).
 // Docs: docs/DESIGN.md → POS Rules
 
 import { useState, useCallback } from "react";
@@ -21,18 +23,14 @@ const PAD_KEYS = [
 ] as const;
 
 export type Props = {
-  /** Optional override for redirect target after successful login. */
+  /**
+   * Optional override for the post-login redirect. When omitted, the user is
+   * routed by role: admin → /admin, everyone else → /pos/queue.
+   */
   redirectTo?: string;
-  /** Which surface the form sits on — controls the sub-label only. */
-  surface?: "pos" | "admin";
 };
 
-const SURFACE_LABEL: Record<NonNullable<Props["surface"]>, string> = {
-  pos: "Point of Sale",
-  admin: "Admin",
-};
-
-export default function LoginForm({ redirectTo = "/pos/queue", surface = "pos" }: Props) {
+export default function LoginForm({ redirectTo }: Props) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -55,9 +53,11 @@ export default function LoginForm({ redirectTo = "/pos/queue", surface = "pos" }
     try {
       const result = await loginWithPin(pin);
       if (result.ok) {
+        // Route by role unless an explicit target was supplied.
+        const dest = redirectTo ?? (result.data.role === "admin" ? "/admin" : "/pos/queue");
         // Full navigation so the session cookie committed by the Server Action
         // is included in the request — router.push fires before cookies settle.
-        window.location.href = redirectTo;
+        window.location.href = dest;
       } else {
         setError(result.message);
         setPin("");
@@ -88,7 +88,7 @@ export default function LoginForm({ redirectTo = "/pos/queue", surface = "pos" }
           className="opacity-90"
         />
         <span className="favo-label tracking-[var(--tracking-label)] text-cool-steel">
-          {SURFACE_LABEL[surface]}
+          Staff
         </span>
       </div>
 

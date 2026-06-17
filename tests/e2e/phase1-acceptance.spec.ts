@@ -17,7 +17,7 @@
 
 /** Log in as the seed barista (PIN 1234). */
 async function loginAsBarista(page: Page) {
-  await page.goto("/pos", { waitUntil: "domcontentloaded" });
+  await page.goto("/staff/login", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: /enter your pin/i })).toBeVisible();
   await expect(page.getByLabel("Digit 1")).toBeEnabled({ timeout: 15_000 });
   for (const digit of "1234") {
@@ -30,7 +30,7 @@ async function loginAsBarista(page: Page) {
 
 /** Log in as the seed admin (PIN 4321). */
 async function loginAsAdmin(page: Page) {
-  await page.goto("/pos", { waitUntil: "domcontentloaded" });
+  await page.goto("/staff/login", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: /enter your pin/i })).toBeVisible();
   await expect(page.getByLabel("Digit 4")).toBeEnabled({ timeout: 15_000 });
   for (const digit of "4321") {
@@ -43,22 +43,22 @@ async function loginAsAdmin(page: Page) {
 
 // ─── 1. Authentication ────────────────────────────────────────────────────────
 
-test.describe("1. POS authentication", () => {
-  test("landing on /pos shows the PIN login screen", async ({ page }) => {
-    await page.goto("/pos", { waitUntil: "domcontentloaded" });
+test.describe("1. Staff authentication", () => {
+  test("landing on /staff/login shows the PIN login screen", async ({ page }) => {
+    await page.goto("/staff/login", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveTitle(/FAVO/);
     await expect(page.getByRole("heading", { name: /enter your pin/i })).toBeVisible();
   });
 
   test("all 10 digit buttons are present on the keypad", async ({ page }) => {
-    await page.goto("/pos", { waitUntil: "domcontentloaded" });
+    await page.goto("/staff/login", { waitUntil: "domcontentloaded" });
     for (const digit of ["0","1","2","3","4","5","6","7","8","9"]) {
       await expect(page.getByLabel(`Digit ${digit}`)).toBeVisible();
     }
   });
 
   test("barista can log in with PIN 1234", async ({ page }) => {
-    await page.goto("/pos", { waitUntil: "domcontentloaded" });
+    await page.goto("/staff/login", { waitUntil: "domcontentloaded" });
     for (const digit of "1234") {
       await page.getByLabel(`Digit ${digit}`).click();
     }
@@ -67,13 +67,13 @@ test.describe("1. POS authentication", () => {
   });
 
   test("wrong PIN shows an error and stays on the login screen", async ({ page }) => {
-    await page.goto("/pos", { waitUntil: "domcontentloaded" });
+    await page.goto("/staff/login", { waitUntil: "domcontentloaded" });
     for (const digit of "0000") {
       await page.getByLabel(`Digit ${digit}`).click();
     }
     await page.getByLabel("Confirm PIN").click();
     await expect(page.getByRole("alert")).toBeVisible();
-    await expect(page).toHaveURL(/\/pos/);
+    await expect(page).toHaveURL(/\/staff\/login/);
   });
 });
 

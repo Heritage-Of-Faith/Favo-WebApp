@@ -104,16 +104,24 @@ describe("LoginForm", () => {
     await waitFor(() => expect(mockLoginWithPin).toHaveBeenCalledWith("1234"));
   });
 
-  it("redirects to /pos/queue on successful login", async () => {
-    mockLoginWithPin.mockResolvedValue({ ok: true, data: { staffId: "s1", name: "Alice" } });
+  it("routes a barista to /pos/queue on successful login", async () => {
+    mockLoginWithPin.mockResolvedValue({ ok: true, data: { staffId: "s1", name: "Alice", role: "barista" } });
     render(<LoginForm />);
     pressDigits("1","2","3","4");
     fireEvent.click(getSubmitButton());
     await waitFor(() => expect(lastHref).toBe("/pos/queue"));
   });
 
-  it("respects a custom redirectTo prop", async () => {
-    mockLoginWithPin.mockResolvedValue({ ok: true, data: { staffId: "s1", name: "Alice" } });
+  it("routes an admin to /admin on successful login", async () => {
+    mockLoginWithPin.mockResolvedValue({ ok: true, data: { staffId: "s2", name: "Mia", role: "admin" } });
+    render(<LoginForm />);
+    pressDigits("4","3","2","1");
+    fireEvent.click(getSubmitButton());
+    await waitFor(() => expect(lastHref).toBe("/admin"));
+  });
+
+  it("respects a custom redirectTo prop, overriding role routing", async () => {
+    mockLoginWithPin.mockResolvedValue({ ok: true, data: { staffId: "s1", name: "Alice", role: "admin" } });
     render(<LoginForm redirectTo="/pos/order/123" />);
     pressDigits("1","2","3","4");
     fireEvent.click(getSubmitButton());
@@ -184,22 +192,10 @@ describe("LoginForm", () => {
     expect(status).toHaveAccessibleName("4 digits entered");
   });
 
-  it("shows the Point of Sale sub-label by default", () => {
+  it("shows the unified Staff sub-label", () => {
     render(<LoginForm />);
-    expect(screen.getByText("Point of Sale")).toBeInTheDocument();
-  });
-
-  it("shows the Admin sub-label on the admin surface", () => {
-    render(<LoginForm surface="admin" />);
-    expect(screen.getByText("Admin")).toBeInTheDocument();
+    expect(screen.getByText("Staff")).toBeInTheDocument();
     expect(screen.queryByText("Point of Sale")).toBeNull();
-  });
-
-  it("redirects to the provided target on successful login", async () => {
-    mockLoginWithPin.mockResolvedValue({ ok: true, data: { staffId: "s1", name: "Mia" } });
-    render(<LoginForm redirectTo="/admin" surface="admin" />);
-    pressDigits("4", "3", "2", "1");
-    fireEvent.click(getSubmitButton());
-    await waitFor(() => expect(lastHref).toBe("/admin"));
+    expect(screen.queryByText("Admin")).toBeNull();
   });
 });

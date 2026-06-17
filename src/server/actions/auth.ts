@@ -8,7 +8,7 @@ import { writeAudit } from "@/server/audit";
 import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
 import { signIn, signOut as nextSignOut } from "../../../auth";
 import { mintLoginAttestation } from "../../../auth";
-import type { ActionResult } from "@/lib/types";
+import type { ActionResult, StaffRole } from "@/lib/types";
 
 // Docs: docs/API.md → loginWithPin · Bcrypt-compare against staff.pin_hash.
 // Audit row in BOTH branches (success and failure). Never log/echo the raw PIN.
@@ -21,7 +21,7 @@ const pinSchema = z.string().regex(/^\d{4,6}$/, "PIN must be 4–6 digits");
  */
 export async function loginWithPin(
   pin: string
-): Promise<ActionResult<{ staffId: string; name: string }>> {
+): Promise<ActionResult<{ staffId: string; name: string; role: StaffRole }>> {
   const parsed = pinSchema.safeParse(pin);
   if (!parsed.success || !isValidPinFormat(pin)) {
     return { ok: false, code: "INVALID_PIN_FORMAT", message: "PIN must be 4–6 digits." };
@@ -73,7 +73,10 @@ export async function loginWithPin(
     actorRole: matched.role,
   });
 
-  return { ok: true, data: { staffId: matched.id, name: matched.name } };
+  return {
+    ok: true,
+    data: { staffId: matched.id, name: matched.name, role: matched.role as StaffRole },
+  };
 }
 
 export async function signOut(): Promise<ActionResult> {

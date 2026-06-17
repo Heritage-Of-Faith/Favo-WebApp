@@ -5,6 +5,6 @@ import POSWorkspace from "@/components/pos/POSWorkspace";
 
 export default async function POSWorkspacePage() {
   const session = await getSession();
-  if (!session) redirect("/pos");
+  if (!session) redirect("/staff/login");
   return <POSWorkspace staffName={session.name} staffId={session.id} />;
 }
