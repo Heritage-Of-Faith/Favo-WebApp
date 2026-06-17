@@ -20,9 +20,7 @@ export default async function PurchasesPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <header>
-        <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
-          Purchases
-        </h1>
+        <h1 className="admin-page-title">Purchases</h1>
         <p className="mt-1 favo-small" style={{ color: "var(--color-text-muted)" }}>
           Recording a purchase creates inventory lots. Emergency purchases need admin sign-off (L10).
         </p>

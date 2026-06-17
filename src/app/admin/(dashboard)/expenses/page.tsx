@@ -15,9 +15,7 @@ export default async function ExpensesPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <header>
-        <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
-          Expenses
-        </h1>
+        <h1 className="admin-page-title">Expenses</h1>
         <p className="mt-1 favo-small" style={{ color: "var(--color-text-muted)" }}>
           Operating expenses feed the COGS dashboard&apos;s net figure.
         </p>

@@ -18,9 +18,7 @@ export default async function StockTakesPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-prose">
-          <h1 className="favo-h2" style={{ color: "var(--color-text-strong)" }}>
-            Stock takes
-          </h1>
+          <h1 className="admin-page-title">Stock Takes</h1>
           <p className="mt-2 favo-small" style={{ color: "var(--color-text-muted)" }}>
             A stock take is a physical count of your inventory. The system tracks running
             stock mathematically — stock takes find real-world gaps like spills, miscounts,

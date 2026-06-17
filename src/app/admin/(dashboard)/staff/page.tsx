@@ -39,8 +39,8 @@ export default function StaffPage() {
     <div className="mx-auto max-w-4xl">
       <header className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-text-strong">Staff</h1>
-          <p className="mt-1 text-sm text-text-muted">
+          <h1 className="admin-page-title">Staff</h1>
+          <p className="mt-1 favo-small text-text-muted">
             Manage staff members, roles, and PINs.
           </p>
         </div>
@@ -50,10 +50,10 @@ export default function StaffPage() {
       </header>
 
       {loading ? (
-        <p className="text-sm text-text-muted">Loading…</p>
+        <p className="favo-small text-text-muted">Loading…</p>
       ) : (
         <StaffTable
-          staff={staff}
+          staff={staff.filter((m) => (m.role as string) !== "owner")}
           onResetPin={(member) => setForm({ mode: "resetPin", member })}
           onChanged={refresh}
         />

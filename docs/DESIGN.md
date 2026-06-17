@@ -137,7 +137,6 @@ Do not implement dark mode any other way. Source: [Tailwind v4 theme docs](https
 ## Admin rules
 - Sidebar collapsible below 1024 px.
 - shadcn `Table` for lists, `Dialog` for edits, `Sonner` for toasts.
-- Finance role hides "Menu" and "Staff" sidebar items.
 
 ## Landing rules
 - Must render with JavaScript disabled.

@@ -23,7 +23,7 @@ export default async function AuditPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="admin-section-title">Audit Log</h1>
+        <h1 className="admin-page-title">Audit Log</h1>
         <p className="favo-small text-text-muted mt-1">
           Append-only record of every mutation in the system.
           Newest entries shown first.

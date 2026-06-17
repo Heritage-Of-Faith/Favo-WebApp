@@ -40,10 +40,8 @@ export default function SyncConflictsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <header>
-        <h1 className="text-2xl font-semibold text-text-strong">
-          Sync conflicts
-        </h1>
-        <p className="mt-1 text-sm text-text-muted">
+        <h1 className="admin-page-title">Sync Conflicts</h1>
+        <p className="mt-1 favo-small text-text-muted">
           Offline orders that failed to sync cleanly. Resolve each one by
           reviewing the diff and adding a note.
         </p>
