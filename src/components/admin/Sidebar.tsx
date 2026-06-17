@@ -48,7 +48,7 @@ export default function Sidebar({ role }: Props) {
   const handleSignOut = useCallback(async () => {
     setSigningOut(true);
     await signOut();
-    router.push("/staff/login");
+    router.push("/staff/login" as Route);
   }, [router]);
 
   const visibleItems = NAV_ITEMS.filter((item) => !item.hideFor?.includes(role));
@@ -92,7 +92,12 @@ export default function Sidebar({ role }: Props) {
         )}
       >
         <div className="mb-6 px-2 pt-2">
-          <span className="text-lg font-semibold text-text-strong">FAVO Admin</span>
+          <span
+            className="text-lg font-bold uppercase text-text-strong"
+            style={{ fontFamily: "var(--font-display)", letterSpacing: "0.06em" }}
+          >
+            FAVO Admin
+          </span>
         </div>
 
         <ul className="flex flex-1 flex-col gap-1">

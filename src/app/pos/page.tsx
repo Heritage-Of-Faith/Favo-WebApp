@@ -4,9 +4,10 @@
 // sent to the unified staff login. Docs: docs/DESIGN.md → POS Rules
 
 import { redirect } from "next/navigation";
+import type { Route } from "next";
 import { getSession } from "@/lib/auth/session";
 
 export default async function POSPage() {
   const session = await getSession();
-  redirect(session ? "/pos/queue" : "/staff/login");
+  redirect((session ? "/pos/queue" : "/staff/login") as Route);
 }
