@@ -8,14 +8,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 
-type ExportKind = "sales" | "cogs" | "inventory" | "monthly_pnl";
+type ExportKind = "sales" | "cogs" | "inventory";
 type ExportFormat = "csv" | "pdf";
 
 const KIND_LABELS: Record<ExportKind, string> = {
   sales: "Sales",
   cogs: "COGS",
   inventory: "Inventory",
-  monthly_pnl: "Monthly P&L",
 };
 
 const selectClass =
@@ -98,7 +97,6 @@ export default function ReportExportForm() {
             <option value="sales">Sales</option>
             <option value="cogs">COGS</option>
             <option value="inventory">Inventory</option>
-            <option value="monthly_pnl">Monthly P&L</option>
           </select>
         </div>
 
