@@ -64,6 +64,14 @@ async function expandCard() {
 }
 
 describe("queue payment gate (L01)", () => {
+  it("without Yoco key, order can start without Take payment", async () => {
+    delete process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => fullOrder("pending") }) as unknown as typeof fetch;
+    await expandCard();
+    expect(await screen.findByRole("button", { name: /start making/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /take payment/i })).toBeNull();
+  });
+
   it("unpaid order shows Take payment and hides Start Making", async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => fullOrder("pending") }) as unknown as typeof fetch;
     await expandCard();

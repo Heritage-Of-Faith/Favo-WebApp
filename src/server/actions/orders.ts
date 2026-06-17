@@ -614,7 +614,7 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
 
 /** Bootstrap the POS queue on page load — returns all non-terminal orders. */
 export async function listActiveOrders(): Promise<ActionResult<{ orderId: string; state: OrderState; lastUpdatedAt: string }[]>> {
-  const auth = await authorize("barista");
+  const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
 
   const rows = await db
