@@ -43,17 +43,23 @@ export async function POST(request: Request) {
     );
   }
 
-  await db
-    .update(customers)
-    .set({ pushSubscription: subscription })
-    .where(eq(customers.id, customerId));
+  await db.transaction(async (tx) => {
+    const txDb = tx as unknown as import("@/lib/db").DB;
+    await tx
+      .update(customers)
+      .set({ pushSubscription: subscription })
+      .where(eq(customers.id, customerId));
 
-  await writeAudit({
-    entityKind: "customer",
-    entityId: customerId,
-    action: "push_subscribe",
-    actorId: staffSession?.id ?? customerId,
-    actorRole: staffSession?.role ?? "customer",
+    await writeAudit(
+      {
+        entityKind: "customer",
+        entityId: customerId,
+        action: "push_subscribe",
+        actorId: staffSession?.id ?? customerId,
+        actorRole: staffSession?.role ?? "customer",
+      },
+      txDb
+    );
   });
 
   return NextResponse.json({ ok: true });
