@@ -58,7 +58,7 @@ export default function OfflineBanner({ pendingCount }: Props) {
     <div
       role="status"
       aria-live="polite"
-      className="shrink-0 flex items-center gap-2 px-4 py-2 border-b"
+      className="shrink-0 flex w-full items-center gap-2 px-4 py-1.5 min-h-[36px] border-b"
       style={{
         background: "color-mix(in srgb, var(--color-warning) 14%, transparent)",
         color: "var(--color-warning)",
@@ -67,9 +67,8 @@ export default function OfflineBanner({ pendingCount }: Props) {
     >
       <WifiOff size={14} strokeWidth={2.25} aria-hidden className="shrink-0" />
       <p className="favo-small flex-1">
-        Working offline
-        {pendingCount > 0 ? ` · ${pendingCount} pending` : ""}
-        {" · "}Sync resumes when WAN returns.
+        Working offline — {pendingCount} order{pendingCount === 1 ? "" : "s"} pending
+        {" · "}Will sync automatically when connection returns
       </p>
       <button type="button" onClick={dismiss} aria-label="Dismiss offline banner"
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-btn)] hover:bg-coffee-bean/10">

@@ -58,9 +58,9 @@ describe("M19 — offline deferred queue", () => {
     await act(async () => { fireEvent.click(place); });
 
     // Deferred-payment notice is shown instead of Yoco.
-    expect(await screen.findByText(/take payment in person/i)).toBeDefined();
+    expect(await screen.findByText(/no connection/i)).toBeDefined();
 
-    const confirm = screen.getByRole("button", { name: /take payment & queue order/i });
+    const confirm = screen.getByRole("button", { name: /confirm — paid in person/i });
     await act(async () => { fireEvent.click(confirm); });
 
     await waitFor(() => expect(mockQueueOrder).toHaveBeenCalledTimes(1));

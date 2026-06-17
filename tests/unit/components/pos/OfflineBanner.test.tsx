@@ -19,9 +19,14 @@ describe("OfflineBanner", () => {
   it("shows offline copy with pending count when offline", () => {
     setOnline(false);
     render(<OfflineBanner pendingCount={3} />);
-    expect(screen.getByText(/working offline/i)).toBeDefined();
-    expect(screen.getByText(/3 pending/)).toBeDefined();
-    expect(screen.getByText(/sync resumes when wan returns/i)).toBeDefined();
+    expect(screen.getByText(/working offline — 3 orders pending/i)).toBeDefined();
+    expect(screen.getByText(/will sync automatically when connection returns/i)).toBeDefined();
+  });
+
+  it("uses the singular for a single pending order", () => {
+    setOnline(false);
+    render(<OfflineBanner pendingCount={1} />);
+    expect(screen.getByText(/1 order pending/i)).toBeDefined();
   });
 
   it("can be dismissed for the session", () => {
