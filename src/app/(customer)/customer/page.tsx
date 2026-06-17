@@ -121,7 +121,17 @@ export default async function CustomerDashboard() {
         <OrderHistoryList orders={orders} />
 
         {/* Push opt-in — only shows if permission not yet granted; hides after first dismissal. */}
-        {summary && <PushOptIn customerId={summary.customerId} />}
+        {summary && (
+          <PushOptIn
+            customerId={summary.customerId}
+            serverHasSubscription={summary.hasPushSubscription}
+          />
+        )}
+
+        <section aria-label="Opening hours">
+          <p style={S.hoursLabel}>Opening hours</p>
+          <OperatingHours className="" />
+        </section>
       </main>
     </div>
   );
