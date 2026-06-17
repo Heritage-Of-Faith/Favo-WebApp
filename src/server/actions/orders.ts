@@ -395,7 +395,9 @@ export async function transitionOrder(
             .catch(() => {});
         }
       })
-      .catch(() => {});
+      .catch((err: unknown) => {
+        console.error("[push] sendOrderReadyPush failed for order", orderId, err);
+      });
   }
 
   return await loadOrder(orderId);
