@@ -222,7 +222,7 @@ export default function PushOptIn({ customerId, serverHasSubscription }: PushOpt
         notification on this device — no need to watch the queue.
       </p>
 
-      {fullyEnabled ? (
+      {(fullyEnabled || needsSync) ? (
         <div style={S.statusRow}>
           <span style={S.statusLabel}>
             <span style={S.dot(true)} />
@@ -234,16 +234,6 @@ export default function PushOptIn({ customerId, serverHasSubscription }: PushOpt
             disabled={loading}
           >
             {loading ? "Disabling…" : "Disable"}
-          </button>
-        </div>
-      ) : needsSync ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <span style={S.statusLabel}>
-            <span style={S.dot(false)} />
-            Permission granted — tap to finish registering
-          </span>
-          <button style={S.btn(loading)} onClick={handleEnable} disabled={loading}>
-            {loading ? "Registering…" : "Register device"}
           </button>
         </div>
       ) : permission === "denied" ? (
