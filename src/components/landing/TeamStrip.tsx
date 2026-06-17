@@ -39,7 +39,7 @@ const S = {
     bottom: "-8%",
     width: "clamp(200px, 23vw, 340px)",
     aspectRatio: "1000 / 1113",
-    opacity: 0.16,
+    opacity: 0.09,
     filter: "invert(1)",
     pointerEvents: "none" as const,
     zIndex: 0,
