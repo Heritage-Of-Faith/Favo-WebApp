@@ -8,7 +8,7 @@
 | Styling | Tailwind v4 + shadcn/ui |
 | DB | PostgreSQL 17 (Supabase, project `Flavo-Real`, eu-west-1) |
 | ORM | Drizzle ORM (`prepare: false` in `db/index.ts` — required for PgBouncer Transaction pooler) |
-| Auth | Auth.js v5 — PIN provider (staff) + HOFMI SSO (admin, TODO) + email magic link (customers, Phase 3) |
+| Auth | Auth.js v5 — PIN provider (staff) + email magic link (customers, Phase 3) |
 | Payments | Yoco Online API (hosted fields, tokenisation) |
 | Real-time | Postgres LISTEN/NOTIFY → SSE |
 | Push | Web Push API + VAPID (`web-push`) |

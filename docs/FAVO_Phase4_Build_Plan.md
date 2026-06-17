@@ -184,7 +184,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 - **Files to create:**
   - `docs/deploy-runbook.md` — exact steps, rollback steps, who-pings-whom
   - `docs/backup-restore.md` — Warden R2 snapshot restoration procedure (DR drill)
-  - `tests/e2e/prod-smoke.spec.ts` — read-only paths only: landing loads, healthz green, login pages render, POS shell loads behind PIN page, admin page redirects to SSO. **No mutations on prod data.** (PRD §11)
+  - `tests/e2e/prod-smoke.spec.ts` — read-only paths only: landing loads, healthz green, login pages render, POS shell loads behind PIN page, admin page shows PIN login. **No mutations on prod data.** (PRD §11)
   - `scripts/ship-ping.ts` — posts deploy SHA, smoke result, audit-coverage query result to `#favo-ops`
 - **Claude prompt:**
   > Read `FAVO_PRD_v3.md` §09 §11, `ARCHITECTURAL.md` deploy pipeline. Write `deploy-runbook.md` covering: (1) verify pre-flight green (G23 + G24 outputs); (2) verify production env checklist (G25); (3) tag the release commit `v1.0.0`; (4) trigger Coolify webhook; (5) watch logs in real time via Loki; (6) post-deploy smoke (this spec); (7) ship ping; (8) standby for 60 min on the channel. Write `backup-restore.md` documenting Warden R2 nightly snapshot location, point-in-time recovery procedure (worst-case 24h granularity per PRD §10), and a quarterly DR drill template. Build `prod-smoke.spec.ts` running read-only paths only (PRD §11 forbids mutations on prod). Write `scripts/ship-ping.ts` posting a structured Discord embed (title, deploy SHA short, smoke result, audit coverage = 0, link to dashboards).
@@ -267,9 +267,9 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 - **PRD sections:** §09 P4 acceptance ("admin can see live COGS")
 - **Files to create:**
   - `tests/e2e/admin-flow.spec.ts` — pre-flight against staging: login, dashboard load, inventory view, stock take walkthrough, expense log, monthly P&L draft + admin sign-off
-  - `docs/admin-prod-smoke.md` — Mia's launch-day walkthrough: log in via HOFMI SSO on prod, confirm dashboard renders live numbers, confirm one CSV export downloads, confirm one PDF export renders
+  - `docs/admin-prod-smoke.md` — Mia's launch-day walkthrough: log in via PIN on prod, confirm dashboard renders live numbers, confirm one CSV export downloads, confirm one PDF export renders
 - **Claude prompt:**
-  > Read `FAVO_PRD_v3.md` §09 P4. Build `admin-flow.spec.ts` as a Playwright spec covering the Phase 2 admin acceptance plus the Phase 3 admin extensions (hours editor, exports). Run as part of pre-flight (G23). On launch day after G27 completes, perform the read-only prod smoke: log into `favo.hofmi.org/admin` via SSO, confirm the COGS dashboard renders (numbers will be zero or near-zero on a fresh prod DB — that's fine, the assertion is that it renders without error), download one CSV and one PDF export. Document inline in `docs/admin-prod-smoke.md`.
+  > Read `FAVO_PRD_v3.md` §09 P4. Build `admin-flow.spec.ts` as a Playwright spec covering the Phase 2 admin acceptance plus the Phase 3 admin extensions (hours editor, exports). Run as part of pre-flight (G23). On launch day after G27 completes, perform the read-only prod smoke: log into `favo.hofmi.org/admin` via PIN, confirm the COGS dashboard renders (numbers will be zero or near-zero on a fresh prod DB — that's fine, the assertion is that it renders without error), download one CSV and one PDF export. Document inline in `docs/admin-prod-smoke.md`.
 - **Acceptance criteria:**
   - Pre-flight spec passes on staging
   - Admin prod smoke runs cleanly within 5 min of deploy
@@ -391,7 +391,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 | 10:00 | `favo.hofmi.org` responds 200 · healthz green | Gian | all three sub-checks green |
 | 10:15 | Cloudflare Access policies verified · WAF rules active | Gian | curl probes confirm |
 | 11:00 | POS prod smoke: PIN login + test order + push | Mine | screenshots saved |
-| 11:30 | Admin prod smoke: SSO login + COGS dashboard + 1 CSV + 1 PDF | Mia | export files saved |
+| 11:30 | Admin prod smoke: PIN login + COGS dashboard + 1 CSV + 1 PDF | Mia | export files saved |
 | 12:00 | Customer prod smoke: magic link + setup + push subscription | Nikao | end-to-end on real device |
 | 12:30 | Audit coverage query on prod returns 0 | Gian | SQL evidence saved |
 | 13:00 | Hand-off begins: Mia walks Nkuli through ops runbook | Mia | sign-off captured |

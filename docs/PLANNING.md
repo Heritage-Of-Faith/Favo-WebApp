@@ -4,7 +4,7 @@
 
 | Phase | Dates | Scope |
 |---|---|---|
-| P1 — POS Core + Auth + Payment | Thu 28 – Fri 29 May | Schema (24 tables), seed, PIN + SSO, customer lookup, order flow, Yoco, state machine, ready→push, SSE queue, staff discount, audit on all mutations |
+| P1 — POS Core + Auth + Payment | Thu 28 – Fri 29 May | Schema (24 tables), seed, PIN auth, customer lookup, order flow, Yoco, state machine, ready→push, SSE queue, staff discount, audit on all mutations |
 | P2 — Inventory + Live COGS | Sat 30 – Sun 31 May | Recipe deduction on transition, lots + origin, waste log, stock takes, low-stock push, live COGS dashboard, weekly archival, monthly P&L admin sign-off |
 | P3 — Customer PWA + Loyalty + Offline | Mon 1 – Tue 2 Jun | Magic link, customer dashboard, loyalty earn/redeem, hours display, Service Worker offline, wallet + packs, exports |
 | P4 — QA + Deploy | Wed 3 Jun | E2E suite, smoke, deploy to favo.hofmi.org |
@@ -35,7 +35,7 @@ After these land, every other task is independently buildable.
 
 | ID | Title | DB tables | Actions / endpoints | Dependency |
 |---|---|---|---|---|
-| G4 | Auth.js v6: PIN provider + HOFMI SSO + RBAC middleware | staff, audit_log | `loginWithPin` | G1, G2, G3, GX |
+| G4 | Auth.js v5: PIN provider + RBAC middleware | staff, audit_log | `loginWithPin` | G1, G2, G3, GX |
 | G5 | Order actions: search, create, transition, cancel, staff discount | orders, order_items, customers, staff_entitlement_log, payments, audit_log | `searchCustomer`, `createOrder`, `transitionOrder`, `cancelOrder`, `applyStaffDiscount` | G1, G2, G3, G4, GX |
 | G6 | Yoco webhook + SSE queue endpoint + LISTEN/NOTIFY plumbing | payments, orders, audit_log | `POST /api/payments/yoco/webhook`, `GET /api/queue/stream` | G1, G2, G3, G5 |
 | G7 | Web Push backend (VAPID + send on ready) | customers, audit_log | `POST /api/push/subscribe`, `sendOrderReadyPush()` | G5 |
@@ -58,7 +58,7 @@ After these land, every other task is independently buildable.
 |---|---|---|---|
 | A1 | shadcn/ui setup + admin design tokens | — | N1 |
 | A2 | Admin shell + sidebar + auth gate | `getSession` | A1, GX |
-| A3 | HOFMI SSO login page | `signIn('hofmi-sso')` | A1, A2 |
+| A3 | Admin login page (PIN only) | `loginWithPin` | A1, A2 |
 | A4 | Staff management UI | `listStaff`, `createStaff`, `setStaffPin`, `deactivateStaff` | A1, A2, GX |
 | A5 | Menu management UI (price edit + history) | `getMenu`, `setMenuItemPrice` | A1, A2, GX |
 | A6 | Audit log viewer (paginated + filterable + JSON diff) | `listAudit` | A1, A2, GX |
