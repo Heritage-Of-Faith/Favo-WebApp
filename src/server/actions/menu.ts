@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import { menuItems, menuCustomisations, priceHistory, operatingHours } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
-import type { ActionResult, MenuItem, MenuCustomisation } from "@/lib/types";
+import type { ActionResult, MenuItem, MenuCustomisation, MenuCategory } from "@/lib/types";
 
 // Cache tag for the public menu. The menu changes rarely (only on price edits
 // or item/customisation changes), but is read on every POS mount, landing page,
@@ -38,9 +38,17 @@ export type OperatingHour = {
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
+const MENU_CATEGORIES = ["coffee", "tea", "cold_brew", "food", "merchandise", "other"] as const;
+
 const setPriceSchema = z.object({
   menuItemId: z.string().min(1),
   newPriceZar: z.number().int().positive("Price must be a positive integer (cents)."),
+});
+
+const createItemSchema = z.object({
+  name: z.string().min(1, "Name is required.").max(80, "Name too long."),
+  category: z.enum(MENU_CATEGORIES),
+  priceZar: z.number().int().positive("Price must be a positive integer (cents)."),
 });
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
@@ -235,6 +243,139 @@ export async function getMenuItemPriceHistory(
       effectiveUntil: r.effectiveUntil ? r.effectiveUntil.toISOString() : null,
     })),
   };
+}
+
+/**
+ * Return all menu items (active + inactive) for the admin editor.
+ * Auth: admin only.
+ */
+export async function getMenuAdmin(): Promise<ActionResult<MenuItem[]>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+
+  const [items, customisations] = await Promise.all([
+    db
+      .select()
+      .from(menuItems)
+      .orderBy(asc(menuItems.category), asc(menuItems.name)),
+    db
+      .select()
+      .from(menuCustomisations)
+      .orderBy(asc(menuCustomisations.name)),
+  ]);
+
+  const custByItem = new Map<string, MenuCustomisation[]>();
+  for (const c of customisations) {
+    const list = custByItem.get(c.menuItemId) ?? [];
+    list.push({ id: c.id, name: c.name, priceDeltaZar: c.priceDeltaZar });
+    custByItem.set(c.menuItemId, list);
+  }
+
+  return {
+    ok: true,
+    data: items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      currentPriceZar: item.currentPriceZar,
+      active: item.active,
+      customisations: custByItem.get(item.id) ?? [],
+    })),
+  };
+}
+
+/**
+ * Create a new menu item with an initial price history row.
+ * Auth: admin only.
+ */
+export async function createMenuItem(input: {
+  name: string;
+  category: MenuCategory;
+  priceZar: number;
+}): Promise<ActionResult<MenuItem>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+
+  const parsed = createItemSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, code: "INVALID_INPUT", message: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  const { name, category, priceZar } = parsed.data;
+  const now = new Date();
+
+  const [created] = await db
+    .insert(menuItems)
+    .values({ name, category, currentPriceZar: priceZar, active: true })
+    .returning();
+
+  await db.insert(priceHistory).values({
+    menuItemId: created!.id,
+    priceZar,
+    effectiveFrom: now,
+    effectiveUntil: null,
+  });
+
+  await writeAudit({
+    entityKind: "menu_item",
+    entityId: created!.id,
+    action: "create",
+    actorId: auth.session.id,
+    actorRole: auth.session.role,
+    before: null,
+    after: { name, category, priceZar },
+  });
+
+  revalidateTag(MENU_CACHE_TAG, "max");
+
+  return {
+    ok: true,
+    data: {
+      id: created!.id,
+      name: created!.name,
+      category: created!.category,
+      currentPriceZar: created!.currentPriceZar,
+      active: created!.active,
+      customisations: [],
+    },
+  };
+}
+
+/**
+ * Activate or deactivate a menu item (soft delete).
+ * Deactivated items are hidden from POS and customer menu but preserved in order history.
+ * Auth: admin only.
+ */
+export async function setMenuItemActive(
+  menuItemId: string,
+  active: boolean,
+): Promise<ActionResult<void>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+
+  const [existing] = await db
+    .select({ id: menuItems.id, active: menuItems.active })
+    .from(menuItems)
+    .where(eq(menuItems.id, menuItemId));
+
+  if (!existing) return { ok: false, code: "NOT_FOUND", message: "Menu item not found." };
+  if (existing.active === active) return { ok: true, data: undefined };
+
+  await db.update(menuItems).set({ active }).where(eq(menuItems.id, menuItemId));
+
+  await writeAudit({
+    entityKind: "menu_item",
+    entityId: menuItemId,
+    action: active ? "reactivate" : "deactivate",
+    actorId: auth.session.id,
+    actorRole: auth.session.role,
+    before: { active: existing.active },
+    after: { active },
+  });
+
+  revalidateTag(MENU_CACHE_TAG, "max");
+
+  return { ok: true, data: undefined };
 }
 
 /**
