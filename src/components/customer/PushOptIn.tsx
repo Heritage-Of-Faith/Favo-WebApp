@@ -150,8 +150,7 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
       const reg = await navigator.serviceWorker.getRegistration();
       if (!reg) {
         setError(
-          "Notifications need the installed app — available when the FAVO app " +
-          "is added to your home screen in Phase 3."
+          "Notifications require the app to be installed. Add FAVO to your home screen, then try again."
         );
         setLoading(false);
         return;
