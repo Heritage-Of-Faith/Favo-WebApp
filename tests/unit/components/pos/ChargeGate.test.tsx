@@ -49,6 +49,12 @@ function fullOrder(paymentStatus: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
+  // L01 gate is only active when Yoco is configured — simulate that here.
+  process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY = "pk_test_key";
+});
+
+afterEach(() => {
+  delete process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
 });
 
 async function expandCard() {

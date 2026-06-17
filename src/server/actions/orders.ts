@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   orders,
@@ -610,4 +610,25 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
     })),
   };
   return { ok: true, data: order };
+}
+
+/** Bootstrap the POS queue on page load — returns all non-terminal orders. */
+export async function listActiveOrders(): Promise<ActionResult<{ orderId: string; state: OrderState; lastUpdatedAt: string }[]>> {
+  const auth = await authorize("barista");
+  if (!auth.ok) return auth;
+
+  const rows = await db
+    .select({ id: orders.id, state: orders.state, placedAt: orders.placedAt })
+    .from(orders)
+    .where(notInArray(orders.state, ["collected", "cancelled"]))
+    .orderBy(orders.placedAt);
+
+  return {
+    ok: true,
+    data: rows.map((r) => ({
+      orderId: r.id,
+      state: r.state,
+      lastUpdatedAt: r.placedAt.toISOString(),
+    })),
+  };
 }
