@@ -270,6 +270,7 @@ export async function transitionOrder(
   // Track whether we need to send the ready-push after the transaction.
   let pushSubscription: unknown = null;
   let pushCustomerName: string | null = null;
+  let pushCustomerId: string | null = null;
 
   try {
     await db.transaction(async (tx) => {
@@ -330,6 +331,7 @@ export async function transitionOrder(
           .where(eq(customers.id, current.customerId));
         pushSubscription = cust?.pushSubscription ?? null;
         pushCustomerName = cust?.name ?? null;
+        pushCustomerId = current.customerId ?? null;
       }
 
       // ── 4. Audit ───────────────────────────────────────────────────────────
@@ -367,10 +369,18 @@ export async function transitionOrder(
   }).catch(() => {}); // POS resyncs on reconnect if this drops
 
   // Push to customer device when order is ready.
+  // On 410 Gone, null out the stale subscription so we don't retry it forever.
   if (toState === "ready" && pushSubscription && isValidPushSubscription(pushSubscription)) {
-    sendOrderReadyPush(pushSubscription, orderId, pushCustomerName ?? undefined).catch(
-      () => {}
-    );
+    sendOrderReadyPush(pushSubscription, orderId, pushCustomerName ?? undefined)
+      .then((alive) => {
+        if (!alive && pushCustomerId) {
+          db.update(customers)
+            .set({ pushSubscription: null })
+            .where(eq(customers.id, pushCustomerId))
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
   }
 
   return await loadOrder(orderId);

@@ -32,6 +32,6 @@ export function buildOrderReadyPayload(
   return {
     title: "Your order is ready ☕",
     body: `${greeting} order is ready for collection at FAVO Café.`,
-    data: { orderId, url: "/" },
+    data: { orderId, url: "/customer" },
   };
 }

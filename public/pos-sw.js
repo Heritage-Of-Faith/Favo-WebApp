@@ -118,3 +118,39 @@ self.addEventListener("fetch", (event) => {
 
   // Everything else: do not intercept.
 });
+
+// ── Push notifications ────────────────────────────────────────────────────────
+// Staff alerts (low-stock, order flags) arrive here because this SW is scoped
+// to /pos/ and staff devices register under the POS scope.
+
+self.addEventListener("push", (event) => {
+  let data = { title: "FAVO Café", body: "You have a new alert.", data: { url: "/pos/queue" } };
+  try {
+    if (event.data) data = { ...data, ...event.data.json() };
+  } catch { /* malformed payload — use defaults */ }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: data.data,
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url ?? "/pos/queue";
+  const resolved = new URL(url, self.location.origin).href;
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((windowClients) => {
+        const existing = windowClients.find((c) => c.url === resolved && "focus" in c);
+        if (existing) return existing.focus();
+        return self.clients.openWindow(resolved);
+      })
+  );
+});

@@ -18,6 +18,7 @@ const ASKED_KEY = "favo_pos_push_asked";
 
 export default function StaffPushOptIn() {
   const [visible, setVisible] = useState(false);
+  const [denied, setDenied] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -25,11 +26,14 @@ export default function StaffPushOptIn() {
     if (!window.Notification || !("serviceWorker" in navigator)) return;
 
     const permission = window.Notification.permission;
-    // Already granted → never show. Revoked/default → show unless asked this device.
     if (permission === "granted") return;
     const asked = localStorage.getItem(ASKED_KEY) === "1";
-    // If permission was revoked we re-show regardless of the asked flag.
-    if (permission === "denied" || !asked) setVisible(true);
+    if (permission === "denied") {
+      setDenied(true);
+      setVisible(true);
+    } else if (!asked) {
+      setVisible(true);
+    }
   }, []);
 
   function dismiss() {
@@ -60,24 +64,35 @@ export default function StaffPushOptIn() {
           <p className="favo-small text-cool-steel mt-0.5">
             Get pinged on this device when stock runs low or an order needs attention.
           </p>
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              onClick={handleEnable}
-              disabled={loading}
-              className="flex min-h-[40px] items-center gap-2 rounded-[4px] bg-crimson-carrot px-4 transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
-              style={{ color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}
-            >
-              {loading ? <Loader2 size={14} strokeWidth={2} className="animate-spin" /> : "Enable"}
-            </button>
-            <button
-              type="button"
-              onClick={dismiss}
-              className="min-h-[40px] rounded-[4px] border border-cool-steel/30 px-4 favo-small text-cool-steel hover:bg-porcelain/10"
-            >
-              Not now
-            </button>
-          </div>
+          {denied ? (
+            <div className="mt-3 flex gap-2">
+              <p className="favo-small text-cool-steel">
+                Notifications are blocked. Allow them in your browser settings, then refresh.
+              </p>
+              <button type="button" onClick={dismiss} className="ml-auto shrink-0 min-h-[40px] rounded-[4px] border border-cool-steel/30 px-4 favo-small text-cool-steel hover:bg-porcelain/10">
+                Dismiss
+              </button>
+            </div>
+          ) : (
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={handleEnable}
+                disabled={loading}
+                className="flex min-h-[40px] items-center gap-2 rounded-[4px] bg-crimson-carrot px-4 transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
+                style={{ color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}
+              >
+                {loading ? <Loader2 size={14} strokeWidth={2} className="animate-spin" /> : "Enable"}
+              </button>
+              <button
+                type="button"
+                onClick={dismiss}
+                className="min-h-[40px] rounded-[4px] border border-cool-steel/30 px-4 favo-small text-cool-steel hover:bg-porcelain/10"
+              >
+                Not now
+              </button>
+            </div>
+          )}
         </div>
         <button
           type="button"
