@@ -1,23 +1,20 @@
 "use client";
-// Push notification opt-in — owner: Nikao (task N14, AT-66)
-// Requests browser push permission, creates a PushSubscription,
-// and POSTs it to /api/push/subscribe with the authenticated customerId.
-// Only renders on browsers that support Push API.
-// Persists a per-device "asked once" flag to avoid re-prompting on every visit.
+// Push notification opt-in / management — owner: Nikao (task N14, AT-66)
+// Accurate enabled state: checks both browser permission AND DB subscription.
+// Supports enable, disable, and sync-recovery (permission granted but DB missing).
 
 import { useState, useEffect } from "react";
 
 interface PushOptInProps {
   customerId: string;
+  /** Whether the server currently has a push subscription saved for this customer. */
+  serverHasSubscription: boolean;
 }
 
 type PermissionState = "default" | "granted" | "denied" | "unsupported";
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
-// localStorage key tracks whether the user has been shown the prompt on this device.
-// Value "granted" means we stored confirmation that push was once granted (detects revocation).
-// Value "1" means asked but not yet granted.
 function askedKey(customerId: string) {
   return `favo_push_asked_${customerId}`;
 }
@@ -64,23 +61,34 @@ const S = {
     color: "var(--color-porcelain)",
     opacity: 0.85,
   },
-  btn: (disabled: boolean) => ({
+  btn: (disabled: boolean, variant: "primary" | "ghost" = "primary") => ({
     display: "inline-flex",
     alignItems: "center",
     gap: 8,
-    backgroundColor: disabled ? "rgba(245,86,12,0.4)" : "var(--color-crimson-carrot)",
-    color: "var(--color-paper)",
+    backgroundColor:
+      variant === "ghost"
+        ? "transparent"
+        : disabled
+          ? "rgba(245,86,12,0.4)"
+          : "var(--color-crimson-carrot)",
+    color: variant === "ghost" ? "var(--color-cool-steel)" : "var(--color-paper)",
     fontFamily: "'DM Sans', sans-serif",
     fontWeight: 700,
     fontSize: 12,
     letterSpacing: "0.12em",
     textTransform: "uppercase" as const,
-    border: "none",
+    border: variant === "ghost" ? "1px solid rgba(160,172,180,0.3)" : "none",
     padding: "14px 28px",
     borderRadius: 2,
     cursor: disabled ? "not-allowed" : "pointer",
   } as React.CSSProperties),
-  statusEnabled: {
+  statusRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap" as const,
+  },
+  statusLabel: {
     display: "flex",
     alignItems: "center",
     gap: 8,
@@ -99,16 +107,14 @@ const S = {
   } as React.CSSProperties),
 } as const;
 
-export default function PushOptIn({ customerId }: PushOptInProps) {
+export default function PushOptIn({ customerId, serverHasSubscription }: PushOptInProps) {
   const [permission, setPermission] = useState<PermissionState>("default");
+  const [dbHasSub, setDbHasSub] = useState(serverHasSubscription);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // true when user has been prompted before and dismissed without granting (hides the card).
-  // Reset to false when permission is "granted" so we can detect subsequent revocation.
   const [hiddenByFlag, setHiddenByFlag] = useState(false);
 
   useEffect(() => {
-    // Check truthiness so tests can simulate absence by setting window.Notification = undefined
     if (!window.Notification || !("serviceWorker" in navigator)) {
       setPermission("unsupported");
       return;
@@ -118,18 +124,13 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
 
     const stored = localStorage.getItem(askedKey(customerId));
     if (perm === "granted") {
-      // Record that we once had grant — lets us detect future revocation.
       localStorage.setItem(askedKey(customerId), "granted");
     } else if (perm === "default") {
-      // Hide if asked before, UNLESS permission was previously granted and then revoked.
-      // Revocation: stored was "granted" but perm is now "default" → show again.
       if (stored === "1") setHiddenByFlag(true);
     }
   }, [customerId]);
 
   async function handleEnable() {
-    // Always record "asked" on first click — even if VAPID isn't configured — so the card
-    // doesn't re-appear on every visit after the user interacts with it once.
     localStorage.setItem(askedKey(customerId), "1");
     if (!VAPID_KEY) {
       setError("Push not configured — NEXT_PUBLIC_VAPID_PUBLIC_KEY missing.");
@@ -149,10 +150,7 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
 
       const reg = await navigator.serviceWorker.getRegistration();
       if (!reg) {
-        setError(
-          "Notifications need the installed app — available when the FAVO app " +
-          "is added to your home screen in Phase 3."
-        );
+        setError("Notifications require the app to be installed. Add FAVO to your home screen, then try again.");
         setLoading(false);
         return;
       }
@@ -166,11 +164,11 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ customerId, subscription: sub.toJSON() }),
       });
-
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Subscribe failed: ${res.status} ${text}`);
       }
+      setDbHasSub(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setPermission("default");
@@ -179,9 +177,41 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
     }
   }
 
+  async function handleDisable() {
+    setLoading(true);
+    setError(null);
+    try {
+      // Unsubscribe from browser push manager first.
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) await sub.unsubscribe();
+      }
+      // Clear from DB.
+      const res = await fetch("/api/push/subscribe", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId }),
+      });
+      if (!res.ok) throw new Error("Failed to disable notifications.");
+      setDbHasSub(false);
+      localStorage.removeItem(askedKey(customerId));
+      // Note: browser Notification.permission stays "granted" at OS level —
+      // the user can re-enable without another OS prompt.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   if (permission === "unsupported") return null;
-  // Hide after user has been prompted once and hasn't granted (dismissal without action).
   if (permission === "default" && hiddenByFlag) return null;
+
+  // Fully enabled: browser permission granted AND subscription saved in DB.
+  const fullyEnabled = permission === "granted" && dbHasSub;
+  // Partial: permission granted but DB subscription missing — needs re-sync.
+  const needsSync = permission === "granted" && !dbHasSub;
 
   return (
     <div style={S.wrap}>
@@ -192,23 +222,42 @@ export default function PushOptIn({ customerId }: PushOptInProps) {
         notification on this device — no need to watch the queue.
       </p>
 
-      {permission === "granted" ? (
-        <div style={S.statusEnabled}>
-          <span style={S.dot(true)} />
-          Notifications enabled on this device
+      {fullyEnabled ? (
+        <div style={S.statusRow}>
+          <span style={S.statusLabel}>
+            <span style={S.dot(true)} />
+            Notifications enabled
+          </span>
+          <button
+            style={S.btn(loading, "ghost")}
+            onClick={handleDisable}
+            disabled={loading}
+          >
+            {loading ? "Disabling…" : "Disable"}
+          </button>
+        </div>
+      ) : needsSync ? (
+        <div style={S.statusRow}>
+          <span style={S.statusLabel}>
+            <span style={S.dot(false)} />
+            This device needs to be registered again
+          </span>
+          <button
+            style={S.btn(loading)}
+            onClick={handleEnable}
+            disabled={loading}
+            aria-busy={loading}
+          >
+            {loading ? "Registering…" : "Register device"}
+          </button>
         </div>
       ) : permission === "denied" ? (
-        <div style={S.statusEnabled}>
+        <span style={S.statusLabel}>
           <span style={S.dot(false)} />
           Notifications blocked — allow them in your browser settings to enable
-        </div>
+        </span>
       ) : (
-        <button
-          style={S.btn(loading)}
-          onClick={handleEnable}
-          disabled={loading}
-          aria-busy={loading}
-        >
+        <button style={S.btn(loading)} onClick={handleEnable} disabled={loading} aria-busy={loading}>
           {loading ? "Enabling…" : "Enable notifications"}
         </button>
       )}

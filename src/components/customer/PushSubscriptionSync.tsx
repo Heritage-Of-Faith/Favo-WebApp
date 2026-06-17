@@ -36,16 +36,20 @@ export default function PushSubscriptionSync({ customerId }: PushSubscriptionSyn
     // Fire-and-forget — failure is silent; user can re-enable via the dashboard prompt.
     async function sync() {
       try {
-        const reg = await navigator.serviceWorker.ready;
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_KEY),
-        });
+        // getRegistration() returns immediately (undefined if SW not yet active).
+        // serviceWorker.ready hangs indefinitely before first activation — avoid it.
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) return;
+        // Reuse the existing subscription if present; subscribe() creates one otherwise.
+        const sub =
+          (await reg.pushManager.getSubscription()) ??
+          (await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_KEY),
+          }));
         await fetch("/api/push/subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // customerId is sent for backwards-compat with the staff-side code path;
-          // the server will use the session cookie for customer callers.
           body: JSON.stringify({ customerId, subscription: sub.toJSON() }),
         });
       } catch {

@@ -5,7 +5,6 @@ import type { NextAuthConfig } from "next-auth";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { staff } from "@db/schema";
-import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
 
 // Task G4 — PIN provider (staff).
 // Role is resolved at authorize time and carried through the JWT so getSession()
@@ -18,9 +17,8 @@ import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
 //    single primary-key lookup — no bcrypt at all. The HMAC prevents a direct
 //    POST to /api/auth/callback/credentials from forging the fast path.
 //
-// 2. pin (fallback / direct) — full bcrypt scan. Used when signIn("credentials",
-//    { pin }) is called without an attestation (e.g. direct API testing). Normal
-//    POS/admin login always goes through loginWithPin first.
+// All logins require an attestation token minted by loginWithPin — direct
+// signIn calls without one are rejected at the authorize() level.
 
 // ─── Short-lived attestation token ───────────────────────────────────────────
 
@@ -81,36 +79,21 @@ export const authConfig: NextAuthConfig = {
         const attestation = typeof credentials?.attestation === "string"
           ? credentials.attestation.trim()
           : "";
-        const pin = typeof credentials?.pin === "string" ? credentials.pin : "";
 
-        // ── Fast path: HMAC-attested token from loginWithPin ─────────────────
-        if (attestation) {
-          const staffId = verifyLoginAttestation(attestation);
-          if (!staffId) return null; // expired or tampered
+        // All logins must go through loginWithPin (audited). Direct signIn
+        // without an attestation token is rejected.
+        if (!attestation) return null;
 
-          const [member] = await db
-            .select({ id: staff.id, name: staff.name, role: staff.role, active: staff.active })
-            .from(staff)
-            .where(eq(staff.id, staffId));
+        const staffId = verifyLoginAttestation(attestation);
+        if (!staffId) return null; // expired or tampered
 
-          if (!member?.active) return null;
-          return { id: member.id, name: member.name, role: member.role };
-        }
-
-        // ── Fallback: full bcrypt scan (direct signIn without attestation) ───
-        if (!isValidPinFormat(pin)) return null;
-
-        const activeStaff = await db
-          .select()
+        const [member] = await db
+          .select({ id: staff.id, name: staff.name, role: staff.role, active: staff.active })
           .from(staff)
-          .where(eq(staff.active, true));
+          .where(eq(staff.id, staffId));
 
-        for (const s of activeStaff) {
-          if (await verifyPin(pin, s.pinHash)) {
-            return { id: s.id, name: s.name, role: s.role };
-          }
-        }
-        return null;
+        if (!member?.active) return null;
+        return { id: member.id, name: member.name, role: member.role };
       },
     }),
   ],

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { eq, asc, desc, and, isNull } from "drizzle-orm";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
+import type { DB } from "@/lib/db";
 import { menuItems, menuCustomisations, priceHistory, operatingHours } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
@@ -304,26 +305,35 @@ export async function createMenuItem(input: {
   const { name, category, priceZar } = parsed.data;
   const now = new Date();
 
-  const [created] = await db
-    .insert(menuItems)
-    .values({ name, category, currentPriceZar: priceZar, active: true })
-    .returning();
+  const [created] = await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DB;
 
-  await db.insert(priceHistory).values({
-    menuItemId: created!.id,
-    priceZar,
-    effectiveFrom: now,
-    effectiveUntil: null,
-  });
+    const [item] = await tx
+      .insert(menuItems)
+      .values({ name, category, currentPriceZar: priceZar, active: true })
+      .returning();
 
-  await writeAudit({
-    entityKind: "menu_item",
-    entityId: created!.id,
-    action: "create",
-    actorId: auth.session.id,
-    actorRole: auth.session.role,
-    before: null,
-    after: { name, category, priceZar },
+    await tx.insert(priceHistory).values({
+      menuItemId: item!.id,
+      priceZar,
+      effectiveFrom: now,
+      effectiveUntil: null,
+    });
+
+    await writeAudit(
+      {
+        entityKind: "menu_item",
+        entityId: item!.id,
+        action: "create",
+        actorId: auth.session.id,
+        actorRole: auth.session.role,
+        before: null,
+        after: { name, category, priceZar },
+      },
+      txDb
+    );
+
+    return [item];
   });
 
   revalidateTag(MENU_CACHE_TAG, "max");

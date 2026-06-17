@@ -142,15 +142,23 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = event.notification.data?.url ?? "/pos/queue";
-  const resolved = new URL(url, self.location.origin).href;
+  let safeUrl = new URL("/pos/queue", self.location.origin).href;
+  try {
+    const parsed = new URL(url, self.location.origin);
+    if (parsed.origin === self.location.origin && parsed.pathname.startsWith("/pos")) {
+      safeUrl = parsed.href;
+    }
+  } catch {
+    // malformed URL in notification payload — keep fallback
+  }
 
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((windowClients) => {
-        const existing = windowClients.find((c) => c.url === resolved && "focus" in c);
+        const existing = windowClients.find((c) => c.url === safeUrl && "focus" in c);
         if (existing) return existing.focus();
-        return self.clients.openWindow(resolved);
+        return self.clients.openWindow(safeUrl);
       })
   );
 });

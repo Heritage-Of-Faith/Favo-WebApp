@@ -51,6 +51,7 @@ export async function getCustomerSummary(): Promise<ActionResult<CustomerSummary
       name: customers.name,
       loyaltyPoints: customers.loyaltyPoints,
       walletBalanceZar: customers.walletZar,
+      hasPushSubscription: sql<boolean>`(push_subscription IS NOT NULL)`,
     })
     .from(customers)
     .where(eq(customers.id, session.customerId));
@@ -79,6 +80,7 @@ export async function getCustomerSummary(): Promise<ActionResult<CustomerSummary
       loyaltyPoints: customer.loyaltyPoints,
       walletBalanceZar: customer.walletBalanceZar,
       activePackCount: packCount?.count ?? 0,
+      hasPushSubscription: customer.hasPushSubscription,
     },
   };
 }

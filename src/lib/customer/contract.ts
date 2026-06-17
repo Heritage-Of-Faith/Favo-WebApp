@@ -27,6 +27,8 @@ export type CustomerSummary = {
   walletBalanceZar: number;
   /** Number of coffee packs that are still active (not expired, qty remaining > 0). */
   activePackCount: number;
+  /** Whether a push subscription is currently saved for this customer in the DB. */
+  hasPushSubscription: boolean;
 };
 
 // ─── Orders ───────────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import LoyaltyCard from "@/components/customer/LoyaltyCard";
 import WalletCard from "@/components/customer/WalletCard";
 import PackList from "@/components/customer/PackList";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
+import OperatingHours from "@/components/shared/OperatingHours";
 import PushOptIn from "@/components/customer/PushOptIn";
 
 // Always render fresh data (hours/loyalty change at the counter): no static cache.
@@ -121,7 +122,17 @@ export default async function CustomerDashboard() {
         <OrderHistoryList orders={orders} />
 
         {/* Push opt-in — only shows if permission not yet granted; hides after first dismissal. */}
-        {summary && <PushOptIn customerId={summary.customerId} />}
+        {summary && (
+          <PushOptIn
+            customerId={summary.customerId}
+            serverHasSubscription={summary.hasPushSubscription}
+          />
+        )}
+
+        <section aria-label="Opening hours">
+          <p style={S.hoursLabel}>Opening hours</p>
+          <OperatingHours className="" />
+        </section>
       </main>
     </div>
   );

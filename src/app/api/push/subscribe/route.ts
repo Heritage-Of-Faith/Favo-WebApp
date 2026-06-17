@@ -58,3 +58,39 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(request: Request) {
+  const staffSession = await getSession();
+  const customerSessionId = await getCustomerSession();
+
+  if (!staffSession && !customerSessionId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Customers can only unsubscribe themselves.
+  let customerId = customerSessionId;
+  if (!customerId && staffSession) {
+    let body: unknown;
+    try { body = await request.json(); } catch { /* no body is fine */ }
+    customerId = (body as { customerId?: string })?.customerId ?? null;
+  }
+
+  if (!customerId) {
+    return NextResponse.json({ error: "customerId required" }, { status: 400 });
+  }
+
+  await db
+    .update(customers)
+    .set({ pushSubscription: null })
+    .where(eq(customers.id, customerId));
+
+  await writeAudit({
+    entityKind: "customer",
+    entityId: customerId,
+    action: "push_unsubscribe",
+    actorId: staffSession?.id ?? customerId,
+    actorRole: staffSession?.role ?? "customer",
+  });
+
+  return NextResponse.json({ ok: true });
+}

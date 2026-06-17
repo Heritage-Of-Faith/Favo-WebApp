@@ -34,14 +34,14 @@ beforeEach(() => {
 
 describe("PushOptIn", () => {
   it("renders the Enable button when permission is default", () => {
-    render(<PushOptIn customerId="test-customer-id" />);
+    render(<PushOptIn customerId="test-customer-id" serverHasSubscription={false} />);
     expect(screen.getByRole("button", { name: /enable notifications/i })).toBeTruthy();
   });
 
   it("renders nothing when Push API is unsupported", () => {
     // Set Notification to undefined — component guard checks truthiness
     Object.defineProperty(window, "Notification", { writable: true, configurable: true, value: undefined });
-    const { container } = render(<PushOptIn customerId="test-customer-id" />);
+    const { container } = render(<PushOptIn customerId="test-customer-id" serverHasSubscription={false} />);
     expect(container.firstChild).toBeNull();
   });
 
@@ -50,8 +50,19 @@ describe("PushOptIn", () => {
       writable: true,
       value: { permission: "granted", requestPermission: mockRequestPermission },
     });
-    render(<PushOptIn customerId="test-customer-id" />);
+    render(<PushOptIn customerId="test-customer-id" serverHasSubscription={true} />);
     expect(screen.getByText(/notifications enabled/i)).toBeTruthy();
+  });
+
+  it("renders Register device button when permission granted but DB subscription missing (needsSync)", async () => {
+    Object.defineProperty(window, "Notification", {
+      writable: true,
+      value: { permission: "granted", requestPermission: mockRequestPermission },
+    });
+    render(<PushOptIn customerId="test-customer-id" serverHasSubscription={false} />);
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: /register device/i })).toBeTruthy();
+    expect(screen.getByText(/needs to be registered again/i)).toBeTruthy();
   });
 
   it("renders blocked message when permission is denied", () => {
@@ -59,13 +70,13 @@ describe("PushOptIn", () => {
       writable: true,
       value: { permission: "denied", requestPermission: mockRequestPermission },
     });
-    render(<PushOptIn customerId="test-customer-id" />);
+    render(<PushOptIn customerId="test-customer-id" serverHasSubscription={false} />);
     expect(screen.getByText(/notifications blocked/i)).toBeTruthy();
   });
 
   it("hides when permission is default and the asked-once flag is set", async () => {
     localStorage.setItem("favo_push_asked_cust-1", "1");
-    const { container } = render(<PushOptIn customerId="cust-1" />);
+    const { container } = render(<PushOptIn customerId="cust-1" serverHasSubscription={false} />);
     // Wait for effects to run
     await act(async () => {});
     expect(container.firstChild).toBeNull();
@@ -75,13 +86,13 @@ describe("PushOptIn", () => {
     // Store the "granted" state — simulates a previous visit where push was working.
     localStorage.setItem("favo_push_asked_cust-2", "granted");
     // But current permission is "default" (user revoked in browser settings).
-    render(<PushOptIn customerId="cust-2" />);
+    render(<PushOptIn customerId="cust-2" serverHasSubscription={false} />);
     await act(async () => {});
     expect(screen.getByRole("button", { name: /enable notifications/i })).toBeTruthy();
   });
 
   it("sets the asked-once flag in localStorage on Enable click", async () => {
-    render(<PushOptIn customerId="cust-3" />);
+    render(<PushOptIn customerId="cust-3" serverHasSubscription={false} />);
     const btn = screen.getByRole("button", { name: /enable notifications/i });
     await userEvent.click(btn);
     // Flag must be set regardless of VAPID / permission outcome.
@@ -117,7 +128,7 @@ describe("PushOptIn", () => {
     // a behaviour under test here. We test the POST shape by injecting the env before import.
     // Since VAPID_KEY is module-level, skip the POST assertion when key is absent; the
     // subscription body test is covered by integration tests with real env.
-    render(<PushOptIn customerId="cust-4" />);
+    render(<PushOptIn customerId="cust-4" serverHasSubscription={false} />);
     const btn = screen.getByRole("button", { name: /enable notifications/i });
     await userEvent.click(btn);
 
