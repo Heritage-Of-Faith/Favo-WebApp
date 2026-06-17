@@ -142,11 +142,15 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = event.notification.data?.url ?? "/pos/queue";
-  const parsed = new URL(url, self.location.origin);
-  const safeUrl =
-    parsed.origin === self.location.origin && parsed.pathname.startsWith("/pos")
-      ? parsed.href
-      : new URL("/pos/queue", self.location.origin).href;
+  let safeUrl = new URL("/pos/queue", self.location.origin).href;
+  try {
+    const parsed = new URL(url, self.location.origin);
+    if (parsed.origin === self.location.origin && parsed.pathname.startsWith("/pos")) {
+      safeUrl = parsed.href;
+    }
+  } catch {
+    // malformed URL in notification payload — keep fallback
+  }
 
   event.waitUntil(
     self.clients

@@ -54,6 +54,17 @@ describe("PushOptIn", () => {
     expect(screen.getByText(/notifications enabled/i)).toBeTruthy();
   });
 
+  it("renders Register device button when permission granted but DB subscription missing (needsSync)", async () => {
+    Object.defineProperty(window, "Notification", {
+      writable: true,
+      value: { permission: "granted", requestPermission: mockRequestPermission },
+    });
+    render(<PushOptIn customerId="test-customer-id" serverHasSubscription={false} />);
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: /register device/i })).toBeTruthy();
+    expect(screen.getByText(/needs to be registered again/i)).toBeTruthy();
+  });
+
   it("renders blocked message when permission is denied", () => {
     Object.defineProperty(window, "Notification", {
       writable: true,

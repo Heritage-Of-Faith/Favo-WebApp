@@ -17,9 +17,8 @@ import { staff } from "@db/schema";
 //    single primary-key lookup — no bcrypt at all. The HMAC prevents a direct
 //    POST to /api/auth/callback/credentials from forging the fast path.
 //
-// 2. pin (fallback / direct) — full bcrypt scan. Used when signIn("credentials",
-//    { pin }) is called without an attestation (e.g. direct API testing). Normal
-//    POS/admin login always goes through loginWithPin first.
+// All logins require an attestation token minted by loginWithPin — direct
+// signIn calls without one are rejected at the authorize() level.
 
 // ─── Short-lived attestation token ───────────────────────────────────────────
 

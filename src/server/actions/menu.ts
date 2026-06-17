@@ -9,6 +9,7 @@ import { z } from "zod";
 import { eq, asc, desc, and, isNull } from "drizzle-orm";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
+import type { DB } from "@/lib/db";
 import { menuItems, menuCustomisations, priceHistory, operatingHours } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
@@ -305,6 +306,8 @@ export async function createMenuItem(input: {
   const now = new Date();
 
   const [created] = await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DB;
+
     const [item] = await tx
       .insert(menuItems)
       .values({ name, category, currentPriceZar: priceZar, active: true })
@@ -317,17 +320,20 @@ export async function createMenuItem(input: {
       effectiveUntil: null,
     });
 
-    return [item];
-  });
+    await writeAudit(
+      {
+        entityKind: "menu_item",
+        entityId: item!.id,
+        action: "create",
+        actorId: auth.session.id,
+        actorRole: auth.session.role,
+        before: null,
+        after: { name, category, priceZar },
+      },
+      txDb
+    );
 
-  await writeAudit({
-    entityKind: "menu_item",
-    entityId: created!.id,
-    action: "create",
-    actorId: auth.session.id,
-    actorRole: auth.session.role,
-    before: null,
-    after: { name, category, priceZar },
+    return [item];
   });
 
   revalidateTag(MENU_CACHE_TAG, "max");
