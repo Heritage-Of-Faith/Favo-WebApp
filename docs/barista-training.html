@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAVO Café — Barista Quick Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;700;900&family=DM+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --porcelain: #F7F6F2;
+    --cool-steel: #81A4B1;
+    --crimson-carrot: #F5560C;
+    --coffee-bean: #1C0501;
+    --dark-teal: #054D61;
+    --warning-bg: #FBF1D8;
+    --warning-border: #E0B33A;
+    --warning-text: #7A5A12;
+    --low: #C8861A;
+    --out: #C0392B;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #E9E7E0;
+    font-family: "DM Sans", system-ui, sans-serif;
+    color: var(--coffee-bean);
+    line-height: 1.6;
+    padding: 32px 16px;
+  }
+  .sheet {
+    max-width: 760px;
+    margin: 0 auto;
+    background: var(--porcelain);
+    padding: 48px 56px 56px;
+    border-radius: 4px;
+    box-shadow: 0 6px 28px rgba(28, 5, 1, 0.12);
+  }
+  .eyebrow {
+    font-family: "DM Sans", sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--cool-steel);
+    margin: 0 0 6px;
+  }
+  h1 {
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    font-size: 46px;
+    line-height: 1;
+    margin: 0 0 14px;
+    color: var(--coffee-bean);
+  }
+  .lede {
+    font-size: 17px;
+    color: #4a3a36;
+    margin: 0 0 8px;
+    max-width: 60ch;
+  }
+  h2 {
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 26px;
+    color: var(--dark-teal);
+    margin: 38px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid rgba(129, 164, 177, 0.35);
+  }
+  ul { padding-left: 22px; margin: 0 0 12px; }
+  li { margin: 6px 0; }
+  p { margin: 0 0 12px; }
+  strong { font-weight: 700; color: var(--coffee-bean); }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.88em;
+    background: rgba(5, 77, 97, 0.08);
+    color: var(--dark-teal);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  .callout {
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-left: 5px solid var(--warning-border);
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    color: var(--warning-text);
+  }
+  .callout strong { color: var(--warning-text); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 8px;
+    font-size: 15px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(129, 164, 177, 0.4);
+    vertical-align: top;
+  }
+  th {
+    font-family: "DM Sans", sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--cool-steel);
+    background: rgba(5, 77, 97, 0.04);
+  }
+  tr:last-child td { border-bottom: none; }
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .badge.low { background: rgba(200, 134, 26, 0.16); color: var(--low); }
+  .badge.out { background: rgba(192, 57, 43, 0.14); color: var(--out); }
+  footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(129, 164, 177, 0.35);
+    font-size: 12px;
+    color: var(--cool-steel);
+  }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .sheet { box-shadow: none; max-width: none; padding: 24px; }
+    h2 { page-break-after: avoid; }
+    table, .callout { page-break-inside: avoid; }
+  }
+  @media (max-width: 520px) {
+    .sheet { padding: 28px 20px 36px; }
+    h1 { font-size: 36px; }
+  }
+</style>
+</head>
+<body>
+<main class="sheet">
+  <p class="eyebrow">FAVO Café · Point of Sale</p>
+  <h1>Barista Quick Guide</h1>
+  <p class="lede">Everything you need to take your first order. Read it once; it takes about five minutes. Screenshots are coming in a later version.</p>
+
+  <h2>Logging in</h2>
+  <ul>
+    <li>Open the POS on the iPad at <code>favo.hofmi.org/pos</code>.</li>
+    <li>You'll see <strong>Enter your PIN</strong>. Tap in your 4-digit PIN, then tap <strong>GO</strong>.</li>
+    <li>Wrong PIN? It clears so you can try again.</li>
+    <li>Forgot your PIN? Ask the shift manager — they sign in separately.</li>
+  </ul>
+
+  <h2>Taking an order</h2>
+  <ul>
+    <li><strong>Add a customer (optional).</strong> Tap the search bar at the top and type a name or phone number. Tap the customer when they appear. No account? Just leave it blank — it's a walk-in. They can link an account later in the customer app.</li>
+    <li><strong>Build the order.</strong> Tap an item on the menu grid. A panel slides up with any <strong>add-ons</strong> (extra shot, oat milk, and so on). Tap the ones you want, then tap <strong>Add to order</strong>. The total updates on its own.</li>
+    <li><strong>Change a quantity.</strong> Use the <strong>+</strong> and <strong>–</strong> buttons next to each line in the order summary. Tap the bin icon to remove a line.</li>
+    <li><strong>Loyalty.</strong> If the customer has enough points, a <strong>Redeem 100 pts (R20 off)</strong> button appears on the payment screen. Tap it there — not while building.</li>
+  </ul>
+
+  <div class="callout">
+    <strong>Staff free coffee:</strong> Baristas get one free cappuccino per weekday. You apply it from the order <strong>after</strong> it's placed — open the order in the queue and tap <strong>Apply staff discount</strong> (it fills in your own ID). Cappuccinos only, weekdays only.
+  </div>
+
+  <h2>Confirming and payment</h2>
+  <ul>
+    <li>Tap <strong>Place Order</strong>. The payment screen opens.</li>
+    <li>For a normal order, tap <strong>Charge card — R…</strong>. The secure Yoco card form appears. The customer taps, swipes, or presents their card.</li>
+    <li>When the card confirms, the order moves into the live queue <strong>on its own</strong> — you don't tap anything else.</li>
+    <li>If the order is free (loyalty or staff discount), there's no card step — just tap <strong>Confirm — send to queue</strong>.</li>
+  </ul>
+
+  <h2>Working the queue</h2>
+  <p>The right panel shows every live order. Work each one top to bottom:</p>
+  <ul>
+    <li>Tap <strong>Start Making</strong> when you begin the drink.</li>
+    <li>Tap <strong>Mark Ready</strong> when it's done. The customer gets a notification on their phone.</li>
+    <li>Tap <strong>DONE — Collected</strong> when they pick it up. The order closes.</li>
+  </ul>
+
+  <h2>Going offline</h2>
+  <div class="callout">
+    <strong>Offline mode:</strong> If the iPad loses internet, a yellow bar appears at the top: <strong>Working offline — 2 orders pending · Will sync automatically when connection returns</strong>. You can keep working normally.
+  </div>
+  <ul>
+    <li>Build and <strong>Place Order</strong> exactly as usual.</li>
+    <li>On the payment screen you'll see <strong>No connection — Take payment on the Yoco card machine, then tap Confirm</strong>.</li>
+    <li>Take the payment on the card machine, then tap <strong>Confirm — paid in person</strong>.</li>
+    <li>Orders save on the iPad. When the internet comes back, they send themselves and the pending count drops.</li>
+    <li><strong>Do not refresh or close the page while offline</strong> — wait for the count to reach zero first.</li>
+    <li>To see what's still waiting, tap the connectivity pill in the top bar — it opens the <strong>sync</strong> list.</li>
+  </ul>
+
+  <h2>Stock warnings</h2>
+  <ul>
+    <li>A <span class="badge low">Low</span> badge on an item means stock is low — you can still sell it.</li>
+    <li>A <span class="badge out">Out</span> badge means out of stock — it's locked and can't be added.</li>
+    <li>Tell the manager when something runs low. They update stock in the admin panel.</li>
+  </ul>
+
+  <h2>Common problems</h2>
+  <table>
+    <thead>
+      <tr><th>Problem</th><th>What to do</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Payment fails on the card machine</td><td>Try again. If it fails twice, take cash and note it in the order comments.</td></tr>
+      <tr><td>Order stuck in the queue</td><td>Open the order and tap <strong>Cancel order</strong>. This only works while it's still in <strong>Ordered</strong>.</td></tr>
+      <tr><td>Screen frozen</td><td>Reload with <code>⌘R</code>. Any offline orders on the iPad are safe.</td></tr>
+      <tr><td>Can't find a customer</td><td>Leave it as a walk-in. They can link their account later in the customer app.</td></tr>
+      <tr><td>Wrong item on an order</td><td>You can't edit a placed order. Cancel it and place a new one.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>End of shift</h2>
+  <ul>
+    <li>Nothing to close off — the system records everything for you.</li>
+    <li>Before you leave, tap the connectivity pill in the top bar and check the sync list is empty. If anything is still pending, tell the manager.</li>
+  </ul>
+
+  <footer>FAVO Café — Barista Quick Guide · Initial version, screenshots to follow.</footer>
+</main>
+</body>
+</html>
