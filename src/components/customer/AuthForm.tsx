@@ -138,6 +138,10 @@ export default function AuthForm({ mode }: Props) {
           Can&apos;t find it? Check your spam folder.
         </p>
 
+        {error && (
+          <p role="alert" className="mt-4 favo-small text-[var(--color-error)]">{error}</p>
+        )}
+
         {resendSent ? (
           <p className="favo-small mt-4 text-porcelain/70">Resent — check your inbox.</p>
         ) : (
@@ -145,12 +149,20 @@ export default function AuthForm({ mode }: Props) {
             type="button"
             disabled={resending}
             onClick={async () => {
+              setError(null);
               setResending(true);
-              await resendVerificationEmail(verificationEmail);
-              setResending(false);
-              setResendSent(true);
+              try {
+                const res = await resendVerificationEmail(verificationEmail);
+                if (!res.ok) {
+                  setError(res.message);
+                  return;
+                }
+                setResendSent(true);
+              } finally {
+                setResending(false);
+              }
             }}
-            className="mt-4 favo-small text-crimson-carrot underline underline-offset-2 disabled:opacity-50"
+            className="mt-4 favo-small text-crimson-carrot underline underline-offset-2 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-porcelain"
           >
             {resending ? "Resending…" : "Resend confirmation email"}
           </button>
@@ -159,7 +171,7 @@ export default function AuthForm({ mode }: Props) {
         <div className="mt-8">
           <Link
             href="/login"
-            className="favo-small text-porcelain/60 underline underline-offset-2"
+            className="favo-small text-porcelain/60 underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-porcelain"
           >
             Back to sign in
           </Link>

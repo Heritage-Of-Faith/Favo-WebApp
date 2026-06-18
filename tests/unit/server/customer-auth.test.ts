@@ -199,6 +199,26 @@ describe("registerCustomer — PHONE_TAKEN", () => {
     });
     expect(mockSignUp).not.toHaveBeenCalled();
   });
+
+  it("allows legacy customer with same email+phone to bypass PHONE_TAKEN and re-link", async () => {
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
+    const { db } = await import("@db/index");
+    // Phone check: same phone, same email, null auth_id → legacy row → skip PHONE_TAKEN
+    vi.mocked(db.select).mockImplementationOnce(
+      () => chain([{ id: "cust_legacy", email: "gian@favo.co.za", authId: null }]) as never
+    );
+    // Email/re-link check: returns the same legacy row
+    vi.mocked(db.select).mockImplementationOnce(
+      () => chain([{ id: "cust_legacy", name: "Gian", authId: null }]) as never
+    );
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({
+      name: "Gian", email: "gian@favo.co.za", password: "password1", phone: "082 999 0000",
+    });
+    expect(result.ok).toBe(true);
+    expect(vi.mocked(db.update)).toHaveBeenCalled();
+    expect(vi.mocked(db.insert)).not.toHaveBeenCalled();
+  });
 });
 
 // ─── registerCustomer — legacy re-link ───────────────────────────────────────

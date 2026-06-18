@@ -63,13 +63,15 @@ export async function registerCustomer(input: {
     phone = validated;
   }
 
-  // Phone uniqueness — same number already belongs to another customer
+  // Phone uniqueness — same number already belongs to another customer.
+  // Exception: legacy row with same email + null auth_id is allowed through (re-link path below).
   if (phone) {
     const [byPhone] = await db
-      .select({ id: customers.id })
+      .select({ id: customers.id, email: customers.email, authId: customers.authId })
       .from(customers)
       .where(eq(customers.phone, phone));
-    if (byPhone) {
+    const isLegacySameEmail = byPhone?.email === email && byPhone?.authId === null;
+    if (byPhone && !isLegacySameEmail) {
       return {
         ok: false,
         code: "PHONE_TAKEN",
