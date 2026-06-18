@@ -135,7 +135,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
     date: today.date,
     revenueZar: sum("revenueZar"),
     cogsZar: sum("cogsZar"),
-    expensesZar: sum("expensesZar"),
+    expensesZar: 0,
     grossMarginZar: sum("grossMarginZar"),
     netZar: periodNetZar,
     profit: periodNetZar >= 0,
@@ -152,13 +152,11 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
   const periodPrev = {
     revenueZar: halfSum(firstHalf, "revenueZar"),
     cogsZar: halfSum(firstHalf, "cogsZar"),
-    expensesZar: halfSum(firstHalf, "expensesZar"),
     netZar: halfSum(firstHalf, "netZar"),
   };
   const periodCurr = {
     revenueZar: halfSum(secondHalf, "revenueZar"),
     cogsZar: halfSum(secondHalf, "cogsZar"),
-    expensesZar: halfSum(secondHalf, "expensesZar"),
     netZar: halfSum(secondHalf, "netZar"),
   };
 
@@ -167,7 +165,6 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
   const kpiTrend = {
     revenue: trendOf(inspectDate ? view.revenueZar : periodCurr.revenueZar, inspectDate ? prevDay?.revenueZar : periodPrev.revenueZar),
     cogs: trendOf(inspectDate ? view.cogsZar : periodCurr.cogsZar, inspectDate ? prevDay?.cogsZar : periodPrev.cogsZar),
-    expenses: trendOf(inspectDate ? view.expensesZar : periodCurr.expensesZar, inspectDate ? prevDay?.expensesZar : periodPrev.expensesZar),
     net: trendOf(inspectDate ? view.netZar : periodCurr.netZar, inspectDate ? prevDay?.netZar : periodPrev.netZar),
   };
   const kpiSub = inspectDate ? undefined : `last ${rangeDays}d`;
@@ -175,7 +172,6 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
   // Revenue allocation for the viewed day or period (handles loss gracefully).
   const allocation = [
     { label: "COGS", value: Math.max(kpi.cogsZar, 0), color: chartColor.warning },
-    { label: "Expenses", value: Math.max(kpi.expensesZar, 0), color: chartColor.neutral },
     { label: kpi.netZar >= 0 ? "Net profit" : "Net loss", value: Math.max(kpi.netZar, 0), color: chartColor.positive },
   ];
 
@@ -222,11 +218,11 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
       )}
 
       {/* ── Empty-period notice ─────────────────────────────────────────────── */}
-      {kpi.revenueZar === 0 && kpi.cogsZar === 0 && kpi.expensesZar === 0 && (
+      {kpi.revenueZar === 0 && kpi.cogsZar === 0 && (
         <AlertTile
           severity="info"
           title={inspectDate ? "No activity recorded for this day" : `No activity recorded in the last ${rangeDays} days`}
-          description="Figures populate as orders are placed (Revenue, COGS) and expenses are logged. Take an order on the POS or log an expense to see them update live."
+          description="Figures populate as orders are placed and ingredients are deducted. Take an order on the POS to see them update live."
         />
       )}
 
@@ -247,19 +243,12 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
           hint="ingredient cost of items sold"
         />
         <KpiTile
-          label="Expenses"
-          valueZar={kpi.expensesZar}
-          trend={{ ...kpiTrend.expenses, upIsGood: false }}
-          sub={kpiSub}
-          hint="rent, utilities, wages…"
-        />
-        <KpiTile
           label="Net"
           valueZar={kpi.netZar}
           tone={kpi.netZar >= 0 ? "positive" : "negative"}
           trend={kpiTrend.net}
           sub={kpiSub ?? (kpi.profit ? "profit" : "loss")}
-          hint="revenue − COGS − expenses"
+          hint="revenue − COGS"
         />
       </TileGrid>
 
@@ -353,7 +342,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
             formatValue={formatZar}
             centerLabel={formatZar(kpi.revenueZar)}
             centerSub="revenue"
-            ariaLabel={`Revenue allocation: COGS ${formatZar(kpi.cogsZar)}, expenses ${formatZar(kpi.expensesZar)}, net ${formatZar(kpi.netZar)}`}
+            ariaLabel={`Revenue allocation: COGS ${formatZar(kpi.cogsZar)}, net ${formatZar(kpi.netZar)}`}
           />
           {kpi.netZar < 0 && (
             <p className="favo-caption mt-2" style={{ color: "var(--color-crimson-carrot)", textTransform: "none", letterSpacing: 0 }}>

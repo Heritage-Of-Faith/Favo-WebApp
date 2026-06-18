@@ -9,7 +9,7 @@
 
 import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { monthlyReports, orders, expenses } from "@db/schema";
+import { monthlyReports, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import type {
@@ -146,15 +146,8 @@ export async function generateMonthlyPnL(
   `);
   const cogsZar = parseInt(cogsRow?.total ?? "0", 10) || 0;
 
-  // ── Expenses ───────────────────────────────────────────────────────────────
-  const [expRow] = await db
-    .select({ total: sql<number>`COALESCE(SUM(${expenses.amountZar}), 0)::int` })
-    .from(expenses)
-    .where(and(gte(expenses.incurredAt, start), lt(expenses.incurredAt, end)));
-  const expensesZar = expRow?.total ?? 0;
-
   const grossMarginZar = revenueZar - cogsZar;
-  const netZar = grossMarginZar - expensesZar;
+  const netZar = grossMarginZar;
 
   let reportId!: string;
 
@@ -167,7 +160,7 @@ export async function generateMonthlyPnL(
         month,
         revenueZar,
         cogsZar,
-        expensesZar,
+        expensesZar: 0,
         grossMarginZar,
         netZar,
         status: "draft",
@@ -184,7 +177,7 @@ export async function generateMonthlyPnL(
         actorId: session.id,
         actorRole: session.role,
         before: null,
-        after: { month, revenueZar, cogsZar, expensesZar, netZar, status: "draft" },
+        after: { month, revenueZar, cogsZar, expensesZar: 0, netZar, status: "draft" },
       },
       txDb
     );

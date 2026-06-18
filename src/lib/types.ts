@@ -219,25 +219,6 @@ export type PosTodaySummary = {
   wasteCount: number;
 };
 
-// ─── Phase 2: Expenses ────────────────────────────────────────────────────────
-
-export type ExpenseCategory =
-  | "rent"
-  | "utilities"
-  | "staff"
-  | "maintenance"
-  | "marketing"
-  | "other";
-
-export type Expense = {
-  id: string;
-  category: ExpenseCategory;
-  amountZar: number;
-  incurredAt: string; // ISO 8601
-  loggedBy: string; // staff id
-  loggedByName: string;
-};
-
 // ─── Phase 2: Purchases ───────────────────────────────────────────────────────
 
 export type PurchaseKind = "planned" | "emergency";

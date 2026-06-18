@@ -7,7 +7,6 @@
  *   - Inventory list renders
  *   - Stock-takes page renders
  *   - Purchases page renders
- *   - Expenses page renders
  *   - Monthly P&L page renders
  *   - Hours editor renders (AT-76 / A16)
  *   - Reports / export page renders (AT-77 / A17)
@@ -78,7 +77,7 @@ test.describe("2. Admin dashboard", () => {
     const nav = page.getByRole("navigation", { name: /admin/i });
     await expect(nav.getByRole("link", { name: /inventory/i })).toBeVisible();
     await expect(nav.getByRole("link", { name: /stock takes/i })).toBeVisible();
-    await expect(nav.getByRole("link", { name: /expenses/i })).toBeVisible();
+    await expect(nav.getByRole("link", { name: /purchases/i })).toBeVisible();
   });
 });
 
@@ -111,15 +110,6 @@ test.describe("3. Core admin pages", () => {
     await expect(page).toHaveURL(/\/admin\/purchases/);
     await expect(
       page.getByRole("heading", { name: /purchase/i }).first()
-    ).toBeVisible({ timeout: 15_000 });
-  });
-
-  test("expenses page renders", async ({ page }) => {
-    await loginAsAdmin(page);
-    await page.goto("/admin/expenses", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/admin\/expenses/);
-    await expect(
-      page.getByRole("heading", { name: /expense/i }).first()
     ).toBeVisible({ timeout: 15_000 });
   });
 

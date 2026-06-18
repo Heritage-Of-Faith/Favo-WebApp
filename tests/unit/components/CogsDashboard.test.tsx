@@ -23,9 +23,9 @@ function makeCogs(over: Partial<CogsLive> = {}): CogsLive {
     date: "2026-06-04",
     revenueZar: 50000,
     cogsZar: 15000,
-    expensesZar: 5000,
+    expensesZar: 0,
     grossMarginZar: 35000,
-    netZar: 30000,
+    netZar: 35000,
     profit: true,
     costEstimatedWarning: false,
     ...over,
@@ -78,9 +78,9 @@ describe("CogsDashboard", () => {
     const { rerender } = render(
       <CogsDashboard initialToday={makeCogs()} initialHistory={history} todayDate="2026-06-04" />
     );
-    // Period aggregate net: 10000 + 20000 + 30000 = 60000 = R600,00
+    // Period aggregate net: 10000 + 20000 + 35000 (today, merged) = 65000 = R650,00
     expect(
-      screen.getAllByText(/R\s*600,00/).some((el) => el.style.color === "var(--color-dark-teal)")
+      screen.getAllByText(/R\s*650,00/).some((el) => el.style.color === "var(--color-dark-teal)")
     ).toBe(true);
 
     // Loss: today's net = -4500; merged into Jun 4 → aggregate = 10000+20000+(-4500) = 25500 = R255,00

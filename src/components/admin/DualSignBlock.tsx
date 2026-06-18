@@ -89,7 +89,6 @@ export default function DualSignBlock({ report, canSignAdmin, onSigned }: DualSi
           <dl className="grid grid-cols-2 gap-y-1 py-2">
             <Figure label="Revenue" value={report.revenueZar} />
             <Figure label="COGS" value={report.cogsZar} />
-            <Figure label="Expenses" value={report.expensesZar} />
             <Figure label="Net" value={report.netZar} strong />
           </dl>
           <p className="favo-caption" style={{ color: "var(--color-text-muted)", textTransform: "none", letterSpacing: 0 }}>
