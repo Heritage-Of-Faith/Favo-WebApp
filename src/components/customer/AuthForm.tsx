@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Route } from "next";
-import { registerCustomer, loginCustomer } from "@/server/actions/customer-auth";
+import { registerCustomer, loginCustomer, requestPasswordReset } from "@/server/actions/customer-auth";
 
 type Mode = "signin" | "signup";
 
@@ -58,6 +58,8 @@ export default function AuthForm({ mode }: Props) {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [sendingReset, setSendingReset] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -170,9 +172,30 @@ export default function AuthForm({ mode }: Props) {
 
         {/* Password */}
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="password" className="favo-label text-cool-steel">
-            Password
-          </label>
+          <div className="flex items-center justify-between">
+            <label htmlFor="password" className="favo-label text-cool-steel">
+              Password
+            </label>
+            {mode === "signin" && (
+              <button
+                type="button"
+                disabled={sendingReset}
+                onClick={async () => {
+                  if (!email) {
+                    setError("Enter your email above, then click Forgot password.");
+                    return;
+                  }
+                  setSendingReset(true);
+                  await requestPasswordReset(email);
+                  setSendingReset(false);
+                  setForgotSent(true);
+                }}
+                className="favo-small text-crimson-carrot underline underline-offset-2 disabled:opacity-50"
+              >
+                {sendingReset ? "Sending…" : "Forgot password?"}
+              </button>
+            )}
+          </div>
           <input
             id="password"
             name="password"
@@ -184,6 +207,11 @@ export default function AuthForm({ mode }: Props) {
             className={inputClass}
             placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
           />
+          {forgotSent && (
+            <p className="favo-small text-porcelain/70">
+              If that email is registered you&apos;ll receive a reset link shortly.
+            </p>
+          )}
         </div>
 
         {/* Confirm password — signup only */}

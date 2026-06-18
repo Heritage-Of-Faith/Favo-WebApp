@@ -11,6 +11,7 @@ import {
   index,
   check,
   numeric,
+  uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -58,10 +59,10 @@ export const staff = pgTable("staff", {
 export const customers = pgTable("customers", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: tenantId(),
+  authId: uuid("auth_id").unique(),
   email: text("email").unique(),
   name: text("name").notNull(),
   phone: text("phone"),
-  passwordHash: text("password_hash"),
   pushSubscription: jsonb("push_subscription"),
   loyaltyPoints: integer("loyalty_points").default(0).notNull(),
   walletZar: integer("wallet_zar").default(0).notNull(),

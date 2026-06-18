@@ -58,6 +58,13 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
+      - name: Create Supabase auth schema stub (CI only)
+        run: |
+          psql postgresql://favo:favo@localhost:5432/favo_test -c "
+            CREATE SCHEMA IF NOT EXISTS auth;
+            CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY);
+          "
+
       - name: Migrate test DB
         run: bun db:migrate
 

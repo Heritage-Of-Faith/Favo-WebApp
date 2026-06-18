@@ -1,6 +1,6 @@
 {
-  "id": "8158bce1-d73d-4f4e-ac51-f57a3316d1ae",
-  "prevId": "7ab52c0a-f8f0-44d0-814f-0f0de1e20c3e",
+  "id": "6b531145-ca52-4aa0-8635-8b1b36291938",
+  "prevId": "8158bce1-d73d-4f4e-ac51-f57a3316d1ae",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -266,6 +266,12 @@
           "notNull": true,
           "default": "'hofmi'"
         },
+        "auth_id": {
+          "name": "auth_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "email": {
           "name": "email",
           "type": "text",
@@ -280,12 +286,6 @@
         },
         "phone": {
           "name": "phone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "password_hash": {
-          "name": "password_hash",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -322,6 +322,13 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
+        "customers_auth_id_unique": {
+          "name": "customers_auth_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "auth_id"
+          ]
+        },
         "customers_email_unique": {
           "name": "customers_email_unique",
           "nullsNotDistinct": false,
@@ -982,12 +989,6 @@
         },
         "admin_sig": {
           "name": "admin_sig",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "finance_sig": {
-          "name": "finance_sig",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
@@ -2959,11 +2960,7 @@
       "schema": "public",
       "values": [
         "barista",
-        "roaster",
-        "manager",
-        "admin",
-        "finance",
-        "owner"
+        "admin"
       ]
     },
     "public.stock_movement_kind": {

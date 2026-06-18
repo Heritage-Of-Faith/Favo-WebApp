@@ -1,48 +1,50 @@
-// Customer auth unit tests — customer-auth.ts
-// Covers input validation (email, password, name), EMAIL_TAKEN, and
-// INVALID_CREDENTIALS paths. bcrypt happy paths (hash/compare) are deferred
-// to integration tests — these tests mock bcrypt to keep unit tests fast.
+// Customer auth unit tests — customer-auth.ts (Supabase Auth)
+// Covers input validation, EMAIL_TAKEN, INVALID_CREDENTIALS, and logout paths.
+// Supabase client is mocked to keep unit tests fast and offline.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
-vi.mock("@db/index", () => {
-  function chain() {
-    const c: Record<string, unknown> = {
-      then: (resolve: (v: unknown[]) => void) => resolve([]),
-      from: vi.fn(), where: vi.fn(),
-    };
-    for (const k of ["from", "where"]) {
-      (c[k] as ReturnType<typeof vi.fn>).mockReturnValue(c);
-    }
-    return c;
-  }
-  return {
-    db: {
-      select: vi.fn().mockImplementation(chain),
-      insert: vi.fn().mockReturnValue({
-        values: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([{ id: "cust_new", name: "Louis" }]),
-        }),
-      }),
-    },
-  };
-});
+const mockSignUp = vi.fn();
+const mockSignIn = vi.fn();
+const mockSignOut = vi.fn();
+const mockResetPassword = vi.fn();
 
-vi.mock("bcryptjs", () => ({
-  default: {
-    hash: vi.fn().mockResolvedValue("$2a$12$hashed"),
-    compare: vi.fn().mockResolvedValue(true),
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: vi.fn().mockResolvedValue({
+    auth: {
+      signUp: mockSignUp,
+      signInWithPassword: mockSignIn,
+      signOut: mockSignOut,
+      resetPasswordForEmail: mockResetPassword,
+    },
+  }),
+}));
+
+function chain() {
+  const c: Record<string, unknown> = {
+    then: (resolve: (v: unknown[]) => void) => resolve([]),
+    from: vi.fn(), where: vi.fn(),
+  };
+  for (const k of ["from", "where"]) {
+    (c[k] as ReturnType<typeof vi.fn>).mockReturnValue(c);
+  }
+  return c;
+}
+
+vi.mock("@db/index", () => ({
+  db: {
+    select: vi.fn().mockImplementation(chain),
+    insert: vi.fn().mockReturnValue({
+      values: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: "cust_new", name: "Louis" }]),
+      }),
+    }),
   },
 }));
 
 vi.mock("@/server/audit", () => ({ writeAudit: vi.fn().mockResolvedValue(undefined) }));
-
-vi.mock("@/server/auth/customer-session", () => ({
-  setCustomerSession: vi.fn().mockResolvedValue(undefined),
-  clearCustomerSession: vi.fn().mockResolvedValue(undefined),
-}));
 
 // ─── registerCustomer — validation ───────────────────────────────────────────
 
@@ -85,6 +87,7 @@ describe("registerCustomer — validation", () => {
   });
 
   it("accepts 8-character password as minimum", async () => {
+    mockSignUp.mockResolvedValueOnce({ data: { user: { id: "uuid-123" } }, error: null });
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "12345678" });
     expect(result.ok).toBe(true);
@@ -96,13 +99,11 @@ describe("registerCustomer — validation", () => {
 describe("registerCustomer — EMAIL_TAKEN", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("returns EMAIL_TAKEN when email already registered", async () => {
-    const { db } = await import("@db/index");
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ id: "cust_existing" }]),
-      }),
-    } as never);
+  it("returns EMAIL_TAKEN when Supabase reports email already registered", async () => {
+    mockSignUp.mockResolvedValueOnce({
+      data: { user: null },
+      error: { message: "User already registered" },
+    });
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1" });
     expect(result.ok).toBe(false);
@@ -116,27 +117,22 @@ describe("registerCustomer — email normalisation", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("lowercases the email before registration", async () => {
-    const { db } = await import("@db/index");
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
-    } as never);
+    mockSignUp.mockResolvedValueOnce({ data: { user: { id: "uuid-123" } }, error: null });
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    // Should not fail validation even with mixed-case email
     const result = await registerCustomer({ name: "Louis", email: "Louis@FAVO.co.za", password: "password1" });
     expect(result.ok).toBe(true);
+    expect(mockSignUp).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "louis@favo.co.za" })
+    );
   });
 });
 
-// ─── registerCustomer — phone (AT-64) ────────────────────────────────────────
+// ─── registerCustomer — phone ─────────────────────────────────────────────────
 
 describe("registerCustomer — phone", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("rejects a malformed phone number when one is supplied", async () => {
-    const { db } = await import("@db/index");
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
-    } as never);
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     const result = await registerCustomer({
       name: "Louis", email: "louis@favo.co.za", password: "password1", phone: "123",
@@ -146,10 +142,8 @@ describe("registerCustomer — phone", () => {
   });
 
   it("persists a valid phone number on the new customer row", async () => {
+    mockSignUp.mockResolvedValueOnce({ data: { user: { id: "uuid-123" } }, error: null });
     const { db } = await import("@db/index");
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
-    } as never);
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     const result = await registerCustomer({
       name: "Louis", email: "louis@favo.co.za", password: "password1", phone: "082 123 4567",
@@ -189,11 +183,8 @@ describe("loginCustomer — validation", () => {
 describe("loginCustomer — INVALID_CREDENTIALS", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("returns INVALID_CREDENTIALS for unknown email (does not reveal existence)", async () => {
-    const { db } = await import("@db/index");
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
-    } as never);
+  it("returns INVALID_CREDENTIALS for unknown email", async () => {
+    mockSignIn.mockResolvedValueOnce({ data: { user: null }, error: { message: "Invalid credentials" } });
     const { loginCustomer } = await import("@/server/actions/customer-auth");
     const result = await loginCustomer({ email: "unknown@favo.co.za", password: "password1" });
     expect(result.ok).toBe(false);
@@ -201,33 +192,21 @@ describe("loginCustomer — INVALID_CREDENTIALS", () => {
   });
 
   it("returns INVALID_CREDENTIALS for wrong password", async () => {
-    const { db } = await import("@db/index");
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([
-          { id: "cust_1", name: "Louis", passwordHash: "$2a$12$hashed" },
-        ]),
-      }),
-    } as never);
-    const bcrypt = await import("bcryptjs");
-    vi.mocked(bcrypt.default.compare).mockResolvedValueOnce(false as never);
+    mockSignIn.mockResolvedValueOnce({ data: { user: null }, error: { message: "Invalid login credentials" } });
     const { loginCustomer } = await import("@/server/actions/customer-auth");
     const result = await loginCustomer({ email: "louis@favo.co.za", password: "wrongpassword" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("INVALID_CREDENTIALS");
   });
 
-  it("returns INVALID_CREDENTIALS when account has no passwordHash (social account)", async () => {
+  it("returns INVALID_CREDENTIALS when customer row not found for auth user", async () => {
+    mockSignIn.mockResolvedValueOnce({ data: { user: { id: "uuid-orphan" } }, error: null });
     const { db } = await import("@db/index");
     vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([
-          { id: "cust_1", name: "Louis", passwordHash: null },
-        ]),
-      }),
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
     } as never);
     const { loginCustomer } = await import("@/server/actions/customer-auth");
-    const result = await loginCustomer({ email: "louis@favo.co.za", password: "password1" });
+    const result = await loginCustomer({ email: "orphan@favo.co.za", password: "password1" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("INVALID_CREDENTIALS");
   });
@@ -239,15 +218,36 @@ describe("logoutCustomer", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("always returns ok", async () => {
+    mockSignOut.mockResolvedValueOnce({ error: null });
     const { logoutCustomer } = await import("@/server/actions/customer-auth");
     const result = await logoutCustomer();
     expect(result.ok).toBe(true);
   });
 
-  it("calls clearCustomerSession", async () => {
-    const { clearCustomerSession } = await import("@/server/auth/customer-session");
+  it("calls supabase.auth.signOut", async () => {
+    mockSignOut.mockResolvedValueOnce({ error: null });
     const { logoutCustomer } = await import("@/server/actions/customer-auth");
     await logoutCustomer();
-    expect(clearCustomerSession).toHaveBeenCalledOnce();
+    expect(mockSignOut).toHaveBeenCalledOnce();
+  });
+});
+
+// ─── requestPasswordReset ─────────────────────────────────────────────────────
+
+describe("requestPasswordReset", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("rejects invalid email", async () => {
+    const { requestPasswordReset } = await import("@/server/actions/customer-auth");
+    const result = await requestPasswordReset("notanemail");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION");
+  });
+
+  it("returns ok without leaking whether the email exists", async () => {
+    mockResetPassword.mockResolvedValueOnce({ error: null });
+    const { requestPasswordReset } = await import("@/server/actions/customer-auth");
+    const result = await requestPasswordReset("anyone@favo.co.za");
+    expect(result.ok).toBe(true);
   });
 });
