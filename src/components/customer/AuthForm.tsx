@@ -7,7 +7,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Route } from "next";
-import { registerCustomer, loginCustomer, requestPasswordReset } from "@/server/actions/customer-auth";
+import {
+  registerCustomer,
+  loginCustomer,
+  requestPasswordReset,
+  resendVerificationEmail,
+} from "@/server/actions/customer-auth";
 
 type Mode = "signin" | "signup";
 
@@ -58,14 +63,20 @@ export default function AuthForm({ mode }: Props) {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Forgot password flow
   const [forgotSent, setForgotSent] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
+
+  // Email verification flow (signup with confirmation enabled, or login before verification)
+  const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
+  const [resendSent, setResendSent] = useState(false);
+  const [resending, setResending] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
-    // Client-side guard for confirm password
     if (mode === "signup" && password !== confirm) {
       setError("Passwords don't match.");
       return;
@@ -73,14 +84,26 @@ export default function AuthForm({ mode }: Props) {
 
     setSubmitting(true);
     try {
-      const res =
-        mode === "signup"
-          ? await registerCustomer({ name, email, phone, password })
-          : await loginCustomer({ email, password });
-
-      if (!res.ok) {
-        setError(res.message);
-        return;
+      if (mode === "signup") {
+        const res = await registerCustomer({ name, email, phone, password });
+        if (!res.ok) {
+          setError(res.message);
+          return;
+        }
+        if (res.data.verificationSent) {
+          setVerificationEmail(email);
+          return;
+        }
+      } else {
+        const res = await loginCustomer({ email, password });
+        if (!res.ok) {
+          if (res.code === "EMAIL_NOT_VERIFIED") {
+            setVerificationEmail(email);
+            return;
+          }
+          setError(res.message);
+          return;
+        }
       }
 
       router.refresh();
@@ -91,6 +114,61 @@ export default function AuthForm({ mode }: Props) {
       setSubmitting(false);
     }
   }
+
+  // ── Verification pending screen ───────────────────────────────────────────
+
+  if (verificationEmail) {
+    return (
+      <div className="w-full max-w-[400px] text-center">
+        <Link
+          href="/"
+          aria-label="Back to FAVO home"
+          className="favo-hero inline-block text-[clamp(2.75rem,10vw,4.5rem)] leading-none"
+          style={{ color: "var(--color-porcelain)", textDecoration: "none" }}
+        >
+          FAVO
+        </Link>
+        <h1 className="favo-h2 mt-5 text-porcelain">Check your email</h1>
+        <p className="favo-body mt-3 text-porcelain/80">
+          We sent a confirmation link to{" "}
+          <span className="text-porcelain font-medium">{verificationEmail}</span>.
+          Click it to activate your account.
+        </p>
+        <p className="favo-small mt-6 text-porcelain/60">
+          Can&apos;t find it? Check your spam folder.
+        </p>
+
+        {resendSent ? (
+          <p className="favo-small mt-4 text-porcelain/70">Resent — check your inbox.</p>
+        ) : (
+          <button
+            type="button"
+            disabled={resending}
+            onClick={async () => {
+              setResending(true);
+              await resendVerificationEmail(verificationEmail);
+              setResending(false);
+              setResendSent(true);
+            }}
+            className="mt-4 favo-small text-crimson-carrot underline underline-offset-2 disabled:opacity-50"
+          >
+            {resending ? "Resending…" : "Resend confirmation email"}
+          </button>
+        )}
+
+        <div className="mt-8">
+          <Link
+            href="/login"
+            className="favo-small text-porcelain/60 underline underline-offset-2"
+          >
+            Back to sign in
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main form ─────────────────────────────────────────────────────────────
 
   return (
     <div className="w-full max-w-[400px]">

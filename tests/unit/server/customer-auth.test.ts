@@ -1,5 +1,6 @@
 // Customer auth unit tests — customer-auth.ts (Supabase Auth)
-// Covers input validation, EMAIL_TAKEN, INVALID_CREDENTIALS, and logout paths.
+// Covers input validation, phone deduplication, legacy re-link, email verification,
+// EMAIL_TAKEN, INVALID_CREDENTIALS, EMAIL_NOT_VERIFIED, and logout paths.
 // Supabase client is mocked to keep unit tests fast and offline.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -10,6 +11,7 @@ const mockSignUp = vi.fn();
 const mockSignIn = vi.fn();
 const mockSignOut = vi.fn();
 const mockResetPassword = vi.fn();
+const mockResend = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn().mockResolvedValue({
@@ -18,13 +20,14 @@ vi.mock("@/lib/supabase/server", () => ({
       signInWithPassword: mockSignIn,
       signOut: mockSignOut,
       resetPasswordForEmail: mockResetPassword,
+      resend: mockResend,
     },
   }),
 }));
 
-function chain() {
+function chain(result: unknown[] = []) {
   const c: Record<string, unknown> = {
-    then: (resolve: (v: unknown[]) => void) => resolve([]),
+    then: (resolve: (v: unknown[]) => void) => resolve(result),
     from: vi.fn(), where: vi.fn(),
   };
   for (const k of ["from", "where"]) {
@@ -35,16 +38,28 @@ function chain() {
 
 vi.mock("@db/index", () => ({
   db: {
-    select: vi.fn().mockImplementation(chain),
+    select: vi.fn().mockImplementation(() => chain()),
     insert: vi.fn().mockReturnValue({
       values: vi.fn().mockReturnValue({
         returning: vi.fn().mockResolvedValue([{ id: "cust_new", name: "Louis" }]),
+      }),
+    }),
+    update: vi.fn().mockReturnValue({
+      set: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: "cust_migrated", name: "Gian" }]),
+        }),
       }),
     }),
   },
 }));
 
 vi.mock("@/server/audit", () => ({ writeAudit: vi.fn().mockResolvedValue(undefined) }));
+
+// Supabase signUp response with an active session (email confirmation disabled)
+const signedInResponse = { data: { user: { id: "uuid-123" }, session: { access_token: "tok" } }, error: null };
+// Supabase signUp response without a session (email confirmation enabled)
+const pendingResponse = { data: { user: { id: "uuid-123" }, session: null }, error: null };
 
 // ─── registerCustomer — validation ───────────────────────────────────────────
 
@@ -87,7 +102,7 @@ describe("registerCustomer — validation", () => {
   });
 
   it("accepts 8-character password as minimum", async () => {
-    mockSignUp.mockResolvedValueOnce({ data: { user: { id: "uuid-123" } }, error: null });
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "12345678" });
     expect(result.ok).toBe(true);
@@ -117,7 +132,7 @@ describe("registerCustomer — email normalisation", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("lowercases the email before registration", async () => {
-    mockSignUp.mockResolvedValueOnce({ data: { user: { id: "uuid-123" } }, error: null });
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     const result = await registerCustomer({ name: "Louis", email: "Louis@FAVO.co.za", password: "password1" });
     expect(result.ok).toBe(true);
@@ -142,7 +157,7 @@ describe("registerCustomer — phone", () => {
   });
 
   it("persists a valid phone number on the new customer row", async () => {
-    mockSignUp.mockResolvedValueOnce({ data: { user: { id: "uuid-123" } }, error: null });
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
     const { db } = await import("@db/index");
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     const result = await registerCustomer({
@@ -155,6 +170,88 @@ describe("registerCustomer — phone", () => {
     expect(insertResult.values).toHaveBeenCalledWith(
       expect.objectContaining({ phone: "082 123 4567" })
     );
+  });
+});
+
+// ─── registerCustomer — PHONE_TAKEN ──────────────────────────────────────────
+
+describe("registerCustomer — PHONE_TAKEN", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns PHONE_TAKEN when another customer already uses that number", async () => {
+    const { db } = await import("@db/index");
+    // First db.select call (phone check) returns an existing customer
+    vi.mocked(db.select).mockImplementationOnce(() => chain([{ id: "cust_existing" }]) as never);
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({
+      name: "Gian", email: "gian@work.co.za", password: "password1", phone: "082 999 0000",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("PHONE_TAKEN");
+  });
+
+  it("does not call Supabase signUp when the phone is taken", async () => {
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockImplementationOnce(() => chain([{ id: "cust_existing" }]) as never);
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    await registerCustomer({
+      name: "Gian", email: "gian@work.co.za", password: "password1", phone: "082 999 0000",
+    });
+    expect(mockSignUp).not.toHaveBeenCalled();
+  });
+});
+
+// ─── registerCustomer — legacy re-link ───────────────────────────────────────
+
+describe("registerCustomer — legacy customer re-link", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("links auth user to existing customers row instead of inserting a duplicate", async () => {
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
+    const { db } = await import("@db/index");
+    // No phone provided → phone check is skipped. Only the email check select runs.
+    vi.mocked(db.select).mockImplementationOnce(
+      () => chain([{ id: "cust_legacy", name: "Gian", authId: null }]) as never
+    );
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({ name: "Gian", email: "gian@favo.co.za", password: "password1" });
+    expect(result.ok).toBe(true);
+    expect(vi.mocked(db.update)).toHaveBeenCalled();
+    expect(vi.mocked(db.insert)).not.toHaveBeenCalled();
+  });
+
+  it("returns the migrated customer id on re-link", async () => {
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockImplementationOnce(
+      () => chain([{ id: "cust_legacy", name: "Gian", authId: null }]) as never
+    );
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({ name: "Gian", email: "gian@favo.co.za", password: "password1" });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.customerId).toBe("cust_migrated");
+  });
+});
+
+// ─── registerCustomer — email verification ────────────────────────────────────
+
+describe("registerCustomer — email verification", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns verificationSent: false when Supabase issues a session immediately", async () => {
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1" });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.verificationSent).toBe(false);
+  });
+
+  it("returns verificationSent: true when email confirmation is required (no session)", async () => {
+    mockSignUp.mockResolvedValueOnce(pendingResponse);
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1" });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.verificationSent).toBe(true);
   });
 });
 
@@ -212,6 +309,23 @@ describe("loginCustomer — INVALID_CREDENTIALS", () => {
   });
 });
 
+// ─── loginCustomer — EMAIL_NOT_VERIFIED ──────────────────────────────────────
+
+describe("loginCustomer — EMAIL_NOT_VERIFIED", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns EMAIL_NOT_VERIFIED when Supabase reports email not confirmed", async () => {
+    mockSignIn.mockResolvedValueOnce({
+      data: { user: null },
+      error: { message: "Email not confirmed" },
+    });
+    const { loginCustomer } = await import("@/server/actions/customer-auth");
+    const result = await loginCustomer({ email: "louis@favo.co.za", password: "password1" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("EMAIL_NOT_VERIFIED");
+  });
+});
+
 // ─── logoutCustomer ───────────────────────────────────────────────────────────
 
 describe("logoutCustomer", () => {
@@ -249,5 +363,28 @@ describe("requestPasswordReset", () => {
     const { requestPasswordReset } = await import("@/server/actions/customer-auth");
     const result = await requestPasswordReset("anyone@favo.co.za");
     expect(result.ok).toBe(true);
+  });
+});
+
+// ─── resendVerificationEmail ──────────────────────────────────────────────────
+
+describe("resendVerificationEmail", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("rejects invalid email", async () => {
+    const { resendVerificationEmail } = await import("@/server/actions/customer-auth");
+    const result = await resendVerificationEmail("notanemail");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION");
+  });
+
+  it("returns ok and calls supabase.auth.resend", async () => {
+    mockResend.mockResolvedValueOnce({ error: null });
+    const { resendVerificationEmail } = await import("@/server/actions/customer-auth");
+    const result = await resendVerificationEmail("louis@favo.co.za");
+    expect(result.ok).toBe(true);
+    expect(mockResend).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "signup", email: "louis@favo.co.za" })
+    );
   });
 });
