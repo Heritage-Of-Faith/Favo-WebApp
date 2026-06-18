@@ -50,8 +50,7 @@ export default function MonthlyReportRow({ report, canSignAdmin, onChanged }: Mo
             {monthLabel(report.month)}
           </p>
           <p className="favo-caption" style={{ color: "var(--color-text-muted)" }}>
-            Rev {formatZar(report.revenueZar)} · COGS {formatZar(report.cogsZar)} · Exp{" "}
-            {formatZar(report.expensesZar)}
+            Rev {formatZar(report.revenueZar)} · COGS {formatZar(report.cogsZar)}
           </p>
         </div>
         <div className="flex items-center gap-3">

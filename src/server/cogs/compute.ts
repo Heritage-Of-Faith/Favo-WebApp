@@ -1,6 +1,6 @@
 // COGS computation — task G13
-// getCogsLive: queries v_daily_revenue, v_daily_cogs, v_daily_expenses for
-// a given SAST date and returns the full daily P&L breakdown.
+// getCogsLive: queries v_daily_revenue and v_daily_cogs for
+// a given SAST date and returns the daily P&L breakdown.
 //
 // The cost_estimated_warning flag is true when any inventory_lot contributing
 // to today's COGS was seeded with reason containing 'cost_estimated' in the
@@ -28,9 +28,8 @@ export function todaySast(): string {
 /**
  * Computes the COGS summary for a given SAST date.
  *
- * Queries the v_daily_revenue, v_daily_cogs, and v_daily_expenses views
- * created in migration 0004.  Returns zeros for any missing view row
- * (e.g. no orders / no deductions / no expenses on that day).
+ * Queries the v_daily_revenue and v_daily_cogs views created in migration 0004.
+ * Returns zeros for any missing view row (e.g. no orders / no deductions on that day).
  *
  * cost_estimated_warning: checks the audit_log for any deduction on this
  * date where the linked lot's creation audit row has reason LIKE
@@ -49,12 +48,6 @@ export async function getCogsLive(date: string): Promise<CogsLive> {
   );
   const cogsZar = parseInt(cogsRow?.cogs_zar ?? "0", 10) || 0;
 
-  // ── Expenses ───────────────────────────────────────────────────────────────
-  const [expRow] = await db.execute<{ expenses_zar: string | null }>(
-    sql`SELECT expenses_zar FROM v_daily_expenses WHERE sast_date = ${date}::date`
-  );
-  const expensesZar = parseInt(expRow?.expenses_zar ?? "0", 10) || 0;
-
   // ── cost_estimated_warning (R10) ───────────────────────────────────────────
   // A lot is considered "estimated" if its creation audit row contains
   // 'cost_estimated' in the reason field.
@@ -71,16 +64,15 @@ export async function getCogsLive(date: string): Promise<CogsLive> {
   const costEstimatedWarning = parseInt(warnRow?.cnt ?? "0", 10) > 0;
 
   const grossMarginZar = revenueZar - cogsZar;
-  const netZar = grossMarginZar - expensesZar;
 
   return {
     date,
     revenueZar,
     cogsZar,
-    expensesZar,
+    expensesZar: 0,
     grossMarginZar,
-    netZar,
-    profit: netZar > 0,
+    netZar: grossMarginZar,
+    profit: grossMarginZar > 0,
     costEstimatedWarning,
   };
 }

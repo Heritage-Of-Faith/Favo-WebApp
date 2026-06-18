@@ -36,38 +36,38 @@ describe("CogsLive type contract", () => {
       date: "2026-05-30",
       revenueZar: 100000,
       cogsZar: 40000,
-      expensesZar: 15000,
+      expensesZar: 0,
       grossMarginZar: 60000,
-      netZar: 45000,
+      netZar: 60000,
       profit: true,
       costEstimatedWarning: false,
     };
     expect(cogs.profit).toBe(cogs.netZar > 0);
   });
 
-  it("grossMarginZar = revenueZar - cogsZar", () => {
+  it("grossMarginZar = revenueZar - cogsZar, netZar = grossMarginZar", () => {
     const cogs: CogsLive = {
       date: "2026-05-30",
       revenueZar: 125600,
       cogsZar: 42800,
-      expensesZar: 15000,
+      expensesZar: 0,
       grossMarginZar: 82800,
-      netZar: 67800,
+      netZar: 82800,
       profit: true,
       costEstimatedWarning: true,
     };
     expect(cogs.grossMarginZar).toBe(cogs.revenueZar - cogs.cogsZar);
-    expect(cogs.netZar).toBe(cogs.grossMarginZar - cogs.expensesZar);
+    expect(cogs.netZar).toBe(cogs.grossMarginZar);
   });
 
-  it("zero revenue day has profit=false", () => {
+  it("COGS exceeding revenue produces a loss", () => {
     const cogs: CogsLive = {
       date: "2026-05-30",
-      revenueZar: 0,
-      cogsZar: 0,
-      expensesZar: 12000,
-      grossMarginZar: 0,
-      netZar: -12000,
+      revenueZar: 10000,
+      cogsZar: 15000,
+      expensesZar: 0,
+      grossMarginZar: -5000,
+      netZar: -5000,
       profit: false,
       costEstimatedWarning: false,
     };

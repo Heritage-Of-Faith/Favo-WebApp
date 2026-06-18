@@ -27,7 +27,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/inventory" as Route, label: "Inventory" },
   { href: "/admin/stock-takes" as Route, label: "Stock takes" },
   { href: "/admin/purchases" as Route, label: "Purchases" },
-  { href: "/admin/expenses" as Route, label: "Expenses" },
   { href: "/admin/reports" as Route, label: "Reports" },
   { href: "/admin/hours" as Route, label: "Hours" },
   { href: "/admin/menu", label: "Menu" },

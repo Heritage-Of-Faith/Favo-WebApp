@@ -49,7 +49,6 @@ vi.mock("@db/index", () => {
 });
 import { getCogsLive, getCogsHistory } from "@/server/actions/cogs";
 import { listInventory, listLots, listInventoryStatus, getActiveBeanLot } from "@/server/actions/inventory";
-import { listExpenses } from "@/server/actions/expenses";
 import { listPurchases } from "@/server/actions/purchases";
 import { listStockTakes } from "@/server/actions/stock-takes";
 import { getRecipe, listRecipes } from "@/server/actions/recipes";
@@ -85,7 +84,7 @@ describe("getCogsHistory stub", () => {
     if (!result.ok) return;
     for (const entry of result.data.history) {
       expect(entry.grossMarginZar).toBe(entry.revenueZar - entry.cogsZar);
-      expect(entry.netZar).toBe(entry.grossMarginZar - entry.expensesZar);
+      expect(entry.netZar).toBe(entry.grossMarginZar);
       expect(entry.profit).toBe(entry.netZar > 0);
     }
   });
@@ -135,18 +134,6 @@ describe("getActiveBeanLot stub", () => {
   it("returns ok:true (real impl post-G12, DB mocked → null lot)", async () => {
     const result = await getActiveBeanLot();
     expect(result.ok).toBe(true);
-  });
-});
-
-// ─── listExpenses (real impl post-G12, DB mocked) ─────────────────────────────
-
-describe("listExpenses", () => {
-  it("returns ok:true with expenses array", async () => {
-    const result = await listExpenses();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(Array.isArray(result.data.expenses)).toBe(true);
-    expect(typeof result.data.total).toBe("number");
   });
 });
 
