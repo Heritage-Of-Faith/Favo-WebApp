@@ -4,7 +4,7 @@
 // Supabase handles password hashing, session cookies, and password-reset emails.
 // Intentionally separate from the staff Auth.js/PIN flow.
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customers } from "@db/schema";
 import { writeAudit } from "@/server/audit";
@@ -39,7 +39,7 @@ export async function registerCustomer(input: {
   email: string;
   password: string;
   phone?: string;
-}): Promise<ActionResult<{ customerId: string; name: string }>> {
+}): Promise<ActionResult<{ customerId: string; name: string; verificationSent: boolean }>> {
   const name = input.name.trim();
   const email = validateEmail(input.email);
   const password = validatePassword(input.password);
@@ -63,6 +63,23 @@ export async function registerCustomer(input: {
     phone = validated;
   }
 
+  // Phone uniqueness — same number already belongs to another customer.
+  // Exception: legacy row with same email + null auth_id is allowed through (re-link path below).
+  if (phone) {
+    const [byPhone] = await db
+      .select({ id: customers.id, email: customers.email, authId: customers.authId })
+      .from(customers)
+      .where(eq(customers.phone, phone));
+    const isLegacySameEmail = byPhone?.email === email && byPhone?.authId === null;
+    if (byPhone && !isLegacySameEmail) {
+      return {
+        ok: false,
+        code: "PHONE_TAKEN",
+        message: "That mobile number is already linked to a FAVO account. Try signing in, or use a different number.",
+      };
+    }
+  }
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.auth.signUp({
@@ -72,9 +89,15 @@ export async function registerCustomer(input: {
   });
 
   if (error) {
-    if (error.message.toLowerCase().includes("already registered") ||
-        error.message.toLowerCase().includes("already exists")) {
-      return { ok: false, code: "EMAIL_TAKEN", message: "An account with that email already exists." };
+    if (
+      error.message.toLowerCase().includes("already registered") ||
+      error.message.toLowerCase().includes("already exists")
+    ) {
+      return {
+        ok: false,
+        code: "EMAIL_TAKEN",
+        message: "An account with that email already exists. Try signing in.",
+      };
     }
     return { ok: false, code: "AUTH_ERROR", message: error.message };
   }
@@ -84,14 +107,31 @@ export async function registerCustomer(input: {
     return { ok: false, code: "AUTH_ERROR", message: "Could not create your account. Please try again." };
   }
 
-  // Insert the customers row, linking to the Supabase auth user via authId
-  const [customer] = await db
-    .insert(customers)
-    .values({ tenantId: TENANT_ID, name, email, phone, authId: user.id })
-    .returning({ id: customers.id, name: customers.name });
+  // Check for a pre-migration customers row (email present, auth_id not yet linked)
+  const [existingRow] = await db
+    .select({ id: customers.id, name: customers.name, authId: customers.authId })
+    .from(customers)
+    .where(and(eq(customers.email, email), isNull(customers.authId)));
+
+  let customer: { id: string; name: string } | undefined;
+
+  if (existingRow) {
+    // Migrate legacy row — link the new Supabase user without creating a duplicate
+    const [updated] = await db
+      .update(customers)
+      .set({ authId: user.id, name, phone })
+      .where(eq(customers.id, existingRow.id))
+      .returning({ id: customers.id, name: customers.name });
+    customer = updated;
+  } else {
+    const [inserted] = await db
+      .insert(customers)
+      .values({ tenantId: TENANT_ID, name, email, phone, authId: user.id })
+      .returning({ id: customers.id, name: customers.name });
+    customer = inserted;
+  }
 
   if (!customer) {
-    // Roll back Supabase user to avoid orphan auth entries
     await supabase.auth.admin?.deleteUser(user.id).catch(() => null);
     return { ok: false, code: "DB_ERROR", message: "Could not create your account. Please try again." };
   }
@@ -105,7 +145,11 @@ export async function registerCustomer(input: {
     after: { email },
   });
 
-  return { ok: true, data: { customerId: customer.id, name: customer.name } };
+  // data.session is null when Supabase email confirmation is enabled
+  return {
+    ok: true,
+    data: { customerId: customer.id, name: customer.name, verificationSent: !data.session },
+  };
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
@@ -127,7 +171,18 @@ export async function loginCustomer(input: {
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password: input.password });
 
-  if (error || !data.user) {
+  if (error) {
+    if (error.message.toLowerCase().includes("email not confirmed")) {
+      return {
+        ok: false,
+        code: "EMAIL_NOT_VERIFIED",
+        message: "Please verify your email before signing in. Check your inbox for the confirmation link.",
+      };
+    }
+    return { ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect email or password." };
+  }
+
+  if (!data.user) {
     return { ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect email or password." };
   }
 
@@ -166,6 +221,23 @@ export async function requestPasswordReset(
   await supabase.auth.resetPasswordForEmail(validated, {
     redirectTo: `${process.env.PUBLIC_BASE_URL}/reset-password`,
   });
+
+  return { ok: true, data: null };
+}
+
+// ── Resend verification email ─────────────────────────────────────────────────
+
+export async function resendVerificationEmail(
+  email: string
+): Promise<ActionResult<null>> {
+  const validated = validateEmail(email);
+  if (!validated) {
+    return { ok: false, code: "VALIDATION", message: "Please enter a valid email address." };
+  }
+
+  const supabase = await createClient();
+  // No-leak: always return ok
+  await supabase.auth.resend({ type: "signup", email: validated });
 
   return { ok: true, data: null };
 }
