@@ -23,7 +23,7 @@ import type {
 } from "@/lib/types";
 import type { DB } from "@/lib/db";
 
-const READER_ROLES = ["admin"] as const;
+const READER_ROLES = ["admin", "barista"] as const;
 const ADMIN_ROLES = ["admin"] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
