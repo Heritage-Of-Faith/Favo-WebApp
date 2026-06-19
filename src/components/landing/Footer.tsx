@@ -46,16 +46,6 @@ const S = {
     opacity: 0.85,
     margin: 0,
   } satisfies React.CSSProperties,
-  link: {
-    fontFamily: "'DM Sans', sans-serif",
-    fontWeight: 400,
-    fontSize: 14,
-    lineHeight: 1.9,
-    color: "var(--color-porcelain)",
-    textDecoration: "none",
-    display: "block",
-    opacity: 0.85,
-  } satisfies React.CSSProperties,
   rule: {
     border: 0,
     borderTop: "1px solid rgba(247,246,242,0.12)",
@@ -105,12 +95,11 @@ export default function Footer() {
           {/* Links */}
           <div>
             <p style={S.colHead}>More</p>
-            <a href="/login" style={S.link} className="landing-footer-link">Sign in</a>
-            <a href="/staff/login" style={S.link} className="landing-footer-link">Staff sign in</a>
-            <a href="/privacy" style={S.link} className="landing-footer-link">Privacy policy</a>
+            <a href="/login" className="landing-footer-link">Sign in</a>
+            <a href="/staff/login" className="landing-footer-link">Staff sign in</a>
+            <a href="/privacy" className="landing-footer-link">Privacy policy</a>
             <a
               href="https://hofmi.net/"
-              style={S.link}
               className="landing-footer-link"
               target="_blank"
               rel="noopener noreferrer"
