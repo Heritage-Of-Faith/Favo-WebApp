@@ -3,7 +3,7 @@
 // for the day. Pages Discord on T01 variance band breach (L09).
 // Docs: API.md · BUSINESS_RULES.md L09 T01
 
-import { and, gte, lt, sql, inArray } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders } from "@db/schema";
 import { writeAudit } from "@/server/audit";
@@ -56,13 +56,16 @@ export type CloseDailyResult = {
 export async function closeDaily(referenceDate?: Date): Promise<CloseDailyResult> {
   const { start, end, date } = dayBounds(referenceDate);
 
-  // Revenue = sum of totalZar for orders placed today that reached 'collected'
+  // Revenue = sum of totalZar for orders fully collected today.
+  // in_progress and ready orders have been paid but not yet served — counting
+  // them here inflates revenue vs. the payments query and creates a nightly
+  // Discord alert for variance that resolves itself only after collection.
   const [revRow] = await db
     .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
     .from(orders)
     .where(
       and(
-        inArray(orders.state, ["in_progress", "ready", "collected"]),
+        eq(orders.state, "collected"),
         gte(orders.placedAt, start),
         lt(orders.placedAt, end)
       )

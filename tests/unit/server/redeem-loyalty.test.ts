@@ -12,8 +12,10 @@ vi.mock("@db/index", () => {
       where: vi.fn(),
       orderBy: vi.fn(),
       limit: vi.fn(),
+      // Required for SELECT ... FOR UPDATE used inside redeemLoyalty transaction.
+      for: vi.fn(),
     };
-    for (const k of ["from", "where", "orderBy", "limit"]) {
+    for (const k of ["from", "where", "orderBy", "limit", "for"]) {
       (c[k] as ReturnType<typeof vi.fn>).mockReturnValue(c);
     }
     // default: return empty rows
@@ -80,6 +82,24 @@ function setupSelectSequence(db: { select: ReturnType<typeof vi.fn> }, rows: unk
         // make it thenable AND awaitable
         [Symbol.toStringTag]: "Promise",
       })),
+    }),
+  }));
+}
+
+/**
+ * Wire up txMock.select so that SELECT ... FOR UPDATE calls inside the
+ * redeemLoyalty transaction return the given row sequences.
+ */
+function setupTxSelectSequence(txMock: { select: ReturnType<typeof vi.fn> }, rows: unknown[][]) {
+  let call = 0;
+  txMock.select.mockImplementation(() => ({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        for: vi.fn().mockImplementation(() => ({
+          then: (resolve: (v: unknown[]) => void) => resolve(rows[call++] ?? []),
+          [Symbol.toStringTag]: "Promise",
+        })),
+      }),
     }),
   }));
 }
@@ -164,11 +184,10 @@ describe("redeemLoyalty — loyalty point guards", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns NOT_FOUND for missing customer", async () => {
-    const { db } = await import("@db/index");
-    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder()],  // order found
-      [],             // customer not found
-    ]);
+    const mod = await import("@db/index") as unknown as { db: { select: ReturnType<typeof vi.fn> }; __txMock: { select: ReturnType<typeof vi.fn> } };
+    const { db, __txMock } = mod;
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [[mockOrder()]]);
+    setupTxSelectSequence(__txMock, [[]]); // customer not found inside transaction
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
     const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
     expect(res.ok).toBe(false);
@@ -176,11 +195,10 @@ describe("redeemLoyalty — loyalty point guards", () => {
   });
 
   it("rejects customer with insufficient points (99 pts)", async () => {
-    const { db } = await import("@db/index");
-    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder()],
-      [mockCustomer(99)],
-    ]);
+    const mod = await import("@db/index") as unknown as { db: { select: ReturnType<typeof vi.fn> }; __txMock: { select: ReturnType<typeof vi.fn> } };
+    const { db, __txMock } = mod;
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [[mockOrder()]]);
+    setupTxSelectSequence(__txMock, [[mockCustomer(99)]]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
     const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
     expect(res.ok).toBe(false);
@@ -197,11 +215,10 @@ describe("redeemLoyalty — happy path", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns ok and runs the transaction", async () => {
-    const { db } = await import("@db/index");
-    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder()],
-      [mockCustomer(150)],
-    ]);
+    const mod = await import("@db/index") as unknown as { db: { select: ReturnType<typeof vi.fn>; transaction: ReturnType<typeof vi.fn> }; __txMock: { select: ReturnType<typeof vi.fn> } };
+    const { db, __txMock } = mod;
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [[mockOrder()]]);
+    setupTxSelectSequence(__txMock, [[mockCustomer(150)]]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
     const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
     expect(res.ok).toBe(true);
@@ -209,11 +226,10 @@ describe("redeemLoyalty — happy path", () => {
   });
 
   it("writes audit on successful redemption", async () => {
-    const { db } = await import("@db/index");
-    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder()],
-      [mockCustomer(100)],
-    ]);
+    const mod = await import("@db/index") as unknown as { db: { select: ReturnType<typeof vi.fn> }; __txMock: { select: ReturnType<typeof vi.fn> } };
+    const { db, __txMock } = mod;
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [[mockOrder()]]);
+    setupTxSelectSequence(__txMock, [[mockCustomer(100)]]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
     await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
     const { writeAudit } = await import("@/server/audit");
