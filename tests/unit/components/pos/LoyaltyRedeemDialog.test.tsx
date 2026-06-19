@@ -27,7 +27,10 @@ function setup(over: Partial<React.ComponentProps<typeof LoyaltyRedeemDialog>> =
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockRedeem.mockResolvedValue({ ok: true, data: { discountZar: 2000, newTotalZar: 0, clientSecret: null } });
+  mockRedeem.mockResolvedValue({
+    ok: true,
+    data: { discountZar: 2000, pointsUsed: 100, newTotalZar: 2500, clientSecret: "ck_test" },
+  });
 });
 
 describe("LoyaltyRedeemDialog", () => {
@@ -39,7 +42,7 @@ describe("LoyaltyRedeemDialog", () => {
   it("calls redeemLoyalty(customerId, orderId), toasts and fires onRedeemed", async () => {
     const { onRedeemed, onClose } = setup();
     fireEvent.click(screen.getByRole("button", { name: /redeem r20 off/i }));
-    await waitFor(() => expect(mockRedeem).toHaveBeenCalledWith("c1", "ord_1"));
+    await waitFor(() => expect(mockRedeem).toHaveBeenCalledWith("c1", "ord_1", 1));
     await waitFor(() => expect(onRedeemed).toHaveBeenCalledOnce());
     expect(toastSuccess).toHaveBeenCalledWith("100 pts redeemed — R20 off");
     expect(onClose).toHaveBeenCalledOnce();

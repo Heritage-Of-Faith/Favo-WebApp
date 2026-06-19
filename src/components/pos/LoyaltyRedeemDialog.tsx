@@ -3,9 +3,14 @@
 /**
  * LoyaltyRedeemDialog — task M18, fixed by AT-115 (BUG-Y1).
  *
- * Single-unit redemption (rule L06): 100 pts → R20 off, capped at the order
- * total. The server re-creates the Yoco checkout for the remainder and returns
- * the new clientSecret so the POS can reinitialise the payment form.
+ * Single-unit redemption only (rule L06): 100 points → R20 off, capped at the
+ * order total. There is no partial- or multi-unit redemption path by design.
+ *
+ * Redemption operates on an order that already exists in the `ordered` state
+ * (pre-payment) — `redeemLoyalty` validates that server-side and atomically
+ * discounts `order.totalZar` by min(R20, total), deducts exactly 100 points,
+ * and writes the audit row. We surface this on the POS payment step, where the
+ * order id is known.
  */
 
 import { useState, useCallback } from "react";
@@ -41,7 +46,8 @@ export default function LoyaltyRedeemDialog({
   const confirm = useCallback(async () => {
     if (submitting) return;
     setSubmitting(true);
-    const r = await redeemLoyalty(customerId, orderId).catch(() => ({
+    // AT-109: pass units=1 (single-unit dialog). AT-110 will replace this with a stepper.
+    const r = await redeemLoyalty(customerId, orderId, 1).catch(() => ({
       ok: false as const, code: "ERR", message: "Could not redeem points.",
     }));
     setSubmitting(false);
@@ -53,7 +59,7 @@ export default function LoyaltyRedeemDialog({
     } else {
       toast.error(r.message);
     }
-  }, [submitting, customerId, orderId, onRedeemed, onClose]);
+  }, [submitting, customerId, orderId, discountLabel, onRedeemed, onClose]);
 
   return (
     <div

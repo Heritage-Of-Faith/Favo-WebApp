@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "loyalty_txn_redeem_order_unique" ON "loyalty_transactions" USING btree ("order_id") WHERE kind = 'redeem';

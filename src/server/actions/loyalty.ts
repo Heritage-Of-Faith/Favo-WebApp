@@ -1,6 +1,6 @@
 "use server";
 
-// Loyalty server actions — G8 (redeemLoyalty), G9 (topUpWallet, purchasePack)
+// Loyalty server actions — AT-109 (redeemLoyalty multi-unit), G9 (topUpWallet, purchasePack)
 // Docs: docs/API.md · BUSINESS_RULES.md L06, L16
 
 import { eq, sql } from "drizzle-orm";
@@ -9,8 +9,7 @@ import { orders, customers, loyaltyTransactions, pendingCharges, coffeePacks, me
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import {
-  canRedeem,
-  MIN_REDEEM_POINTS,
+  REDEEM_POINTS_UNIT,
   REDEEM_VALUE_ZAR,
 } from "@/server/loyalty/calc";
 import { createPaymentIntent } from "@/server/yoco/client";
@@ -19,55 +18,42 @@ import type { DB } from "@/lib/db";
 
 const PACK_EXPIRY_DAYS = 90;
 
-// Structured error used to surface failures out of the redeemLoyalty transaction
-// without leaking exception details across the client boundary.
-class RedeemError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string
-  ) {
-    super(message);
-    this.name = "RedeemError";
-  }
-}
-
 // ─── redeemLoyalty ────────────────────────────────────────────────────────────
 
 /**
- * Apply a single-unit loyalty redemption (100 pts = R20 off) to an order before
- * payment (BUG-Y1 fix). Syncs payments.amountZar to orders.totalZar and
- * re-creates the Yoco checkout for the remaining amount, returning the new
- * clientSecret so the POS can reinitialise the hosted-fields form.
+ * Apply a multi-unit loyalty redemption to an order before payment (AT-109).
+ * Server clamps units = min(floor(pts/100), floor(total/2000)).
+ * Each unit = 100 pts = R20 off. Re-creates Yoco intent for newTotalZar.
+ * Idempotency: partial unique index on loyalty_transactions(order_id) WHERE kind='redeem'.
  * Rules: L06, L17.
  */
 export async function redeemLoyalty(
   customerId: string,
-  orderId: string
-): Promise<ActionResult<{ discountZar: number; newTotalZar: number; clientSecret: string | null }>> {
+  orderId: string,
+  units: number
+): Promise<ActionResult<{ discountZar: number; pointsUsed: number; newTotalZar: number; clientSecret: string | null }>> {
   const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
   const session = auth.session;
 
-  const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
-  if (!order) {
-    return { ok: false, code: "NOT_FOUND", message: "Order not found." };
+  if (!Number.isInteger(units) || units < 1) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "units must be a positive integer." };
   }
+
+  const [order] = await db
+    .select()
+    .from(orders)
+    .where(eq(orders.id, orderId));
+
+  if (!order) return { ok: false, code: "NOT_FOUND", message: "Order not found." };
   if (order.state !== "ordered") {
-    return {
-      ok: false,
-      code: "CONFLICT",
-      message: "Loyalty can only be redeemed on an order in 'ordered' state (before payment).",
-    };
+    return { ok: false, code: "CONFLICT", message: "Loyalty can only be redeemed before payment (state='ordered')." };
   }
   if (order.customerId !== customerId) {
     return { ok: false, code: "VALIDATION_ERROR", message: "Customer does not match the order." };
   }
   if (order.isStaffDiscount) {
-    return {
-      ok: false,
-      code: "CONFLICT",
-      message: "Cannot combine loyalty redemption with a staff discount.",
-    };
+    return { ok: false, code: "CONFLICT", message: "Cannot combine loyalty redemption with a staff discount (L17)." };
   }
 
   const [customer] = await db
@@ -75,23 +61,27 @@ export async function redeemLoyalty(
     .from(customers)
     .where(eq(customers.id, customerId));
 
-  if (!customer) {
-    return { ok: false, code: "NOT_FOUND", message: "Customer not found." };
-  }
-  if (!canRedeem(customer.loyaltyPoints)) {
+  if (!customer) return { ok: false, code: "NOT_FOUND", message: "Customer not found." };
+
+  // Server-side clamp: min(floor(pts/100), floor(total/2000)) — L06
+  const maxByPoints = Math.floor(customer.loyaltyPoints / REDEEM_POINTS_UNIT);
+  const maxByTotal = Math.floor(order.totalZar / REDEEM_VALUE_ZAR);
+  const clampedUnits = Math.min(units, maxByPoints, maxByTotal);
+
+  if (clampedUnits < 1) {
     return {
       ok: false,
       code: "CONFLICT",
-      message: `Insufficient loyalty points (${customer.loyaltyPoints} pts — need ${MIN_REDEEM_POINTS}).`,
+      message: `Insufficient points or order total too low to redeem. Points: ${customer.loyaltyPoints}, order total: ${order.totalZar} cents.`,
     };
   }
 
-  // Single-unit: R20 off, capped at the order total (L06).
-  const discountZar = Math.min(REDEEM_VALUE_ZAR, order.totalZar);
+  const pointsUsed = clampedUnits * REDEEM_POINTS_UNIT;
+  const discountZar = clampedUnits * REDEEM_VALUE_ZAR;
   const newTotalZar = order.totalZar - discountZar;
 
-  // Create new Yoco checkout OUTSIDE the DB transaction (external API call).
-  // The old checkout is abandoned — it expires naturally on Yoco's side.
+  // Create new Yoco checkout outside the DB transaction (external API call).
+  // Old checkout is abandoned — it expires naturally on Yoco's side.
   let newClientSecret: string | null = null;
   if (newTotalZar > 0) {
     try {
@@ -106,30 +96,29 @@ export async function redeemLoyalty(
     }
   }
 
-  const prevTotal = order.totalZar;
-
-  try {
-    await db.transaction(async (tx) => {
-      const txDb = tx as unknown as DB;
+  await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DB;
 
     await tx
       .update(orders)
       .set({ totalZar: newTotalZar })
       .where(eq(orders.id, orderId));
 
+    // Atomic point deduction — DB CHECK (loyalty_points >= 0) is the safety net.
     await tx
       .update(customers)
-      .set({ loyaltyPoints: sql`${customers.loyaltyPoints} - ${MIN_REDEEM_POINTS}` })
+      .set({ loyaltyPoints: sql`${customers.loyaltyPoints} - ${pointsUsed}` })
       .where(eq(customers.id, customerId));
 
+    // Partial unique index (loyalty_txn_redeem_order_unique) makes this idempotent.
     await tx.insert(loyaltyTransactions).values({
       customerId,
       orderId,
-      delta: -MIN_REDEEM_POINTS,
+      delta: -pointsUsed,
       kind: "redeem",
     });
 
-    // Keep payments.amountZar in sync with orders.totalZar (BUG-Y1).
+    // Update payment record to reflect the new total and new checkout ID.
     await tx
       .update(payments)
       .set({
@@ -146,24 +135,14 @@ export async function redeemLoyalty(
         action: "redeem_loyalty",
         actorId: session.id,
         actorRole: session.role,
-        before: { totalZar: prevTotal, loyaltyPoints: customer.loyaltyPoints },
-        after: {
-          totalZar: newTotalZar,
-          discountZar,
-          loyaltyPoints: customer.loyaltyPoints - MIN_REDEEM_POINTS,
-        },
+        before: { totalZar: order.totalZar, loyaltyPoints: customer.loyaltyPoints },
+        after: { totalZar: newTotalZar, discountZar, pointsUsed, clampedUnits },
       },
       txDb
     );
   });
-  } catch (err) {
-    if (err instanceof RedeemError) {
-      return { ok: false, code: err.code, message: err.message };
-    }
-    throw err;
-  }
 
-  return { ok: true, data: { discountZar, newTotalZar, clientSecret: newClientSecret } };
+  return { ok: true, data: { discountZar, pointsUsed, newTotalZar, clientSecret: newClientSecret } };
 }
 
 // ─── topUpWallet ──────────────────────────────────────────────────────────────
