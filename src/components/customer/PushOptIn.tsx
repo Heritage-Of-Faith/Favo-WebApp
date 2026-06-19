@@ -2,6 +2,8 @@
 // Push notification opt-in / management — owner: Nikao (task N14, AT-66)
 // Accurate enabled state: checks both browser permission AND DB subscription.
 // Supports enable, disable, and sync-recovery (permission granted but DB missing).
+// Superseded by WelcomeModal (first-login prompt) + NotificationToggle (settings page).
+// Retained to avoid breaking Nikao's tests — cleanup tracked separately.
 
 import { useState, useEffect } from "react";
 

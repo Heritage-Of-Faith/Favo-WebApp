@@ -338,3 +338,46 @@ describe("updateCustomerProfile", () => {
     if (!res.ok) expect(res.code).toBe("VALIDATION");
   });
 });
+
+// ─── getCustomerProfile ───────────────────────────────────────────────────────
+
+describe("getCustomerProfile", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns UNAUTHORIZED when no session", async () => {
+    const { getCustomerSession } = await import("@/server/auth/customer-session");
+    vi.mocked(getCustomerSession).mockResolvedValue(null);
+    const { getCustomerProfile } = await import("@/server/actions/customer");
+    const res = await getCustomerProfile();
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("UNAUTHORIZED");
+  });
+
+  it("returns NOT_FOUND when customer row is missing", async () => {
+    const { getCustomerSession } = await import("@/server/auth/customer-session");
+    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([]) as unknown as ReturnType<typeof db.select>);
+    const { getCustomerProfile } = await import("@/server/actions/customer");
+    const res = await getCustomerProfile();
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("NOT_FOUND");
+  });
+
+  it("returns id, name, email, phone for authenticated customer", async () => {
+    const { getCustomerSession } = await import("@/server/auth/customer-session");
+    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
+    const { db } = await import("@db/index");
+    const profileRow = makeSelectChain([{ id: CUSTOMER_ID, name: "Louis", email: "louis@favo.co.za", phone: "082 111 2222" }]);
+    vi.mocked(db.select).mockReturnValueOnce(profileRow as unknown as ReturnType<typeof db.select>);
+    const { getCustomerProfile } = await import("@/server/actions/customer");
+    const res = await getCustomerProfile();
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.id).toBe(CUSTOMER_ID);
+      expect(res.data.name).toBe("Louis");
+      expect(res.data.email).toBe("louis@favo.co.za");
+      expect(res.data.phone).toBe("082 111 2222");
+    }
+  });
+});

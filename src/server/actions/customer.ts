@@ -241,6 +241,26 @@ export async function getPacks(): Promise<ActionResult<PacksView>> {
   return { ok: true, data: { active, expired } };
 }
 
+// ─── getCustomerProfile ───────────────────────────────────────────────────────
+
+export async function getCustomerProfile(): Promise<
+  ActionResult<{ id: string; name: string; email: string | null; phone: string | null }>
+> {
+  const session = await requireCustomer();
+  if (!session.ok) return session;
+
+  const [customer] = await db
+    .select({ id: customers.id, name: customers.name, email: customers.email, phone: customers.phone })
+    .from(customers)
+    .where(eq(customers.id, session.customerId));
+
+  if (!customer) {
+    return { ok: false, code: "NOT_FOUND", message: "Customer account not found." };
+  }
+
+  return { ok: true, data: { id: customer.id, name: customer.name, email: customer.email, phone: customer.phone } };
+}
+
 // ─── updateCustomerProfile ────────────────────────────────────────────────────
 
 const profileSchema = z.object({

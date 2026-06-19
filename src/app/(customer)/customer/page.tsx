@@ -11,7 +11,7 @@ import LoyaltyCard from "@/components/customer/LoyaltyCard";
 import WalletCard from "@/components/customer/WalletCard";
 import PackList from "@/components/customer/PackList";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
-import PushOptIn from "@/components/customer/PushOptIn";
+import WelcomeModal from "@/components/customer/WelcomeModal";
 
 // Always render fresh data (hours/loyalty change at the counter): no static cache.
 export const dynamic = "force-dynamic";
@@ -95,7 +95,10 @@ export default async function CustomerDashboard() {
     <div style={S.page}>
       <nav style={S.nav}>
         <a href="/" style={S.wordmark}>FAVO</a>
-        <a href="/" style={S.back}>← Home</a>
+        <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
+          <a href="/customer/settings" style={S.back}>Settings</a>
+          <a href="/" style={S.back}>← Home</a>
+        </div>
       </nav>
 
       <main style={S.main}>
@@ -111,15 +114,15 @@ export default async function CustomerDashboard() {
 
         <OrderHistoryList orders={orders} />
 
-        {/* Push opt-in — only shows if permission not yet granted; hides after first dismissal. */}
-        {summary && (
-          <PushOptIn
-            customerId={summary.customerId}
-            serverHasSubscription={summary.hasPushSubscription}
-          />
-        )}
-
       </main>
+
+      {/* First-login notification prompt — fires once, then never again. */}
+      {summary && (
+        <WelcomeModal
+          customerId={summary.customerId}
+          firstName={firstName}
+        />
+      )}
     </div>
   );
 }
