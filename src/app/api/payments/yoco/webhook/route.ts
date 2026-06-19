@@ -116,32 +116,72 @@ export async function POST(request: Request) {
       .update(payments)
       .set({ status: "successful", webhookReceivedAt: new Date(), ...paymentIdSet })
       .where(eq(payments.id, existingPayment!.id));
+
+    await writeAudit({
+      entityKind: "payment",
+      entityId: event.paymentId,
+      action: "yoco_mark_paid",
+      actorRole: "system",
+      after: { type: event.type, orderId: outcome.orderId ?? null },
+    });
   } else if (outcome.action === "fail_payment") {
-    await db
-      .update(payments)
-      .set({ status: "failed", webhookReceivedAt: new Date(), ...paymentIdSet })
-      .where(eq(payments.id, existingPayment!.id));
-    // Rule L01: failed payment cancels the order (only while still 'ordered').
-    if (outcome.orderId) {
-      await db
-        .update(orders)
-        .set({ state: "cancelled" })
-        .where(eq(orders.id, outcome.orderId));
-    }
+    // Rule L01: failed payment cancels the order. Both writes must be atomic —
+    // if order cancellation fails, the payment must not be marked failed either.
+    await db.transaction(async (tx) => {
+      const txDb = tx as unknown as DB;
+
+      await tx
+        .update(payments)
+        .set({ status: "failed", webhookReceivedAt: new Date(), ...paymentIdSet })
+        .where(eq(payments.id, existingPayment!.id));
+
+      if (outcome.orderId) {
+        // Only cancel if still in 'ordered' state — barista may have already
+        // progressed the order before the failure webhook arrived.
+        await tx
+          .update(orders)
+          .set({ state: "cancelled" })
+          .where(and(eq(orders.id, outcome.orderId), eq(orders.state, "ordered")));
+
+        await writeAudit(
+          {
+            entityKind: "order",
+            entityId: outcome.orderId,
+            action: "cancel",
+            actorRole: "system",
+            before: { state: "ordered" },
+            after: { state: "cancelled" },
+            reason: "payment_failed",
+          },
+          txDb
+        );
+      }
+
+      await writeAudit(
+        {
+          entityKind: "payment",
+          entityId: event.paymentId,
+          action: "yoco_fail_payment",
+          actorRole: "system",
+          after: { type: event.type, orderId: outcome.orderId ?? null },
+        },
+        txDb
+      );
+    });
   } else if (outcome.action === "record_refund") {
     await db
       .update(payments)
       .set({ status: "refunded", webhookReceivedAt: new Date(), ...paymentIdSet })
       .where(eq(payments.id, existingPayment!.id));
-  }
 
-  await writeAudit({
-    entityKind: "payment",
-    entityId: event.paymentId,
-    action: `yoco_${outcome.action}`,
-    actorRole: "system",
-    after: { type: event.type, orderId: outcome.orderId ?? null },
-  });
+    await writeAudit({
+      entityKind: "payment",
+      entityId: event.paymentId,
+      action: "yoco_record_refund",
+      actorRole: "system",
+      after: { type: event.type, orderId: outcome.orderId ?? null },
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }

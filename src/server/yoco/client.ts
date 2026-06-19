@@ -50,6 +50,47 @@ export async function createPaymentIntent(
   return { id: data.id, clientSecret: data.id };
 }
 
+// ─── Refunds ──────────────────────────────────────────────────────────────────
+
+/**
+ * Issue a full refund against a confirmed Yoco payment (rule L02).
+ * Requires YOCO_SECRET_KEY in env. Called by approveRefund() server action.
+ *
+ * NOTE: Yoco is currently simulated — this will throw until YOCO_SECRET_KEY is
+ * set in production. The endpoint + body field names should be verified against
+ * the live Yoco Online Payments docs before go-live.
+ */
+export async function createRefund(
+  yocoPaymentId: string,
+  amountZar: number
+): Promise<{ id: string }> {
+  const secretKey = process.env.YOCO_SECRET_KEY;
+  if (!secretKey) {
+    throw new Error("YOCO_SECRET_KEY is not configured.");
+  }
+
+  const res = await fetch(`${YOCO_API_BASE}/refunds`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secretKey}`,
+    },
+    body: JSON.stringify({
+      chargeId: yocoPaymentId,
+      amount: amountZar,
+      currency: "ZAR",
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Yoco refund API error ${res.status}: ${body}`);
+  }
+
+  const data = (await res.json()) as { id: string };
+  return { id: data.id };
+}
+
 export type YocoCheckoutStatus = "pending" | "succeeded" | "failed" | "expired";
 
 /**

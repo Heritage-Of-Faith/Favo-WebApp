@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, notInArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   orders,
@@ -538,6 +538,14 @@ export async function applyStaffDiscount(
         .set({ totalZar: 0, isStaffDiscount: true })
         .where(eq(orders.id, orderId));
 
+      // Mark the payment row as free — no Yoco card transaction needed for
+      // staff discount orders. Setting amountZar=0 + status=successful keeps
+      // the daily close reconciliation accurate (both revenue and payments = 0).
+      await tx
+        .update(payments)
+        .set({ amountZar: 0, status: "successful" })
+        .where(eq(payments.orderId, orderId));
+
       await writeAudit(
         {
           entityKind: "order",
@@ -567,7 +575,7 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
   const [o] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!o) return { ok: false, code: "NOT_FOUND", message: "Order not found." };
 
-  const [itemRows, paymentRow] = await Promise.all([
+  const [itemRows, paymentRow, customerRow] = await Promise.all([
     db
       .select({
         id: orderItems.id,
@@ -585,12 +593,19 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
       .from(payments)
       .where(eq(payments.orderId, orderId))
       .limit(1),
+    o.customerId
+      ? db
+          .select({ name: customers.name })
+          .from(customers)
+          .where(eq(customers.id, o.customerId))
+          .limit(1)
+      : Promise.resolve([]),
   ]);
 
   const order: Order = {
     id: o.id,
     customerId: o.customerId,
-    customerName: null,
+    customerName: customerRow[0]?.name ?? null,
     staffId: o.staffId,
     state: o.state,
     placedAt: o.placedAt.toISOString(),
@@ -612,15 +627,19 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
   return { ok: true, data: order };
 }
 
-/** Bootstrap the POS queue on page load — returns all non-terminal orders. */
+/** Bootstrap the POS queue on page load — returns non-terminal orders from the last 48 h. */
 export async function listActiveOrders(): Promise<ActionResult<{ orderId: string; state: OrderState; lastUpdatedAt: string }[]>> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
 
+  // 48-hour window covers orders that span the SAST midnight boundary and any
+  // that are stuck in a non-terminal state from the previous shift.
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
   const rows = await db
     .select({ id: orders.id, state: orders.state, placedAt: orders.placedAt })
     .from(orders)
-    .where(notInArray(orders.state, ["collected", "cancelled"]))
+    .where(and(notInArray(orders.state, ["collected", "cancelled"]), gte(orders.placedAt, cutoff)))
     .orderBy(orders.placedAt);
 
   return {
