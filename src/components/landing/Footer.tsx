@@ -105,12 +105,13 @@ export default function Footer() {
           {/* Links */}
           <div>
             <p style={S.colHead}>More</p>
-            <a href="/login" style={S.link}>Sign in</a>
-            <a href="/staff/login" style={S.link}>Staff sign in</a>
-            <a href="/privacy" style={S.link}>Privacy policy</a>
+            <a href="/login" style={S.link} className="landing-footer-link">Sign in</a>
+            <a href="/staff/login" style={S.link} className="landing-footer-link">Staff sign in</a>
+            <a href="/privacy" style={S.link} className="landing-footer-link">Privacy policy</a>
             <a
               href="https://hofmi.net/"
               style={S.link}
+              className="landing-footer-link"
               target="_blank"
               rel="noopener noreferrer"
             >
