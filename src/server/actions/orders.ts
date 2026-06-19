@@ -211,7 +211,7 @@ export async function createOrder(
 // without leaking exception details across the client boundary.
 class TransitionError extends Error {
   constructor(
-    public readonly code: "NOT_FOUND" | "INVALID_TRANSITION",
+    public readonly code: "NOT_FOUND" | "INVALID_TRANSITION" | "PAYMENT_REQUIRED",
     message: string
   ) {
     super(message);
@@ -293,6 +293,22 @@ export async function transitionOrder(
           "INVALID_TRANSITION",
           `Cannot move order from ${current.state} to ${toState}.`
         );
+      }
+
+      // ── Cash-remove guard (AT-122): ordered → in_progress requires a
+      // confirmed Yoco payment for non-free orders. Free orders (totalZar === 0
+      // after loyalty/staff-discount) need no payment row. ─────────────────────
+      if (toState === "in_progress" && current.totalZar > 0) {
+        const [pmt] = await tx
+          .select({ status: payments.status })
+          .from(payments)
+          .where(eq(payments.orderId, orderId));
+        if (pmt?.status !== "successful") {
+          throw new TransitionError(
+            "PAYMENT_REQUIRED",
+            "Order cannot start — card payment not yet confirmed."
+          );
+        }
       }
 
       // ── 1. Update order state ──────────────────────────────────────────────

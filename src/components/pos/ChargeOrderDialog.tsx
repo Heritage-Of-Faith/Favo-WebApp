@@ -4,21 +4,17 @@
  * ChargeOrderDialog — take payment for an order that's already in the queue.
  *
  * The place-order flow charges immediately, but if the customer steps away or
- * the barista backs out, the order sits in `ordered` unpaid with no way to
- * charge it. This dialog reopens payment for a specific queued order:
- *   • online  → the Yoco card form (YocoOrderForm) — charge + webbook confirm
+ * the barista backs out, the order sits in `ordered` unpaid. This dialog
+ * reopens payment for a specific queued order:
+ *   • online  → the Yoco card form (YocoOrderForm) — charge + webhook confirm
  *   • offline → the deferred notice (take payment on the card machine in person)
- *   • always  → a manual "paid on the card machine / cash" fallback
  *
- * On settle it calls onPaid(orderId); the parent records the order as paid so it
- * can advance (rule L01: no payment → no order). Card payments are confirmed by
- * the backend (paymentStatus); the manual fallback is a counter override —
- * persisting cash/in-person payment needs a backend action (flagged to G6).
+ * On settle it calls onPaid(orderId). Card payments are confirmed by the backend
+ * webhook (paymentStatus). No cash or manual fallback — AT-122.
  */
 
 import { useEffect, useState } from "react";
-import { X, HandCoins } from "lucide-react";
-import { formatZar } from "@/lib/format";
+import { X } from "lucide-react";
 import YocoOrderForm from "@/components/pos/YocoOrderForm";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import type { Order } from "@/lib/types";
@@ -69,15 +65,7 @@ export default function ChargeOrderDialog({ order, onPaid, onClose }: Props) {
 
         <div className="flex flex-col gap-4 px-5 py-5">
           {online ? (
-            <>
-              <YocoOrderForm orderId={order.id} amountZar={order.totalZar} onPaid={settle} />
-              {/* In-person fallback — payment taken on the standalone card machine or cash. */}
-              <button type="button" onClick={settle}
-                className="flex w-full items-center justify-center gap-2 rounded-[var(--radius-btn)] border border-cool-steel/30 py-3 min-h-[48px] favo-small text-coffee-bean hover:bg-coffee-bean/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
-                <HandCoins size={15} strokeWidth={2.25} />
-                Paid on the card machine / cash — {formatZar(order.totalZar)}
-              </button>
-            </>
+            <YocoOrderForm orderId={order.id} amountZar={order.totalZar} onPaid={settle} />
           ) : (
             <DeferredPaymentNotice
               totalZar={order.totalZar}
