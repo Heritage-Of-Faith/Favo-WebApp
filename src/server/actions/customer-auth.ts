@@ -5,13 +5,30 @@
 // Intentionally separate from the staff Auth.js/PIN flow.
 
 import { and, eq, isNull } from "drizzle-orm";
+import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { customers } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { createClient } from "@/lib/supabase/server";
+import { checkRateLimit } from "@/server/rate-limit";
 import type { ActionResult } from "@/lib/types";
 
 const TENANT_ID = "hofmi-favo";
+
+// SEC-4 rate limits
+const AUTH_LIMIT = 5;           // attempts per window
+const AUTH_WINDOW_MS = 60_000;  // 1 minute
+const RESET_LIMIT = 3;          // requests per window
+const RESET_WINDOW_MS = 60 * 60_000; // 1 hour
+
+async function clientIp(): Promise<string> {
+  try {
+    const h = await headers();
+    return h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "anonymous";
+  } catch {
+    return "anonymous";
+  }
+}
 
 // ── Validation helpers ────────────────────────────────────────────────────────
 
@@ -40,6 +57,12 @@ export async function registerCustomer(input: {
   password: string;
   phone?: string;
 }): Promise<ActionResult<{ customerId: string; name: string; verificationSent: boolean }>> {
+  const ip = await clientIp();
+  const rl = checkRateLimit(`register:${ip}`, AUTH_LIMIT, AUTH_WINDOW_MS);
+  if (!rl.allowed) {
+    return { ok: false, code: "RATE_LIMITED", message: `Too many attempts. Try again in ${rl.retryAfterSecs}s.` };
+  }
+
   const name = input.name.trim();
   const email = validateEmail(input.email);
   const password = validatePassword(input.password);
@@ -158,6 +181,12 @@ export async function loginCustomer(input: {
   email: string;
   password: string;
 }): Promise<ActionResult<{ customerId: string; name: string }>> {
+  const ip = await clientIp();
+  const rl = checkRateLimit(`login:${ip}`, AUTH_LIMIT, AUTH_WINDOW_MS);
+  if (!rl.allowed) {
+    return { ok: false, code: "RATE_LIMITED", message: `Too many attempts. Try again in ${rl.retryAfterSecs}s.` };
+  }
+
   const email = validateEmail(input.email);
 
   if (!email) {
@@ -214,6 +243,13 @@ export async function requestPasswordReset(
   const validated = validateEmail(email);
   if (!validated) {
     return { ok: false, code: "VALIDATION", message: "Please enter a valid email address." };
+  }
+
+  const rl = checkRateLimit(`reset:${validated}`, RESET_LIMIT, RESET_WINDOW_MS);
+  if (!rl.allowed) {
+    // Return ok to avoid leaking that the email exists or that the limit was hit.
+    // Suppressing the send silently is safer than 429-ing here (no-leak rule).
+    return { ok: true, data: null };
   }
 
   const supabase = await createClient();

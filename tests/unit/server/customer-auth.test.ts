@@ -1,7 +1,7 @@
 // Customer auth unit tests — customer-auth.ts (Supabase Auth)
 // Covers input validation, phone deduplication, legacy re-link, email verification,
-// EMAIL_TAKEN, INVALID_CREDENTIALS, EMAIL_NOT_VERIFIED, and logout paths.
-// Supabase client is mocked to keep unit tests fast and offline.
+// EMAIL_TAKEN, INVALID_CREDENTIALS, EMAIL_NOT_VERIFIED, logout paths, and rate limiting.
+// Supabase client and rate limiter are mocked to keep tests fast and offline.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -23,6 +23,18 @@ vi.mock("@/lib/supabase/server", () => ({
       resend: mockResend,
     },
   }),
+}));
+
+// next/headers is not available in unit tests — mock with a static IP
+vi.mock("next/headers", () => ({
+  headers: vi.fn().mockResolvedValue({ get: () => "1.2.3.4" }),
+}));
+
+// Rate limiter: default to allowed so existing tests are unaffected.
+// Individual tests override this to simulate rate-limited state.
+const mockCheckRateLimit = vi.fn().mockReturnValue({ allowed: true });
+vi.mock("@/server/rate-limit", () => ({
+  checkRateLimit: (...args: unknown[]) => mockCheckRateLimit(...args),
 }));
 
 function chain(result: unknown[] = []) {
@@ -292,6 +304,41 @@ describe("loginCustomer — validation", () => {
     const result = await loginCustomer({ email: "louis@favo.co.za", password: "" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("VALIDATION");
+  });
+});
+
+// ─── loginCustomer — RATE_LIMITED ────────────────────────────────────────────
+
+describe("loginCustomer — RATE_LIMITED (SEC-4)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns RATE_LIMITED when the IP limit is exceeded", async () => {
+    mockCheckRateLimit.mockReturnValueOnce({ allowed: false, retryAfterSecs: 42 });
+    const { loginCustomer } = await import("@/server/actions/customer-auth");
+    const result = await loginCustomer({ email: "louis@favo.co.za", password: "password1" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("RATE_LIMITED");
+  });
+
+  it("does not call Supabase signIn when rate-limited", async () => {
+    mockCheckRateLimit.mockReturnValueOnce({ allowed: false, retryAfterSecs: 10 });
+    const { loginCustomer } = await import("@/server/actions/customer-auth");
+    await loginCustomer({ email: "louis@favo.co.za", password: "password1" });
+    expect(mockSignIn).not.toHaveBeenCalled();
+  });
+});
+
+// ─── registerCustomer — RATE_LIMITED ─────────────────────────────────────────
+
+describe("registerCustomer — RATE_LIMITED (SEC-4)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns RATE_LIMITED when the IP limit is exceeded", async () => {
+    mockCheckRateLimit.mockReturnValueOnce({ allowed: false, retryAfterSecs: 30 });
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("RATE_LIMITED");
   });
 });
 

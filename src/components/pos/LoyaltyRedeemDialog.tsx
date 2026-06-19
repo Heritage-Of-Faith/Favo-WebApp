@@ -26,13 +26,15 @@ export type Props = {
   orderId: string;
   /** Current points, for the confirmation copy and the optimistic decrement. */
   loyaltyPoints: number;
+  /** Current order total in cents — passed by POSWorkspace. */
+  orderTotalZar?: number;
   /** Called after a successful redeem so the caller can zero the order + drop 100 pts. */
   onRedeemed: () => void;
   onClose: () => void;
 };
 
 export default function LoyaltyRedeemDialog({
-  customerId, customerName, orderId, loyaltyPoints, onRedeemed, onClose,
+  customerId, customerName, orderId, loyaltyPoints, orderTotalZar: _orderTotalZar, onRedeemed, onClose,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
