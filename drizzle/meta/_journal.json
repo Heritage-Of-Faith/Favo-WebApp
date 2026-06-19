@@ -106,6 +106,13 @@
       "when": 1781858082411,
       "tag": "0014_smooth_forge",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1781861997494,
+      "tag": "0016_wallet_zar_check",
+      "breakpoints": true
     }
   ]
 }

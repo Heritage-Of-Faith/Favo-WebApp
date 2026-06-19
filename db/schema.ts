@@ -56,18 +56,25 @@ export const staff = pgTable("staff", {
 
 // ─── Customers ────────────────────────────────────────────────────────────────
 
-export const customers = pgTable("customers", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: tenantId(),
-  authId: uuid("auth_id").unique(),
-  email: text("email").unique(),
-  name: text("name").notNull(),
-  phone: text("phone"),
-  pushSubscription: jsonb("push_subscription"),
-  loyaltyPoints: integer("loyalty_points").default(0).notNull(),
-  walletZar: integer("wallet_zar").default(0).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const customers = pgTable(
+  "customers",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    authId: uuid("auth_id").unique(),
+    email: text("email").unique(),
+    name: text("name").notNull(),
+    phone: text("phone"),
+    pushSubscription: jsonb("push_subscription"),
+    loyaltyPoints: integer("loyalty_points").default(0).notNull(),
+    walletZar: integer("wallet_zar").default(0).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  () => [
+    // AT-114: wallet balance can never go negative (L16).
+    check("customers_wallet_zar_non_negative", sql`wallet_zar >= 0`),
+  ]
+);
 
 // ─── Menu ─────────────────────────────────────────────────────────────────────
 

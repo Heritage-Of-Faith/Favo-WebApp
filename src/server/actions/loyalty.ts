@@ -160,17 +160,26 @@ export async function topUpWallet(
   if (!auth.ok) return auth;
   const session = auth.session;
 
-  if (!customerId || typeof amountZar !== "number" || amountZar <= 0) {
-    return { ok: false, code: "VALIDATION_ERROR", message: "customerId and a positive amountZar are required." };
+  const MAX_TOPUP_ZAR = 100_000;   // R1,000 per top-up (L16)
+  const MAX_BALANCE_ZAR = 250_000; // R2,500 max wallet balance (L16)
+
+  if (!customerId || !Number.isInteger(amountZar) || amountZar <= 0) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "customerId and a positive integer amountZar are required." };
+  }
+  if (amountZar > MAX_TOPUP_ZAR) {
+    return { ok: false, code: "VALIDATION_ERROR", message: `Single top-up cannot exceed R${MAX_TOPUP_ZAR / 100}.` };
   }
 
   const [customer] = await db
-    .select({ id: customers.id })
+    .select({ id: customers.id, walletZar: customers.walletZar })
     .from(customers)
     .where(eq(customers.id, customerId));
 
   if (!customer) {
     return { ok: false, code: "NOT_FOUND", message: "Customer not found." };
+  }
+  if (customer.walletZar + amountZar > MAX_BALANCE_ZAR) {
+    return { ok: false, code: "CONFLICT", message: `Top-up would exceed max wallet balance of R${MAX_BALANCE_ZAR / 100}.` };
   }
 
   let checkoutId: string;
@@ -306,14 +315,13 @@ export async function activatePendingCharge(
       .set({ walletZar: sql`${customers.walletZar} + ${charge.amountZar}` })
       .where(eq(customers.id, charge.customerId));
 
-    // Append-only wallet ledger row so customers and admins can see top-up
-    // history and the balance can be reconstructed from the ledger alone.
+    // Append wallet ledger entry for this top-up (AT-114).
+    // No loyalty points on top-up — no double-dip (L16).
     await tx.insert(walletTransactions).values({
       customerId: charge.customerId,
       deltaZar: charge.amountZar,
       kind: "topup",
       relatedPendingChargeId: chargeId,
-      description: "Wallet top-up",
     });
 
     await writeAudit(

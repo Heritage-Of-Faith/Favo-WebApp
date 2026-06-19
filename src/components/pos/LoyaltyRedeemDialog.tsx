@@ -27,7 +27,7 @@ export type Props = {
   orderId: string;
   /** Current points, for the confirmation copy and the optimistic decrement. */
   loyaltyPoints: number;
-  /** Order total (cents) — discount is capped at this; R20 off otherwise. */
+  /** Order total in cents — kept for POSWorkspace compatibility (AT-110 will use it). */
   orderTotalZar?: number;
   /** Called after a successful redeem so the caller can apply the discount + drop 100 pts. */
   onRedeemed: () => void;
