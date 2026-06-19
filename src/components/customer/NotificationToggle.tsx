@@ -109,7 +109,7 @@ export default function NotificationToggle({ customerId, serverHasSubscription }
       gap: 16,
     }}>
       <p style={{
-        fontFamily: "'DM Sans', sans-serif",
+        fontFamily: "var(--font-sans)",
         fontWeight: 300,
         fontSize: 11,
         letterSpacing: "0.14em",
@@ -129,7 +129,7 @@ export default function NotificationToggle({ customerId, serverHasSubscription }
             display: "block",
           }} />
           <span style={{
-            fontFamily: "'DM Sans', sans-serif",
+            fontFamily: "var(--font-sans)",
             fontWeight: 500,
             fontSize: 14,
             color: "var(--color-porcelain)",
@@ -151,9 +151,9 @@ export default function NotificationToggle({ customerId, serverHasSubscription }
             aria-busy={loading}
             style={{
               backgroundColor: fullyEnabled ? "transparent" : "var(--color-crimson-carrot)",
-              color: fullyEnabled ? "rgba(247,246,242,0.6)" : "var(--color-porcelain)",
+              color: fullyEnabled ? "var(--color-cool-steel)" : "var(--color-porcelain)",
               border: fullyEnabled ? "1px solid rgba(247,246,242,0.2)" : "none",
-              fontFamily: "'DM Sans', sans-serif",
+              fontFamily: "var(--font-sans)",
               fontWeight: 700,
               fontSize: 11,
               letterSpacing: "0.12em",
@@ -173,9 +173,9 @@ export default function NotificationToggle({ customerId, serverHasSubscription }
 
       {permission === "denied" && (
         <p style={{
-          fontFamily: "'DM Sans', sans-serif",
+          fontFamily: "var(--font-sans)",
           fontSize: 13,
-          color: "rgba(247,246,242,0.55)",
+          color: "var(--color-cool-steel)",
           margin: 0,
           lineHeight: 1.6,
         }}>
@@ -185,7 +185,7 @@ export default function NotificationToggle({ customerId, serverHasSubscription }
 
       {error && (
         <p style={{
-          fontFamily: "'DM Sans', sans-serif",
+          fontFamily: "var(--font-sans)",
           fontSize: 13,
           color: "var(--color-crimson-carrot)",
           margin: 0,

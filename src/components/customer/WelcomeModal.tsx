@@ -56,11 +56,12 @@ export default function WelcomeModal({ customerId, firstName }: Props) {
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_KEY),
       });
-      await fetch("/api/push/subscribe", {
+      const res = await fetch("/api/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ customerId, subscription: sub.toJSON() }),
       });
+      if (!res.ok) throw new Error(`Failed to save subscription (${res.status})`);
       setSuccess(true);
       setTimeout(() => setVisible(false), 1800);
     } catch {
@@ -184,7 +185,7 @@ export default function WelcomeModal({ customerId, firstName }: Props) {
                 disabled={loading}
                 style={{
                   backgroundColor: "transparent",
-                  color: "rgba(247,246,242,0.5)",
+                  color: "var(--color-cool-steel)",
                   fontFamily: "'DM Sans', sans-serif",
                   fontWeight: 400,
                   fontSize: 12,
