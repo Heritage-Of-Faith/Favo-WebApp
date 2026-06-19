@@ -2,8 +2,9 @@
 // Previously, a Yoco payment-intent rejection re-threw in production, which both
 // surfaced a generic "Failed to place order" to the barista AND left a ghost
 // order committed in the DB (the transaction runs in parallel). The fix degrades
-// gracefully: the order is created, yocoClientSecret is "", and the POS falls
-// back to manual cash/card.
+// gracefully: the order is created, yocoClientSecret is "", and the POS shows
+// an error — the barista must collect payment via the queue when Yoco is back.
+// (No cash/manual fallback — AT-122.)
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -44,7 +45,7 @@ describe("createOrder — graceful Yoco degradation (P0 regression)", () => {
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.data.orderId).toBeTruthy();
-      expect(res.data.yocoClientSecret).toBe(""); // → POS manual-payment fallback path
+      expect(res.data.yocoClientSecret).toBe(""); // → POS shows error (no cash fallback)
     }
   });
 
@@ -62,7 +63,7 @@ describe("createOrder — graceful Yoco degradation (P0 regression)", () => {
     mockCreatePaymentIntent.mockRejectedValue(new Error("YOCO down"));
     try {
       const res = await createOrder(ORDER_INPUT);
-      expect(res.ok).toBe(true); // must not throw → POS shows manual fallback
+      expect(res.ok).toBe(true); // must not throw → ghost-order prevention, POS shows error
     } finally {
       // @ts-expect-error — restore
       process.env.NODE_ENV = prev;

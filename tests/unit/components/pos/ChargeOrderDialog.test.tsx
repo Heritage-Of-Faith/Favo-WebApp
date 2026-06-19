@@ -45,14 +45,6 @@ describe("ChargeOrderDialog", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("online: in-person fallback settles the order", () => {
-    const onPaid = vi.fn(); const onClose = vi.fn();
-    render(<ChargeOrderDialog order={ORDER} onPaid={onPaid} onClose={onClose} />);
-    fireEvent.click(screen.getByRole("button", { name: /paid on the card machine/i }));
-    expect(onPaid).toHaveBeenCalledWith("ord_abc123");
-    expect(onClose).toHaveBeenCalledOnce();
-  });
-
   it("offline: shows the deferred notice and settles via it", () => {
     setOnline(false);
     const onPaid = vi.fn();

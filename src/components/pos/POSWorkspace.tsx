@@ -276,11 +276,10 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
       if (r.data.yocoClientSecret) {
         setShowPayment(true);
       } else {
-        // No Yoco configured — treat as paid so "Start Making" is immediately available.
-        setPaidLocally((prev) => { const n = new Set(prev); n.add(r.data.orderId); return n; });
-        setOrderSuccess("Order placed.");
+        // Yoco unavailable — order is in the queue; barista must collect payment via card reader when online.
+        setOrderError("Card payment unavailable — Yoco could not be reached. The order is in the queue; take payment via the queue when online.");
+        setPaymentOrderId(null);
         reset();
-        setTimeout(() => setOrderSuccess(null), 3000);
       }
     } else {
       setOrderError(r.message);
@@ -675,9 +674,13 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
         ) : (
           /* Payment view */
           (() => {
-            // Free order — loyalty redemption (M18) or staff discount zeroes the
-            // total. No card needed: skip the Yoco form and confirm directly.
-            const isFree = redeemed || totalZar === 0;
+            // Amount due after a loyalty redemption (M18): one 100-pt unit is
+            // R20 off (REDEEM_VALUE_ZAR), capped at the order total — matches the
+            // server cap in redeemLoyalty. Staff discount zeroes the total outright.
+            const REDEEM_VALUE_ZAR = 2000; // R20,00 in cents — mirrors loyalty/calc.
+            const amountDueZar = redeemed ? Math.max(0, totalZar - REDEEM_VALUE_ZAR) : totalZar;
+            // Free only when nothing is owed — skip the Yoco form and confirm directly.
+            const isFree = amountDueZar === 0;
 
             // After the order is paid (or free-confirmed): clear everything.
             const finishPayment = () => {
@@ -696,7 +699,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
             if (!online && !isFree) {
               return (
                 <DeferredPaymentNotice
-                  totalZar={totalZar}
+                  totalZar={amountDueZar}
                   onConfirmDeferred={handleDeferredConfirm}
                   onBack={() => { setShowPayment(false); setPaymentOrderId(null); setYocoCheckoutId(""); }}
                 />
@@ -708,14 +711,16 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
                 <ShieldCheck size={40} strokeWidth={1.5} className="text-cool-steel opacity-60" />
                 <div className="text-center">
                   <p className="favo-label text-cool-steel mb-1">Amount due</p>
-                  <p className="favo-h2 text-coffee-bean">{formatZar(isFree ? 0 : totalZar)}</p>
+                  <p className="favo-h2 text-coffee-bean">{formatZar(amountDueZar)}</p>
                   <p className="favo-small text-cool-steel mt-1">
-                    {redeemed ? "Paid with 100 loyalty points" : isFree ? "No payment due" : "Tap or insert the customer's card"}
+                    {redeemed
+                      ? (isFree ? "R20 covered by 100 loyalty points" : "R20 off with 100 loyalty points — pay the rest")
+                      : "Tap or insert the customer's card"}
                   </p>
                 </div>
 
                 <div className="flex flex-col gap-3 w-full max-w-[320px]">
-                  {/* M18 — full loyalty redemption (L06): 100 pts → R20 off, zeroes the order.
+                  {/* M18 — loyalty redemption (L06): 100 pts → R20 off, capped at the order total.
                       Offered only at ≥100 pts and when the order is worth ≥ R20. */}
                   {customer && customer.loyaltyPoints >= 100 && totalZar >= 2000 && !redeemed && paymentOrderId && (
                     <button type="button" onClick={() => setRedeemOpen(true)}
@@ -737,17 +742,14 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
                     /* Real card capture via Yoco; backend webhook + poll confirm. */
                     <YocoOrderForm
                       orderId={paymentOrderId}
-                      amountZar={totalZar}
+                      amountZar={amountDueZar}
                       onPaid={finishPayment}
                     />
                   ) : (
-                    /* No Yoco checkout (no key / intent failed) — manual fallback. */
-                    <button type="button" onClick={finishPayment}
-                      className="flex w-full items-center justify-center gap-2 rounded-[4px] py-4 min-h-[52px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-porcelain"
-                      style={{ background: "var(--color-success)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
-                      <CheckCircle size={16} strokeWidth={2} className="mr-1" />
-                      Confirm — accept cash or card manually
-                    </button>
+                    /* Yoco unavailable — no cash fallback. */
+                    <p className="favo-small text-center text-cool-steel py-4">
+                      Card payment unavailable. Go back and retry when online.
+                    </p>
                   )}
 
                   <button type="button" onClick={() => setShowPayment(false)}
@@ -1106,6 +1108,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
           customerName={customer.name}
           orderId={paymentOrderId}
           loyaltyPoints={customer.loyaltyPoints}
+          orderTotalZar={totalZar}
           onRedeemed={() => {
             setRedeemed(true);
             setCustomer({ ...customer, loyaltyPoints: customer.loyaltyPoints - 100 });
