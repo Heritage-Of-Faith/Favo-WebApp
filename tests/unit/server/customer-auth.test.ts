@@ -11,6 +11,7 @@ const mockSignUp = vi.fn();
 const mockSignIn = vi.fn();
 const mockSignOut = vi.fn();
 const mockGetUser = vi.fn();
+const mockUpdateUser = vi.fn();
 const mockResetPassword = vi.fn();
 const mockResend = vi.fn();
 
@@ -21,6 +22,7 @@ vi.mock("@/lib/supabase/server", () => ({
       signInWithPassword: mockSignIn,
       signOut: mockSignOut,
       getUser: mockGetUser,
+      updateUser: mockUpdateUser,
       resetPasswordForEmail: mockResetPassword,
       resend: mockResend,
     },
@@ -512,5 +514,84 @@ describe("resendVerificationEmail", () => {
     expect(mockResend).toHaveBeenCalledWith(
       expect.objectContaining({ type: "signup", email: "louis@favo.co.za" })
     );
+  });
+});
+
+// ─── resetPassword (SEC-3) ────────────────────────────────────────────────────
+
+describe("resetPassword — validation", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("rejects password shorter than 8 characters", async () => {
+    const { resetPassword } = await import("@/server/actions/customer-auth");
+    const result = await resetPassword("short");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION");
+  });
+
+  it("rejects empty password", async () => {
+    const { resetPassword } = await import("@/server/actions/customer-auth");
+    const result = await resetPassword("");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION");
+  });
+});
+
+describe("resetPassword — UNAUTHORIZED", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns UNAUTHORIZED when there is no active session (expired link)", async () => {
+    mockGetUser.mockResolvedValueOnce({ data: { user: null }, error: null });
+    const { resetPassword } = await import("@/server/actions/customer-auth");
+    const result = await resetPassword("newpassword1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("UNAUTHORIZED");
+  });
+
+  it("returns UNAUTHORIZED when getUser returns an error", async () => {
+    mockGetUser.mockResolvedValueOnce({ data: { user: null }, error: { message: "JWT expired" } });
+    const { resetPassword } = await import("@/server/actions/customer-auth");
+    const result = await resetPassword("newpassword1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("UNAUTHORIZED");
+  });
+});
+
+describe("resetPassword — success", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("calls updateUser with the new password and returns ok", async () => {
+    mockGetUser.mockResolvedValueOnce({ data: { user: { id: "uuid-123" } }, error: null });
+    mockUpdateUser.mockResolvedValueOnce({ error: null });
+    const { resetPassword } = await import("@/server/actions/customer-auth");
+    const result = await resetPassword("newpassword1");
+    expect(result.ok).toBe(true);
+    expect(mockUpdateUser).toHaveBeenCalledWith({ password: "newpassword1" });
+  });
+
+  it("writes a customer.password_reset audit row when customer is found", async () => {
+    mockGetUser.mockResolvedValueOnce({ data: { user: { id: "uuid-123" } }, error: null });
+    mockUpdateUser.mockResolvedValueOnce({ error: null });
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: "cust_123" }]),
+      }),
+    } as never);
+    const { writeAudit } = await import("@/server/audit");
+    const { resetPassword } = await import("@/server/actions/customer-auth");
+    await resetPassword("newpassword1");
+    expect(vi.mocked(writeAudit)).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "customer.password_reset", entityId: "cust_123" })
+    );
+  });
+
+  it("returns AUTH_ERROR when updateUser fails", async () => {
+    mockGetUser.mockResolvedValueOnce({ data: { user: { id: "uuid-123" } }, error: null });
+    mockUpdateUser.mockResolvedValueOnce({ error: { message: "Password too weak" } });
+    const { resetPassword } = await import("@/server/actions/customer-auth");
+    const result = await resetPassword("newpassword1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("AUTH_ERROR");
   });
 });

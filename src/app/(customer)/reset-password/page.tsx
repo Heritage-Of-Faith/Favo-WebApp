@@ -1,5 +1,7 @@
 // Password reset — handles the redirect from Supabase Auth email link.
 // Supabase sets the session from the URL hash; this page lets the user set a new password.
+// The actual updateUser call goes through a Server Action (resetPassword) so the mutation
+// is audited and runs server-side.
 
 "use client";
 
@@ -7,6 +9,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { resetPassword } from "@/server/actions/customer-auth";
 
 const inputClass =
   "h-12 w-full rounded-[var(--radius-btn)] border border-porcelain/20 bg-porcelain/10 px-4 text-porcelain placeholder:text-porcelain/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot";
@@ -21,7 +24,8 @@ export default function ResetPasswordPage() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // Supabase sets the session from the URL hash on mount
+    // Supabase parses the PASSWORD_RECOVERY hash from the email link and sets auth cookies.
+    // Once cookies are set, the resetPassword Server Action can read the session server-side.
     const supabase = createClient();
     supabase.auth.onAuthStateChange((event: string) => {
       if (event === "PASSWORD_RECOVERY") setReady(true);
@@ -35,23 +39,19 @@ export default function ResetPasswordPage() {
       setError("Passwords don't match.");
       return;
     }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    setSubmitting(true);
+    const result = await resetPassword(password).catch(() => ({
+      ok: false as const,
+      code: "ERR",
+      message: "Could not update your password. Please try again.",
+    }));
+    setSubmitting(false);
+    if (!result.ok) {
+      setError(result.message);
       return;
     }
-    setSubmitting(true);
-    try {
-      const supabase = createClient();
-      const { error: updateError } = await supabase.auth.updateUser({ password });
-      if (updateError) {
-        setError(updateError.message);
-        return;
-      }
-      setDone(true);
-      setTimeout(() => router.push("/customer"), 2000);
-    } finally {
-      setSubmitting(false);
-    }
+    setDone(true);
+    setTimeout(() => router.push("/customer"), 2000);
   }
 
   return (

@@ -292,6 +292,53 @@ export async function requestPasswordReset(
   return { ok: true, data: null };
 }
 
+// ── Reset password (SEC-3) ────────────────────────────────────────────────────
+//
+// Called from the /reset-password page after the client-side Supabase SDK has
+// parsed the PASSWORD_RECOVERY event from the email link and set auth cookies.
+// The server-side client reads those cookies and calls updateUser server-side.
+
+export async function resetPassword(
+  newPassword: string
+): Promise<ActionResult<null>> {
+  if (!newPassword || newPassword.length < 8) {
+    return { ok: false, code: "VALIDATION", message: "Password must be at least 8 characters." };
+  }
+
+  const supabase = await createClient();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return {
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Your reset link has expired or is invalid. Please request a new one.",
+    };
+  }
+
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) {
+    return { ok: false, code: "AUTH_ERROR", message: error.message };
+  }
+
+  const [customer] = await db
+    .select({ id: customers.id })
+    .from(customers)
+    .where(eq(customers.authId, user.id));
+
+  if (customer) {
+    await writeAudit({
+      actorId: customer.id,
+      actorRole: "customer",
+      action: "customer.password_reset",
+      entityKind: "customers",
+      entityId: customer.id,
+    });
+  }
+
+  return { ok: true, data: null };
+}
+
 // ── Resend verification email ─────────────────────────────────────────────────
 
 export async function resendVerificationEmail(
