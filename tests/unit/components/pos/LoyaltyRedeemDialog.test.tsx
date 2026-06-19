@@ -27,7 +27,7 @@ function setup(over: Partial<React.ComponentProps<typeof LoyaltyRedeemDialog>> =
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockRedeem.mockResolvedValue({ ok: true, data: undefined });
+  mockRedeem.mockResolvedValue({ ok: true, data: { discountZar: 2000, newTotalZar: 0, clientSecret: null } });
 });
 
 describe("LoyaltyRedeemDialog", () => {

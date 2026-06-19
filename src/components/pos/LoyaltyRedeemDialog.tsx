@@ -1,15 +1,11 @@
 "use client";
 
 /**
- * LoyaltyRedeemDialog — task M18.
+ * LoyaltyRedeemDialog — task M18, fixed by AT-115 (BUG-Y1).
  *
- * Full loyalty redemption only (rule L06): 100 points → R20 off, applied as a
- * whole-order zeroing. There is no partial-redemption path anywhere by design.
- *
- * Redemption operates on an order that already exists in the `ordered` state
- * (pre-payment) — `redeemLoyalty` validates that server-side and atomically
- * sets `order.totalZar = 0`, deducts exactly 100 points, and writes the audit
- * row. We surface this on the POS payment step, where the order id is known.
+ * Single-unit redemption (rule L06): 100 pts → R20 off, capped at the order
+ * total. The server re-creates the Yoco checkout for the remainder and returns
+ * the new clientSecret so the POS can reinitialise the payment form.
  */
 
 import { useState, useCallback } from "react";
@@ -26,17 +22,21 @@ export type Props = {
   orderId: string;
   /** Current points, for the confirmation copy and the optimistic decrement. */
   loyaltyPoints: number;
-  /** Current order total in cents — passed by POSWorkspace. */
+  /** Order total (cents) — discount is capped at this; R20 off otherwise. */
   orderTotalZar?: number;
-  /** Called after a successful redeem so the caller can zero the order + drop 100 pts. */
+  /** Called after a successful redeem so the caller can apply the discount + drop 100 pts. */
   onRedeemed: () => void;
   onClose: () => void;
 };
 
 export default function LoyaltyRedeemDialog({
-  customerId, customerName, orderId, loyaltyPoints, orderTotalZar: _orderTotalZar, onRedeemed, onClose,
+  customerId, customerName, orderId, loyaltyPoints, orderTotalZar, onRedeemed, onClose,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
+
+  // One 100-pt unit is worth R20, but the server caps the discount at the order total.
+  const discountZar = orderTotalZar == null ? REDEEM_VALUE_ZAR : Math.min(REDEEM_VALUE_ZAR, orderTotalZar);
+  const discountLabel = `R${(discountZar / 100).toFixed(0)}`;
 
   const confirm = useCallback(async () => {
     if (submitting) return;
@@ -46,7 +46,8 @@ export default function LoyaltyRedeemDialog({
     }));
     setSubmitting(false);
     if (r.ok) {
-      toast.success("100 pts redeemed — R20 off");
+      const applied = r.data.discountZar;
+      toast.success(`100 pts redeemed — R${(applied / 100).toFixed(0)} off`);
       onRedeemed();
       onClose();
     } else {
@@ -75,11 +76,13 @@ export default function LoyaltyRedeemDialog({
         <div className="px-5 py-4 flex flex-col gap-4">
           <p className="favo-small text-porcelain">
             Redeem <span className="text-crimson-carrot font-bold">{REDEEM_POINTS} points</span> for{" "}
-            <span className="text-crimson-carrot font-bold">R20,00 off</span> for {customerName}?
+            <span className="text-crimson-carrot font-bold">{discountLabel} off</span> for {customerName}?
           </p>
           <p className="favo-caption text-cool-steel">
             {loyaltyPoints} pts available → {loyaltyPoints - REDEEM_POINTS} pts after.
-            This zeroes the whole order. Full redemption only.
+            {orderTotalZar != null && orderTotalZar < REDEEM_VALUE_ZAR
+              ? " Discount is capped at the order total."
+              : " R20 off this order."}
           </p>
 
           <div className="flex gap-2">
@@ -92,7 +95,7 @@ export default function LoyaltyRedeemDialog({
               style={{ color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
               {submitting
                 ? <Loader2 size={16} strokeWidth={2.25} className="animate-spin" />
-                : <>Redeem R{(REDEEM_VALUE_ZAR / 100).toFixed(0)} off</>}
+                : <>Redeem {discountLabel} off</>}
             </button>
           </div>
         </div>

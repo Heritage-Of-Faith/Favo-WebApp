@@ -11,6 +11,7 @@ import { writeAudit } from "@/server/audit";
 import {
   canRedeem,
   MIN_REDEEM_POINTS,
+  REDEEM_VALUE_ZAR,
 } from "@/server/loyalty/calc";
 import { createPaymentIntent } from "@/server/yoco/client";
 import type { ActionResult } from "@/lib/types";
@@ -33,26 +34,20 @@ class RedeemError extends Error {
 // ─── redeemLoyalty ────────────────────────────────────────────────────────────
 
 /**
- * Apply a loyalty redemption to an order before payment.
- * Sets order total_zar = 0, deducts 100 pts, marks payment as free.
- * Rule L06: min 100 pts, full redemption only (total → 0).
- *
- * TOCTOU fix: the customer row is locked with SELECT FOR UPDATE inside the
- * transaction. A concurrent redemption call blocks at the lock, then re-reads
- * the already-deducted balance and correctly fails the canRedeem check instead
- * of allowing two redemptions against the same balance.
+ * Apply a single-unit loyalty redemption (100 pts = R20 off) to an order before
+ * payment (BUG-Y1 fix). Syncs payments.amountZar to orders.totalZar and
+ * re-creates the Yoco checkout for the remaining amount, returning the new
+ * clientSecret so the POS can reinitialise the hosted-fields form.
+ * Rules: L06, L17.
  */
 export async function redeemLoyalty(
   customerId: string,
   orderId: string
-): Promise<ActionResult> {
+): Promise<ActionResult<{ discountZar: number; newTotalZar: number; clientSecret: string | null }>> {
   const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
   const session = auth.session;
 
-  // Pre-checks on the order — these read-only checks are safe outside the
-  // transaction because order state is barista-controlled and won't race with
-  // a loyalty redemption.
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!order) {
     return { ok: false, code: "NOT_FOUND", message: "Order not found." };
@@ -75,68 +70,92 @@ export async function redeemLoyalty(
     };
   }
 
+  const [customer] = await db
+    .select({ loyaltyPoints: customers.loyaltyPoints })
+    .from(customers)
+    .where(eq(customers.id, customerId));
+
+  if (!customer) {
+    return { ok: false, code: "NOT_FOUND", message: "Customer not found." };
+  }
+  if (!canRedeem(customer.loyaltyPoints)) {
+    return {
+      ok: false,
+      code: "CONFLICT",
+      message: `Insufficient loyalty points (${customer.loyaltyPoints} pts — need ${MIN_REDEEM_POINTS}).`,
+    };
+  }
+
+  // Single-unit: R20 off, capped at the order total (L06).
+  const discountZar = Math.min(REDEEM_VALUE_ZAR, order.totalZar);
+  const newTotalZar = order.totalZar - discountZar;
+
+  // Create new Yoco checkout OUTSIDE the DB transaction (external API call).
+  // The old checkout is abandoned — it expires naturally on Yoco's side.
+  let newClientSecret: string | null = null;
+  if (newTotalZar > 0) {
+    try {
+      const intent = await createPaymentIntent({
+        amountZar: newTotalZar,
+        metadata: { orderId, customerId, kind: "loyalty_redeem" },
+      });
+      newClientSecret = intent.clientSecret;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Yoco checkout creation failed.";
+      return { ok: false, code: "PAYMENT_ERROR", message };
+    }
+  }
+
   const prevTotal = order.totalZar;
 
   try {
     await db.transaction(async (tx) => {
       const txDb = tx as unknown as DB;
 
-      // Lock the customer row for the duration of the transaction. Any
-      // concurrent redeemLoyalty call for the same customer blocks here until
-      // we commit, then re-reads the deducted balance and fails canRedeem.
-      const [lockedCustomer] = await tx
-        .select({ loyaltyPoints: customers.loyaltyPoints })
-        .from(customers)
-        .where(eq(customers.id, customerId))
-        .for("update");
+    await tx
+      .update(orders)
+      .set({ totalZar: newTotalZar })
+      .where(eq(orders.id, orderId));
 
-      if (!lockedCustomer) throw new RedeemError("NOT_FOUND", "Customer not found.");
-      if (!canRedeem(lockedCustomer.loyaltyPoints)) {
-        throw new RedeemError(
-          "CONFLICT",
-          `Insufficient loyalty points (${lockedCustomer.loyaltyPoints} pts — need ${MIN_REDEEM_POINTS}).`
-        );
-      }
+    await tx
+      .update(customers)
+      .set({ loyaltyPoints: sql`${customers.loyaltyPoints} - ${MIN_REDEEM_POINTS}` })
+      .where(eq(customers.id, customerId));
 
-      const newPoints = lockedCustomer.loyaltyPoints - MIN_REDEEM_POINTS;
-
-      // Zero the order total and mark the payment row as free. The Yoco
-      // checkout was already created with the original amount, but since the
-      // order is now £0 no card transaction is needed. Marking the payment
-      // successful with amountZar=0 keeps the daily close reconciliation
-      // accurate (revenueZar and paymentsZar both reflect 0 for this order).
-      await tx.update(orders).set({ totalZar: 0 }).where(eq(orders.id, orderId));
-      await tx
-        .update(payments)
-        .set({ amountZar: 0, status: "successful" })
-        .where(eq(payments.orderId, orderId));
-
-      // Deduct points with the locked current value already confirmed.
-      await tx
-        .update(customers)
-        .set({ loyaltyPoints: sql`${customers.loyaltyPoints} - ${MIN_REDEEM_POINTS}` })
-        .where(eq(customers.id, customerId));
-
-      await tx.insert(loyaltyTransactions).values({
-        customerId,
-        orderId,
-        delta: -MIN_REDEEM_POINTS,
-        kind: "redeem",
-      });
-
-      await writeAudit(
-        {
-          entityKind: "order",
-          entityId: orderId,
-          action: "redeem_loyalty",
-          actorId: session.id,
-          actorRole: session.role,
-          before: { totalZar: prevTotal, loyaltyPoints: lockedCustomer.loyaltyPoints },
-          after: { totalZar: 0, loyaltyPoints: newPoints },
-        },
-        txDb
-      );
+    await tx.insert(loyaltyTransactions).values({
+      customerId,
+      orderId,
+      delta: -MIN_REDEEM_POINTS,
+      kind: "redeem",
     });
+
+    // Keep payments.amountZar in sync with orders.totalZar (BUG-Y1).
+    await tx
+      .update(payments)
+      .set({
+        amountZar: newTotalZar,
+        ...(newClientSecret ? { yocoCheckoutId: newClientSecret } : {}),
+        status: newTotalZar === 0 ? "successful" : "pending",
+      })
+      .where(eq(payments.orderId, orderId));
+
+    await writeAudit(
+      {
+        entityKind: "order",
+        entityId: orderId,
+        action: "redeem_loyalty",
+        actorId: session.id,
+        actorRole: session.role,
+        before: { totalZar: prevTotal, loyaltyPoints: customer.loyaltyPoints },
+        after: {
+          totalZar: newTotalZar,
+          discountZar,
+          loyaltyPoints: customer.loyaltyPoints - MIN_REDEEM_POINTS,
+        },
+      },
+      txDb
+    );
+  });
   } catch (err) {
     if (err instanceof RedeemError) {
       return { ok: false, code: err.code, message: err.message };
@@ -144,7 +163,7 @@ export async function redeemLoyalty(
     throw err;
   }
 
-  return { ok: true, data: undefined };
+  return { ok: true, data: { discountZar, newTotalZar, clientSecret: newClientSecret } };
 }
 
 // ─── topUpWallet ──────────────────────────────────────────────────────────────
