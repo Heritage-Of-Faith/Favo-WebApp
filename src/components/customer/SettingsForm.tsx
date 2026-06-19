@@ -50,7 +50,7 @@ const S = {
     fontSize: 11,
     letterSpacing: "0.10em",
     textTransform: "uppercase" as const,
-    color: "rgba(247,246,242,0.55)",
+    color: "var(--color-cool-steel)",
   },
   input: {
     height: 48,
@@ -75,7 +75,7 @@ const S = {
     fontFamily: "'DM Sans', sans-serif",
     fontWeight: 400,
     fontSize: 15,
-    color: "rgba(247,246,242,0.4)",
+    color: "var(--color-cool-steel)",
     width: "100%",
     boxSizing: "border-box" as const,
     display: "flex" as const,
@@ -100,7 +100,7 @@ const S = {
   successMsg: {
     fontFamily: "'DM Sans', sans-serif",
     fontSize: 13,
-    color: "rgba(247,246,242,0.7)",
+    color: "var(--color-cool-steel)",
     alignSelf: "flex-end" as const,
     display: "flex",
     alignItems: "center",
@@ -163,8 +163,12 @@ export default function SettingsForm({
 
   async function handleSignOut() {
     setSigningOut(true);
-    await logoutCustomer();
-    router.push("/login");
+    try {
+      await logoutCustomer();
+      router.push("/login");
+    } finally {
+      setSigningOut(false);
+    }
   }
 
   return (
