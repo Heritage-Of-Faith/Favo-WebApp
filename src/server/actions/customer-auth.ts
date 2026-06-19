@@ -195,6 +195,15 @@ export async function loginCustomer(input: {
     return { ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect email or password." };
   }
 
+  await writeAudit({
+    actorId: customer.id,
+    actorRole: "customer",
+    action: "customer.login",
+    entityKind: "customers",
+    entityId: customer.id,
+    after: { email },
+  });
+
   return { ok: true, data: { customerId: customer.id, name: customer.name } };
 }
 
@@ -202,7 +211,29 @@ export async function loginCustomer(input: {
 
 export async function logoutCustomer(): Promise<ActionResult<null>> {
   const supabase = await createClient();
-  await supabase.auth.signOut();
+
+  // Capture current user before session is invalidated
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Revoke all sessions for this user across all devices (SEC-1)
+  await supabase.auth.signOut({ scope: "global" });
+
+  if (user) {
+    const [customer] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.authId, user.id));
+    if (customer) {
+      await writeAudit({
+        actorId: customer.id,
+        actorRole: "customer",
+        action: "customer.logout",
+        entityKind: "customers",
+        entityId: customer.id,
+      });
+    }
+  }
+
   return { ok: true, data: null };
 }
 

@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockSignUp = vi.fn();
 const mockSignIn = vi.fn();
 const mockSignOut = vi.fn();
+const mockGetUser = vi.fn();
 const mockResetPassword = vi.fn();
 const mockResend = vi.fn();
 
@@ -19,6 +20,7 @@ vi.mock("@/lib/supabase/server", () => ({
       signUp: mockSignUp,
       signInWithPassword: mockSignIn,
       signOut: mockSignOut,
+      getUser: mockGetUser,
       resetPasswordForEmail: mockResetPassword,
       resend: mockResend,
     },
@@ -346,23 +348,80 @@ describe("loginCustomer — EMAIL_NOT_VERIFIED", () => {
   });
 });
 
+// ─── loginCustomer — audit ────────────────────────────────────────────────────
+
+describe("loginCustomer — audit on success", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("writes a customer.login audit row on successful login (SEC-1)", async () => {
+    mockSignIn.mockResolvedValueOnce({ data: { user: { id: "uuid-123" } }, error: null });
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: "cust_123", name: "Louis" }]),
+      }),
+    } as never);
+    const { writeAudit } = await import("@/server/audit");
+    const { loginCustomer } = await import("@/server/actions/customer-auth");
+    const result = await loginCustomer({ email: "louis@favo.co.za", password: "password1" });
+    expect(result.ok).toBe(true);
+    expect(vi.mocked(writeAudit)).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "customer.login", entityId: "cust_123" })
+    );
+  });
+
+  it("does not call writeAudit when credentials are wrong", async () => {
+    mockSignIn.mockResolvedValueOnce({ data: { user: null }, error: { message: "Invalid login credentials" } });
+    const { writeAudit } = await import("@/server/audit");
+    const { loginCustomer } = await import("@/server/actions/customer-auth");
+    await loginCustomer({ email: "louis@favo.co.za", password: "wrong" });
+    expect(vi.mocked(writeAudit)).not.toHaveBeenCalled();
+  });
+});
+
 // ─── logoutCustomer ───────────────────────────────────────────────────────────
 
 describe("logoutCustomer", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default: no authenticated session (logout still succeeds; audit skipped)
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+    mockSignOut.mockResolvedValue({ error: null });
+  });
 
   it("always returns ok", async () => {
-    mockSignOut.mockResolvedValueOnce({ error: null });
     const { logoutCustomer } = await import("@/server/actions/customer-auth");
     const result = await logoutCustomer();
     expect(result.ok).toBe(true);
   });
 
-  it("calls supabase.auth.signOut", async () => {
-    mockSignOut.mockResolvedValueOnce({ error: null });
+  it("calls signOut({ scope: 'global' }) to revoke all devices (SEC-1)", async () => {
     const { logoutCustomer } = await import("@/server/actions/customer-auth");
     await logoutCustomer();
-    expect(mockSignOut).toHaveBeenCalledOnce();
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: "global" });
+  });
+
+  it("writes a customer.logout audit row when customer is found (SEC-1)", async () => {
+    mockGetUser.mockResolvedValueOnce({ data: { user: { id: "uuid-123" } } });
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: "cust_123" }]),
+      }),
+    } as never);
+    const { writeAudit } = await import("@/server/audit");
+    const { logoutCustomer } = await import("@/server/actions/customer-auth");
+    await logoutCustomer();
+    expect(vi.mocked(writeAudit)).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "customer.logout", entityId: "cust_123" })
+    );
+  });
+
+  it("does not fail logout when no session exists (anonymous call)", async () => {
+    // mockGetUser already returns { data: { user: null } } via beforeEach default
+    const { logoutCustomer } = await import("@/server/actions/customer-auth");
+    const result = await logoutCustomer();
+    expect(result.ok).toBe(true);
   });
 });
 
