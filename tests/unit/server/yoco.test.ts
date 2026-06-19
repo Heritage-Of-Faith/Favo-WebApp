@@ -36,7 +36,22 @@ describe("yoco: signature verification", () => {
 describe("yoco: event parsing", () => {
   it("parses a valid payment.succeeded event", () => {
     const event = parseYocoEvent({ type: "payment.succeeded", paymentId: "pay_1", orderId: "ord_1", amountZar: 3800 });
-    expect(event).toEqual({ type: "payment.succeeded", paymentId: "pay_1", orderId: "ord_1", amountZar: 3800 });
+    expect(event?.type).toBe("payment.succeeded");
+    expect(event?.paymentId).toBe("pay_1");
+    expect(event?.orderId).toBe("ord_1");
+    expect(event?.amountZar).toBe(3800);
+    expect(event?.checkoutId).toBeUndefined();
+  });
+
+  it("parses checkoutId when present (BUG-Y2: checkout ≠ payment ID)", () => {
+    const event = parseYocoEvent({ type: "payment.succeeded", paymentId: "pay_1", checkoutId: "ck_xxx" });
+    expect(event?.checkoutId).toBe("ck_xxx");
+    expect(event?.paymentId).toBe("pay_1");
+  });
+
+  it("omits checkoutId when not a string", () => {
+    const event = parseYocoEvent({ type: "payment.succeeded", paymentId: "pay_1", checkoutId: 123 });
+    expect(event?.checkoutId).toBeUndefined();
   });
 
   it("accepts `id` as an alias for paymentId", () => {

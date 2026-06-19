@@ -11,6 +11,8 @@ export type YocoEventType =
 export type YocoEvent = {
   type: YocoEventType;
   paymentId: string;
+  /** Checkout ID from Yoco — matches payments.yoco_checkout_id / pending_charges.yoco_checkout_id. */
+  checkoutId?: string;
   orderId?: string;
   amountZar?: number;
 };
@@ -34,6 +36,7 @@ export function parseYocoEvent(raw: unknown): YocoEvent | null {
   return {
     type: type as YocoEventType,
     paymentId,
+    checkoutId: typeof obj.checkoutId === "string" ? obj.checkoutId : undefined,
     orderId: typeof obj.orderId === "string" ? obj.orderId : undefined,
     amountZar: typeof obj.amountZar === "number" ? obj.amountZar : undefined,
   };
