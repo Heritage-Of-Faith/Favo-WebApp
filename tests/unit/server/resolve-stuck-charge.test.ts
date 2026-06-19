@@ -16,14 +16,15 @@ const mockTxUpdate = vi.fn();
 const mockTxInsert = vi.fn();
 
 function makeSelectChain(rows: unknown[]) {
-  const chain = {
-    from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
-    for: vi.fn().mockImplementation(() => ({
-      then: (resolve: (v: unknown[]) => void) => resolve(rows),
-    })),
+  // Use explicit closure reference instead of mockReturnThis() — mockReturnThis()
+  // relies on `this` binding which is fragile in CI's strict ESM worker context.
+  const chain: Record<string, unknown> = {};
+  chain.from = vi.fn().mockImplementation(() => chain);
+  chain.where = vi.fn().mockImplementation(() => chain);
+  chain.for = vi.fn().mockImplementation(() => ({
     then: (resolve: (v: unknown[]) => void) => resolve(rows),
-  };
+  }));
+  chain.then = (resolve: (v: unknown[]) => void) => resolve(rows);
   return chain;
 }
 
@@ -147,6 +148,11 @@ describe("resolveStuckCharge — happy path", () => {
       set: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
+    });
+    // Defensive: coffee_pack path would call tx.insert().values(); set it up so
+    // the mock doesn't throw if the code path changes.
+    mockTxInsert.mockReturnValue({
+      values: vi.fn().mockResolvedValue([]),
     });
   });
 
