@@ -9,6 +9,11 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function getCustomerSession(): Promise<string | null> {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "[customer-session] NEXT_PUBLIC_SUPABASE_URL / ANON_KEY must be set in production — customer sessions cannot be validated without them"
+      );
+    }
     if (process.env.NODE_ENV === "development") {
       console.warn("[customer-session] NEXT_PUBLIC_SUPABASE_URL / ANON_KEY not set — auth disabled");
     }
