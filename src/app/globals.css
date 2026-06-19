@@ -363,6 +363,13 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
   gap: 40px;
   align-items: flex-start;
 }
+.landing-footer-link {
+  transition: opacity var(--dur-fast, 150ms) ease, color var(--dur-fast, 150ms) ease;
+}
+.landing-footer-link:hover {
+  opacity: 1;
+  color: var(--color-crimson-carrot);
+}
 
 @media (max-width: 900px) {
   .landing-section-pad   { padding: 56px 24px; }

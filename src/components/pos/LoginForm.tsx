@@ -167,7 +167,7 @@ export default function LoginForm({ redirectTo }: Props) {
                 className={[
                   "flex min-h-[44px] min-w-[44px] items-center justify-center",
                   "rounded-[var(--radius-btn)]",
-                  "bg-crimson-carrot text-porcelain favo-cta text-porcelain",
+                  "bg-crimson-carrot text-porcelain font-bold uppercase tracking-[var(--tracking-cta)] text-[var(--text-small)]",
                   "transition-colors duration-[var(--dur-fast)]",
                   "hover:bg-[var(--color-coffee-bean-deep)] active:scale-95",
                   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-porcelain",
