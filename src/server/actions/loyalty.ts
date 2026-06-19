@@ -328,3 +328,62 @@ export async function activatePendingCharge(
     );
   }
 }
+
+// ─── resolveStuckCharge (BUG-O2) ─────────────────────────────────────────────
+
+/**
+ * Admin-only: manually activate a pending charge whose webhook never arrived.
+ * Idempotent — if the charge is already resolved, returns its current status.
+ * Uses SELECT FOR UPDATE inside a transaction to prevent concurrent double-credit.
+ */
+export async function resolveStuckCharge(
+  pendingChargeId: string
+): Promise<ActionResult<{ status: "completed" | "already_resolved" }>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+
+  if (!pendingChargeId?.trim()) {
+    return { ok: false, code: "VALIDATION", message: "pendingChargeId is required." };
+  }
+
+  // Fast pre-check (no lock) — avoid acquiring a lock on an already-resolved row
+  const [existing] = await db
+    .select({ id: pendingCharges.id, status: pendingCharges.status })
+    .from(pendingCharges)
+    .where(eq(pendingCharges.id, pendingChargeId));
+
+  if (!existing) {
+    return { ok: false, code: "NOT_FOUND", message: "Pending charge not found." };
+  }
+
+  if (existing.status !== "pending") {
+    return { ok: true, data: { status: "already_resolved" } };
+  }
+
+  await db.transaction(async (tx) => {
+    // Lock the row so concurrent admin calls don't double-credit
+    const [locked] = await tx
+      .select({ id: pendingCharges.id, status: pendingCharges.status })
+      .from(pendingCharges)
+      .where(eq(pendingCharges.id, pendingChargeId))
+      .for("update");
+
+    if (!locked || locked.status !== "pending") return;
+
+    await activatePendingCharge(pendingChargeId, tx as unknown as DB);
+
+    await writeAudit(
+      {
+        entityKind: "pending_charge",
+        entityId: pendingChargeId,
+        action: "admin.resolve_stuck_charge",
+        actorId: auth.session.id,
+        actorRole: "admin",
+        after: { resolvedBy: auth.session.id },
+      },
+      tx as unknown as DB
+    );
+  });
+
+  return { ok: true, data: { status: "completed" } };
+}
