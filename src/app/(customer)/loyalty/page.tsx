@@ -5,13 +5,14 @@
 import type { CSSProperties } from "react";
 import { redirect } from "next/navigation";
 import { listCustomerLoyaltyHistory } from "@/server/actions/customer";
+import { getOperatingHours } from "@/server/actions/hours";
 import { formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 const S: Record<string, CSSProperties> = {
   page: {
-    backgroundColor: "var(--color-coffee-bean)",
+    backgroundColor: "var(--color-dark-teal)",
     minHeight: "100dvh",
     display: "flex",
     flexDirection: "column",
@@ -176,6 +177,41 @@ const S: Record<string, CSSProperties> = {
     color: "var(--color-cool-steel)",
     opacity: 0.65,
   },
+  hoursBlock: {
+    padding: "16px 20px",
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(247,246,242,0.1)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  },
+  hoursLabel: {
+    fontFamily: "'DM Sans', sans-serif",
+    fontWeight: 300,
+    fontSize: 11,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase" as const,
+    color: "var(--color-cool-steel)",
+    margin: 0,
+  },
+  hoursOpen: {
+    fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+    fontWeight: 700,
+    fontSize: 22,
+    letterSpacing: "0.04em",
+    color: "var(--color-porcelain)",
+    margin: 0,
+  },
+  hoursClosed: {
+    fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+    fontWeight: 700,
+    fontSize: 22,
+    letterSpacing: "0.04em",
+    color: "var(--color-cool-steel)",
+    margin: 0,
+    opacity: 0.55,
+  },
 };
 
 const KIND_COLORS: Record<string, string> = {
@@ -223,7 +259,16 @@ export default async function LoyaltyPage({
   const params = await searchParams;
   const page = Math.max(0, parseInt(params.page ?? "0", 10) || 0);
 
-  const res = await listCustomerLoyaltyHistory(page);
+  const [res, hoursRes] = await Promise.all([
+    listCustomerLoyaltyHistory(page),
+    getOperatingHours(),
+  ]);
+
+  const todayDow = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Africa/Johannesburg" })
+  ).getDay();
+  const allHours = hoursRes.ok ? hoursRes.data : [];
+  const todayHours = allHours.find((h) => h.dayOfWeek === todayDow) ?? null;
   if (!res.ok) {
     if (res.code === "UNAUTHORIZED") redirect("/login");
     // Non-auth failure: render with defaults.
@@ -255,6 +300,18 @@ export default async function LoyaltyPage({
             Earn 5 pts per R10 spent. Redeem 100 pts = R20 off.
           </p>
         </section>
+
+        {/* Today's cafe hours */}
+        {todayHours && (
+          <section aria-label="Today's hours" style={S.hoursBlock}>
+            <p style={S.hoursLabel}>Today's hours</p>
+            {todayHours.isClosed ? (
+              <p style={S.hoursClosed}>Closed today</p>
+            ) : (
+              <p style={S.hoursOpen}>{todayHours.opensAt} – {todayHours.closesAt}</p>
+            )}
+          </section>
+        )}
 
         {/* Transaction history */}
         <section>
