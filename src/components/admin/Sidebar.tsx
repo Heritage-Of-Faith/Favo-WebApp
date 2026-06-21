@@ -34,6 +34,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/customers" as Route, label: "Customers" },
   { href: "/admin/sync-conflicts" as Route, label: "Sync conflicts" },
   { href: "/admin/loyalty" as Route, label: "Loyalty" },
+  { href: "/admin/loyalty/reconcile" as Route, label: "↳ Reconcile" },
+  { href: "/admin/loyalty/liability" as Route, label: "↳ Liability" },
   { href: "/admin/audit", label: "Audit log" },
 ];
 

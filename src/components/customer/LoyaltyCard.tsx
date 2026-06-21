@@ -92,6 +92,22 @@ export default function LoyaltyCard({ points }: LoyaltyCardProps) {
           ? "You've got a R20 reward waiting — redeem it at the counter."
           : `${toNext} ${toNext === 1 ? "point" : "points"} to your next R20 reward.`}
       </p>
+
+      <a
+        href="/loyalty"
+        style={{
+          fontFamily: "'DM Sans', sans-serif",
+          fontWeight: 600,
+          fontSize: 12,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "var(--color-cool-steel)",
+          textDecoration: "none",
+          alignSelf: "flex-start",
+        }}
+      >
+        View history →
+      </a>
     </section>
   );
 }
