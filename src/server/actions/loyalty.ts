@@ -3,7 +3,7 @@
 // Loyalty server actions — AT-109 (redeemLoyalty multi-unit), G9 (topUpWallet, purchasePack)
 // Docs: docs/API.md · BUSINESS_RULES.md L06, L16
 
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, sql, count, and, gte, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, customers, loyaltyTransactions, pendingCharges, coffeePacks, menuItems, payments, walletTransactions } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -415,4 +415,96 @@ export async function resolveStuckCharge(
   });
 
   return { ok: true, data: { status: "completed" } };
+}
+
+// ─── listLoyaltyAudit (AT-120) ────────────────────────────────────────────────
+
+const LOYALTY_AUDIT_PAGE_SIZE = 50;
+
+export type LoyaltyAuditRow = {
+  id: string;
+  customerId: string;
+  customerName: string;
+  orderId: string | null;
+  delta: number;
+  kind: "earn" | "redeem" | "adjustment" | "expiry";
+  at: string; // ISO-8601
+};
+
+export type ListLoyaltyAuditInput = {
+  page?: number;
+  kind?: "earn" | "redeem" | "adjustment" | "expiry";
+  dateFrom?: string; // YYYY-MM-DD
+  dateTo?: string;   // YYYY-MM-DD
+};
+
+export type ListLoyaltyAuditResult = {
+  rows: LoyaltyAuditRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/**
+ * Admin loyalty transaction audit — paginated, newest-first.
+ * Shows all loyalty_transactions joined with customer name (AT-120).
+ * Auth: admin only.
+ */
+export async function listLoyaltyAudit(
+  input: ListLoyaltyAuditInput = {}
+): Promise<ActionResult<ListLoyaltyAuditResult>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+
+  const page = Math.max(0, input.page ?? 0);
+
+  const conditions = [];
+  if (input.kind) {
+    conditions.push(eq(loyaltyTransactions.kind, input.kind));
+  }
+  if (input.dateFrom) {
+    conditions.push(gte(loyaltyTransactions.at, new Date(`${input.dateFrom}T00:00:00+02:00`)));
+  }
+  if (input.dateTo) {
+    conditions.push(lte(loyaltyTransactions.at, new Date(`${input.dateTo}T23:59:59+02:00`)));
+  }
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [totalResult, rows] = await Promise.all([
+    db.select({ value: count() }).from(loyaltyTransactions).where(where),
+    db
+      .select({
+        id: loyaltyTransactions.id,
+        customerId: loyaltyTransactions.customerId,
+        customerName: customers.name,
+        orderId: loyaltyTransactions.orderId,
+        delta: loyaltyTransactions.delta,
+        kind: loyaltyTransactions.kind,
+        at: loyaltyTransactions.at,
+      })
+      .from(loyaltyTransactions)
+      .innerJoin(customers, eq(loyaltyTransactions.customerId, customers.id))
+      .where(where)
+      .orderBy(desc(loyaltyTransactions.at))
+      .limit(LOYALTY_AUDIT_PAGE_SIZE)
+      .offset(page * LOYALTY_AUDIT_PAGE_SIZE),
+  ]);
+
+  return {
+    ok: true,
+    data: {
+      rows: rows.map((r) => ({
+        id: r.id,
+        customerId: r.customerId,
+        customerName: r.customerName,
+        orderId: r.orderId,
+        delta: r.delta,
+        kind: r.kind as LoyaltyAuditRow["kind"],
+        at: r.at.toISOString(),
+      })),
+      total: totalResult[0]?.value ?? 0,
+      page,
+      pageSize: LOYALTY_AUDIT_PAGE_SIZE,
+    },
+  };
 }

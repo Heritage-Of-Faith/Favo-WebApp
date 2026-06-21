@@ -33,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/staff", label: "Staff" },
   { href: "/admin/customers" as Route, label: "Customers" },
   { href: "/admin/sync-conflicts" as Route, label: "Sync conflicts" },
+  { href: "/admin/loyalty" as Route, label: "Loyalty" },
   { href: "/admin/audit", label: "Audit log" },
 ];
 
