@@ -34,6 +34,7 @@ import SyncDrawer from "@/components/pos/SyncDrawer";
 import CustomerCard from "@/components/pos/CustomerCard";
 import LoyaltyRedeemDialog from "@/components/pos/LoyaltyRedeemDialog";
 import PackRedeemSection from "@/components/pos/PackRedeemSection";
+import WalletSpendDialog from "@/components/pos/WalletSpendDialog";
 import OfflineBanner from "@/components/pos/OfflineBanner";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import YocoOrderForm from "@/components/pos/YocoOrderForm";
@@ -113,6 +114,9 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
   const [redeemedData, setRedeemedData] = useState<{ pointsUsed: number; discountZar: number; newTotalZar: number } | null>(null);
   // AT-116 — pack redemption savings (cumulative, sum of line prices redeemed).
   const [packSavings, setPackSavings] = useState(0);
+  // AT-113 — wallet spend on the payment step.
+  const [walletSpendOpen, setWalletSpendOpen] = useState(false);
+  const [walletData, setWalletData] = useState<{ amountSpent: number; newTotalZar: number } | null>(null);
   // Connectivity — drives the offline banner gate and the payment-screen swap
   // between the Yoco card form (online) and the deferred-payment notice (offline).
   const [online, setOnline] = useState(true);
@@ -263,6 +267,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
       setYocoCheckoutId("");
       setRedeemedData(null);
       setPackSavings(0);
+      setWalletData(null);
       setShowPayment(true);
       return;
     }
@@ -278,6 +283,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
       setPaymentOrderId(r.data.orderId);
       setRedeemedData(null);
       setPackSavings(0);
+      setWalletData(null);
       if (r.data.yocoClientSecret) {
         setShowPayment(true);
       } else {
@@ -321,6 +327,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
       setYocoCheckoutId("");
       setRedeemedData(null);
       setPackSavings(0);
+      setWalletData(null);
       toast.success("Paid in person — order confirmed");
     } catch {
       setOrderError("Failed to save order offline. Please retry.");
@@ -680,10 +687,10 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
         ) : (
           /* Payment view */
           (() => {
-            // Amount due: server-confirmed newTotalZar if loyalty redeemed (AT-110),
-            // further reduced by pack savings (AT-116), capped at zero.
+            // Amount due: loyalty (AT-110) → wallet (AT-113) → pack savings (AT-116), capped at zero.
             const loyaltyReducedTotal = redeemedData ? redeemedData.newTotalZar : totalZar;
-            const amountDueZar = Math.max(0, loyaltyReducedTotal - packSavings);
+            const walletReducedTotal = walletData ? walletData.newTotalZar : loyaltyReducedTotal;
+            const amountDueZar = Math.max(0, walletReducedTotal - packSavings);
             // Free only when nothing is owed — skip the Yoco form and confirm directly.
             const isFree = amountDueZar === 0;
 
@@ -695,6 +702,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
               setPaymentOrderId(null);
               setRedeemedData(null);
               setPackSavings(0);
+              setWalletData(null);
               setOrderSuccess("Order paid — sent to the queue.");
               setTimeout(() => setOrderSuccess(null), 4000);
             };
@@ -719,7 +727,9 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
                   <p className="favo-label text-cool-steel mb-1">Amount due</p>
                   <p className="favo-h2 text-coffee-bean">{formatZar(amountDueZar)}</p>
                   <p className="favo-small text-cool-steel mt-1">
-                    {redeemedData
+                    {walletData
+                      ? (isFree ? `${formatZar(walletData.amountSpent)} covered by wallet` : `${formatZar(walletData.amountSpent)} from wallet — pay the rest`)
+                      : redeemedData
                       ? (isFree
                           ? `R${(redeemedData.discountZar / 100).toFixed(0)} covered by ${redeemedData.pointsUsed} loyalty points`
                           : `R${(redeemedData.discountZar / 100).toFixed(0)} off with ${redeemedData.pointsUsed} pts — pay the rest`)
@@ -730,7 +740,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
                 <div className="flex flex-col gap-3 w-full max-w-[320px]">
                   {/* M18 — loyalty redemption (L06): 100 pts → R20 off, capped at the order total.
                       Offered only at ≥100 pts and when the order is worth ≥ R20. */}
-                  {customer && customer.loyaltyPoints >= 100 && totalZar >= 2000 && redeemedData === null && paymentOrderId && (
+                  {customer && customer.loyaltyPoints >= 100 && totalZar >= 2000 && redeemedData === null && walletData === null && paymentOrderId && (
                     <button type="button" onClick={() => setRedeemOpen(true)}
                       className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-crimson-carrot/50 py-3 min-h-[48px] favo-small text-crimson-carrot hover:bg-crimson-carrot/8 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
                       <Star size={14} strokeWidth={2.25} />
@@ -747,6 +757,16 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
                         setPackSavings((prev) => prev + unitPriceZar);
                       }}
                     />
+                  )}
+
+                  {/* AT-113 — wallet spend (L16): apply wallet balance against order.
+                      Shown when customer has wallet funds and amount is still owing. */}
+                  {customer && customer.walletZar > 0 && amountDueZar > 0 && walletData === null && paymentOrderId && (
+                    <button type="button" onClick={() => setWalletSpendOpen(true)}
+                      className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-cool-steel/40 py-3 min-h-[48px] favo-small text-cool-steel hover:bg-coffee-bean/8 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
+                      <Wallet size={14} strokeWidth={2.25} />
+                      Spend from wallet ({formatZar(customer.walletZar)})
+                    </button>
                   )}
 
                   {isFree ? (
@@ -1133,6 +1153,22 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
             setCustomer({ ...customer, loyaltyPoints: customer.loyaltyPoints - result.pointsUsed });
           }}
           onClose={() => setRedeemOpen(false)}
+        />
+      )}
+
+      {/* ════════ WALLET SPEND (AT-113) ════════ */}
+      {walletSpendOpen && customer && paymentOrderId && (
+        <WalletSpendDialog
+          customerId={customer.id}
+          customerName={customer.name}
+          orderId={paymentOrderId}
+          walletZar={customer.walletZar}
+          orderTotalZar={redeemedData ? redeemedData.newTotalZar : totalZar}
+          onApplied={(result) => {
+            setWalletData(result);
+            setCustomer({ ...customer, walletZar: customer.walletZar - result.amountSpent });
+          }}
+          onClose={() => setWalletSpendOpen(false)}
         />
       )}
 
