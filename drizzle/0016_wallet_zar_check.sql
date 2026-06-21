@@ -1,0 +1,1 @@
+ALTER TABLE "customers" ADD CONSTRAINT "customers_wallet_zar_non_negative" CHECK (wallet_zar >= 0);

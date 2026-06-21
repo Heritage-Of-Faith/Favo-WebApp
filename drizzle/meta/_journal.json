@@ -108,10 +108,17 @@
       "breakpoints": true
     },
     {
-      "idx": 15,
+"idx": 15,
       "version": "7",
       "when": 1781861522789,
       "tag": "0015_pack_redemptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1781861997494,
+      "tag": "0016_wallet_zar_check",
       "breakpoints": true
     }
   ]
