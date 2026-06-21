@@ -688,3 +688,34 @@ export async function listActiveOrders(): Promise<ActionResult<{ orderId: string
     })),
   };
 }
+
+// ─── getOrderItems (AT-116) ───────────────────────────────────────────────────
+
+/**
+ * Returns the line items for a given order with their DB IDs. Used by the POS
+ * payment panel to look up orderLineRef values for pack redemption (AT-116).
+ * One row per order_items row — quantities > 1 produce multiple rows.
+ */
+export async function getOrderItems(
+  orderId: string
+): Promise<ActionResult<{ id: string; menuItemId: string; menuItemName: string; unitPriceZar: number }[]>> {
+  const auth = await authorize("barista", "admin");
+  if (!auth.ok) return auth;
+
+  if (!orderId) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "orderId is required." };
+  }
+
+  const rows = await db
+    .select({
+      id: orderItems.id,
+      menuItemId: orderItems.menuItemId,
+      menuItemName: menuItems.name,
+      unitPriceZar: orderItems.unitPriceZar,
+    })
+    .from(orderItems)
+    .innerJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
+    .where(eq(orderItems.orderId, orderId));
+
+  return { ok: true, data: rows };
+}

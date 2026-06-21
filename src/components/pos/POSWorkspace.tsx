@@ -33,6 +33,7 @@ import ConnectivityPill from "@/components/pos/ConnectivityPill";
 import SyncDrawer from "@/components/pos/SyncDrawer";
 import CustomerCard from "@/components/pos/CustomerCard";
 import LoyaltyRedeemDialog from "@/components/pos/LoyaltyRedeemDialog";
+import PackRedeemSection from "@/components/pos/PackRedeemSection";
 import OfflineBanner from "@/components/pos/OfflineBanner";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import YocoOrderForm from "@/components/pos/YocoOrderForm";
@@ -110,6 +111,8 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [redeemed, setRedeemed] = useState(false);
+  // AT-116 — pack redemption savings (cumulative, sum of line prices redeemed).
+  const [packSavings, setPackSavings] = useState(0);
   // Connectivity — drives the offline banner gate and the payment-screen swap
   // between the Yoco card form (online) and the deferred-payment notice (offline).
   const [online, setOnline] = useState(true);
@@ -259,6 +262,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
       setPaymentOrderId(null);
       setYocoCheckoutId("");
       setRedeemed(false);
+      setPackSavings(0);
       setShowPayment(true);
       return;
     }
@@ -273,6 +277,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
       setYocoCheckoutId(r.data.yocoClientSecret);
       setPaymentOrderId(r.data.orderId);
       setRedeemed(false);
+      setPackSavings(0);
       if (r.data.yocoClientSecret) {
         setShowPayment(true);
       } else {
@@ -315,6 +320,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
       setPaymentOrderId(null);
       setYocoCheckoutId("");
       setRedeemed(false);
+      setPackSavings(0);
       toast.success("Paid in person — order confirmed");
     } catch {
       setOrderError("Failed to save order offline. Please retry.");
@@ -678,7 +684,9 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
             // R20 off (REDEEM_VALUE_ZAR), capped at the order total — matches the
             // server cap in redeemLoyalty. Staff discount zeroes the total outright.
             const REDEEM_VALUE_ZAR = 2000; // R20,00 in cents — mirrors loyalty/calc.
-            const amountDueZar = redeemed ? Math.max(0, totalZar - REDEEM_VALUE_ZAR) : totalZar;
+            const loyaltyReducedTotal = redeemed ? Math.max(0, totalZar - REDEEM_VALUE_ZAR) : totalZar;
+            // AT-116: subtract pack savings (each redeemed line reduces the total by its unitPriceZar).
+            const amountDueZar = Math.max(0, loyaltyReducedTotal - packSavings);
             // Free only when nothing is owed — skip the Yoco form and confirm directly.
             const isFree = amountDueZar === 0;
 
@@ -689,6 +697,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
               setYocoCheckoutId("");
               setPaymentOrderId(null);
               setRedeemed(false);
+              setPackSavings(0);
               setOrderSuccess("Order paid — sent to the queue.");
               setTimeout(() => setOrderSuccess(null), 4000);
             };
@@ -728,6 +737,17 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
                       <Star size={14} strokeWidth={2.25} />
                       Redeem 100 pts (R20 off)
                     </button>
+                  )}
+
+                  {/* AT-116 — pack redemption (L16): per-line "Use pack" buttons for coffee items. */}
+                  {customer && paymentOrderId && (
+                    <PackRedeemSection
+                      customerId={customer.id}
+                      orderId={paymentOrderId}
+                      onRedeemed={(_lineId, unitPriceZar) => {
+                        setPackSavings((prev) => prev + unitPriceZar);
+                      }}
+                    />
                   )}
 
                   {isFree ? (
