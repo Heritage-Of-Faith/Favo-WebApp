@@ -1,9 +1,10 @@
 "use server";
 
 // Loyalty server actions — AT-109 (redeemLoyalty multi-unit), G9 (topUpWallet, purchasePack)
+// AT-127 (getLoyaltyLiabilityReport)
 // Docs: docs/API.md · BUSINESS_RULES.md L06, L16
 
-import { desc, eq, sql, count, and, gte, lte } from "drizzle-orm";
+import { desc, eq, sql, count, and, gte, lte, gt, max } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, customers, loyaltyTransactions, pendingCharges, coffeePacks, menuItems, payments, walletTransactions } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -513,6 +514,114 @@ export async function listLoyaltyAudit(
       total: totalResult[0]?.value ?? 0,
       page,
       pageSize: LOYALTY_AUDIT_PAGE_SIZE,
+    },
+  };
+}
+
+// ─── getLoyaltyLiabilityReport (AT-127) ───────────────────────────────────────
+
+export type LiabilityRow = {
+  customerId: string;
+  name: string;
+  phone: string | null;
+  loyaltyPoints: number;
+  liabilityZar: number; // cents: floor(points/100)*2000
+  lastActivityAt: Date | null;
+};
+
+export type LoyaltyLiabilityReport = {
+  totalPoints: number;
+  totalLiabilityZar: number; // cents
+  activeCustomers: number; // customers with points > 0 active within 12 months
+  averagePoints: number;
+  top10: LiabilityRow[];
+  allActive: LiabilityRow[]; // customers with points > 0, active within 12 months
+};
+
+/**
+ * Finance report: outstanding loyalty liability across all customers with points,
+ * filtered to those active within the last 12 months (AT-127).
+ * Liability formula: floor(points / 100) * 2000 cents (100 pts = R20).
+ * Auth: admin only.
+ */
+export async function getLoyaltyLiabilityReport(): Promise<ActionResult<LoyaltyLiabilityReport>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+
+  const twelveMonthsAgo = new Date();
+  twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear() - 1);
+
+  // All customers with at least one loyalty point
+  const customersWithPoints = await db
+    .select({
+      id: customers.id,
+      name: customers.name,
+      phone: customers.phone,
+      loyaltyPoints: customers.loyaltyPoints,
+    })
+    .from(customers)
+    .where(gt(customers.loyaltyPoints, 0));
+
+  if (customersWithPoints.length === 0) {
+    return {
+      ok: true,
+      data: {
+        totalPoints: 0,
+        totalLiabilityZar: 0,
+        activeCustomers: 0,
+        averagePoints: 0,
+        top10: [],
+        allActive: [],
+      },
+    };
+  }
+
+  // Last activity per customer (MAX(at) from loyalty_transactions)
+  const activityRows = await db
+    .select({
+      customerId: loyaltyTransactions.customerId,
+      lastActivityAt: max(loyaltyTransactions.at),
+    })
+    .from(loyaltyTransactions)
+    .groupBy(loyaltyTransactions.customerId);
+
+  const activityMap = new Map<string, Date>();
+  for (const row of activityRows) {
+    if (row.lastActivityAt) {
+      activityMap.set(row.customerId, row.lastActivityAt);
+    }
+  }
+
+  // Filter to customers active within the last 12 months
+  const activeCustomers: LiabilityRow[] = customersWithPoints
+    .filter((c) => {
+      const last = activityMap.get(c.id);
+      return last != null && last >= twelveMonthsAgo;
+    })
+    .map((c) => ({
+      customerId: c.id,
+      name: c.name,
+      phone: c.phone,
+      loyaltyPoints: c.loyaltyPoints,
+      liabilityZar: Math.floor(c.loyaltyPoints / 100) * 2000,
+      lastActivityAt: activityMap.get(c.id) ?? null,
+    }))
+    .sort((a, b) => b.loyaltyPoints - a.loyaltyPoints);
+
+  const totalPoints = activeCustomers.reduce((sum, r) => sum + r.loyaltyPoints, 0);
+  const totalLiabilityZar = activeCustomers.reduce((sum, r) => sum + r.liabilityZar, 0);
+  const customerCount = activeCustomers.length;
+  const averagePoints = customerCount > 0 ? Math.round(totalPoints / customerCount) : 0;
+
+  return {
+    ok: true,
+    data: {
+      totalPoints,
+      totalLiabilityZar,
+      activeCustomers: customerCount,
+      averagePoints,
+      top10: activeCustomers.slice(0, 10),
+      allActive: activeCustomers,
     },
   };
 }
