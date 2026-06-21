@@ -5,6 +5,7 @@
 // straight to their home here. Docs: docs/DESIGN.md → POS/Admin Rules.
 
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { canAccessAdmin } from "@/server/auth/rbac";
@@ -24,8 +25,24 @@ export default async function StaffLoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-porcelain px-[var(--spacing-m)]">
-      <LoginForm />
+    <main className="flex min-h-screen flex-col bg-porcelain px-[var(--spacing-m)]">
+      {/* Back to home — customers who land here by mistake can escape */}
+      <div className="flex items-center px-[var(--spacing-m)] pt-[var(--spacing-m)]">
+        <Link
+          href="/"
+          className="favo-small flex items-center gap-1.5 text-text-muted hover:text-text-strong transition-colors duration-[var(--dur-fast)]"
+          aria-label="Back to home page"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Home
+        </Link>
+      </div>
+
+      <div className="flex flex-1 items-center justify-center">
+        <LoginForm />
+      </div>
     </main>
   );
 }

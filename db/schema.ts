@@ -262,6 +262,7 @@ export const loyaltyTransactions = pgTable(
     orderId: text("order_id").references(() => orders.id),
     delta: integer("delta").notNull(),
     kind: loyaltyKind("kind").notNull(),
+    reason: text("reason"),
     at: now(),
   },
   (t) => [

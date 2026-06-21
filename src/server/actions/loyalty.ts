@@ -1,9 +1,10 @@
 "use server";
 
 // Loyalty server actions — AT-109 (redeemLoyalty multi-unit), G9 (topUpWallet, purchasePack)
+// AT-127 (getLoyaltyLiabilityReport)
 // Docs: docs/API.md · BUSINESS_RULES.md L06, L16
 
-import { desc, eq, sql, count, and, gte, lte, sum } from "drizzle-orm";
+import { desc, eq, sql, count, and, gte, lte, gt, max, sum } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, customers, loyaltyTransactions, pendingCharges, coffeePacks, menuItems, payments, walletTransactions } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -436,6 +437,7 @@ export type LoyaltyAuditRow = {
   orderId: string | null;
   delta: number;
   kind: "earn" | "redeem" | "adjustment" | "expiry";
+  reason: string | null;
   at: string; // ISO-8601
 };
 
@@ -488,6 +490,7 @@ export async function listLoyaltyAudit(
         orderId: loyaltyTransactions.orderId,
         delta: loyaltyTransactions.delta,
         kind: loyaltyTransactions.kind,
+        reason: loyaltyTransactions.reason,
         at: loyaltyTransactions.at,
       })
       .from(loyaltyTransactions)
@@ -508,6 +511,7 @@ export async function listLoyaltyAudit(
         orderId: r.orderId,
         delta: r.delta,
         kind: r.kind as LoyaltyAuditRow["kind"],
+        reason: r.reason,
         at: r.at.toISOString(),
       })),
       total: totalResult[0]?.value ?? 0,
@@ -567,7 +571,6 @@ export async function reconcileLoyalty(): Promise<ActionResult<{
         delta: ledgerSum - customer.loyaltyPoints,
       });
 
-      // Log every drift — never auto-correct (AT-124)
       await writeAudit(
         {
           entityKind: "loyalty_reconcile",
@@ -591,4 +594,170 @@ export async function reconcileLoyalty(): Promise<ActionResult<{
       rows: driftedRows,
     },
   };
+}
+
+// ─── getLoyaltyLiabilityReport (AT-127) ───────────────────────────────────────
+
+export type LiabilityRow = {
+  customerId: string;
+  name: string;
+  phone: string | null;
+  loyaltyPoints: number;
+  liabilityZar: number;
+  lastActivityAt: Date | null;
+};
+
+export type LoyaltyLiabilityReport = {
+  totalPoints: number;
+  totalLiabilityZar: number;
+  activeCustomers: number;
+  averagePoints: number;
+  top10: LiabilityRow[];
+  allActive: LiabilityRow[];
+};
+
+export async function getLoyaltyLiabilityReport(): Promise<ActionResult<LoyaltyLiabilityReport>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+
+  const twelveMonthsAgo = new Date();
+  twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear() - 1);
+
+  const customersWithPoints = await db
+    .select({ id: customers.id, name: customers.name, phone: customers.phone, loyaltyPoints: customers.loyaltyPoints })
+    .from(customers)
+    .where(gt(customers.loyaltyPoints, 0));
+
+  if (customersWithPoints.length === 0) {
+    return { ok: true, data: { totalPoints: 0, totalLiabilityZar: 0, activeCustomers: 0, averagePoints: 0, top10: [], allActive: [] } };
+  }
+
+  const activityRows = await db
+    .select({ customerId: loyaltyTransactions.customerId, lastActivityAt: max(loyaltyTransactions.at) })
+    .from(loyaltyTransactions)
+    .groupBy(loyaltyTransactions.customerId);
+
+  const activityMap = new Map<string, Date>();
+  for (const row of activityRows) {
+    if (row.lastActivityAt) {
+      activityMap.set(row.customerId, row.lastActivityAt);
+    }
+  }
+
+  // Filter to customers active within the last 12 months
+  const activeCustomers: LiabilityRow[] = customersWithPoints
+    .filter((c) => {
+      const last = activityMap.get(c.id);
+      return last != null && last >= twelveMonthsAgo;
+    })
+    .map((c) => ({
+      customerId: c.id,
+      name: c.name,
+      phone: c.phone,
+      loyaltyPoints: c.loyaltyPoints,
+      liabilityZar: Math.floor(c.loyaltyPoints / 100) * 2000,
+      lastActivityAt: activityMap.get(c.id) ?? null,
+    }))
+    .sort((a, b) => b.loyaltyPoints - a.loyaltyPoints);
+
+  const totalPoints = activeCustomers.reduce((sum, r) => sum + r.loyaltyPoints, 0);
+  const totalLiabilityZar = activeCustomers.reduce((sum, r) => sum + r.liabilityZar, 0);
+  const customerCount = activeCustomers.length;
+  const averagePoints = customerCount > 0 ? Math.round(totalPoints / customerCount) : 0;
+
+  return {
+    ok: true,
+    data: {
+      totalPoints,
+      totalLiabilityZar,
+      activeCustomers: customerCount,
+      averagePoints,
+      top10: activeCustomers.slice(0, 10),
+      allActive: activeCustomers,
+    },
+  };
+}
+
+// ─── adjustLoyalty (AT-123) ───────────────────────────────────────────────────
+
+/**
+ * Admin-only: manually adjust a customer's loyalty balance with an audited reason.
+ * Inserts a loyalty_transaction (kind='adjustment') and updates customers.loyalty_points.
+ * Calls writeAudit() for the full before/after trail.
+ * Rules: delta must be a non-zero integer; balance cannot go below zero.
+ */
+export async function adjustLoyalty(
+  customerId: string,
+  delta: number,
+  reason: string,
+): Promise<ActionResult<{ newBalance: number }>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+  const session = auth.session;
+
+  // Validate delta
+  if (!Number.isInteger(delta) || delta === 0) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "delta must be a non-zero integer." };
+  }
+
+  // Validate reason
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "reason is required." };
+  }
+
+  // Look up the customer
+  const [customer] = await db
+    .select({ id: customers.id, loyaltyPoints: customers.loyaltyPoints })
+    .from(customers)
+    .where(eq(customers.id, customerId));
+
+  if (!customer) {
+    return { ok: false, code: "NOT_FOUND", message: "Customer not found." };
+  }
+
+  // Floor guard: prevent balance going negative
+  if (delta < 0 && customer.loyaltyPoints + delta < 0) {
+    return {
+      ok: false,
+      code: "VALIDATION_ERROR",
+      message: "Adjustment would reduce balance below zero.",
+    };
+  }
+
+  let newBalance = 0;
+
+  await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DB;
+
+    await tx.insert(loyaltyTransactions).values({
+      customerId,
+      delta,
+      kind: "adjustment",
+      reason: trimmedReason,
+    });
+
+    const [updated] = await tx
+      .update(customers)
+      .set({ loyaltyPoints: sql`${customers.loyaltyPoints} + ${delta}` })
+      .where(eq(customers.id, customerId))
+      .returning({ loyaltyPoints: customers.loyaltyPoints });
+
+    newBalance = updated?.loyaltyPoints ?? customer.loyaltyPoints + delta;
+
+    await writeAudit(
+      {
+        entityKind: "customer",
+        entityId: customerId,
+        action: "loyalty_adjustment",
+        actorId: session.id,
+        actorRole: session.role,
+        before: { loyaltyPoints: customer.loyaltyPoints },
+        after: { loyaltyPoints: newBalance, reason: trimmedReason },
+      },
+      txDb,
+    );
+  });
+
+  return { ok: true, data: { newBalance } };
 }
