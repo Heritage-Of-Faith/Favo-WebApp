@@ -160,3 +160,35 @@ class PackError extends Error {
     super(message);
   }
 }
+
+// ─── getCustomerActivePacks (AT-116) ──────────────────────────────────────────
+
+/**
+ * Returns the menu item IDs for which the customer has at least one active,
+ * non-expired coffee pack with qty_remaining > 0. Used by the POS payment
+ * panel to show per-line "Use pack" buttons (AT-116).
+ */
+export async function getCustomerActivePacks(
+  customerId: string
+): Promise<ActionResult<{ menuItemId: string; qtyRemaining: number }[]>> {
+  const auth = await authorize("barista", "admin");
+  if (!auth.ok) return auth;
+
+  if (!customerId) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "customerId is required." };
+  }
+
+  const rows = await db
+    .select({ menuItemId: coffeePacks.menuItemId, qtyRemaining: coffeePacks.qtyRemaining })
+    .from(coffeePacks)
+    .where(
+      and(
+        eq(coffeePacks.customerId, customerId),
+        gt(coffeePacks.qtyRemaining, 0),
+        gt(coffeePacks.expiresAt, sql`now()`)
+      )
+    )
+    .orderBy(asc(coffeePacks.expiresAt));
+
+  return { ok: true, data: rows };
+}
