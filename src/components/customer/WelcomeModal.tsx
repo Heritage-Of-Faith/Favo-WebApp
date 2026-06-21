@@ -186,7 +186,7 @@ export default function WelcomeModal({ customerId, firstName }: Props) {
                 style={{
                   backgroundColor: "transparent",
                   color: "var(--color-cool-steel)",
-                  fontFamily: "'DM Sans', sans-serif",
+                  fontFamily: "var(--font-sans)",
                   fontWeight: 400,
                   fontSize: 12,
                   letterSpacing: "0.10em",
