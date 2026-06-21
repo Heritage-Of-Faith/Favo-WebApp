@@ -266,9 +266,9 @@ export default async function LoyaltyPage({
             <div style={S.txList}>
               {rows.map((row) => {
                 const isPositive = row.delta >= 0;
-                const deltaColor = isPositive
-                  ? KIND_COLORS.earn
-                  : KIND_COLORS.redeem;
+                const deltaColor =
+                  KIND_COLORS[row.kind] ??
+                  (isPositive ? KIND_COLORS.earn : KIND_COLORS.redeem);
                 const deltaText = isPositive
                   ? `+${row.delta}`
                   : `${row.delta}`;
