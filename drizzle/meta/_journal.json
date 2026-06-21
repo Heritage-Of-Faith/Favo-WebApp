@@ -120,6 +120,13 @@
       "when": 1781861997494,
       "tag": "0016_wallet_zar_check",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782047711099,
+      "tag": "0017_black_timeslip",
+      "breakpoints": true
     }
   ]
 }

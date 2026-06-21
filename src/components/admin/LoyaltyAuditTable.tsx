@@ -1,6 +1,6 @@
 "use client";
 
-// Loyalty audit table — AT-120
+// Loyalty audit table — AT-120 / AT-123
 // Paginated, filterable list of loyalty_transactions.
 // Follows the same pattern as AuditViewer.tsx.
 
@@ -8,6 +8,7 @@ import { useState, useTransition } from "react";
 import { formatDate } from "@/lib/format";
 import { listLoyaltyAudit } from "@/server/actions/loyalty";
 import type { LoyaltyAuditRow } from "@/server/actions/loyalty";
+import AdjustLoyaltyDialog from "./AdjustLoyaltyDialog";
 
 const PAGE_SIZE = 50;
 
@@ -30,6 +31,7 @@ export default function LoyaltyAuditTable({ initialRows, total: initialTotal }: 
 
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   async function fetchPage(
     targetPage: number,
@@ -65,67 +67,81 @@ export default function LoyaltyAuditTable({ initialRows, total: initialTotal }: 
     });
   }
 
+  function handleAdjustSuccess() {
+    startTransition(() => { void fetchPage(page); });
+  }
+
   const hasFilter = kind || dateFrom || dateTo;
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const to = Math.min((page + 1) * PAGE_SIZE, total);
 
   return (
     <div className="space-y-4">
-      {/* Filter bar */}
-      <div className="flex flex-wrap gap-3 items-end p-4 bg-elevated border border-border-subtle rounded-[var(--radius-card)]">
-        <div className="flex flex-col gap-1">
-          <label className="favo-caption">Kind</label>
-          <select
-            value={kind}
-            onChange={(e) => setKind(e.target.value as Kind | "")}
-            className="h-9 px-2 text-sm bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
+      {/* Filter bar + Adjust Balance button */}
+      <div className="flex flex-wrap gap-3 items-end justify-between p-4 bg-elevated border border-border-subtle rounded-[var(--radius-card)]">
+        <div className="flex flex-wrap gap-3 items-end">
+          <div className="flex flex-col gap-1">
+            <label className="favo-caption">Kind</label>
+            <select
+              value={kind}
+              onChange={(e) => setKind(e.target.value as Kind | "")}
+              className="h-9 px-2 text-sm bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
+            >
+              <option value="">All kinds</option>
+              {KIND_OPTIONS.map((k) => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="favo-caption">From</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-9 px-2 text-sm bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="favo-caption">To</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-9 px-2 text-sm bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={isPending}
+            className="h-9 px-4 text-sm font-semibold bg-accent text-text-inverse rounded-[var(--radius-btn)] hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
-            <option value="">All kinds</option>
-            {KIND_OPTIONS.map((k) => (
-              <option key={k} value={k}>{k}</option>
-            ))}
-          </select>
-        </div>
+            {isPending ? "Loading…" : "Apply"}
+          </button>
 
-        <div className="flex flex-col gap-1">
-          <label className="favo-caption">From</label>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="h-9 px-2 text-sm bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="favo-caption">To</label>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="h-9 px-2 text-sm bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
-          />
+          {hasFilter && (
+            <button
+              type="button"
+              onClick={handleClear}
+              disabled={isPending}
+              className="h-9 px-3 text-sm text-text-muted hover:text-text-strong disabled:opacity-50 transition-colors"
+            >
+              Clear
+            </button>
+          )}
         </div>
 
         <button
           type="button"
-          onClick={handleApply}
-          disabled={isPending}
-          className="h-9 px-4 text-sm font-semibold bg-accent text-text-inverse rounded-[var(--radius-btn)] hover:opacity-90 disabled:opacity-50 transition-opacity"
+          onClick={() => setDialogOpen(true)}
+          className="h-9 px-4 text-sm font-semibold bg-accent text-text-inverse rounded-[var(--radius-btn)] hover:opacity-90 transition-opacity"
         >
-          {isPending ? "Loading…" : "Apply"}
+          Adjust Balance
         </button>
-
-        {hasFilter && (
-          <button
-            type="button"
-            onClick={handleClear}
-            disabled={isPending}
-            className="h-9 px-3 text-sm text-text-muted hover:text-text-strong disabled:opacity-50 transition-colors"
-          >
-            Clear
-          </button>
-        )}
       </div>
 
       {error && <p className="text-sm text-error px-1">{error}</p>}
@@ -140,12 +156,13 @@ export default function LoyaltyAuditTable({ initialRows, total: initialTotal }: 
               <th className="text-left px-3 py-2.5 favo-caption font-semibold">Kind</th>
               <th className="text-right px-3 py-2.5 favo-caption font-semibold">Points</th>
               <th className="text-left px-3 py-2.5 favo-caption font-semibold">Order</th>
+              <th className="text-left px-3 py-2.5 favo-caption font-semibold">Reason</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-center py-10 text-text-muted favo-small">
+                <td colSpan={6} className="text-center py-10 text-text-muted favo-small">
                   {isPending ? "Loading…" : "No loyalty transactions found."}
                 </td>
               </tr>
@@ -171,6 +188,9 @@ export default function LoyaltyAuditTable({ initialRows, total: initialTotal }: 
                 </td>
                 <td className="px-3 py-2.5 text-text-muted font-mono text-xs">
                   {row.orderId ? `${row.orderId.slice(0, 8)}…` : "—"}
+                </td>
+                <td className="px-3 py-2.5 text-text-muted favo-small max-w-[200px] truncate">
+                  {row.reason ?? ""}
                 </td>
               </tr>
             ))}
@@ -204,6 +224,12 @@ export default function LoyaltyAuditTable({ initialRows, total: initialTotal }: 
           </button>
         </div>
       </div>
+
+      <AdjustLoyaltyDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onSuccess={handleAdjustSuccess}
+      />
     </div>
   );
 }

@@ -436,6 +436,7 @@ export type LoyaltyAuditRow = {
   orderId: string | null;
   delta: number;
   kind: "earn" | "redeem" | "adjustment" | "expiry";
+  reason: string | null;
   at: string; // ISO-8601
 };
 
@@ -488,6 +489,7 @@ export async function listLoyaltyAudit(
         orderId: loyaltyTransactions.orderId,
         delta: loyaltyTransactions.delta,
         kind: loyaltyTransactions.kind,
+        reason: loyaltyTransactions.reason,
         at: loyaltyTransactions.at,
       })
       .from(loyaltyTransactions)
@@ -508,6 +510,7 @@ export async function listLoyaltyAudit(
         orderId: r.orderId,
         delta: r.delta,
         kind: r.kind as LoyaltyAuditRow["kind"],
+        reason: r.reason,
         at: r.at.toISOString(),
       })),
       total: totalResult[0]?.value ?? 0,
@@ -515,4 +518,88 @@ export async function listLoyaltyAudit(
       pageSize: LOYALTY_AUDIT_PAGE_SIZE,
     },
   };
+}
+
+// ─── adjustLoyalty (AT-123) ───────────────────────────────────────────────────
+
+/**
+ * Admin-only: manually adjust a customer's loyalty balance with an audited reason.
+ * Inserts a loyalty_transaction (kind='adjustment') and updates customers.loyalty_points.
+ * Calls writeAudit() for the full before/after trail.
+ * Rules: delta must be a non-zero integer; balance cannot go below zero.
+ */
+export async function adjustLoyalty(
+  customerId: string,
+  delta: number,
+  reason: string,
+): Promise<ActionResult<{ newBalance: number }>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+  const session = auth.session;
+
+  // Validate delta
+  if (!Number.isInteger(delta) || delta === 0) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "delta must be a non-zero integer." };
+  }
+
+  // Validate reason
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "reason is required." };
+  }
+
+  // Look up the customer
+  const [customer] = await db
+    .select({ id: customers.id, loyaltyPoints: customers.loyaltyPoints })
+    .from(customers)
+    .where(eq(customers.id, customerId));
+
+  if (!customer) {
+    return { ok: false, code: "NOT_FOUND", message: "Customer not found." };
+  }
+
+  // Floor guard: prevent balance going negative
+  if (delta < 0 && customer.loyaltyPoints + delta < 0) {
+    return {
+      ok: false,
+      code: "VALIDATION_ERROR",
+      message: "Adjustment would reduce balance below zero.",
+    };
+  }
+
+  let newBalance = 0;
+
+  await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DB;
+
+    await tx.insert(loyaltyTransactions).values({
+      customerId,
+      delta,
+      kind: "adjustment",
+      reason: trimmedReason,
+    });
+
+    const [updated] = await tx
+      .update(customers)
+      .set({ loyaltyPoints: sql`${customers.loyaltyPoints} + ${delta}` })
+      .where(eq(customers.id, customerId))
+      .returning({ loyaltyPoints: customers.loyaltyPoints });
+
+    newBalance = updated?.loyaltyPoints ?? customer.loyaltyPoints + delta;
+
+    await writeAudit(
+      {
+        entityKind: "customer",
+        entityId: customerId,
+        action: "loyalty_adjustment",
+        actorId: session.id,
+        actorRole: session.role,
+        before: { loyaltyPoints: customer.loyaltyPoints },
+        after: { loyaltyPoints: newBalance, reason: trimmedReason },
+      },
+      txDb,
+    );
+  });
+
+  return { ok: true, data: { newBalance } };
 }
