@@ -1,0 +1,1 @@
+ALTER TABLE "loyalty_transactions" ADD COLUMN "reason" text;
