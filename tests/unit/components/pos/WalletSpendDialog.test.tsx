@@ -58,7 +58,6 @@ describe("WalletSpendDialog — display", () => {
   it("shows partial new total when wallet doesn't cover order", () => {
     // walletZar=2000 (R20), orderTotalZar=4500 (R45) → new total R25 (2500 cents)
     setup({ walletZar: 2000, orderTotalZar: 4500 });
-    // formatZar(2500) = "R 25,00" (Intl non-breaking space) — use regex
     expect(screen.getByText(/25,00/)).toBeDefined();
   });
 });
