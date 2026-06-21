@@ -39,6 +39,7 @@ export type Customer = {
   phone: string | null;
   email: string | null;
   loyaltyPoints: number;
+  walletZar: number;
 };
 
 export type MenuCustomisation = {

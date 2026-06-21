@@ -34,6 +34,7 @@ export async function searchCustomer(
     phone: c.phone,
     email: c.email,
     loyaltyPoints: c.loyaltyPoints,
+    walletZar: c.walletZar,
   }));
 
   return { ok: true, data: results };
