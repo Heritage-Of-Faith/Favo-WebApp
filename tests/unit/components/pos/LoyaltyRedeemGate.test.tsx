@@ -62,7 +62,7 @@ describe("M18 — loyalty redeem gate", () => {
   it("enables redemption at 100 pts (total ≥ R20)", async () => {
     CUSTOMER_POINTS = 100;
     await placeOrderAndReachPayment();
-    expect(await screen.findByRole("button", { name: /redeem 100 pts/i })).toBeDefined();
+    expect(await screen.findByRole("button", { name: /redeem loyalty points/i })).toBeDefined();
   });
 
   it("hides redemption at 99 pts", async () => {
@@ -70,6 +70,6 @@ describe("M18 — loyalty redeem gate", () => {
     await placeOrderAndReachPayment();
     // Payment panel is shown (amount due), but no redeem button.
     expect(await screen.findByText(/amount due/i)).toBeDefined();
-    expect(screen.queryByRole("button", { name: /redeem 100 pts/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /redeem loyalty points/i })).toBeNull();
   });
 });

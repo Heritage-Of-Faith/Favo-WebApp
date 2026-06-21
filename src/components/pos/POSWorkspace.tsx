@@ -110,7 +110,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
   // M18 — loyalty redemption on the payment step (order already in `ordered`).
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
   const [redeemOpen, setRedeemOpen] = useState(false);
-  const [redeemed, setRedeemed] = useState(false);
+  const [redeemedData, setRedeemedData] = useState<{ pointsUsed: number; discountZar: number; newTotalZar: number } | null>(null);
   // AT-116 — pack redemption savings (cumulative, sum of line prices redeemed).
   const [packSavings, setPackSavings] = useState(0);
   // Connectivity — drives the offline banner gate and the payment-screen swap
@@ -261,7 +261,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
       setSubmitting(false);
       setPaymentOrderId(null);
       setYocoCheckoutId("");
-      setRedeemed(false);
+      setRedeemedData(null);
       setPackSavings(0);
       setShowPayment(true);
       return;
@@ -276,7 +276,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
       setExpandedId(r.data.orderId);
       setYocoCheckoutId(r.data.yocoClientSecret);
       setPaymentOrderId(r.data.orderId);
-      setRedeemed(false);
+      setRedeemedData(null);
       setPackSavings(0);
       if (r.data.yocoClientSecret) {
         setShowPayment(true);
@@ -319,7 +319,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
       setShowPayment(false);
       setPaymentOrderId(null);
       setYocoCheckoutId("");
-      setRedeemed(false);
+      setRedeemedData(null);
       setPackSavings(0);
       toast.success("Paid in person — order confirmed");
     } catch {
@@ -680,12 +680,9 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
         ) : (
           /* Payment view */
           (() => {
-            // Amount due after a loyalty redemption (M18): one 100-pt unit is
-            // R20 off (REDEEM_VALUE_ZAR), capped at the order total — matches the
-            // server cap in redeemLoyalty. Staff discount zeroes the total outright.
-            const REDEEM_VALUE_ZAR = 2000; // R20,00 in cents — mirrors loyalty/calc.
-            const loyaltyReducedTotal = redeemed ? Math.max(0, totalZar - REDEEM_VALUE_ZAR) : totalZar;
-            // AT-116: subtract pack savings (each redeemed line reduces the total by its unitPriceZar).
+            // Amount due: server-confirmed newTotalZar if loyalty redeemed (AT-110),
+            // further reduced by pack savings (AT-116), capped at zero.
+            const loyaltyReducedTotal = redeemedData ? redeemedData.newTotalZar : totalZar;
             const amountDueZar = Math.max(0, loyaltyReducedTotal - packSavings);
             // Free only when nothing is owed — skip the Yoco form and confirm directly.
             const isFree = amountDueZar === 0;
@@ -696,7 +693,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
               setShowPayment(false);
               setYocoCheckoutId("");
               setPaymentOrderId(null);
-              setRedeemed(false);
+              setRedeemedData(null);
               setPackSavings(0);
               setOrderSuccess("Order paid — sent to the queue.");
               setTimeout(() => setOrderSuccess(null), 4000);
@@ -722,8 +719,10 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
                   <p className="favo-label text-cool-steel mb-1">Amount due</p>
                   <p className="favo-h2 text-coffee-bean">{formatZar(amountDueZar)}</p>
                   <p className="favo-small text-cool-steel mt-1">
-                    {redeemed
-                      ? (isFree ? "R20 covered by 100 loyalty points" : "R20 off with 100 loyalty points — pay the rest")
+                    {redeemedData
+                      ? (isFree
+                          ? `R${(redeemedData.discountZar / 100).toFixed(0)} covered by ${redeemedData.pointsUsed} loyalty points`
+                          : `R${(redeemedData.discountZar / 100).toFixed(0)} off with ${redeemedData.pointsUsed} pts — pay the rest`)
                       : "Tap or insert the customer's card"}
                   </p>
                 </div>
@@ -731,11 +730,11 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
                 <div className="flex flex-col gap-3 w-full max-w-[320px]">
                   {/* M18 — loyalty redemption (L06): 100 pts → R20 off, capped at the order total.
                       Offered only at ≥100 pts and when the order is worth ≥ R20. */}
-                  {customer && customer.loyaltyPoints >= 100 && totalZar >= 2000 && !redeemed && paymentOrderId && (
+                  {customer && customer.loyaltyPoints >= 100 && totalZar >= 2000 && redeemedData === null && paymentOrderId && (
                     <button type="button" onClick={() => setRedeemOpen(true)}
                       className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-crimson-carrot/50 py-3 min-h-[48px] favo-small text-crimson-carrot hover:bg-crimson-carrot/8 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
                       <Star size={14} strokeWidth={2.25} />
-                      Redeem 100 pts (R20 off)
+                      Redeem loyalty points
                     </button>
                   )}
 
@@ -1129,9 +1128,9 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
           orderId={paymentOrderId}
           loyaltyPoints={customer.loyaltyPoints}
           orderTotalZar={totalZar}
-          onRedeemed={() => {
-            setRedeemed(true);
-            setCustomer({ ...customer, loyaltyPoints: customer.loyaltyPoints - 100 });
+          onRedeemed={(result) => {
+            setRedeemedData(result);
+            setCustomer({ ...customer, loyaltyPoints: customer.loyaltyPoints - result.pointsUsed });
           }}
           onClose={() => setRedeemOpen(false)}
         />
