@@ -29,7 +29,7 @@ import { checkStaffDiscountEligibility } from "@/server/orders/discount";
 import { earnPoints } from "@/server/loyalty/calc";
 import { createPaymentIntent } from "@/server/yoco/client";
 import { notifyOrderChange } from "@/server/queue/notify";
-import { sendOrderReadyPush } from "@/server/push/send";
+import { sendOrderReadyPush, sendPointsEarnedPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
 import type { ActionResult, Order, OrderState } from "@/lib/types";
 
@@ -273,6 +273,9 @@ export async function transitionOrder(
   let pushSubscription: unknown = null;
   let pushCustomerName: string | null = null;
   let pushCustomerId: string | null = null;
+  // Track loyalty earn details for points-earned push (AT-128).
+  let earnedPoints = 0;
+  let newLoyaltyBalance = 0;
 
   try {
     await db.transaction(async (tx) => {
@@ -341,15 +344,18 @@ export async function transitionOrder(
             .update(customers)
             .set({ loyaltyPoints: sql`${customers.loyaltyPoints} + ${points}` })
             .where(eq(customers.id, current.customerId));
+          earnedPoints = points;
         }
         // Capture push subscription for post-transaction delivery.
+        // Re-fetch after the loyalty update so loyaltyPoints reflects the new balance.
         const [cust] = await tx
-          .select({ name: customers.name, pushSubscription: customers.pushSubscription })
+          .select({ name: customers.name, pushSubscription: customers.pushSubscription, loyaltyPoints: customers.loyaltyPoints })
           .from(customers)
           .where(eq(customers.id, current.customerId));
         pushSubscription = cust?.pushSubscription ?? null;
         pushCustomerName = cust?.name ?? null;
         pushCustomerId = current.customerId ?? null;
+        newLoyaltyBalance = cust?.loyaltyPoints ?? 0;
       }
 
       // ── 4. Audit ───────────────────────────────────────────────────────────
@@ -423,6 +429,20 @@ export async function transitionOrder(
       })
       .catch((err: unknown) => {
         console.error("[push] sendOrderReadyPush failed for order", orderId, err);
+      });
+  }
+
+  // Push loyalty points earned notification (AT-128) — fire-and-forget.
+  if (earnedPoints > 0 && pushSubscription && isValidPushSubscription(pushSubscription)) {
+    sendPointsEarnedPush(pushSubscription, earnedPoints, newLoyaltyBalance)
+      .then((ok) => {
+        if (!ok) {
+          // Subscription expired — logged already inside sendPointsEarnedPush.
+          // Pruning is handled by the order-ready push path above; skip duplicate cleanup.
+        }
+      })
+      .catch((err: unknown) => {
+        console.error("[push] sendPointsEarnedPush failed for order", orderId, err);
       });
   }
 
