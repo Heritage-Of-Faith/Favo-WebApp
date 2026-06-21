@@ -77,6 +77,30 @@ After these land, every other task is independently buildable.
 
 ---
 
+---
+
+## Wave 2 — Loyalty, Wallet & Packs (AT Jira keys)
+
+These tasks shipped in Wave 2 (merged to `main` by 2026-06-21). Each row cross-references the original LOY/W local ID and the AT Jira issue.
+
+| AT key | LOY/W ID | Title | Status |
+|---|---|---|---|
+| AT-109 | LOY-1 | Multi-unit loyalty redemption | ✅ merged |
+| AT-111 | LOY-10a | Pack redemption backend | ✅ merged |
+| AT-112 | LOY-10b | Pack redemption POS (superseded by AT-116) | ✅ closed — superseded |
+| AT-113 | LOY-16 | WalletSpendDialog | ✅ merged |
+| AT-114 | W1+W2 | Wallet spend action | ✅ merged |
+| AT-116 | — | Pack redemption POS UI (replaces AT-112) | ✅ merged |
+| AT-120 | — | Admin loyalty audit | ✅ merged |
+| AT-123 | LOY-4 | Admin loyalty adjustment | ✅ merged |
+| AT-124 | LOY-5 | Loyalty reconciliation | ✅ merged |
+| AT-125 | LOY-6 | Earn on pack/wallet | ✅ merged |
+| AT-126 | LOY-9 | Spec and enum reconciliation (this ticket) | ✅ merged |
+| AT-127 | LOY-7 | Liability report | ⬜ todo |
+| AT-128 | LOY-8 | Customer loyalty history | ⬜ todo |
+
+---
+
 ## Phase 1 verification (merge gate)
 1. Migrate + seed staging
 2. Register Louis device via N5 staging form
