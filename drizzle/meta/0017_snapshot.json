@@ -1,6 +1,6 @@
 {
-  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "prevId": "12dbca0b-a41e-4843-a079-542e0907494d",
+  "id": "ba497355-a74a-41fc-8b2d-1e4131fde25a",
+  "prevId": "d1f3e6f2-f994-4c79-8217-5cbf4cd371a2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -338,7 +338,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "customers_wallet_zar_non_negative": {
+          "name": "customers_wallet_zar_non_negative",
+          "value": "wallet_zar >= 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.expenses": {
@@ -688,6 +693,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "at": {
           "name": "at",
           "type": "timestamp with time zone",
@@ -709,6 +720,22 @@
           ],
           "isUnique": true,
           "where": "kind = 'earn'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "loyalty_txn_redeem_order_unique": {
+          "name": "loyalty_txn_redeem_order_unique",
+          "columns": [
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "kind = 'redeem'",
           "concurrently": false,
           "method": "btree",
           "with": {}

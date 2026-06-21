@@ -98,6 +98,7 @@ describe("listLoyaltyAudit: LoyaltyAuditRow type contract", () => {
       orderId: "ord_1",
       delta: 10,
       kind: "earn",
+      reason: null,
       at: new Date().toISOString(),
     };
     expect(row.delta).toBeGreaterThan(0);
@@ -112,6 +113,7 @@ describe("listLoyaltyAudit: LoyaltyAuditRow type contract", () => {
       orderId: null,
       delta: -100,
       kind: "redeem",
+      reason: null,
       at: new Date().toISOString(),
     };
     expect(row.delta).toBeLessThan(0);
