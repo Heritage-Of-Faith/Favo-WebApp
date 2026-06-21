@@ -4,7 +4,7 @@
 // AT-127 (getLoyaltyLiabilityReport)
 // Docs: docs/API.md · BUSINESS_RULES.md L06, L16
 
-import { desc, eq, sql, count, and, gte, lte, gt, max } from "drizzle-orm";
+import { desc, eq, sql, count, and, gte, lte, gt, max, sum } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, customers, loyaltyTransactions, pendingCharges, coffeePacks, menuItems, payments, walletTransactions } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -521,6 +521,81 @@ export async function listLoyaltyAudit(
   };
 }
 
+// ─── reconcileLoyalty (AT-124 / LOY-5) ───────────────────────────────────────
+
+/**
+ * Admin-only reconciliation job: compares customers.loyalty_points (cached
+ * denormalised column) against SUM(loyalty_transactions.delta) (the source of
+ * truth).  Logs every discrepancy to audit_log — never auto-corrects balances.
+ * Returns a drift report for the admin dashboard.
+ */
+export async function reconcileLoyalty(): Promise<ActionResult<{
+  checked: number;
+  drifted: number;
+  rows: { customerId: string; name: string; cached: number; ledger: number; delta: number }[];
+}>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+  const session = auth.session;
+
+  // Fetch all customers (id, name, cached loyalty_points)
+  const allCustomers = await db
+    .select({ id: customers.id, name: customers.name, loyaltyPoints: customers.loyaltyPoints })
+    .from(customers);
+
+  // Fetch ledger sums per customer (only rows that have transactions)
+  const ledgerRows = await db
+    .select({
+      customerId: loyaltyTransactions.customerId,
+      ledgerSum: sum(loyaltyTransactions.delta).mapWith(Number),
+    })
+    .from(loyaltyTransactions)
+    .groupBy(loyaltyTransactions.customerId);
+
+  // Build a lookup map: customerId → ledgerSum
+  const ledgerMap = new Map<string, number>();
+  for (const row of ledgerRows) {
+    ledgerMap.set(row.customerId, row.ledgerSum ?? 0);
+  }
+
+  const driftedRows: { customerId: string; name: string; cached: number; ledger: number; delta: number }[] = [];
+
+  for (const customer of allCustomers) {
+    const ledgerSum = ledgerMap.get(customer.id) ?? 0;
+    if (customer.loyaltyPoints !== ledgerSum) {
+      driftedRows.push({
+        customerId: customer.id,
+        name: customer.name,
+        cached: customer.loyaltyPoints,
+        ledger: ledgerSum,
+        delta: ledgerSum - customer.loyaltyPoints,
+      });
+
+      await writeAudit(
+        {
+          entityKind: "loyalty_reconcile",
+          entityId: customer.id,
+          action: "drift_detected",
+          actorId: session.id,
+          actorRole: session.role,
+          before: { cached: customer.loyaltyPoints },
+          after: { ledger: ledgerSum, delta: ledgerSum - customer.loyaltyPoints },
+        },
+        db as unknown as DB
+      );
+    }
+  }
+
+  return {
+    ok: true,
+    data: {
+      checked: allCustomers.length,
+      drifted: driftedRows.length,
+      rows: driftedRows,
+    },
+  };
+}
+
 // ─── getLoyaltyLiabilityReport (AT-127) ───────────────────────────────────────
 
 export type LiabilityRow = {
@@ -528,25 +603,19 @@ export type LiabilityRow = {
   name: string;
   phone: string | null;
   loyaltyPoints: number;
-  liabilityZar: number; // cents: floor(points/100)*2000
+  liabilityZar: number;
   lastActivityAt: Date | null;
 };
 
 export type LoyaltyLiabilityReport = {
   totalPoints: number;
-  totalLiabilityZar: number; // cents
-  activeCustomers: number; // customers with points > 0 active within 12 months
+  totalLiabilityZar: number;
+  activeCustomers: number;
   averagePoints: number;
   top10: LiabilityRow[];
-  allActive: LiabilityRow[]; // customers with points > 0, active within 12 months
+  allActive: LiabilityRow[];
 };
 
-/**
- * Finance report: outstanding loyalty liability across all customers with points,
- * filtered to those active within the last 12 months (AT-127).
- * Liability formula: floor(points / 100) * 2000 cents (100 pts = R20).
- * Auth: admin only.
- */
 export async function getLoyaltyLiabilityReport(): Promise<ActionResult<LoyaltyLiabilityReport>> {
   const auth = await authorize("admin");
   if (!auth.ok) return auth;
@@ -554,37 +623,17 @@ export async function getLoyaltyLiabilityReport(): Promise<ActionResult<LoyaltyL
   const twelveMonthsAgo = new Date();
   twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear() - 1);
 
-  // All customers with at least one loyalty point
   const customersWithPoints = await db
-    .select({
-      id: customers.id,
-      name: customers.name,
-      phone: customers.phone,
-      loyaltyPoints: customers.loyaltyPoints,
-    })
+    .select({ id: customers.id, name: customers.name, phone: customers.phone, loyaltyPoints: customers.loyaltyPoints })
     .from(customers)
     .where(gt(customers.loyaltyPoints, 0));
 
   if (customersWithPoints.length === 0) {
-    return {
-      ok: true,
-      data: {
-        totalPoints: 0,
-        totalLiabilityZar: 0,
-        activeCustomers: 0,
-        averagePoints: 0,
-        top10: [],
-        allActive: [],
-      },
-    };
+    return { ok: true, data: { totalPoints: 0, totalLiabilityZar: 0, activeCustomers: 0, averagePoints: 0, top10: [], allActive: [] } };
   }
 
-  // Last activity per customer (MAX(at) from loyalty_transactions)
   const activityRows = await db
-    .select({
-      customerId: loyaltyTransactions.customerId,
-      lastActivityAt: max(loyaltyTransactions.at),
-    })
+    .select({ customerId: loyaltyTransactions.customerId, lastActivityAt: max(loyaltyTransactions.at) })
     .from(loyaltyTransactions)
     .groupBy(loyaltyTransactions.customerId);
 
