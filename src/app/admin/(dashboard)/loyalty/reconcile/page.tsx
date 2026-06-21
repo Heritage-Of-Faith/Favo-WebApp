@@ -5,6 +5,7 @@
 //       Loyalty section manually after merge.
 
 import { reconcileLoyalty } from "@/server/actions/loyalty";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -85,10 +86,10 @@ export default async function LoyaltyReconcilePage() {
         </div>
       )}
 
-      {/* Re-run: link with timestamp query param busts the force-dynamic cache */}
+      {/* Re-run: timestamp query param forces a fresh navigation */}
       <a
         href={`/admin/loyalty/reconcile?t=${Date.now()}`}
-        className="inline-block text-sm underline text-text-muted hover:text-foreground"
+        className={buttonVariants({ variant: "outline", size: "sm" })}
       >
         Re-run reconciliation
       </a>

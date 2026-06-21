@@ -38,14 +38,59 @@ export default async function MenuPage() {
         style={{
           minHeight: "100svh",
           display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          flexDirection: "column",
           background: "var(--color-paper)",
           fontFamily: "var(--font-sans)",
           color: "var(--color-coffee-bean)",
         }}
       >
-        <p>Could not load the menu right now. Please ask a barista.</p>
+        <header
+          style={{
+            borderBottom: "3px solid var(--color-coffee-bean)",
+            padding: "24px 20px 20px",
+            maxWidth: "600px",
+            width: "100%",
+            margin: "0 auto",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <h1
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 900,
+              fontSize: "2rem",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              margin: 0,
+            }}
+          >
+            FAVO Café
+          </h1>
+          <a
+            href="/"
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--text-small)",
+              color: "var(--color-text-muted)",
+              textDecoration: "none",
+            }}
+          >
+            ← Home
+          </a>
+        </header>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "40px 20px",
+          }}
+        >
+          <p>Could not load the menu right now. Please ask a barista.</p>
+        </div>
       </main>
     );
   }
