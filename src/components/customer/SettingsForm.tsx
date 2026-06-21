@@ -33,8 +33,10 @@ const S = {
     marginBottom: 12,
   },
   card: {
-    backgroundColor: "var(--color-dark-teal)",
-    padding: "28px 32px",
+    backgroundColor: "rgba(28,5,1,0.05)",
+    border: "1px solid rgba(28,5,1,0.12)",
+    borderRadius: 2,
+    padding: "24px 28px",
     display: "flex",
     flexDirection: "column" as const,
     gap: 20,
@@ -54,22 +56,22 @@ const S = {
   },
   input: {
     height: 48,
-    backgroundColor: "rgba(247,246,242,0.07)",
-    border: "1px solid rgba(247,246,242,0.15)",
+    backgroundColor: "var(--color-paper)",
+    border: "1px solid rgba(28,5,1,0.15)",
     borderRadius: 2,
     padding: "0 16px",
     fontFamily: "'DM Sans', sans-serif",
     fontWeight: 400,
     fontSize: 15,
-    color: "var(--color-porcelain)",
+    color: "var(--color-coffee-bean)",
     outline: "none",
     width: "100%",
     boxSizing: "border-box" as const,
   },
   inputReadonly: {
     height: 48,
-    backgroundColor: "rgba(247,246,242,0.03)",
-    border: "1px solid rgba(247,246,242,0.08)",
+    backgroundColor: "rgba(28,5,1,0.03)",
+    border: "1px solid rgba(28,5,1,0.08)",
     borderRadius: 2,
     padding: "0 16px",
     fontFamily: "'DM Sans', sans-serif",
@@ -198,7 +200,7 @@ export default function SettingsForm({
                 autoComplete="name"
                 style={S.input}
                 onFocus={(e) => { e.target.style.borderColor = "rgba(245,86,12,0.6)"; e.target.style.outline = "2px solid rgba(245,86,12,0.3)"; e.target.style.outlineOffset = "0px"; }}
-                onBlur={(e) => { e.target.style.borderColor = "rgba(247,246,242,0.15)"; e.target.style.outline = "none"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(28,5,1,0.15)"; e.target.style.outline = "none"; }}
               />
             </div>
 
@@ -213,7 +215,7 @@ export default function SettingsForm({
                 autoComplete="tel"
                 style={S.input}
                 onFocus={(e) => { e.target.style.borderColor = "rgba(245,86,12,0.6)"; e.target.style.outline = "2px solid rgba(245,86,12,0.3)"; e.target.style.outlineOffset = "0px"; }}
-                onBlur={(e) => { e.target.style.borderColor = "rgba(247,246,242,0.15)"; e.target.style.outline = "none"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(28,5,1,0.15)"; e.target.style.outline = "none"; }}
               />
             </div>
 
