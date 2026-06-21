@@ -1,5 +1,5 @@
-// redeemLoyalty unit tests — AT-115 (BUG-Y1)
-// Covers: RBAC, validation, state guards, Yoco intent recreation, payments sync.
+// redeemLoyalty unit tests — AT-109 (multi-unit redemption)
+// Tests RBAC, validation, server-side clamping, Yoco recreation, and audit.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -12,7 +12,6 @@ vi.mock("@db/index", () => {
       where: vi.fn(),
       orderBy: vi.fn(),
       limit: vi.fn(),
-      // Required for SELECT ... FOR UPDATE used inside redeemLoyalty transaction.
       for: vi.fn(),
     };
     for (const k of ["from", "where", "orderBy", "limit", "for"]) {
@@ -53,7 +52,10 @@ vi.mock("@/server/audit", () => ({
 }));
 
 vi.mock("@/server/yoco/client", () => ({
-  createPaymentIntent: vi.fn().mockResolvedValue({ id: "ck_new_intent", clientSecret: "ck_new_intent" }),
+  createPaymentIntent: vi.fn().mockResolvedValue({
+    id: "ck_new_abc123",
+    clientSecret: "ck_new_abc123",
+  }),
 }));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -66,13 +68,13 @@ function mockOrder(overrides: Record<string, unknown> = {}) {
     id: ORDER_ID,
     customerId: CUSTOMER_ID,
     state: "ordered",
-    totalZar: 4500,
+    totalZar: 4500,        // R45.00
     isStaffDiscount: false,
     ...overrides,
   };
 }
 
-function mockCustomer(loyaltyPoints = 100) {
+function mockCustomer(loyaltyPoints = 200) {
   return { loyaltyPoints };
 }
 
@@ -95,28 +97,51 @@ describe("redeemLoyalty — RBAC", () => {
 
   it("rejects unauthenticated caller", async () => {
     const { authorize } = await import("@/server/auth/guard");
-    vi.mocked(authorize).mockResolvedValueOnce({
-      ok: false, code: "UNAUTHORIZED", message: "Not signed in.",
-    });
+    vi.mocked(authorize).mockResolvedValueOnce({ ok: false, code: "UNAUTHORIZED", message: "Not signed in." });
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("UNAUTHORIZED");
   });
 
-  it("rejects finance role", async () => {
+  it("rejects non-barista role", async () => {
     const { authorize } = await import("@/server/auth/guard");
-    vi.mocked(authorize).mockResolvedValueOnce({
-      ok: false, code: "FORBIDDEN", message: "Barista only.",
-    });
+    vi.mocked(authorize).mockResolvedValueOnce({ ok: false, code: "FORBIDDEN", message: "Barista only." });
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("FORBIDDEN");
   });
 });
 
-// ─── Validation ───────────────────────────────────────────────────────────────
+// ─── Input validation ─────────────────────────────────────────────────────────
+
+describe("redeemLoyalty — units validation", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("rejects units = 0", async () => {
+    const { redeemLoyalty } = await import("@/server/actions/loyalty");
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 0);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects fractional units", async () => {
+    const { redeemLoyalty } = await import("@/server/actions/loyalty");
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1.5);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects negative units", async () => {
+    const { redeemLoyalty } = await import("@/server/actions/loyalty");
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, -1);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("VALIDATION_ERROR");
+  });
+});
+
+// ─── Order / customer guards ───────────────────────────────────────────────────
 
 describe("redeemLoyalty — order state guards", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -125,7 +150,7 @@ describe("redeemLoyalty — order state guards", () => {
     const { db } = await import("@db/index");
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [[]]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("NOT_FOUND");
   });
@@ -136,7 +161,7 @@ describe("redeemLoyalty — order state guards", () => {
       [mockOrder({ state: "in_progress" })],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("CONFLICT");
   });
@@ -147,50 +172,95 @@ describe("redeemLoyalty — order state guards", () => {
       [mockOrder({ customerId: "cust_other" })],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("VALIDATION_ERROR");
   });
 
-  it("rejects combining with a staff discount", async () => {
+  it("rejects combining with a staff discount (L17)", async () => {
     const { db } = await import("@db/index");
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder({ isStaffDiscount: true })],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("CONFLICT");
   });
-});
-
-describe("redeemLoyalty — loyalty point guards", () => {
-  beforeEach(() => vi.clearAllMocks());
 
   it("returns NOT_FOUND for missing customer", async () => {
     const { db } = await import("@db/index");
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder()],
-      [],
+      [mockOrder()], // order found
+      [],           // customer not found
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("NOT_FOUND");
   });
+});
 
-  it("rejects customer with insufficient points (99 pts)", async () => {
+// ─── Server-side clamping (L06) ───────────────────────────────────────────────
+
+describe("redeemLoyalty — clamping", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("rejects when customer has fewer than 100 pts (cannot form 1 unit)", async () => {
     const { db } = await import("@db/index");
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder()],
+      [mockOrder({ totalZar: 4500 })],
       [mockCustomer(99)],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(false);
-    if (!res.ok) {
-      expect(res.code).toBe("CONFLICT");
-      expect(res.message).toMatch(/99 pts/);
+    if (!res.ok) expect(res.code).toBe("CONFLICT");
+  });
+
+  it("rejects when order total < R20 (floor(1500/2000) = 0)", async () => {
+    const { db } = await import("@db/index");
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
+      [mockOrder({ totalZar: 1500 })], // R15 — less than one R20 unit
+      [mockCustomer(200)],
+    ]);
+    const { redeemLoyalty } = await import("@/server/actions/loyalty");
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("CONFLICT");
+  });
+
+  it("clamps requested units down to pts available", async () => {
+    // 200 pts (2 units max by pts), R90 order (4 units max by total), requesting 5 → clamp to 2
+    const { db } = await import("@db/index");
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
+      [mockOrder({ totalZar: 9000 })],
+      [mockCustomer(200)],
+    ]);
+    const { redeemLoyalty } = await import("@/server/actions/loyalty");
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 5);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.pointsUsed).toBe(200);   // 2 units × 100 pts
+      expect(res.data.discountZar).toBe(4000); // 2 units × R20
+      expect(res.data.newTotalZar).toBe(5000); // R90 − R40
+    }
+  });
+
+  it("clamps requested units down to what total allows", async () => {
+    // 500 pts (5 units max by pts), R45 order (2 units max by total), requesting 5 → clamp to 2
+    const { db } = await import("@db/index");
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
+      [mockOrder({ totalZar: 4500 })],
+      [mockCustomer(500)],
+    ]);
+    const { redeemLoyalty } = await import("@/server/actions/loyalty");
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 5);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.pointsUsed).toBe(200);  // 2 units × 100 pts
+      expect(res.data.discountZar).toBe(4000); // 2 units × R20
+      expect(res.data.newTotalZar).toBe(500);  // R45 − R40
     }
   });
 });
@@ -202,41 +272,40 @@ describe("redeemLoyalty — Yoco intent recreation", () => {
 
   it("creates a new Yoco checkout for newTotalZar when > 0", async () => {
     const { db } = await import("@db/index");
-    // totalZar=4500, discount=2000, newTotal=2500
+    // totalZar=4500, 1 unit discount=2000, newTotal=2500
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder({ totalZar: 4500 })],
       [mockCustomer(150)],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
     const { createPaymentIntent } = await import("@/server/yoco/client");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(true);
     expect(vi.mocked(createPaymentIntent)).toHaveBeenCalledOnce();
     expect(vi.mocked(createPaymentIntent)).toHaveBeenCalledWith(
       expect.objectContaining({ amountZar: 2500 })
     );
     if (res.ok) {
-      expect(res.data.clientSecret).toBe("ck_new_intent");
+      expect(res.data.clientSecret).toBe("ck_new_abc123");
       expect(res.data.discountZar).toBe(2000);
       expect(res.data.newTotalZar).toBe(2500);
     }
   });
 
-  it("skips Yoco checkout when newTotalZar = 0 (order ≤ R20)", async () => {
+  it("skips Yoco checkout when newTotalZar = 0 (exact R20 order)", async () => {
     const { db } = await import("@db/index");
-    // totalZar=1500 → discount capped at 1500, newTotal=0
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder({ totalZar: 1500 })],
+      [mockOrder({ totalZar: 2000 })],
       [mockCustomer(100)],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
     const { createPaymentIntent } = await import("@/server/yoco/client");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(true);
     expect(vi.mocked(createPaymentIntent)).not.toHaveBeenCalled();
     if (res.ok) {
       expect(res.data.clientSecret).toBeNull();
-      expect(res.data.discountZar).toBe(1500);
+      expect(res.data.discountZar).toBe(2000);
       expect(res.data.newTotalZar).toBe(0);
     }
   });
@@ -250,7 +319,7 @@ describe("redeemLoyalty — Yoco intent recreation", () => {
     const { createPaymentIntent } = await import("@/server/yoco/client");
     vi.mocked(createPaymentIntent).mockRejectedValueOnce(new Error("Yoco API timeout"));
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(false);
     if (!res.ok) {
       expect(res.code).toBe("PAYMENT_ERROR");
@@ -260,7 +329,7 @@ describe("redeemLoyalty — Yoco intent recreation", () => {
   });
 });
 
-// ─── Payments sync ───────────────────────────────────────────────────────────
+// ─── Payments sync (BUG-Y1) ───────────────────────────────────────────────────
 
 describe("redeemLoyalty — payments.amountZar sync (BUG-Y1)", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -275,19 +344,18 @@ describe("redeemLoyalty — payments.amountZar sync (BUG-Y1)", () => {
       [mockCustomer(150)],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(vi.mocked(__txMock.update)).toHaveBeenCalledTimes(3);
   });
 
   it("sets payments.status=successful and clientSecret=null for R0 remainder", async () => {
     const { db } = await import("@db/index");
-    // Exact R20 order → newTotal=0, no checkout needed
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder({ totalZar: 2000 })],
       [mockCustomer(100)],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.data.newTotalZar).toBe(0);
@@ -301,60 +369,85 @@ describe("redeemLoyalty — payments.amountZar sync (BUG-Y1)", () => {
 describe("redeemLoyalty — happy path", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("returns ok with discountZar=2000, newTotalZar, and clientSecret", async () => {
+  it("single unit: R45 order, 150 pts → R20 off, new total R25", async () => {
     const { db } = await import("@db/index");
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder({ totalZar: 4500 })],
       [mockCustomer(150)],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.data.discountZar).toBe(2000);
+      expect(res.data.pointsUsed).toBe(100);
       expect(res.data.newTotalZar).toBe(2500);
-      expect(res.data.clientSecret).toBe("ck_new_intent");
+      expect(res.data.clientSecret).toBe("ck_new_abc123");
     }
   });
 
-  it("runs the DB transaction", async () => {
+  it("two units: R60 order, 300 pts → R40 off, new total R20", async () => {
     const { db } = await import("@db/index");
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder()],
-      [mockCustomer(150)],
+      [mockOrder({ totalZar: 6000 })],
+      [mockCustomer(300)],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 2);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.discountZar).toBe(4000);
+      expect(res.data.pointsUsed).toBe(200);
+      expect(res.data.newTotalZar).toBe(2000);
+    }
     expect(vi.mocked(db.transaction)).toHaveBeenCalledOnce();
   });
 
-  it("writes audit with correct before/after values", async () => {
+  it("exact R20 order with 100 pts → newTotal 0, clientSecret null (free order)", async () => {
+    const { db } = await import("@db/index");
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
+      [mockOrder({ totalZar: 2000 })],
+      [mockCustomer(100)],
+    ]);
+    const { createPaymentIntent } = await import("@/server/yoco/client");
+    const { redeemLoyalty } = await import("@/server/actions/loyalty");
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.newTotalZar).toBe(0);
+      expect(res.data.clientSecret).toBeNull();
+    }
+    expect(vi.mocked(createPaymentIntent)).not.toHaveBeenCalled();
+  });
+
+  it("writes audit with correct before/after", async () => {
     const { db } = await import("@db/index");
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [mockOrder({ totalZar: 4500 })],
-      [mockCustomer(100)],
-    ]);
-    const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
-    const { writeAudit } = await import("@/server/audit");
-    expect(vi.mocked(writeAudit)).toHaveBeenCalledOnce();
-    const auditCall = vi.mocked(writeAudit).mock.calls[0][0];
-    expect(auditCall.action).toBe("redeem_loyalty");
-    expect(auditCall.after).toMatchObject({ totalZar: 2500, discountZar: 2000, loyaltyPoints: 0 });
-  });
-
-  it("caps discount at order total when total < R20", async () => {
-    const { db } = await import("@db/index");
-    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder({ totalZar: 800 })],
       [mockCustomer(200)],
     ]);
     const { redeemLoyalty } = await import("@/server/actions/loyalty");
-    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID);
-    expect(res.ok).toBe(true);
-    if (res.ok) {
-      expect(res.data.discountZar).toBe(800);
-      expect(res.data.newTotalZar).toBe(0);
-    }
+    await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
+    const { writeAudit } = await import("@/server/audit");
+    expect(vi.mocked(writeAudit)).toHaveBeenCalledOnce();
+    const call = vi.mocked(writeAudit).mock.calls[0][0];
+    expect(call.action).toBe("redeem_loyalty");
+    expect(call.before).toMatchObject({ totalZar: 4500, loyaltyPoints: 200 });
+    expect(call.after).toMatchObject({ totalZar: 2500, discountZar: 2000, pointsUsed: 100, clampedUnits: 1 });
+  });
+
+  it("Yoco failure returns PAYMENT_ERROR and does not mutate DB", async () => {
+    const { db } = await import("@db/index");
+    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
+      [mockOrder({ totalZar: 4500 })],
+      [mockCustomer(200)],
+    ]);
+    const { createPaymentIntent } = await import("@/server/yoco/client");
+    vi.mocked(createPaymentIntent).mockRejectedValueOnce(new Error("Yoco down"));
+    const { redeemLoyalty } = await import("@/server/actions/loyalty");
+    const res = await redeemLoyalty(CUSTOMER_ID, ORDER_ID, 1);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("PAYMENT_ERROR");
+    expect(vi.mocked(db.transaction)).not.toHaveBeenCalled();
   });
 });

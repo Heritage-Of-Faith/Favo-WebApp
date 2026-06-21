@@ -264,6 +264,11 @@ export const loyaltyTransactions = pgTable(
     uniqueIndex("loyalty_txn_earn_order_unique")
       .on(t.orderId)
       .where(sql`kind = 'earn'`),
+    // Idempotency guard (AT-109): prevent double-redemption if redeemLoyalty is
+    // retried on the same order. Only one redeem row is allowed per order_id.
+    uniqueIndex("loyalty_txn_redeem_order_unique")
+      .on(t.orderId)
+      .where(sql`kind = 'redeem'`),
   ]
 );
 
