@@ -6,7 +6,7 @@
 // Implements the CustomerDataApi contract from src/lib/customer/contract.ts.
 // Docs: docs/API.md · BUSINESS_RULES.md L05, L06, L16
 
-import { eq, desc, inArray, and, gt, sql } from "drizzle-orm";
+import { eq, desc, inArray, and, gt, sql, count } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
@@ -16,6 +16,7 @@ import {
   menuItems,
   walletTransactions,
   coffeePacks,
+  loyaltyTransactions,
 } from "@db/schema";
 import { getCustomerSession } from "@/server/auth/customer-session";
 import { writeAudit } from "@/server/audit";
@@ -308,4 +309,73 @@ export async function updateCustomerProfile(
   });
 
   return { ok: true, data: { id: updated.id } };
+}
+
+// ─── listCustomerLoyaltyHistory ───────────────────────────────────────────────
+
+const HISTORY_PAGE_SIZE = 20;
+
+export type LoyaltyHistoryRow = {
+  id: string;
+  delta: number;
+  kind: "earn" | "redeem" | "adjustment" | "expiry";
+  reason: string | null;
+  at: Date;
+  runningBalance: number;
+};
+
+export async function listCustomerLoyaltyHistory(
+  page = 0
+): Promise<ActionResult<{ rows: LoyaltyHistoryRow[]; total: number; currentBalance: number }>> {
+  const session = await requireCustomer();
+  if (!session.ok) return { ok: false, code: "UNAUTHORIZED", message: "Not signed in." };
+
+  const [[customer], txRows, [totalRow]] = await Promise.all([
+    db
+      .select({ loyaltyPoints: customers.loyaltyPoints })
+      .from(customers)
+      .where(eq(customers.id, session.customerId)),
+    db
+      .select({
+        id: loyaltyTransactions.id,
+        delta: loyaltyTransactions.delta,
+        kind: loyaltyTransactions.kind,
+        reason: loyaltyTransactions.reason,
+        at: loyaltyTransactions.at,
+      })
+      .from(loyaltyTransactions)
+      .where(eq(loyaltyTransactions.customerId, session.customerId))
+      .orderBy(desc(loyaltyTransactions.at))
+      .limit(HISTORY_PAGE_SIZE)
+      .offset(page * HISTORY_PAGE_SIZE),
+    db
+      .select({ total: count() })
+      .from(loyaltyTransactions)
+      .where(eq(loyaltyTransactions.customerId, session.customerId)),
+  ]);
+
+  if (!customer) {
+    return { ok: false, code: "NOT_FOUND", message: "Customer account not found." };
+  }
+
+  const currentBalance = customer.loyaltyPoints;
+  const totalTransactions = totalRow?.total ?? 0;
+
+  // Compute running balances by working backwards from currentBalance.
+  // rows[0] is the newest transaction; its post-balance = currentBalance.
+  // Each subsequent row's balance = previous row's balance − previous row's delta.
+  const rows: LoyaltyHistoryRow[] = txRows.map((row, i) => {
+    // Sum of all deltas for rows 0..i-1 (newer transactions already settled)
+    const deltasSoFar = txRows.slice(0, i).reduce((acc, r) => acc + r.delta, 0);
+    return {
+      id: row.id,
+      delta: row.delta,
+      kind: row.kind as LoyaltyHistoryRow["kind"],
+      reason: row.reason,
+      at: row.at,
+      runningBalance: currentBalance - deltasSoFar,
+    };
+  });
+
+  return { ok: true, data: { rows, total: totalTransactions, currentBalance } };
 }
