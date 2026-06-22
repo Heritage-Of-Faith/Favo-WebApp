@@ -471,6 +471,21 @@ export const coffeePacks = pgTable("coffee_packs", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// ─── Pack redemptions (AT-111 — append-only; reversals via reversed_at) ──────
+
+export const packRedemptions = pgTable("pack_redemptions", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  packId: text("pack_id").notNull().references(() => coffeePacks.id),
+  customerId: text("customer_id").notNull().references(() => customers.id),
+  orderId: text("order_id").notNull().references(() => orders.id),
+  /** References order_items.id — the line that was covered by this pack drink. */
+  orderLineRef: text("order_line_ref").notNull(),
+  redeemedAt: timestamp("redeemed_at", { withTimezone: true }).defaultNow().notNull(),
+  /** Null unless the order was cancelled. Set by cancelOrder — never deleted. */
+  reversedAt: timestamp("reversed_at", { withTimezone: true }),
+});
+
 // ─── Wallet transactions (G17 — append-only ledger) ──────────────────────────
 
 export const walletTransactions = pgTable("wallet_transactions", {

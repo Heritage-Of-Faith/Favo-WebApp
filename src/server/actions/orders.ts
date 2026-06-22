@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, gte, inArray, notInArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   orders,
@@ -12,6 +12,8 @@ import {
   loyaltyTransactions,
   staffEntitlementLog,
   payments,
+  packRedemptions,
+  coffeePacks,
 } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { authorize } from "@/server/auth/guard";
@@ -466,6 +468,25 @@ export async function cancelOrder(
         );
       }
 
+      // Reverse any pack redemptions on this order (AT-111).
+      // Increment qty_remaining on the pack and stamp reversed_at — never delete.
+      const redemptions = await tx
+        .select({ id: packRedemptions.id, packId: packRedemptions.packId })
+        .from(packRedemptions)
+        .where(and(eq(packRedemptions.orderId, orderId), isNull(packRedemptions.reversedAt)));
+
+      for (const r of redemptions) {
+        await tx
+          .update(coffeePacks)
+          .set({ qtyRemaining: sql`${coffeePacks.qtyRemaining} + 1` })
+          .where(eq(coffeePacks.id, r.packId));
+
+        await tx
+          .update(packRedemptions)
+          .set({ reversedAt: sql`now()` })
+          .where(eq(packRedemptions.id, r.id));
+      }
+
       await tx.update(orders).set({ state: "cancelled" }).where(eq(orders.id, orderId));
       await writeAudit(
         {
@@ -475,7 +496,7 @@ export async function cancelOrder(
           actorId: session.id,
           actorRole: session.role,
           before: { state: current.state },
-          after: { state: "cancelled" },
+          after: { state: "cancelled", packRedemptionsReversed: redemptions.length },
           reason,
         },
         txDb
