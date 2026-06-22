@@ -24,10 +24,22 @@ describe("LoyaltyCard", () => {
 });
 
 describe("WalletCard", () => {
-  it("formats the balance as ZAR and points to the counter for top-ups", () => {
-    render(<WalletCard balanceZar={12500} />);
-    expect(screen.getByText(/125,00/)).toBeInTheDocument();
-    expect(screen.getByText(/top up at the counter/i)).toBeInTheDocument();
+  it("shows R20 for 100 pts (one whole redemption unit) and redeem prompt", () => {
+    render(<WalletCard loyaltyPoints={100} />);
+    expect(screen.getByText(/20,00/)).toBeInTheDocument();
+    expect(screen.getByText(/redeem at the counter/i)).toBeInTheDocument();
+  });
+
+  it("floors to whole redemption units: 250 pts shows R40 (2 units), not R50", () => {
+    render(<WalletCard loyaltyPoints={250} />);
+    expect(screen.getByText(/40,00/)).toBeInTheDocument();
+    expect(screen.getByText(/redeem at the counter/i)).toBeInTheDocument();
+  });
+
+  it("shows R0 and not-enough message when under 100 pts", () => {
+    render(<WalletCard loyaltyPoints={45} />);
+    expect(screen.getByText(/0,00/)).toBeInTheDocument();
+    expect(screen.getByText(/not enough points to redeem yet/i)).toBeInTheDocument();
   });
 });
 

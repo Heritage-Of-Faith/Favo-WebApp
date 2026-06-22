@@ -14,7 +14,6 @@ import {
   orders,
   orderItems,
   menuItems,
-  walletTransactions,
   coffeePacks,
   loyaltyTransactions,
 } from "@db/schema";
@@ -24,7 +23,6 @@ import type { ActionResult } from "@/lib/types";
 import type {
   CustomerSummary,
   CustomerOrder,
-  WalletView,
   PacksView,
 } from "@/lib/customer/contract";
 
@@ -51,7 +49,6 @@ export async function getCustomerSummary(): Promise<ActionResult<CustomerSummary
       id: customers.id,
       name: customers.name,
       loyaltyPoints: customers.loyaltyPoints,
-      walletBalanceZar: customers.walletZar,
       hasPushSubscription: sql<boolean>`(push_subscription IS NOT NULL)`,
     })
     .from(customers)
@@ -79,7 +76,6 @@ export async function getCustomerSummary(): Promise<ActionResult<CustomerSummary
       customerId: customer.id,
       name: customer.name,
       loyaltyPoints: customer.loyaltyPoints,
-      walletBalanceZar: customer.walletBalanceZar,
       activePackCount: packCount?.count ?? 0,
       hasPushSubscription: customer.hasPushSubscription,
     },
@@ -148,50 +144,6 @@ export async function listCustomerOrders(limit = 10): Promise<ActionResult<Custo
   }));
 
   return { ok: true, data };
-}
-
-// ─── getWallet ────────────────────────────────────────────────────────────────
-
-export async function getWallet(): Promise<ActionResult<WalletView>> {
-  const session = await requireCustomer();
-  if (!session.ok) return session;
-
-  const [[customer], txRows] = await Promise.all([
-    db
-      .select({ walletZar: customers.walletZar })
-      .from(customers)
-      .where(eq(customers.id, session.customerId)),
-    db
-      .select({
-        id: walletTransactions.id,
-        deltaZar: walletTransactions.deltaZar,
-        kind: walletTransactions.kind,
-        description: walletTransactions.description,
-        at: walletTransactions.at,
-      })
-      .from(walletTransactions)
-      .where(eq(walletTransactions.customerId, session.customerId))
-      .orderBy(desc(walletTransactions.at))
-      .limit(50),
-  ]);
-
-  if (!customer) {
-    return { ok: false, code: "NOT_FOUND", message: "Customer account not found." };
-  }
-
-  return {
-    ok: true,
-    data: {
-      balanceZar: customer.walletZar,
-      transactions: txRows.map((t) => ({
-        id: t.id,
-        deltaZar: t.deltaZar,
-        kind: t.kind,
-        description: t.description,
-        at: t.at.toISOString(),
-      })),
-    },
-  };
 }
 
 // ─── getPacks ─────────────────────────────────────────────────────────────────

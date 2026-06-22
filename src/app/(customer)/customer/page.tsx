@@ -164,7 +164,7 @@ export default async function CustomerDashboard() {
         <LoyaltyCard points={summary?.loyaltyPoints ?? 0} />
 
         <div style={S.twoCol}>
-          <WalletCard balanceZar={summary?.walletBalanceZar ?? 0} />
+          <WalletCard loyaltyPoints={summary?.loyaltyPoints ?? 0} />
           <PackList activePackCount={summary?.activePackCount ?? 0} />
         </div>
 

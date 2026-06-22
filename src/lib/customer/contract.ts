@@ -23,8 +23,6 @@ export type CustomerSummary = {
   name: string;
   /** Loyalty points balance (integer points, not money). */
   loyaltyPoints: number;
-  /** Wallet balance in integer cents (ZAR). */
-  walletBalanceZar: number;
   /** Number of coffee packs that are still active (not expired, qty remaining > 0). */
   activePackCount: number;
   /** Whether a push subscription is currently saved for this customer in the DB. */
