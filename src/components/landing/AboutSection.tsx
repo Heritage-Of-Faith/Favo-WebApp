@@ -104,7 +104,7 @@ const DRINKS = [
 
 export default function AboutSection() {
   return (
-    <section style={S.section} className="landing-section-pad-l">
+    <section style={{ ...S.section, paddingBottom: 44 }} className="landing-section-pad-l">
       {/* Subtle café-theme watermark */}
       <div style={S.watermarkCup} aria-hidden="true">
         <Image

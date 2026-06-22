@@ -47,7 +47,7 @@ const S = {
   inner: {
     position: "relative" as const,
     zIndex: 1,
-    maxWidth: 1100,
+    maxWidth: 1200,
     margin: "0 auto",
   } satisfies React.CSSProperties,
   eyebrow: {
@@ -104,7 +104,7 @@ const S = {
 
 export default function TeamStrip() {
   return (
-    <section style={S.section} className="landing-section-pad-l" aria-label="The FAVO barista team">
+    <section style={{ ...S.section, paddingTop: 44 }} className="landing-section-pad-l" aria-label="The FAVO barista team">
       {/* Subtle café-theme watermark */}
       <div style={S.watermarkBean} aria-hidden="true">
         <Image
