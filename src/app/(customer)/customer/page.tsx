@@ -7,6 +7,7 @@
 import type { CSSProperties } from "react";
 import { redirect } from "next/navigation";
 import { getCustomerSummary, listCustomerOrders } from "@/server/actions/customer";
+import { getOperatingHours } from "@/server/actions/hours";
 import LoyaltyCard from "@/components/customer/LoyaltyCard";
 import WalletCard from "@/components/customer/WalletCard";
 import PackList from "@/components/customer/PackList";
@@ -18,7 +19,7 @@ export const dynamic = "force-dynamic";
 
 const S: Record<string, CSSProperties> = {
   page: {
-    backgroundColor: "var(--color-porcelain)",
+    backgroundColor: "var(--color-dark-teal)",
     minHeight: "100dvh",
     display: "flex",
     flexDirection: "column",
@@ -28,7 +29,7 @@ const S: Record<string, CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "20px clamp(20px, 5vw, 40px)",
-    borderBottom: "1px solid rgba(28,5,1,0.1)",
+    borderBottom: "1px solid rgba(247,246,242,0.1)",
   },
   wordmark: {
     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
@@ -36,7 +37,7 @@ const S: Record<string, CSSProperties> = {
     fontSize: 22,
     letterSpacing: "0.22em",
     textTransform: "uppercase",
-    color: "var(--color-coffee-bean)",
+    color: "var(--color-porcelain)",
     textDecoration: "none",
     lineHeight: 1,
   },
@@ -66,7 +67,51 @@ const S: Record<string, CSSProperties> = {
     lineHeight: 0.95,
     letterSpacing: "0.06em",
     textTransform: "uppercase",
-    color: "var(--color-coffee-bean)",
+    color: "var(--color-porcelain)",
+    margin: 0,
+  },
+  hoursBlock: {
+    padding: "16px 20px",
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(247,246,242,0.1)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  },
+  hoursLabel: {
+    fontFamily: "'DM Sans', sans-serif",
+    fontWeight: 300,
+    fontSize: 11,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase" as const,
+    color: "var(--color-cool-steel)",
+    margin: 0,
+  },
+  hoursOpen: {
+    fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+    fontWeight: 700,
+    fontSize: 22,
+    letterSpacing: "0.04em",
+    color: "var(--color-porcelain)",
+    margin: 0,
+  },
+  hoursClosed: {
+    fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+    fontWeight: 700,
+    fontSize: 22,
+    letterSpacing: "0.04em",
+    color: "var(--color-cool-steel)",
+    opacity: 0.55,
+    margin: 0,
+  },
+  earnInfo: {
+    fontFamily: "'DM Sans', sans-serif",
+    fontWeight: 400,
+    fontSize: 13,
+    lineHeight: 1.6,
+    color: "var(--color-porcelain)",
+    opacity: 0.55,
     margin: 0,
   },
   twoCol: {
@@ -86,8 +131,17 @@ export default async function CustomerDashboard() {
   }
 
   const summary = summaryRes.ok ? summaryRes.data : null;
-  const ordersRes = await listCustomerOrders(10);
+  const [ordersRes, hoursRes] = await Promise.all([
+    listCustomerOrders(10),
+    getOperatingHours().catch(() => ({ ok: false as const, code: "FETCH_ERROR", message: "Hours unavailable" })),
+  ]);
   const orders = ordersRes.ok ? ordersRes.data : [];
+
+  const todayDow = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Africa/Johannesburg" })
+  ).getDay();
+  const allHours = hoursRes.ok ? hoursRes.data : [];
+  const todayHours = allHours.find((h) => h.dayOfWeek === todayDow) ?? null;
 
   const firstName = summary?.name?.trim().split(/\s+/)[0] ?? "there";
 
@@ -104,8 +158,21 @@ export default async function CustomerDashboard() {
       <main style={S.main}>
         <h1 style={S.greeting}>Hi {firstName}</h1>
 
+        {todayHours && (
+          <section aria-label="Today's hours" style={S.hoursBlock}>
+            <p style={S.hoursLabel}>Today&apos;s hours</p>
+            {todayHours.isClosed ? (
+              <p style={S.hoursClosed}>Closed today</p>
+            ) : (
+              <p style={S.hoursOpen}>{todayHours.opensAt} – {todayHours.closesAt}</p>
+            )}
+          </section>
+        )}
+
         {/* Loyalty is the hero card (largest number on the page). */}
         <LoyaltyCard points={summary?.loyaltyPoints ?? 0} />
+
+        <p style={S.earnInfo}>Earn 5 pts per R10 spent. Redeem 100 pts = R20 off.</p>
 
         <div style={S.twoCol}>
           <WalletCard balanceZar={summary?.walletBalanceZar ?? 0} />
