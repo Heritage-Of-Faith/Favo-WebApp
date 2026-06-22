@@ -41,7 +41,7 @@ const S = {
 export default function VisitSection() {
   return (
     <section id="visit" style={{ ...S.section, scrollMarginTop: 64 }} className="landing-section-pad-l">
-      <div>
+      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         <h2 style={S.heading}>Come in.<br />We&rsquo;ll be here.</h2>
         <address style={{ display: "block", fontStyle: "normal" }}>
           <p style={S.address}>7 Duiker Street</p>
