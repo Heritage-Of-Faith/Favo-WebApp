@@ -612,7 +612,12 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
                 {/* M18 — loyalty standing for the attached customer */}
                 {customer && (
                   <div className="mb-2">
-                    <CustomerCard customer={customer} onClear={() => setCustomer(null)} />
+                    <CustomerCard
+                      customer={customer}
+                      walletBalanceZar={customer.walletZar}
+                      activePackCount={customer.activePackCount}
+                      onClear={() => setCustomer(null)}
+                    />
                   </div>
                 )}
                 <p className="favo-label text-cool-steel mb-2">Order</p>
@@ -740,7 +745,7 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
                 <div className="flex flex-col gap-3 w-full max-w-[320px]">
                   {/* M18 — loyalty redemption (L06): 100 pts → R20 off, capped at the order total.
                       Offered only at ≥100 pts and when the order is worth ≥ R20. */}
-                  {customer && customer.loyaltyPoints >= 100 && totalZar >= 2000 && redeemedData === null && walletData === null && paymentOrderId && (
+                  {customer && customer.loyaltyPoints >= 100 && amountDueZar >= 2000 && redeemedData === null && walletData === null && paymentOrderId && (
                     <button type="button" onClick={() => setRedeemOpen(true)}
                       className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-crimson-carrot/50 py-3 min-h-[48px] favo-small text-crimson-carrot hover:bg-crimson-carrot/8 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
                       <Star size={14} strokeWidth={2.25} />

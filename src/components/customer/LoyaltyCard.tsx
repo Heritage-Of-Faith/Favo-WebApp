@@ -34,10 +34,19 @@ const label: CSSProperties = {
 
 export default function LoyaltyCard({ points }: LoyaltyCardProps) {
   const safePoints = Math.max(0, Math.floor(points));
-  const canRedeem = safePoints >= REDEEM_AT;
+  const redeemableUnits = Math.floor(safePoints / REDEEM_AT);
   const intoCycle = safePoints % REDEEM_AT;
-  const toNext = canRedeem && intoCycle === 0 ? 0 : REDEEM_AT - intoCycle;
-  const progressPct = Math.min(100, (intoCycle / REDEEM_AT) * 100);
+  const progressPct = (intoCycle / REDEEM_AT) * 100;
+  const toNext = intoCycle === 0 ? REDEEM_AT : REDEEM_AT - intoCycle;
+
+  let statusMsg: string;
+  if (redeemableUnits === 0) {
+    statusMsg = `${toNext} ${toNext === 1 ? "point" : "points"} to your next R20 reward.`;
+  } else if (redeemableUnits === 1) {
+    statusMsg = `1 reward ready — R20 off. ${toNext} pts to the next.`;
+  } else {
+    statusMsg = `${redeemableUnits} × R20 rewards ready — R${redeemableUnits * 20} off total. ${toNext} pts to the next.`;
+  }
 
   return (
     <section style={card} aria-label="Loyalty points">
@@ -58,7 +67,33 @@ export default function LoyaltyCard({ points }: LoyaltyCardProps) {
         {safePoints}
       </p>
 
-      {/* Progress to the next R20 reward. */}
+      {/* Reward pips — one dot per redeemable R20 reward, up to 5 visible. */}
+      {redeemableUnits > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          {Array.from({ length: Math.min(redeemableUnits, 5) }).map((_, i) => (
+            <div
+              key={i}
+              aria-hidden="true"
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                backgroundColor: "var(--color-crimson-carrot)",
+              }}
+            />
+          ))}
+          {redeemableUnits > 5 && (
+            <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 600, color: "var(--color-crimson-carrot)" }}>
+              +{redeemableUnits - 5}
+            </span>
+          )}
+          <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--color-crimson-carrot)", marginLeft: 2 }}>
+            {redeemableUnits === 1 ? "R20 off ready" : `${redeemableUnits} × R20 ready`}
+          </span>
+        </div>
+      )}
+
+      {/* Progress bar — shows progress within the current 100-pt cycle. */}
       <div
         aria-hidden="true"
         style={{
@@ -70,7 +105,7 @@ export default function LoyaltyCard({ points }: LoyaltyCardProps) {
       >
         <div
           style={{
-            width: `${canRedeem ? 100 : progressPct}%`,
+            width: `${progressPct}%`,
             height: "100%",
             backgroundColor: "var(--color-crimson-carrot)",
           }}
@@ -88,9 +123,7 @@ export default function LoyaltyCard({ points }: LoyaltyCardProps) {
           margin: 0,
         }}
       >
-        {canRedeem
-          ? "You've got a R20 reward waiting — redeem it at the counter."
-          : `${toNext} ${toNext === 1 ? "point" : "points"} to your next R20 reward.`}
+        {statusMsg}
       </p>
 
       <a

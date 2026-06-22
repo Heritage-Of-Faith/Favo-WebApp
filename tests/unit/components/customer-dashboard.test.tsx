@@ -16,10 +16,10 @@ describe("LoyaltyCard", () => {
     expect(screen.getByText(/55 points to your next R20 reward/i)).toBeInTheDocument();
   });
 
-  it("invites redemption at the counter once at/over 100", () => {
+  it("shows reward-ready message once at/over 100", () => {
     render(<LoyaltyCard points={120} />);
     expect(screen.getByText("120")).toBeInTheDocument();
-    expect(screen.getByText(/reward waiting — redeem it at the counter/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 reward ready — R20 off/i)).toBeInTheDocument();
   });
 });
 

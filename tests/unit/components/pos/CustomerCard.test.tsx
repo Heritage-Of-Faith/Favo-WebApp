@@ -5,7 +5,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import CustomerCard from "@/components/pos/CustomerCard";
 import type { Customer } from "@/lib/types";
 
-const CUST: Customer = { id: "c1", name: "Thandeka", phone: null, email: null, loyaltyPoints: 145, walletZar: 0 };
+const CUST: Customer = { id: "c1", name: "Thandeka", phone: null, email: null, loyaltyPoints: 145, walletZar: 0, activePackCount: 0 };
 
 describe("CustomerCard", () => {
   it("always shows name and loyalty points", () => {
