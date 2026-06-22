@@ -37,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/loyalty/reconcile" as Route, label: "↳ Reconcile" },
   { href: "/admin/loyalty/liability" as Route, label: "↳ Liability" },
   { href: "/admin/audit", label: "Audit log" },
+  { href: "/pos" as Route, label: "↗ POS" },
 ];
 
 export default function Sidebar({ role }: Props) {

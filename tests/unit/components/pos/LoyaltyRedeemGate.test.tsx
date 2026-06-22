@@ -53,7 +53,7 @@ beforeEach(() => {
 });
 
 async function placeOrderAndReachPayment() {
-  render(<POSWorkspace staffName="Sam" staffId="s1" />);
+  render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
   const place = await screen.findByRole("button", { name: /place order/i });
   await act(async () => { fireEvent.click(place); });
 }

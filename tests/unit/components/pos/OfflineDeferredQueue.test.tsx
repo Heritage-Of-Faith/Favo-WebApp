@@ -52,7 +52,7 @@ beforeEach(() => {
 
 describe("M19 — offline deferred queue", () => {
   it("Place Order offline → deferred notice → confirm queues yoco_deferred", async () => {
-    render(<POSWorkspace staffName="Sam" staffId="s1" />);
+    render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
 
     const place = await screen.findByRole("button", { name: /place order/i });
     await act(async () => { fireEvent.click(place); });

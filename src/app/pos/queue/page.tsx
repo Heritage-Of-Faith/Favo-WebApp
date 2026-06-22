@@ -10,5 +10,5 @@ export default async function POSWorkspacePage() {
   if (!session) redirect("/staff/login" as Route);
   const ordersRes = await listActiveOrders();
   if (!ordersRes.ok) throw new Error(`Failed to load active orders: ${ordersRes.message}`);
-  return <POSWorkspace staffName={session.name} staffId={session.id} initialOrders={ordersRes.data} />;
+  return <POSWorkspace staffName={session.name} staffId={session.id} role={session.role} initialOrders={ordersRes.data} />;
 }
