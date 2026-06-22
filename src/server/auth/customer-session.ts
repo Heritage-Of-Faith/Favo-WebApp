@@ -19,14 +19,23 @@ export async function getCustomerSession(): Promise<string | null> {
     }
     return null;
   }
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  let userId: string | null;
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    userId = user?.id ?? null;
+  } catch {
+    return null;
+  }
+  if (!userId) return null;
 
-  const [row] = await db
-    .select({ id: customers.id })
-    .from(customers)
-    .where(eq(customers.authId, user.id));
-
-  return row?.id ?? null;
+  try {
+    const [row] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.authId, userId));
+    return row?.id ?? null;
+  } catch {
+    return null;
+  }
 }
