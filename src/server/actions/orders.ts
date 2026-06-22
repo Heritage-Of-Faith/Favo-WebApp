@@ -685,7 +685,7 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
 }
 
 /** Bootstrap the POS queue on page load — returns non-terminal orders from the last 48 h. */
-export async function listActiveOrders(): Promise<ActionResult<{ orderId: string; state: OrderState; lastUpdatedAt: string }[]>> {
+export async function listActiveOrders(): Promise<ActionResult<{ orderId: string; state: OrderState; lastUpdatedAt: string; customerName: string | null }[]>> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
 
@@ -694,8 +694,14 @@ export async function listActiveOrders(): Promise<ActionResult<{ orderId: string
   const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
   const rows = await db
-    .select({ id: orders.id, state: orders.state, placedAt: orders.placedAt })
+    .select({
+      id: orders.id,
+      state: orders.state,
+      placedAt: orders.placedAt,
+      customerName: customers.name,
+    })
     .from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id))
     .where(and(notInArray(orders.state, ["collected", "cancelled"]), gte(orders.placedAt, cutoff)))
     .orderBy(orders.placedAt);
 
@@ -705,6 +711,7 @@ export async function listActiveOrders(): Promise<ActionResult<{ orderId: string
       orderId: r.id,
       state: r.state,
       lastUpdatedAt: r.placedAt.toISOString(),
+      customerName: r.customerName ?? null,
     })),
   };
 }

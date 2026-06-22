@@ -844,7 +844,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                     <span className={["block h-2 w-2 rounded-full shrink-0", STATE_DOT[o.state]].join(" ")} />
                     <div>
                       <p className="favo-small text-coffee-bean font-semibold leading-tight">
-                        #{o.orderId.slice(-6).toUpperCase()}
+                        {o.customerName ?? "Walk-in"}
+                        <span className="favo-caption text-cool-steel font-normal ml-1.5">
+                          #{o.orderId.slice(-6).toUpperCase()}
+                        </span>
                       </p>
                       <p className="favo-caption text-cool-steel">{formatDate(new Date(o.lastUpdatedAt))}</p>
                     </div>
