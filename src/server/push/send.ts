@@ -53,7 +53,7 @@ export async function sendHoursPostedPush(
   const payload = JSON.stringify({
     title: "FAVO hours posted ☕",
     body,
-    url: "/loyalty",
+    url: "/customer",
   });
   try {
     await webpush.sendNotification(subscription, payload);
@@ -82,7 +82,7 @@ export async function sendPointsEarnedPush(
   const payload = JSON.stringify({
     title: "Points earned! ☕",
     body: `You earned ${pointsEarned} pts. Balance: ${newBalance} pts.`,
-    url: "/loyalty",
+    url: "/customer",
   });
   try {
     await webpush.sendNotification(subscription, payload);
