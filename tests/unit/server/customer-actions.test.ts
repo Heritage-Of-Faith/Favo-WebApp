@@ -63,7 +63,7 @@ describe("getCustomerSummary", () => {
     if (!res.ok) expect(res.code).toBe("UNAUTHORIZED");
   });
 
-  it("returns summary with loyalty points and wallet balance", async () => {
+  it("returns summary with loyalty points and pack count", async () => {
     const { getCustomerSession } = await import("@/server/auth/customer-session");
     vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
 
@@ -72,7 +72,7 @@ describe("getCustomerSummary", () => {
     // first select → customer row
     vi.mocked(db.select)
       .mockReturnValueOnce(makeSelectChain([
-        { id: CUSTOMER_ID, name: "Louis", loyaltyPoints: 45, walletBalanceZar: 2600 },
+        { id: CUSTOMER_ID, name: "Louis", loyaltyPoints: 45 },
       ]) as unknown as ReturnType<typeof db.select>)
       // second select → active pack count
       .mockReturnValueOnce({
@@ -88,7 +88,6 @@ describe("getCustomerSummary", () => {
     if (!res.ok) return;
     expect(res.data.name).toBe("Louis");
     expect(res.data.loyaltyPoints).toBe(45);
-    expect(res.data.walletBalanceZar).toBe(2600);
     expect(res.data.activePackCount).toBe(2);
   });
 
@@ -167,62 +166,6 @@ describe("listCustomerOrders", () => {
     expect(order.completedAt).toBe(completed.toISOString());
     expect(order.items).toHaveLength(1);
     expect(order.items[0]!.menuItemName).toBe("Cappuccino");
-  });
-});
-
-// ─── getWallet ────────────────────────────────────────────────────────────────
-
-describe("getWallet", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("returns UNAUTHORIZED when no session", async () => {
-    const { getCustomerSession } = await import("@/server/auth/customer-session");
-    vi.mocked(getCustomerSession).mockResolvedValue(null);
-    const { getWallet } = await import("@/server/actions/customer");
-    const res = await getWallet();
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.code).toBe("UNAUTHORIZED");
-  });
-
-  it("returns wallet balance and transaction history", async () => {
-    const { getCustomerSession } = await import("@/server/auth/customer-session");
-    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
-
-    const { db } = await import("@db/index");
-    const txAt = new Date("2026-06-10T09:00:00Z");
-
-    vi.mocked(db.select)
-      .mockReturnValueOnce(makeSelectChain([{ walletZar: 2600 }]) as unknown as ReturnType<typeof db.select>)
-      .mockReturnValueOnce(makeSelectChain([
-        { id: "wtx-1", deltaZar: 20000, kind: "topup", description: "Counter top-up", at: txAt },
-        { id: "wtx-2", deltaZar: -17400, kind: "spend", description: "Coffees", at: txAt },
-      ]) as unknown as ReturnType<typeof db.select>);
-
-    const { getWallet } = await import("@/server/actions/customer");
-    const res = await getWallet();
-
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.data.balanceZar).toBe(2600);
-    expect(res.data.transactions).toHaveLength(2);
-    expect(res.data.transactions[0]!.deltaZar).toBe(20000);
-    expect(res.data.transactions[0]!.kind).toBe("topup");
-    expect(res.data.transactions[0]!.at).toBe(txAt.toISOString());
-  });
-
-  it("returns NOT_FOUND when customer row missing", async () => {
-    const { getCustomerSession } = await import("@/server/auth/customer-session");
-    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
-
-    const { db } = await import("@db/index");
-    vi.mocked(db.select)
-      .mockReturnValueOnce(makeSelectChain([]) as unknown as ReturnType<typeof db.select>)
-      .mockReturnValueOnce(makeSelectChain([]) as unknown as ReturnType<typeof db.select>);
-
-    const { getWallet } = await import("@/server/actions/customer");
-    const res = await getWallet();
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.code).toBe("NOT_FOUND");
   });
 });
 

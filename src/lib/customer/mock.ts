@@ -92,7 +92,6 @@ export async function getCustomerSummary(): Promise<ActionResult<CustomerSummary
     customerId: MOCK_CUSTOMER.id,
     name: MOCK_CUSTOMER.name,
     loyaltyPoints: 45, // N13 acceptance: "45 loyalty points"
-    walletBalanceZar: MOCK_WALLET.balanceZar,
     activePackCount: MOCK_PACKS.active.length,
     hasPushSubscription: false,
   });

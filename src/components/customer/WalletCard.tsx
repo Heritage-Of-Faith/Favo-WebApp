@@ -1,11 +1,12 @@
 // WalletCard — owner: Nikao (task N13, AT-65)
-// Presentational + server-safe. Read-only: top-ups happen at the counter (L05/L16).
+// Presentational + server-safe. Shows the monetary value of the customer's loyalty points.
+// Formula: 100 pts = R20 (whole redemption units only, matching REDEEM_AT in LoyaltyCard).
 
 import type { CSSProperties } from "react";
 import { formatZar } from "@/lib/format";
 
 export interface WalletCardProps {
-  balanceZar: number;
+  loyaltyPoints: number;
 }
 
 const card: CSSProperties = {
@@ -28,10 +29,13 @@ const label: CSSProperties = {
   margin: 0,
 };
 
-export default function WalletCard({ balanceZar }: WalletCardProps) {
+export default function WalletCard({ loyaltyPoints }: WalletCardProps) {
+  const valueZar = Math.floor(loyaltyPoints / 100) * 2000;
+  const canRedeem = loyaltyPoints >= 100;
+
   return (
-    <section style={card} aria-label="Wallet balance">
-      <p style={label}>Wallet</p>
+    <section style={card} aria-label="Points value">
+      <p style={label}>Points value</p>
       <p
         style={{
           fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
@@ -42,7 +46,7 @@ export default function WalletCard({ balanceZar }: WalletCardProps) {
           margin: 0,
         }}
       >
-        {formatZar(balanceZar)}
+        {formatZar(valueZar)}
       </p>
       <p
         style={{
@@ -55,7 +59,7 @@ export default function WalletCard({ balanceZar }: WalletCardProps) {
           margin: 0,
         }}
       >
-        Top up at the counter.
+        {canRedeem ? "Redeem at the counter." : "Not enough points to redeem yet."}
       </p>
     </section>
   );

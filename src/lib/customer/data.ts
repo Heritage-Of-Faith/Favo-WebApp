@@ -8,7 +8,6 @@
 export {
   getCustomerSummary,
   listCustomerOrders,
-  getWallet,
   getPacks,
   updateCustomerProfile,
 } from "@/server/actions/customer";
@@ -16,11 +15,7 @@ export {
 export type {
   CustomerSummary,
   CustomerOrder,
-  WalletView,
-  WalletTransaction,
-  WalletTransactionKind,
   PacksView,
   CoffeePack,
   CustomerProfileInput,
-  CustomerDataApi,
 } from "./contract";

@@ -221,66 +221,6 @@ function findLoyaltyInsert(insertMock: ReturnType<typeof vi.fn>) {
   });
 }
 
-// ─── walletSpend earn scenarios ───────────────────────────────────────────────
-
-describe("earn-scenarios — walletSpend earn on spend amount", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("S1: R50 order, wallet spends R20 → loyaltyTransactions inserted (10 pts)", async () => {
-    const { db, __txMock } = await import("@db/index") as unknown as {
-      db: { select: ReturnType<typeof vi.fn>; transaction: ReturnType<typeof vi.fn> };
-      __txMock: { insert: ReturnType<typeof vi.fn> };
-    };
-    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder({ totalZar: 5000 })],
-      [mockCustomer(20000)],
-    ]);
-    const { walletSpend } = await import("@/server/actions/wallet");
-    const res = await walletSpend(CUSTOMER_ID, ORDER_ID, 2000);
-    expect(res.ok).toBe(true);
-    // earnPoints(2000) = floor(2000/1000)*5 = 10 > 0 → must insert loyalty row
-    expect(findLoyaltyInsert(vi.mocked(__txMock.insert))).toBeDefined();
-  });
-
-  it("S2: R5 order (500 cents wallet spend) → earnPoints(500)=0 → no loyaltyTransactions insert", async () => {
-    const { db, __txMock } = await import("@db/index") as unknown as {
-      db: { select: ReturnType<typeof vi.fn> };
-      __txMock: { insert: ReturnType<typeof vi.fn> };
-    };
-    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder({ totalZar: 500 })],
-      [mockCustomer(5000)],
-    ]);
-    const { walletSpend } = await import("@/server/actions/wallet");
-    const res = await walletSpend(CUSTOMER_ID, ORDER_ID, 500);
-    expect(res.ok).toBe(true);
-    // earnPoints(500) = 0 — the `if (pointsEarned > 0)` guard must suppress the insert
-    expect(findLoyaltyInsert(vi.mocked(__txMock.insert))).toBeUndefined();
-  });
-
-  it("S3: R30 full wallet payment → earns 15 pts, newTotalZar=0, Yoco not called", async () => {
-    const { db } = await import("@db/index");
-    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [mockOrder({ totalZar: 3000 })],
-      [mockCustomer(30000)],
-    ]);
-    const { createPaymentIntent } = await import("@/server/yoco/client");
-    const { walletSpend } = await import("@/server/actions/wallet");
-    const res = await walletSpend(CUSTOMER_ID, ORDER_ID, 3000);
-    expect(res.ok).toBe(true);
-    if (res.ok) {
-      expect(res.data.newTotalZar).toBe(0);
-      expect(res.data.clientSecret).toBeNull();
-    }
-    // No Yoco call for zero-remainder orders
-    expect(vi.mocked(createPaymentIntent)).not.toHaveBeenCalled();
-    // Audit reports earnPoints(3000) = floor(3)*5 = 15 pts
-    const { writeAudit } = await import("@/server/audit");
-    const auditCall = vi.mocked(writeAudit).mock.calls[0][0];
-    expect(auditCall.after).toMatchObject({ pointsEarned: 15 });
-  });
-});
-
 // ─── redeemPack earn-exclusion scenarios ─────────────────────────────────────
 
 describe("earn-scenarios — redeemPack does not earn loyalty points", () => {
