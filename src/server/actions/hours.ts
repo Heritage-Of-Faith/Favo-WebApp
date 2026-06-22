@@ -5,12 +5,14 @@
 // setOperatingHours: admin+ upsert, audit-logged
 // Docs: docs/API.md · BUSINESS_RULES.md L04
 
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { operatingHours } from "@db/schema";
+import { operatingHours, customers } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
+import { sendHoursPostedPush } from "@/server/push/send";
+import { isValidPushSubscription } from "@/server/push/payload";
 import type { ActionResult, OperatingHour } from "@/lib/types";
 
 /**
@@ -92,6 +94,25 @@ export async function setOperatingHours(
     entityId: String(row.id),
     after: { dayOfWeek: data.dayOfWeek, openTime: data.openTime, closeTime: data.closeTime, isClosed: data.isClosed },
   });
+
+  // Fire push to all subscribers if today's hours were just posted (fire-and-forget).
+  const todayDow = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Africa/Johannesburg" })
+  ).getDay();
+  if (data.dayOfWeek === todayDow) {
+    db.select({ id: customers.id, pushSubscription: customers.pushSubscription })
+      .from(customers)
+      .where(isNotNull(customers.pushSubscription))
+      .then((subs) => {
+        for (const sub of subs) {
+          if (!isValidPushSubscription(sub.pushSubscription)) continue;
+          sendHoursPostedPush(sub.pushSubscription, data.openTime, data.closeTime, data.isClosed).catch(
+            (err) => console.error("[push] sendHoursPostedPush failed", { customerId: sub.id }, err)
+          );
+        }
+      })
+      .catch((err) => console.error("[push] failed to fetch push subscriptions for hours notify", err));
+  }
 
   return {
     ok: true,

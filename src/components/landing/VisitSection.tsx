@@ -25,7 +25,7 @@ const S = {
     letterSpacing: "0.06em",
     textTransform: "uppercase" as const,
     color: "var(--color-coffee-bean)",
-    marginBottom: 8,
+    margin: "0 0 8px",
     fontStyle: "normal",
   } satisfies React.CSSProperties,
   addressSub: {
@@ -33,7 +33,7 @@ const S = {
     fontWeight: 400,
     fontSize: 14,
     color: "var(--color-cool-steel)",
-    marginBottom: 40,
+    margin: "0 0 40px",
     fontStyle: "normal",
   } satisfies React.CSSProperties,
 } as const;
@@ -43,7 +43,7 @@ export default function VisitSection() {
     <section id="visit" style={{ ...S.section, scrollMarginTop: 64 }} className="landing-section-pad-l">
       <div>
         <h2 style={S.heading}>Come in.<br />We&rsquo;ll be here.</h2>
-        <address style={{ display: "block" }}>
+        <address style={{ display: "block", fontStyle: "normal" }}>
           <p style={S.address}>7 Duiker Street</p>
           <p style={S.addressSub}>Reyno Ridge · Emalahleni · 1049</p>
         </address>
