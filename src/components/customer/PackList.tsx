@@ -9,8 +9,8 @@ export interface PackListProps {
 }
 
 const card: CSSProperties = {
-  backgroundColor: "rgba(28,5,1,0.05)",
-  border: "1px solid rgba(28,5,1,0.12)",
+  backgroundColor: "rgba(255,255,255,0.08)",
+  border: "1px solid rgba(247,246,242,0.12)",
   borderRadius: 2,
   padding: 24,
   display: "flex",
@@ -39,7 +39,7 @@ export default function PackList({ activePackCount }: PackListProps) {
           fontWeight: 900,
           fontSize: "clamp(2rem, 7vw, 2.75rem)",
           lineHeight: 0.95,
-          color: "var(--color-coffee-bean)",
+          color: "var(--color-porcelain)",
           margin: 0,
         }}
       >
@@ -51,7 +51,7 @@ export default function PackList({ activePackCount }: PackListProps) {
           fontWeight: 400,
           fontSize: 13,
           lineHeight: 1.6,
-          color: "var(--color-coffee-bean)",
+          color: "var(--color-porcelain)",
           opacity: 0.65,
           margin: 0,
         }}
