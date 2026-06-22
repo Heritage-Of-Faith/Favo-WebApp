@@ -330,29 +330,39 @@ export async function listCustomerLoyaltyHistory(
   const session = await requireCustomer();
   if (!session.ok) return { ok: false, code: "UNAUTHORIZED", message: "Not signed in." };
 
-  const [[customer], txRows, [totalRow]] = await Promise.all([
-    db
-      .select({ loyaltyPoints: customers.loyaltyPoints })
-      .from(customers)
-      .where(eq(customers.id, session.customerId)),
-    db
-      .select({
-        id: loyaltyTransactions.id,
-        delta: loyaltyTransactions.delta,
-        kind: loyaltyTransactions.kind,
-        reason: loyaltyTransactions.reason,
-        at: loyaltyTransactions.at,
-      })
-      .from(loyaltyTransactions)
-      .where(eq(loyaltyTransactions.customerId, session.customerId))
-      .orderBy(desc(loyaltyTransactions.at))
-      .limit(HISTORY_PAGE_SIZE)
-      .offset(page * HISTORY_PAGE_SIZE),
-    db
-      .select({ total: count() })
-      .from(loyaltyTransactions)
-      .where(eq(loyaltyTransactions.customerId, session.customerId)),
-  ]);
+  let queryResult: [
+    [{ loyaltyPoints: number } | undefined],
+    { id: string; delta: number; kind: string; reason: string | null; at: Date }[],
+    [{ total: number } | undefined],
+  ];
+  try {
+    queryResult = await Promise.all([
+      db
+        .select({ loyaltyPoints: customers.loyaltyPoints })
+        .from(customers)
+        .where(eq(customers.id, session.customerId)),
+      db
+        .select({
+          id: loyaltyTransactions.id,
+          delta: loyaltyTransactions.delta,
+          kind: loyaltyTransactions.kind,
+          reason: loyaltyTransactions.reason,
+          at: loyaltyTransactions.at,
+        })
+        .from(loyaltyTransactions)
+        .where(eq(loyaltyTransactions.customerId, session.customerId))
+        .orderBy(desc(loyaltyTransactions.at))
+        .limit(HISTORY_PAGE_SIZE)
+        .offset(page * HISTORY_PAGE_SIZE),
+      db
+        .select({ total: count() })
+        .from(loyaltyTransactions)
+        .where(eq(loyaltyTransactions.customerId, session.customerId)),
+    ]) as typeof queryResult;
+  } catch {
+    return { ok: false, code: "DB_ERROR", message: "Could not load loyalty history." };
+  }
+  const [[customer], txRows, [totalRow]] = queryResult;
 
   if (!customer) {
     return { ok: false, code: "NOT_FOUND", message: "Customer account not found." };
