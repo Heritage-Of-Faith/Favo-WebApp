@@ -1,6 +1,6 @@
 "use server";
 
-import { or, ilike, eq, desc, asc } from "drizzle-orm";
+import { or, ilike, eq, desc, asc, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customers, orders, loyaltyTransactions, walletTransactions, coffeePacks, menuItems } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -23,7 +23,21 @@ export async function searchCustomer(
   }
 
   const rows = await db
-    .select()
+    .select({
+      id: customers.id,
+      name: customers.name,
+      phone: customers.phone,
+      email: customers.email,
+      loyaltyPoints: customers.loyaltyPoints,
+      walletZar: customers.walletZar,
+      activePackCount: sql<number>`(
+        SELECT COUNT(*)::int
+        FROM coffee_packs
+        WHERE coffee_packs.customer_id = ${customers.id}
+          AND coffee_packs.qty_remaining > 0
+          AND coffee_packs.expires_at > NOW()
+      )`.mapWith(Number),
+    })
     .from(customers)
     .where(or(ilike(customers.name, `%${q}%`), eq(customers.phone, q)))
     .limit(MAX_RESULTS);
@@ -35,6 +49,7 @@ export async function searchCustomer(
     email: c.email,
     loyaltyPoints: c.loyaltyPoints,
     walletZar: c.walletZar,
+    activePackCount: c.activePackCount,
   }));
 
   return { ok: true, data: results };

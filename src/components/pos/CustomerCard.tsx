@@ -5,14 +5,8 @@
  *
  * Shows the attached customer's loyalty standing at a glance: loyalty points
  * always, plus wallet balance and active-pack count when available.
- *
- * BACKEND GAP: `searchCustomer` (the only staff-callable customer lookup) returns
- * just `{ id, name, phone, email, loyaltyPoints }`. There is no barista-callable
- * action that returns a customer's wallet balance or active-pack count by id —
- * `getCustomerSummary`/`getWallet`/`getPacks` are all customer-session-scoped.
- * So `walletBalanceZar` and `activePackCount` are optional here and render only
- * if a caller can supply them. Wiring them up needs a backend follow-up
- * (e.g. a staff-callable `getCustomerSummaryById`). Tracked separately.
+ * `walletBalanceZar` and `activePackCount` are optional so callers that only
+ * have partial data don't need to supply everything.
  */
 
 import { Star, Wallet, Package, X } from "lucide-react";

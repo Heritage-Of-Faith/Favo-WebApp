@@ -41,13 +41,13 @@ describe("draftOrder store", () => {
   });
 
   it("setCustomer stores and retrieves a customer", () => {
-    const c = { id: "c1", name: "Louis", phone: "0821234567", email: null, loyaltyPoints: 50, walletZar: 0 };
+    const c = { id: "c1", name: "Louis", phone: "0821234567", email: null, loyaltyPoints: 50, walletZar: 0, activePackCount: 0 };
     store().setCustomer(c);
     expect(store().customer).toEqual(c);
   });
 
   it("setCustomer(null) clears the customer", () => {
-    const c = { id: "c1", name: "Louis", phone: null, email: null, loyaltyPoints: 0, walletZar: 0 };
+    const c = { id: "c1", name: "Louis", phone: null, email: null, loyaltyPoints: 0, walletZar: 0, activePackCount: 0 };
     store().setCustomer(c);
     store().setCustomer(null);
     expect(store().customer).toBeNull();
@@ -122,7 +122,7 @@ describe("draftOrder store", () => {
 
   it("reset returns to initial state", () => {
     store().addItem(item1);
-    store().setCustomer({ id: "c1", name: "Louis", phone: null, email: null, loyaltyPoints: 0, walletZar: 0 });
+    store().setCustomer({ id: "c1", name: "Louis", phone: null, email: null, loyaltyPoints: 0, walletZar: 0, activePackCount: 0 });
     store().setOrderCreated("ord-1", "secret");
     store().reset();
     const s = store();

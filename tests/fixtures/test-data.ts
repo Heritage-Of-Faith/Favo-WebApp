@@ -7,6 +7,7 @@ export const testCustomer: Customer = {
   email: "louis@example.com",
   loyaltyPoints: 50,
   walletZar: 0,
+  activePackCount: 0,
 };
 
 export const testStaff: Staff = {

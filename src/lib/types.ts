@@ -40,6 +40,7 @@ export type Customer = {
   email: string | null;
   loyaltyPoints: number;
   walletZar: number;
+  activePackCount: number;
 };
 
 export type MenuCustomisation = {
