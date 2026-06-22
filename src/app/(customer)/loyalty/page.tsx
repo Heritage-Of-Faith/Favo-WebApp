@@ -261,7 +261,7 @@ export default async function LoyaltyPage({
 
   const [res, hoursRes] = await Promise.all([
     listCustomerLoyaltyHistory(page),
-    getOperatingHours(),
+    getOperatingHours().catch(() => ({ ok: false as const, code: "FETCH_ERROR", message: "Hours unavailable" })),
   ]);
 
   const todayDow = new Date(

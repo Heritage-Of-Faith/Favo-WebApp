@@ -21,20 +21,24 @@ import type { ActionResult, OperatingHour } from "@/lib/types";
  * and customer PWA.
  */
 export async function getOperatingHours(): Promise<ActionResult<OperatingHour[]>> {
-  const rows = await db
-    .select()
-    .from(operatingHours)
-    .orderBy(asc(operatingHours.dayOfWeek));
+  try {
+    const rows = await db
+      .select()
+      .from(operatingHours)
+      .orderBy(asc(operatingHours.dayOfWeek));
 
-  return {
-    ok: true,
-    data: rows.map((r) => ({
-      dayOfWeek: r.dayOfWeek,
-      opensAt: r.openTime,
-      closesAt: r.closeTime,
-      isClosed: r.isClosed,
-    })),
-  };
+    return {
+      ok: true,
+      data: rows.map((r) => ({
+        dayOfWeek: r.dayOfWeek,
+        opensAt: r.openTime,
+        closesAt: r.closeTime,
+        isClosed: r.isClosed,
+      })),
+    };
+  } catch {
+    return { ok: false, code: "DB_ERROR", message: "Could not load operating hours." };
+  }
 }
 
 const setHoursSchema = z.object({
