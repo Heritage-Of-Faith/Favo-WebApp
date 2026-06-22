@@ -37,7 +37,7 @@ const S: Record<string, CSSProperties> = {
     fontSize: 22,
     letterSpacing: "0.22em",
     textTransform: "uppercase",
-    color: "var(--color-porcelain)",
+    color: "var(--color-crimson-carrot)",
     textDecoration: "none",
     lineHeight: 1,
   },
@@ -93,7 +93,7 @@ const S: Record<string, CSSProperties> = {
     fontWeight: 700,
     fontSize: 22,
     letterSpacing: "0.04em",
-    color: "var(--color-porcelain)",
+    color: "var(--color-crimson-carrot)",
     margin: 0,
   },
   hoursClosed: {
@@ -102,15 +102,6 @@ const S: Record<string, CSSProperties> = {
     fontSize: 22,
     letterSpacing: "0.04em",
     color: "var(--color-cool-steel)",
-    opacity: 0.55,
-    margin: 0,
-  },
-  earnInfo: {
-    fontFamily: "'DM Sans', sans-serif",
-    fontWeight: 400,
-    fontSize: 13,
-    lineHeight: 1.6,
-    color: "var(--color-porcelain)",
     opacity: 0.55,
     margin: 0,
   },
@@ -171,8 +162,6 @@ export default async function CustomerDashboard() {
 
         {/* Loyalty is the hero card (largest number on the page). */}
         <LoyaltyCard points={summary?.loyaltyPoints ?? 0} />
-
-        <p style={S.earnInfo}>Earn 5 pts per R10 spent. Redeem 100 pts = R20 off.</p>
 
         <div style={S.twoCol}>
           <WalletCard balanceZar={summary?.walletBalanceZar ?? 0} />

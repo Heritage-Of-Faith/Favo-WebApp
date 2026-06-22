@@ -126,6 +126,22 @@ export default function LoyaltyCard({ points }: LoyaltyCardProps) {
         {statusMsg}
       </p>
 
+      <p
+        style={{
+          fontFamily: "'DM Sans', sans-serif",
+          fontWeight: 400,
+          fontSize: 12,
+          lineHeight: 1.6,
+          color: "var(--color-porcelain)",
+          opacity: 0.5,
+          margin: 0,
+          paddingTop: 12,
+          borderTop: "1px solid rgba(247,246,242,0.08)",
+        }}
+      >
+        Earn 5 pts per R10 spent. Redeem 100 pts = R20 off.
+      </p>
+
       <a
         href="/loyalty"
         style={{
@@ -134,7 +150,7 @@ export default function LoyaltyCard({ points }: LoyaltyCardProps) {
           fontSize: 12,
           letterSpacing: "0.08em",
           textTransform: "uppercase",
-          color: "var(--color-cool-steel)",
+          color: "var(--color-crimson-carrot)",
           textDecoration: "none",
           alignSelf: "flex-start",
         }}
