@@ -11,6 +11,7 @@ import LoyaltyCard from "@/components/customer/LoyaltyCard";
 import WalletCard from "@/components/customer/WalletCard";
 import PackList from "@/components/customer/PackList";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
+import PushOptIn from "@/components/customer/PushOptIn";
 import WelcomeModal from "@/components/customer/WelcomeModal";
 
 // Always render fresh data (hours/loyalty change at the counter): no static cache.
@@ -114,6 +115,12 @@ export default async function CustomerDashboard() {
 
         <OrderHistoryList orders={orders} />
 
+        {summary && (
+          <PushOptIn
+            customerId={summary.customerId}
+            serverHasSubscription={summary.hasPushSubscription}
+          />
+        )}
       </main>
 
       {/* First-login notification prompt — fires once, then never again. */}
