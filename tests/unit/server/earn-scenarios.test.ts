@@ -264,59 +264,59 @@ describe("earn-scenarios — redeemPack does not earn loyalty points", () => {
   });
 });
 
-// ─── transitionOrder earn at 'ready' ─────────────────────────────────────────
+// ─── transitionOrder earn at 'in_progress' (payment confirmed) ───────────────
 
-describe("earn-scenarios — transitionOrder earn at ready", () => {
+describe("earn-scenarios — transitionOrder earn at in_progress", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("S6: card-only order totalZar=3500 → ready inserts loyaltyTransactions (15 pts)", async () => {
+  it("S6: card-only order totalZar=3500 → in_progress inserts loyaltyTransactions (15 pts)", async () => {
     const { db, __txMock } = await import("@db/index") as unknown as {
       db: { select: ReturnType<typeof vi.fn>; transaction: ReturnType<typeof vi.fn> };
       __txMock: { insert: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> };
     };
-    const orderRow = mockOrder({ totalZar: 3500, state: "in_progress" });
+    const orderRow = mockOrder({ totalZar: 3500, state: "ordered" });
 
     // Outer existence check
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [{ id: ORDER_ID }],
     ]);
-    // Inner tx reads: SELECT FOR UPDATE + payments check + customer push lookup
+    // Inner tx reads: SELECT FOR UPDATE + customer lookup (no payment gate — YOCO_SECRET_KEY not set)
     setupTxSelectSequence(__txMock as unknown as { select: ReturnType<typeof vi.fn> }, [
       [orderRow],                                          // SELECT FOR UPDATE
-      [{ name: "Louis", pushSubscription: null }],        // customer push lookup
+      [{ name: "Louis", pushSubscription: null, loyaltyPoints: 0 }], // customer loyalty lookup
     ]);
 
     const { canTransition } = await import("@/server/orders/state-machine");
     vi.mocked(canTransition).mockReturnValue(true);
 
     const { transitionOrder } = await import("@/server/actions/orders");
-    await transitionOrder(ORDER_ID, "ready");
+    await transitionOrder(ORDER_ID, "in_progress");
 
     // earnPoints(3500) = floor(3.5)*5 = 15 > 0 → must insert
     expect(findLoyaltyInsert(vi.mocked(__txMock.insert))).toBeDefined();
   });
 
-  it("S7: pack-reduced total (totalZar=2000 by the time order hits ready) → earns on 2000, not original total", async () => {
+  it("S7: pack-reduced total (totalZar=2000 at payment time) → earns on 2000, not original total", async () => {
     const { db, __txMock } = await import("@db/index") as unknown as {
       db: { select: ReturnType<typeof vi.fn> };
       __txMock: { insert: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> };
     };
     // The pack already reduced totalZar to 2000 before transitionOrder is called
-    const orderRow = mockOrder({ totalZar: 2000, state: "in_progress" });
+    const orderRow = mockOrder({ totalZar: 2000, state: "ordered" });
 
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [{ id: ORDER_ID }],
     ]);
     setupTxSelectSequence(__txMock as unknown as { select: ReturnType<typeof vi.fn> }, [
       [orderRow],
-      [{ name: "Louis", pushSubscription: null }],
+      [{ name: "Louis", pushSubscription: null, loyaltyPoints: 0 }],
     ]);
 
     const { canTransition } = await import("@/server/orders/state-machine");
     vi.mocked(canTransition).mockReturnValue(true);
 
     const { transitionOrder } = await import("@/server/actions/orders");
-    await transitionOrder(ORDER_ID, "ready");
+    await transitionOrder(ORDER_ID, "in_progress");
 
     // earnPoints(2000) = floor(2)*5 = 10 > 0 → must insert loyalty row
     // (earnPoints(4500) would have been 20 — this confirms we earn on current total)
@@ -328,21 +328,21 @@ describe("earn-scenarios — transitionOrder earn at ready", () => {
       db: { select: ReturnType<typeof vi.fn> };
       __txMock: { insert: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> };
     };
-    const orderRow = mockOrder({ totalZar: 1000, state: "in_progress" });
+    const orderRow = mockOrder({ totalZar: 1000, state: "ordered" });
 
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [{ id: ORDER_ID }],
     ]);
     setupTxSelectSequence(__txMock as unknown as { select: ReturnType<typeof vi.fn> }, [
       [orderRow],
-      [{ name: "Louis", pushSubscription: null }],
+      [{ name: "Louis", pushSubscription: null, loyaltyPoints: 0 }],
     ]);
 
     const { canTransition } = await import("@/server/orders/state-machine");
     vi.mocked(canTransition).mockReturnValue(true);
 
     const { transitionOrder } = await import("@/server/actions/orders");
-    await transitionOrder(ORDER_ID, "ready");
+    await transitionOrder(ORDER_ID, "in_progress");
 
     // earnPoints(1000) = floor(1)*5 = 5 > 0 → loyalty row must be inserted
     expect(findLoyaltyInsert(vi.mocked(__txMock.insert))).toBeDefined();
@@ -353,21 +353,20 @@ describe("earn-scenarios — transitionOrder earn at ready", () => {
       db: { select: ReturnType<typeof vi.fn> };
       __txMock: { insert: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> };
     };
-    const orderRow = mockOrder({ totalZar: 0, state: "in_progress" });
+    const orderRow = mockOrder({ totalZar: 0, state: "ordered" });
 
     setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
       [{ id: ORDER_ID }],
     ]);
     setupTxSelectSequence(__txMock as unknown as { select: ReturnType<typeof vi.fn> }, [
       [orderRow],
-      [{ name: "Louis", pushSubscription: null }],
     ]);
 
     const { canTransition } = await import("@/server/orders/state-machine");
     vi.mocked(canTransition).mockReturnValue(true);
 
     const { transitionOrder } = await import("@/server/actions/orders");
-    await transitionOrder(ORDER_ID, "ready");
+    await transitionOrder(ORDER_ID, "in_progress");
 
     // earnPoints(0) = 0 → the `if (points > 0)` guard must prevent any loyalty insert
     expect(findLoyaltyInsert(vi.mocked(__txMock.insert))).toBeUndefined();
