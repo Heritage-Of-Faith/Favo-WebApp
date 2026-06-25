@@ -263,7 +263,7 @@ function makeOrder(overrides: Record<string, unknown> = {}) {
   return {
     id: ORDER_ID,
     customerId: CUSTOMER_ID,
-    state: "in_progress",
+    state: "ordered",
     totalZar: 5000, // R50 → earnPoints(5000) > 0
     isStaffDiscount: false,
     completedAt: null,
@@ -305,7 +305,7 @@ function setupTxSelectSequence(
   });
 }
 
-describe("transitionOrder → ready: push notification for earned points", () => {
+describe("transitionOrder → in_progress: push notification for earned points", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("calls sendPointsEarnedPush when customer earns points and has a push subscription", async () => {
@@ -328,7 +328,7 @@ describe("transitionOrder → ready: push notification for earned points", () =>
     const { sendPointsEarnedPush } = await import("@/server/push/send");
     const { transitionOrder } = await import("@/server/actions/orders");
 
-    await transitionOrder(ORDER_ID, "ready");
+    await transitionOrder(ORDER_ID, "in_progress");
 
     // Give microtasks a chance to settle (fire-and-forget)
     await new Promise((r) => setTimeout(r, 0));
@@ -357,7 +357,7 @@ describe("transitionOrder → ready: push notification for earned points", () =>
     const { sendPointsEarnedPush } = await import("@/server/push/send");
     const { transitionOrder } = await import("@/server/actions/orders");
 
-    await transitionOrder(ORDER_ID, "ready");
+    await transitionOrder(ORDER_ID, "in_progress");
     await new Promise((r) => setTimeout(r, 0));
 
     expect(vi.mocked(sendPointsEarnedPush)).not.toHaveBeenCalled();

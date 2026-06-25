@@ -19,7 +19,7 @@ export async function sendOrderReadyPush(
   customerName?: string
 ): Promise<boolean> {
   initVapid();
-  const payload = JSON.stringify(buildOrderReadyPayload(orderId, customerName));
+  const payload = JSON.stringify({ ...buildOrderReadyPayload(orderId, customerName), tag: "favo-order-ready" });
   try {
     await webpush.sendNotification(subscription, payload);
     return true;
@@ -82,7 +82,8 @@ export async function sendPointsEarnedPush(
   const payload = JSON.stringify({
     title: "Points earned! ☕",
     body: `You earned ${pointsEarned} pts. Balance: ${newBalance} pts.`,
-    url: "/loyalty",
+    data: { url: "/loyalty" },
+    tag: "favo-points-earned",
   });
   try {
     await webpush.sendNotification(subscription, payload);

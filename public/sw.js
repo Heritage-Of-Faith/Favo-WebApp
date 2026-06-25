@@ -92,10 +92,11 @@ self.addEventListener("fetch", (event) => {
 
 // ─── Push notifications ───────────────────────────────────────────────────────
 // Triggered when the FAVO backend sends a push after an order goes "ready".
-// Payload JSON: { title: string; body?: string; icon?: string; data?: { url: string } }
+// Payload JSON: { title: string; body?: string; icon?: string; tag?: string; data?: { url: string } }
 
+/* global self */
 self.addEventListener("push", (event) => {
-  let payload = { title: "FAVO", body: "Your order is ready!", icon: "/icons/icon-192.png", data: { url: "/customer" } };
+  let payload = { title: "FAVO", body: "Your order is ready!", icon: "/icons/icon-192.png", tag: undefined, data: { url: "/customer" } };
   if (event.data) {
     try {
       const received = event.data.json();
@@ -104,14 +105,14 @@ self.addEventListener("push", (event) => {
       // Malformed payload — use defaults.
     }
   }
-  event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
-      icon: payload.icon ?? "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      data: payload.data ?? { url: "/customer" },
-    })
-  );
+  const options = {
+    body: payload.body,
+    icon: payload.icon ?? "/icons/icon-192.png",
+    badge: "/brand/logo-monogram.svg",
+    data: payload.data ?? { url: "/customer" },
+  };
+  if (payload.tag) options.tag = payload.tag;
+  event.waitUntil(self.registration.showNotification(payload.title, options));
 });
 
 // ─── Notification click ───────────────────────────────────────────────────────

@@ -331,8 +331,9 @@ export async function transitionOrder(
         await deductForOrder(orderId, txDb, session.id);
       }
 
-      // ── 3. Loyalty accrual on in_progress → ready (L06) ───────────────────
-      if (toState === "ready" && current.customerId) {
+      // ── 3. Loyalty accrual on ordered → in_progress (payment confirmed) ───
+      // Points are awarded at purchase time, not when the coffee is ready (L06).
+      if (toState === "in_progress" && current.customerId) {
         const points = earnPoints(current.totalZar);
         if (points > 0) {
           await tx.insert(loyaltyTransactions).values({
@@ -347,7 +348,6 @@ export async function transitionOrder(
             .where(eq(customers.id, current.customerId));
           earnedPoints = points;
         }
-        // Capture push subscription for post-transaction delivery.
         // Re-fetch after the loyalty update so loyaltyPoints reflects the new balance.
         const [cust] = await tx
           .select({ name: customers.name, pushSubscription: customers.pushSubscription, loyaltyPoints: customers.loyaltyPoints })
@@ -359,7 +359,18 @@ export async function transitionOrder(
         newLoyaltyBalance = cust?.loyaltyPoints ?? 0;
       }
 
-      // ── 4. Audit ───────────────────────────────────────────────────────────
+      // ── 4. Fetch subscription for order-ready push (in_progress → ready) ──
+      if (toState === "ready" && current.customerId) {
+        const [cust] = await tx
+          .select({ name: customers.name, pushSubscription: customers.pushSubscription })
+          .from(customers)
+          .where(eq(customers.id, current.customerId));
+        pushSubscription = cust?.pushSubscription ?? null;
+        pushCustomerName = cust?.name ?? null;
+        pushCustomerId = current.customerId ?? null;
+      }
+
+      // ── 5. Audit ───────────────────────────────────────────────────────────
       await writeAudit(
         {
           entityKind: "order",
