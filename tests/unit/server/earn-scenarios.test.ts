@@ -360,6 +360,8 @@ describe("earn-scenarios — transitionOrder earn at in_progress", () => {
     ]);
     setupTxSelectSequence(__txMock as unknown as { select: ReturnType<typeof vi.fn> }, [
       [orderRow],
+      // Customer SELECT always runs for in_progress+customerId; only INSERT is gated.
+      [{ name: "Louis", pushSubscription: null, loyaltyPoints: 0 }],
     ]);
 
     const { canTransition } = await import("@/server/orders/state-machine");
