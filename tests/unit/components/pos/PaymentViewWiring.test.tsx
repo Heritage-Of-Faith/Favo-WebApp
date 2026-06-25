@@ -55,7 +55,7 @@ beforeEach(() => {
 });
 
 async function placeOrder() {
-  render(<POSWorkspace staffName="Sam" staffId="s1" />);
+  render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
   await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /place order/i })); });
 }
 

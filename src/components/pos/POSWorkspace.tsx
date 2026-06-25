@@ -86,10 +86,11 @@ const CATEGORY_LABEL: Record<string, string> = {
 type Props = {
   staffName: string;
   staffId: string;
-  initialOrders?: { orderId: string; state: import("@/lib/types").OrderState; lastUpdatedAt: string }[];
+  role: import("@/lib/types").StaffRole;
+  initialOrders?: { orderId: string; state: import("@/lib/types").OrderState; lastUpdatedAt: string; customerName: string | null }[];
 };
 
-export default function POSWorkspace({ staffName, staffId, initialOrders }: Props) {
+export default function POSWorkspace({ staffName, staffId, role, initialOrders }: Props) {
   const yocoConfigured = !!process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
   const router = useRouter();
 
@@ -785,10 +786,18 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
             <h2 className="favo-h3 text-coffee-bean">Queue</h2>
             <StreamChip status={status} />
           </div>
-          <button type="button" onClick={handleSignOut} aria-label="Sign out"
-            className="flex h-9 w-9 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
-            <LogOut size={16} strokeWidth={2} />
-          </button>
+          <div className="flex items-center gap-1">
+            {role === "admin" && (
+              <a href="/admin" aria-label="Go to admin"
+                className="flex h-9 items-center px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
+                Admin
+              </a>
+            )}
+            <button type="button" onClick={handleSignOut} aria-label="Sign out"
+              className="flex h-9 w-9 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
+              <LogOut size={16} strokeWidth={2} />
+            </button>
+          </div>
         </div>
 
         {/* Order cards — accordion */}
@@ -835,7 +844,10 @@ export default function POSWorkspace({ staffName, staffId, initialOrders }: Prop
                     <span className={["block h-2 w-2 rounded-full shrink-0", STATE_DOT[o.state]].join(" ")} />
                     <div>
                       <p className="favo-small text-coffee-bean font-semibold leading-tight">
-                        #{o.orderId.slice(-6).toUpperCase()}
+                        {o.customerName ?? "Walk-in"}
+                        <span className="favo-caption text-cool-steel font-normal ml-1.5">
+                          #{o.orderId.slice(-6).toUpperCase()}
+                        </span>
                       </p>
                       <p className="favo-caption text-cool-steel">{formatDate(new Date(o.lastUpdatedAt))}</p>
                     </div>

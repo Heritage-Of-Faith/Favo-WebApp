@@ -58,7 +58,7 @@ afterEach(() => {
 });
 
 async function expandCard() {
-  render(<POSWorkspace staffName="Sam" staffId="s1" />);
+  render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
   const card = await screen.findByText("#ORD_1");
   await act(async () => { fireEvent.click(card); });
 }
