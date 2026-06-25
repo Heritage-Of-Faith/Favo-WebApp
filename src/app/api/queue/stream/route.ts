@@ -12,6 +12,10 @@ import { encodeSSE, encodeComment, heartbeat, HEARTBEAT_MS } from "@/server/queu
 import type { QueueEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+// Allow SSE connections to stay open for up to 5 minutes on Vercel Pro.
+// Without this, the default 10–15s function timeout kills the connection,
+// forcing a reconnect cycle that can delay queue updates by several seconds.
+export const maxDuration = 300;
 
 export async function GET() {
   const session = await getSession();
@@ -71,6 +75,8 @@ export async function GET() {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      // Disable Nginx/proxy buffering so frames are forwarded immediately.
+      "X-Accel-Buffering": "no",
     },
   });
 }
