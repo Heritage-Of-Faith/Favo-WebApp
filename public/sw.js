@@ -92,8 +92,9 @@ self.addEventListener("fetch", (event) => {
 
 // ─── Push notifications ───────────────────────────────────────────────────────
 // Triggered when the FAVO backend sends a push after an order goes "ready".
-// Payload JSON: { title: string; body?: string; icon?: string; data?: { url: string } }
+// Payload JSON: { title: string; body?: string; icon?: string; tag?: string; data?: { url: string } }
 
+/* global self */
 self.addEventListener("push", (event) => {
   let payload = { title: "FAVO", body: "Your order is ready!", icon: "/icons/icon-192.png", tag: undefined, data: { url: "/customer" } };
   if (event.data) {

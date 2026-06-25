@@ -82,7 +82,7 @@ export async function sendPointsEarnedPush(
   const payload = JSON.stringify({
     title: "Points earned! ☕",
     body: `You earned ${pointsEarned} pts. Balance: ${newBalance} pts.`,
-    url: "/loyalty",
+    data: { url: "/loyalty" },
     tag: "favo-points-earned",
   });
   try {
