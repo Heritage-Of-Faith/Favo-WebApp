@@ -112,8 +112,10 @@ function setOrder(overrides: Record<string, unknown> = {}) {
 // The payment gate is only active when YOCO_SECRET_KEY is set (dev simulation
 // bypass: when the key is absent the gate is skipped so tests can exercise
 // the full order flow without a real Yoco integration).
-beforeAll(() => { process.env.YOCO_SECRET_KEY = "test-secret"; });
-afterAll(() => { delete process.env.YOCO_SECRET_KEY; });
+// vi.stubEnv saves the original value and restores it on vi.unstubAllEnvs(),
+// so this is safe even when run alongside other suites that may set the key.
+beforeAll(() => { vi.stubEnv("YOCO_SECRET_KEY", "test-key"); });
+afterAll(() => { vi.unstubAllEnvs(); });
 
 beforeEach(() => {
   vi.clearAllMocks();
