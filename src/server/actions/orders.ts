@@ -553,6 +553,13 @@ export async function cancelOrder(
     throw err;
   }
 
+  notifyOrderChange({
+    type: "state_change",
+    orderId,
+    state: "cancelled",
+    at: new Date().toISOString(),
+  }).catch(() => {});
+
   return { ok: true, data: undefined };
 }
 
