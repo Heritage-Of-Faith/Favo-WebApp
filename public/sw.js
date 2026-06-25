@@ -8,7 +8,7 @@
 //   - everything else → passthrough (no interception)
 //   - bypassed entirely: non-GET, cross-origin, /api/*, /pos/*, /admin/*
 
-const VERSION = "favo-v1";
+const VERSION = "favo-v2";
 const CACHE = `favo-static-${VERSION}`;
 const PRECACHE = [
   "/offline.html",
