@@ -105,6 +105,7 @@ export type QueueEvent =
       orderId: string;
       state: OrderState;
       at: string;
+      customerName?: string | null;
     }
   | {
       type: "heartbeat";

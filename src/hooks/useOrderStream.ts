@@ -57,7 +57,11 @@ export function useOrderStream(initialOrders?: LiveOrder[]) {
               orderId: parsed.orderId,
               state: parsed.state,
               lastUpdatedAt: parsed.at,
-              customerName: prev.get(parsed.orderId)?.customerName ?? null,
+              // Prefer the name carried in the event; fall back to what we
+              // already know (so mid-order transitions don't wipe it out).
+              customerName: parsed.customerName !== undefined
+                ? (parsed.customerName ?? null)
+                : (prev.get(parsed.orderId)?.customerName ?? null),
             });
             return next;
           });
