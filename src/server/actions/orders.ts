@@ -198,12 +198,23 @@ export async function createOrder(
     yocoCheckoutId: yocoResult?.id ?? null,
   });
 
+  // Look up customer name for the queue display (walk-in orders have no customer).
+  let newOrderCustomerName: string | null = null;
+  if (data.customerId) {
+    const [cust] = await db
+      .select({ name: customers.name })
+      .from(customers)
+      .where(eq(customers.id, data.customerId));
+    newOrderCustomerName = cust?.name ?? null;
+  }
+
   // Notify the live queue board that a new order is waiting.
   notifyOrderChange({
     type: "state_change",
     orderId,
     state: "ordered",
     at: new Date().toISOString(),
+    customerName: newOrderCustomerName,
   }).catch(() => {}); // Non-fatal
 
   return { ok: true, data: { orderId, yocoClientSecret } };
@@ -402,6 +413,7 @@ export async function transitionOrder(
     orderId,
     state: toState,
     at: new Date().toISOString(),
+    customerName: pushCustomerName ?? undefined,
   }).catch(() => {}); // POS resyncs on reconnect if this drops
 
   // Push to customer device when order is ready.
