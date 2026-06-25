@@ -12,6 +12,7 @@ export type LiveOrder = {
   orderId: string;
   state: OrderState;
   lastUpdatedAt: string;
+  customerName: string | null;
 };
 
 export type StreamStatus = "connecting" | "connected" | "reconnecting" | "offline";
@@ -56,6 +57,7 @@ export function useOrderStream(initialOrders?: LiveOrder[]) {
               orderId: parsed.orderId,
               state: parsed.state,
               lastUpdatedAt: parsed.at,
+              customerName: prev.get(parsed.orderId)?.customerName ?? null,
             });
             return next;
           });
