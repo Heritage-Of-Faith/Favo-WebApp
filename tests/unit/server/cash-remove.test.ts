@@ -2,7 +2,7 @@
 // there is no confirmed Yoco payment on a non-free order.
 // Tests cover the new PAYMENT_REQUIRED guard; other transitions are in orders.test.ts.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -108,6 +108,12 @@ function setOrder(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+// The payment gate is only active when YOCO_SECRET_KEY is set (dev simulation
+// bypass: when the key is absent the gate is skipped so tests can exercise
+// the full order flow without a real Yoco integration).
+beforeAll(() => { process.env.YOCO_SECRET_KEY = "test-secret"; });
+afterAll(() => { delete process.env.YOCO_SECRET_KEY; });
 
 beforeEach(() => {
   vi.clearAllMocks();
