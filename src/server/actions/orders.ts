@@ -302,8 +302,9 @@ export async function transitionOrder(
 
       // ── Cash-remove guard (AT-122): ordered → in_progress requires a
       // confirmed Yoco payment for non-free orders. Free orders (totalZar === 0
-      // after loyalty/staff-discount) need no payment row. ─────────────────────
-      if (toState === "in_progress" && current.totalZar > 0) {
+      // after loyalty/staff-discount) need no payment row.
+      // Bypass when YOCO_SECRET_KEY is absent (dev/simulation mode — no real Yoco). ──
+      if (toState === "in_progress" && current.totalZar > 0 && process.env.YOCO_SECRET_KEY) {
         const [pmt] = await tx
           .select({ status: payments.status })
           .from(payments)
