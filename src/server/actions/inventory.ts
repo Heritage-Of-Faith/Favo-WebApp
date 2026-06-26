@@ -6,7 +6,7 @@
 // setItemThreshold, updateLotCost: admin+ write + audit (L08) + cogs_changes notify.
 // Docs: docs/API.md · docs/DATA_MODEL.md · docs/BUSINESS_RULES.md L08 T04
 
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   inventoryItems,
@@ -36,6 +36,22 @@ async function lotRunningStock(lotId: string): Promise<number> {
     })
     .from(stockMovements)
     .where(eq(stockMovements.inventoryLotId, lotId));
+  return row?.total ?? 0;
+}
+
+/** Cups made from a container lot = -SUM(delta) of its deduction movements. */
+async function lotCupsMade(lotId: string): Promise<number> {
+  const [row] = await db
+    .select({
+      total: sql<number>`COALESCE(SUM(-${stockMovements.delta}), 0)::int`,
+    })
+    .from(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.inventoryLotId, lotId),
+        eq(stockMovements.kind, "deduction")
+      )
+    );
   return row?.total ?? 0;
 }
 
@@ -123,6 +139,9 @@ export async function listLots(
       unitCostZar: lot.unitCostZar,
       quantityReceived: lot.quantityReceived,
       quantityRemaining: await lotRunningStock(lot.id),
+      openedAt: lot.openedAt?.toISOString() ?? null,
+      closedAt: lot.closedAt?.toISOString() ?? null,
+      cupsMade: await lotCupsMade(lot.id),
     }))
   );
 

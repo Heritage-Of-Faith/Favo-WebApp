@@ -25,6 +25,9 @@ const LOT_STATE_VARIANT = {
   depleted: "neutral",
   expired: "out",
   quarantined: "warning",
+  // Container model: open = currently in use, closed = finished.
+  open: "ok",
+  closed: "neutral",
 } as const;
 
 export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerProps) {
@@ -155,6 +158,16 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
                     </Field>
                   )}
                   {lot.quantityReceived && <Field label="Received qty">{lot.quantityReceived}</Field>}
+                  {/* Container model: cups made + open/close timeline */}
+                  {item.unit === "cup" && (
+                    <Field label="Cups made">{lot.cupsMade ?? 0}</Field>
+                  )}
+                  {item.unit === "cup" && lot.openedAt && (
+                    <Field label="Opened">{formatDate(lot.openedAt)}</Field>
+                  )}
+                  {item.unit === "cup" && lot.closedAt && (
+                    <Field label="Closed">{formatDate(lot.closedAt)}</Field>
+                  )}
                 </dl>
 
                 {/* Editable unit cost (R10 recosting) */}

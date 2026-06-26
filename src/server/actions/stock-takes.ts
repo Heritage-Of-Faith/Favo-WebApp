@@ -8,7 +8,7 @@
 // listStockTakes:      admin + finance + manager read.
 // Docs: docs/API.md · docs/BUSINESS_RULES.md L08 T01
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   stockTakes,
@@ -191,11 +191,13 @@ export async function runStockTake(
 
     stockTakeId = take.id;
 
-    // 2. Find all active lots
+    // 2. Find all physically-present lots: sealed (active) plus the in-use OPEN
+    //    container for cup items. Closed/depleted/expired lots are empty and
+    //    excluded. Without 'open' here the draining container is never counted.
     const lots = await tx
       .select({ id: inventoryLots.id })
       .from(inventoryLots)
-      .where(eq(inventoryLots.state, "active"));
+      .where(inArray(inventoryLots.state, ["active", "open"]));
 
     // 3. Pre-fill lines with expected = running stock per lot
     for (const lot of lots) {

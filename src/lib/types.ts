@@ -155,9 +155,16 @@ export type InventoryKind =
   | "equipment"
   | "other";
 
-export type InventoryUnit = "g" | "kg" | "ml" | "l" | "unit" | "bag";
+export type InventoryUnit = "g" | "kg" | "ml" | "l" | "unit" | "bag" | "cup";
 
-export type LotState = "active" | "depleted" | "expired" | "quarantined";
+export type LotState =
+  | "active"
+  | "depleted"
+  | "expired"
+  | "quarantined"
+  // Container model (milk & beans): sealed (active) → open → closed.
+  | "open"
+  | "closed";
 
 /** Summary row returned by listInventory() — one row per item. */
 export type InventoryItemStatus = {
@@ -189,6 +196,13 @@ export type InventoryLot = {
   quantityReceived: string | null;
   /** Computed: SUM(delta) for this lot's stock_movements. */
   quantityRemaining: number;
+  // ── Container model (cup items) ──────────────────────────────────────────────
+  /** When this container was opened on the POS (ISO 8601), or null. */
+  openedAt?: string | null;
+  /** When this container was closed/finished (ISO 8601), or null. */
+  closedAt?: string | null;
+  /** Cups actually made from this container = -SUM(delta) of deduction movements. */
+  cupsMade?: number;
 };
 
 /** Lightweight status used by POS to show low-stock badges (M9). */
