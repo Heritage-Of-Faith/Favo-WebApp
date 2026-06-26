@@ -35,6 +35,8 @@ export const inventoryUnit = pgEnum("inventory_unit", [
   "l",
   "unit",
   "bag",
+  // Container model: milk & beans are tracked in cups produced, not g/ml.
+  "cup",
 ]);
 
 export const lotState = pgEnum("lot_state", [
@@ -42,6 +44,10 @@ export const lotState = pgEnum("lot_state", [
   "depleted",
   "expired",
   "quarantined",
+  // Container model (milk & beans): a physical bottle/bag moves
+  // active (sealed/on-shelf) → open (in use) → closed (finished).
+  "open",
+  "closed",
 ]);
 
 export const stockMovementKind = pgEnum("stock_movement_kind", [

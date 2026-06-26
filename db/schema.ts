@@ -144,6 +144,11 @@ export const inventoryLots = pgTable("inventory_lots", {
   roastDate: timestamp("roast_date", { withTimezone: true }),
   receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
   state: lotState("state").default("active").notNull(),
+  // Container model (milk & beans): when this lot (= one physical bottle/bag)
+  // was opened on the POS and when it was finished/closed. Null for non-container
+  // lots and for sealed containers not yet opened.
+  openedAt: timestamp("opened_at", { withTimezone: true }),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
   origin: text("origin"),
   // Exception to the integer-cents rule: per-unit production cost is a RATE,
   // not a money amount. When unit=g or unit=ml the cost per gram/ml is
@@ -153,8 +158,15 @@ export const inventoryLots = pgTable("inventory_lots", {
   // the order level. Admin recosts via A8 after launch (R10 mitigation).
   unitCostZar: numeric("unit_cost_zar", { precision: 10, scale: 4 }),
   // Quantity received when this lot was booked in (in the item's unit).
+  // For cup-unit container lots this is the expected cups the container yields.
   quantityReceived: numeric("quantity_received", { precision: 10, scale: 2 }),
-});
+}, (t) => [
+  // Container model invariant: at most one OPEN container per inventory item.
+  // Enforced in the DB so two concurrent orders can't both open a new bottle.
+  uniqueIndex("uq_one_open_lot_per_item")
+    .on(t.inventoryItemId)
+    .where(sql`${t.state} = 'open'`),
+]);
 
 export const stockMovements = pgTable("stock_movements", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),

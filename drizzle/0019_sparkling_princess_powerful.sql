@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uq_one_open_lot_per_item" ON "inventory_lots" USING btree ("inventory_item_id") WHERE "inventory_lots"."state" = 'open';

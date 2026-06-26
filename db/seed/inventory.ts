@@ -10,7 +10,7 @@ export type SeedInventoryItem = {
   id: string;
   name: string;
   kind: "bean" | "milk" | "syrup" | "packaging" | "equipment" | "other";
-  unit: "g" | "kg" | "ml" | "l" | "unit" | "bag";
+  unit: "g" | "kg" | "ml" | "l" | "unit" | "bag" | "cup";
   lowStockThreshold: number; // in the item's own unit
 };
 
@@ -71,6 +71,24 @@ export const INVENTORY_ITEMS: SeedInventoryItem[] = [
     kind: "other",
     unit: "g",
     lowStockThreshold: 200, // 200g
+  },
+  // ── Container model (milk & beans) ──────────────────────────────────────────
+  // Tracked in cups produced, not g/ml. A lot = one physical bag/carton; it is
+  // opened on the POS and every coffee made deducts one cup. Threshold is in
+  // total cups remaining across all containers (sealed + open).
+  {
+    id: "inv_item_beans_cups",
+    name: "Espresso Beans (bag)",
+    kind: "bean",
+    unit: "cup",
+    lowStockThreshold: 60, // re-order when < ~half a bag of cups left
+  },
+  {
+    id: "inv_item_whole_milk_cups",
+    name: "Full-Cream Milk (carton)",
+    kind: "milk",
+    unit: "cup",
+    lowStockThreshold: 20, // re-order when < ~2 cartons of cups left
   },
 ];
 
