@@ -27,6 +27,10 @@ export type SeedLot = {
   quantityReceived: string;
   // Opening delta inserted as a restock stock_movement
   openingDelta: number;
+  // Container model (milk & beans): lot lifecycle state. Defaults to "active"
+  // (= sealed/on-shelf for containers; available-for-deduction for gram lots).
+  // Set "open" to seed an already-in-use container (at most one per item).
+  state?: "active" | "open";
 };
 
 // SA best-estimate wholesale prices (May 2026):
@@ -111,6 +115,79 @@ export const INVENTORY_LOTS: SeedLot[] = [
     quantityReceived: "500.00", // 500 g
     openingDelta: 500,
   },
+
+  // ── Container model: bean bags (cups) ───────────────────────────────────────
+  // 1 kg bag ≈ 140 shots → 140 cups. Bag cost R450 = 45000¢ → 321.4286 ¢/cup.
+  // One bag seeded open (in use), two sealed on the shelf.
+  {
+    id: "lot_beans_cups_open",
+    inventoryItemId: "inv_item_beans_cups",
+    sourceName: "Origin Coffee Roasters",
+    batchNumber: "OCR-CUP-001",
+    unitCostZar: "321.4286",
+    quantityReceived: "140.00",
+    openingDelta: 140,
+    state: "open",
+  },
+  {
+    id: "lot_beans_cups_002",
+    inventoryItemId: "inv_item_beans_cups",
+    sourceName: "Origin Coffee Roasters",
+    batchNumber: "OCR-CUP-002",
+    unitCostZar: "321.4286",
+    quantityReceived: "140.00",
+    openingDelta: 140,
+  },
+  {
+    id: "lot_beans_cups_003",
+    inventoryItemId: "inv_item_beans_cups",
+    sourceName: "Origin Coffee Roasters",
+    batchNumber: "OCR-CUP-003",
+    unitCostZar: "321.4286",
+    quantityReceived: "140.00",
+    openingDelta: 140,
+  },
+
+  // ── Container model: milk cartons (cups) ────────────────────────────────────
+  // 2 L carton ≈ 11 milky drinks → 11 cups. Carton cost R56 = 5600¢ → 509.0909 ¢/cup.
+  // One carton seeded open, three sealed in the fridge.
+  {
+    id: "lot_whole_milk_cups_open",
+    inventoryItemId: "inv_item_whole_milk_cups",
+    sourceName: "Clover SA",
+    batchNumber: "CLV-CUP-001",
+    unitCostZar: "509.0909",
+    quantityReceived: "11.00",
+    openingDelta: 11,
+    state: "open",
+  },
+  {
+    id: "lot_whole_milk_cups_002",
+    inventoryItemId: "inv_item_whole_milk_cups",
+    sourceName: "Clover SA",
+    batchNumber: "CLV-CUP-002",
+    unitCostZar: "509.0909",
+    quantityReceived: "11.00",
+    openingDelta: 11,
+  },
+  {
+    id: "lot_whole_milk_cups_003",
+    inventoryItemId: "inv_item_whole_milk_cups",
+    sourceName: "Clover SA",
+    batchNumber: "CLV-CUP-003",
+    unitCostZar: "509.0909",
+    quantityReceived: "11.00",
+    openingDelta: 11,
+  },
+  {
+    id: "lot_whole_milk_cups_004",
+    inventoryItemId: "inv_item_whole_milk_cups",
+    sourceName: "Clover SA",
+    batchNumber: "CLV-CUP-004",
+    unitCostZar: "509.0909",
+    quantityReceived: "11.00",
+    openingDelta: 11,
+  },
 ];
 
 // Stable IDs for opening restock movements (idempotent re-run via ON CONFLICT)
@@ -132,7 +209,9 @@ export async function seedLots() {
         batchNumber: lot.batchNumber,
         unitCostZar: lot.unitCostZar,
         quantityReceived: lot.quantityReceived,
-        state: "active",
+        state: lot.state ?? "active",
+        // Stamp opened_at for containers seeded already in use.
+        openedAt: lot.state === "open" ? new Date() : null,
       })
       .onConflictDoNothing();
 

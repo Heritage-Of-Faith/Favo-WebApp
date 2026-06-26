@@ -3,9 +3,9 @@
 // Food items (croissant, muffin, toastie) and teas are excluded — their COGS
 // comes from purchase invoices, not the ingredient-level deduction model.
 //
-// Quantities are "standard serving" (single-shot small):
-//   Espresso dose: 7g beans (single shot per plan spec)
-//   Milk steamed:  per-drink spec (cappuccino 150ml, latte 200ml, etc.)
+// Beans & milk use the container model — 1 cup per drink from the open
+// container (see BEANS / WHOLE_MILK below). Cups, lids and powder deduct by
+// their real per-serving quantity.
 //
 // After inserting recipes, updates menu_items.recipe_id so deduction (G9)
 // can look up the recipe via the order → menu item → recipe chain.
@@ -18,8 +18,8 @@ import { recipes, recipeIngredients, menuItems } from "../schema";
 
 type IngredientSpec = {
   inventoryItemId: string;
-  quantity: number; // integer, in the item's unit (g, ml, or unit)
-  unit: "g" | "kg" | "ml" | "l" | "unit" | "bag";
+  quantity: number; // integer, in the item's unit (g, ml, unit, or cup)
+  unit: "g" | "kg" | "ml" | "l" | "unit" | "bag" | "cup";
   tolerancePct: number; // acceptable variance % before flagging
 };
 
@@ -29,9 +29,13 @@ type RecipeSpec = {
   ingredients: IngredientSpec[];
 };
 
-// Ingredient shorthand
-const BEANS = "inv_item_espresso_beans";
-const WHOLE_MILK = "inv_item_whole_milk";
+// Ingredient shorthand.
+// BEANS and WHOLE_MILK point at the container (cup) items. Deduction branches on
+// the inventory item's kind and, for milk/bean, deducts ONE cup per drink from the
+// open container regardless of the recipe quantity (so each line is 1·cup). Cups,
+// lids and powder still deduct by their real quantity.
+const BEANS = "inv_item_beans_cups";
+const WHOLE_MILK = "inv_item_whole_milk_cups";
 const CUP_8OZ = "inv_item_cup_8oz";
 const CUP_12OZ = "inv_item_cup_12oz";
 const LID = "inv_item_lid";
@@ -43,7 +47,7 @@ export const RECIPES: RecipeSpec[] = [
     id: "recipe_espresso",
     menuItemId: "menu_espresso",
     ingredients: [
-      { inventoryItemId: BEANS, quantity: 7, unit: "g", tolerancePct: 10 },
+      { inventoryItemId: BEANS, quantity: 1, unit: "cup", tolerancePct: 10 },
       { inventoryItemId: CUP_8OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
     ],
   },
@@ -53,7 +57,7 @@ export const RECIPES: RecipeSpec[] = [
     id: "recipe_americano",
     menuItemId: "menu_americano",
     ingredients: [
-      { inventoryItemId: BEANS, quantity: 7, unit: "g", tolerancePct: 10 },
+      { inventoryItemId: BEANS, quantity: 1, unit: "cup", tolerancePct: 10 },
       { inventoryItemId: CUP_8OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
     ],
   },
@@ -63,8 +67,8 @@ export const RECIPES: RecipeSpec[] = [
     id: "recipe_cappuccino",
     menuItemId: "menu_cappuccino",
     ingredients: [
-      { inventoryItemId: BEANS, quantity: 7, unit: "g", tolerancePct: 10 },
-      { inventoryItemId: WHOLE_MILK, quantity: 150, unit: "ml", tolerancePct: 10 },
+      { inventoryItemId: BEANS, quantity: 1, unit: "cup", tolerancePct: 10 },
+      { inventoryItemId: WHOLE_MILK, quantity: 1, unit: "cup", tolerancePct: 10 },
       { inventoryItemId: CUP_8OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
       { inventoryItemId: LID, quantity: 1, unit: "unit", tolerancePct: 0 },
     ],
@@ -75,8 +79,8 @@ export const RECIPES: RecipeSpec[] = [
     id: "recipe_flat_white",
     menuItemId: "menu_flat_white",
     ingredients: [
-      { inventoryItemId: BEANS, quantity: 7, unit: "g", tolerancePct: 10 },
-      { inventoryItemId: WHOLE_MILK, quantity: 130, unit: "ml", tolerancePct: 10 },
+      { inventoryItemId: BEANS, quantity: 1, unit: "cup", tolerancePct: 10 },
+      { inventoryItemId: WHOLE_MILK, quantity: 1, unit: "cup", tolerancePct: 10 },
       { inventoryItemId: CUP_8OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
       { inventoryItemId: LID, quantity: 1, unit: "unit", tolerancePct: 0 },
     ],
@@ -87,8 +91,8 @@ export const RECIPES: RecipeSpec[] = [
     id: "recipe_latte",
     menuItemId: "menu_latte",
     ingredients: [
-      { inventoryItemId: BEANS, quantity: 7, unit: "g", tolerancePct: 10 },
-      { inventoryItemId: WHOLE_MILK, quantity: 200, unit: "ml", tolerancePct: 10 },
+      { inventoryItemId: BEANS, quantity: 1, unit: "cup", tolerancePct: 10 },
+      { inventoryItemId: WHOLE_MILK, quantity: 1, unit: "cup", tolerancePct: 10 },
       { inventoryItemId: CUP_12OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
       { inventoryItemId: LID, quantity: 1, unit: "unit", tolerancePct: 0 },
     ],
@@ -99,8 +103,8 @@ export const RECIPES: RecipeSpec[] = [
     id: "recipe_cortado",
     menuItemId: "menu_cortado",
     ingredients: [
-      { inventoryItemId: BEANS, quantity: 7, unit: "g", tolerancePct: 10 },
-      { inventoryItemId: WHOLE_MILK, quantity: 50, unit: "ml", tolerancePct: 10 },
+      { inventoryItemId: BEANS, quantity: 1, unit: "cup", tolerancePct: 10 },
+      { inventoryItemId: WHOLE_MILK, quantity: 1, unit: "cup", tolerancePct: 10 },
       { inventoryItemId: CUP_8OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
     ],
   },
@@ -110,9 +114,9 @@ export const RECIPES: RecipeSpec[] = [
     id: "recipe_mocha",
     menuItemId: "menu_mocha",
     ingredients: [
-      { inventoryItemId: BEANS, quantity: 7, unit: "g", tolerancePct: 10 },
+      { inventoryItemId: BEANS, quantity: 1, unit: "cup", tolerancePct: 10 },
       { inventoryItemId: HOT_CHOC, quantity: 20, unit: "g", tolerancePct: 10 },
-      { inventoryItemId: WHOLE_MILK, quantity: 160, unit: "ml", tolerancePct: 10 },
+      { inventoryItemId: WHOLE_MILK, quantity: 1, unit: "cup", tolerancePct: 10 },
       { inventoryItemId: CUP_12OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
       { inventoryItemId: LID, quantity: 1, unit: "unit", tolerancePct: 0 },
     ],
@@ -124,7 +128,7 @@ export const RECIPES: RecipeSpec[] = [
     id: "recipe_cold_brew",
     menuItemId: "menu_cold_brew",
     ingredients: [
-      { inventoryItemId: BEANS, quantity: 25, unit: "g", tolerancePct: 15 },
+      { inventoryItemId: BEANS, quantity: 1, unit: "cup", tolerancePct: 15 },
       { inventoryItemId: CUP_12OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
       { inventoryItemId: LID, quantity: 1, unit: "unit", tolerancePct: 0 },
     ],
@@ -135,8 +139,8 @@ export const RECIPES: RecipeSpec[] = [
     id: "recipe_iced_latte",
     menuItemId: "menu_iced_latte",
     ingredients: [
-      { inventoryItemId: BEANS, quantity: 7, unit: "g", tolerancePct: 10 },
-      { inventoryItemId: WHOLE_MILK, quantity: 180, unit: "ml", tolerancePct: 10 },
+      { inventoryItemId: BEANS, quantity: 1, unit: "cup", tolerancePct: 10 },
+      { inventoryItemId: WHOLE_MILK, quantity: 1, unit: "cup", tolerancePct: 10 },
       { inventoryItemId: CUP_12OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
       { inventoryItemId: LID, quantity: 1, unit: "unit", tolerancePct: 0 },
     ],

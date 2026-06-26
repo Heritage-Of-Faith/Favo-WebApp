@@ -127,6 +127,20 @@
       "when": 1782047711099,
       "tag": "0017_black_timeslip",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782473004279,
+      "tag": "0018_clumsy_shotgun",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782473037652,
+      "tag": "0019_sparkling_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

@@ -11,8 +11,18 @@ import { ALERT_RECIPIENTS } from "@db/seed/alert-recipients";
 // ── Inventory items ───────────────────────────────────────────────────────────
 
 describe("seed: inventory items", () => {
-  it("has exactly 8 items", () => {
-    expect(INVENTORY_ITEMS).toHaveLength(8);
+  it("has exactly 10 items (8 base + 2 cup-container items)", () => {
+    expect(INVENTORY_ITEMS).toHaveLength(10);
+  });
+
+  it("includes cup-container items for beans and milk", () => {
+    const cupItems = INVENTORY_ITEMS.filter((i) => i.unit === "cup");
+    expect(cupItems.map((i) => i.id).sort()).toEqual([
+      "inv_item_beans_cups",
+      "inv_item_whole_milk_cups",
+    ]);
+    // Container items are milk/bean kinds tracked in cups.
+    expect(cupItems.every((i) => i.kind === "bean" || i.kind === "milk")).toBe(true);
   });
 
   it("IDs are unique", () => {
@@ -49,8 +59,20 @@ describe("seed: inventory items", () => {
 describe("seed: inventory lots", () => {
   const itemIds = new Set(INVENTORY_ITEMS.map((i) => i.id));
 
-  it("exactly one lot per inventory item", () => {
-    expect(INVENTORY_LOTS).toHaveLength(INVENTORY_ITEMS.length);
+  it("non-container items have exactly one lot; container items have several", () => {
+    // Non-container (g/ml/unit) items: one starter lot each.
+    const nonContainerItems = INVENTORY_ITEMS.filter((i) => i.unit !== "cup");
+    for (const item of nonContainerItems) {
+      const lots = INVENTORY_LOTS.filter((l) => l.inventoryItemId === item.id);
+      expect(lots).toHaveLength(1);
+    }
+    // Container (cup) items: multiple bottles/bags, exactly one seeded "open".
+    const containerItems = INVENTORY_ITEMS.filter((i) => i.unit === "cup");
+    for (const item of containerItems) {
+      const lots = INVENTORY_LOTS.filter((l) => l.inventoryItemId === item.id);
+      expect(lots.length).toBeGreaterThan(1);
+      expect(lots.filter((l) => l.state === "open")).toHaveLength(1);
+    }
   });
 
   it("lot IDs are unique", () => {
@@ -120,32 +142,32 @@ describe("seed: recipes", () => {
     }
   });
 
-  it("cappuccino recipe has beans + milk + cup + lid", () => {
+  it("cappuccino recipe has beans + milk (cup containers) + cup + lid", () => {
     const cappuccino = RECIPES.find((r) => r.menuItemId === "menu_cappuccino");
     expect(cappuccino).toBeDefined();
     const itemIds = cappuccino!.ingredients.map((i) => i.inventoryItemId);
-    expect(itemIds).toContain("inv_item_espresso_beans");
-    expect(itemIds).toContain("inv_item_whole_milk");
+    expect(itemIds).toContain("inv_item_beans_cups");
+    expect(itemIds).toContain("inv_item_whole_milk_cups");
     expect(itemIds).toContain("inv_item_cup_8oz");
     expect(itemIds).toContain("inv_item_lid");
   });
 
-  it("cappuccino uses 7g beans (plan spec)", () => {
+  it("cappuccino draws 1 cup of beans from the open container", () => {
     const cappuccino = RECIPES.find((r) => r.menuItemId === "menu_cappuccino");
     const beans = cappuccino!.ingredients.find(
-      (i) => i.inventoryItemId === "inv_item_espresso_beans"
+      (i) => i.inventoryItemId === "inv_item_beans_cups"
     );
-    expect(beans?.quantity).toBe(7);
-    expect(beans?.unit).toBe("g");
+    expect(beans?.quantity).toBe(1);
+    expect(beans?.unit).toBe("cup");
   });
 
-  it("cappuccino uses 150ml milk (plan spec)", () => {
+  it("cappuccino draws 1 cup of milk from the open container", () => {
     const cappuccino = RECIPES.find((r) => r.menuItemId === "menu_cappuccino");
     const milk = cappuccino!.ingredients.find(
-      (i) => i.inventoryItemId === "inv_item_whole_milk"
+      (i) => i.inventoryItemId === "inv_item_whole_milk_cups"
     );
-    expect(milk?.quantity).toBe(150);
-    expect(milk?.unit).toBe("ml");
+    expect(milk?.quantity).toBe(1);
+    expect(milk?.unit).toBe("cup");
   });
 
   it("mocha recipe includes hot_choc_powder", () => {
