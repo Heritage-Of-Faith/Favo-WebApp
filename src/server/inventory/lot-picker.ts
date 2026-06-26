@@ -96,3 +96,98 @@ export async function pickActiveLot(
     currentStock: stockRow?.total ?? 0,
   };
 }
+
+// ─── lotRunningStock ──────────────────────────────────────────────────────────
+
+/** Running stock for a single lot = SUM(stock_movements.delta). */
+async function lotRunningStock(lotId: string, tx: DB): Promise<number> {
+  const [row] = await tx
+    .select({ total: sql<number>`COALESCE(SUM(${stockMovements.delta}), 0)::int` })
+    .from(stockMovements)
+    .where(eq(stockMovements.inventoryLotId, lotId));
+  return row?.total ?? 0;
+}
+
+// ─── pickOpenContainer ────────────────────────────────────────────────────────
+
+/**
+ * Container model (milk & beans): returns the currently-OPEN container for
+ * `inventoryItemId` with cups remaining ≥ 1, opening the FIFO-oldest sealed
+ * container if none is open or the open one is empty.
+ *
+ * No-delay guarantee: an empty/absent open container does not block the order —
+ * the next sealed bottle/bag is opened automatically inside the same transaction.
+ *
+ * Concurrency: a per-item transaction advisory lock serialises the open-container
+ * resolution so two simultaneous orders can't each open a fresh container (the
+ * partial unique index `uq_one_open_lot_per_item` is the hard backstop). The lock
+ * is released automatically when the transaction ends.
+ *
+ * Throws `DeductionError('OUT_OF_STOCK', ...)` only when no sealed container
+ * remains to open.
+ */
+export async function pickOpenContainer(
+  inventoryItemId: string,
+  tx: DB
+): Promise<ActiveLot> {
+  // Serialise open-container resolution for this item across concurrent txns.
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext(${"open_container:" + inventoryItemId}))`
+  );
+
+  // 1. Is there an open container? Lock it for the duration of the txn.
+  const openRows = await tx
+    .select({ id: inventoryLots.id })
+    .from(inventoryLots)
+    .where(
+      and(
+        eq(inventoryLots.inventoryItemId, inventoryItemId),
+        eq(inventoryLots.state, "open")
+      )
+    )
+    .limit(1)
+    .for("update");
+
+  if (openRows.length > 0) {
+    const openId = openRows[0].id;
+    const stock = await lotRunningStock(openId, tx);
+    if (stock >= 1) {
+      return { id: openId, currentStock: stock };
+    }
+    // Open container is empty — retire it, then open the next sealed one.
+    await tx
+      .update(inventoryLots)
+      .set({ state: "closed", closedAt: sql`now()` })
+      .where(eq(inventoryLots.id, openId));
+  }
+
+  // 2. Open the FIFO-oldest sealed (active) container.
+  const sealed = await tx
+    .select({ id: inventoryLots.id })
+    .from(inventoryLots)
+    .where(
+      and(
+        eq(inventoryLots.inventoryItemId, inventoryItemId),
+        eq(inventoryLots.state, "active")
+      )
+    )
+    .orderBy(asc(inventoryLots.receivedAt))
+    .limit(1)
+    .for("update");
+
+  if (sealed.length === 0) {
+    throw new DeductionError(
+      "OUT_OF_STOCK",
+      `No sealed container left to open for inventory item ${inventoryItemId}`
+    );
+  }
+
+  const newId = sealed[0].id;
+  await tx
+    .update(inventoryLots)
+    .set({ state: "open", openedAt: sql`now()` })
+    .where(eq(inventoryLots.id, newId));
+
+  const stock = await lotRunningStock(newId, tx);
+  return { id: newId, currentStock: stock };
+}

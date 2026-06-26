@@ -188,9 +188,12 @@ describe("deductForOrder — mocked DB", () => {
         })
         .mockReturnValueOnce({
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([
-              { inventoryItemId: "inv_item_espresso_beans", quantity: 7, unit: "g" },
-            ]),
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([
+                // Non-cup item → quantity path → pickActiveLot (mocked, stock 3).
+                { inventoryItemId: "inv_item_hot_choc_powder", quantity: 7, itemUnit: "g" },
+              ]),
+            }),
           }),
         }),
       insert: vi.fn(),
@@ -203,6 +206,59 @@ describe("deductForOrder — mocked DB", () => {
     ).rejects.toThrow(DeductionError);
 
     void pickActiveLot; // suppress unused warning
+  });
+
+  it("container item: deducts one cup per drink from the open container", async () => {
+    const { deductForOrder } = await import("@/server/orders/deduction");
+    const { writeAudit } = await import("@/server/audit");
+
+    // Open container has plenty of cups — single movement, no spanning.
+    vi.spyOn(
+      await import("@/server/inventory/lot-picker"),
+      "pickOpenContainer"
+    ).mockResolvedValueOnce({ id: "lot_milk_open", currentStock: 11 });
+
+    const values = vi.fn().mockResolvedValue([]);
+    const tx = {
+      select: vi.fn()
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([
+                { orderItemId: "oi_1", menuItemId: "menu_latte", orderQty: 2, recipeId: "recipe_latte" },
+              ]),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([
+                { inventoryItemId: "inv_item_whole_milk_cups", quantity: 1, itemUnit: "cup" },
+              ]),
+            }),
+          }),
+        }),
+      insert: vi.fn().mockReturnValue({ values }),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+      }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    await deductForOrder("order_001", tx as never, "staff_sam");
+
+    // 2 lattes → 2 cups of milk in a single movement against the open container.
+    expect(values).toHaveBeenCalledTimes(1);
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inventoryLotId: "lot_milk_open",
+        delta: -2,
+        kind: "deduction",
+        relatedOrderId: "order_001",
+      })
+    );
+    expect(writeAudit).toHaveBeenCalledTimes(1);
   });
 
   it("OUT_OF_STOCK has the correct error code", async () => {
@@ -226,9 +282,12 @@ describe("deductForOrder — mocked DB", () => {
         })
         .mockReturnValueOnce({
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([
-              { inventoryItemId: "inv_item_espresso_beans", quantity: 7, unit: "g" },
-            ]),
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([
+                // Non-cup item → quantity path → pickActiveLot (mocked, stock 3).
+                { inventoryItemId: "inv_item_hot_choc_powder", quantity: 7, itemUnit: "g" },
+              ]),
+            }),
           }),
         }),
       insert: vi.fn(),
