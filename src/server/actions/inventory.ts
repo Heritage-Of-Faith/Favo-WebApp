@@ -6,7 +6,7 @@
 // setItemThreshold, updateLotCost: admin+ write + audit (L08) + cogs_changes notify.
 // Docs: docs/API.md · docs/DATA_MODEL.md · docs/BUSINESS_RULES.md L08 T04
 
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   inventoryItems,
@@ -36,22 +36,6 @@ async function lotRunningStock(lotId: string): Promise<number> {
     })
     .from(stockMovements)
     .where(eq(stockMovements.inventoryLotId, lotId));
-  return row?.total ?? 0;
-}
-
-/** Cups made from a container lot = -SUM(delta) of its deduction movements. */
-async function lotCupsMade(lotId: string): Promise<number> {
-  const [row] = await db
-    .select({
-      total: sql<number>`COALESCE(SUM(-${stockMovements.delta}), 0)::int`,
-    })
-    .from(stockMovements)
-    .where(
-      and(
-        eq(stockMovements.inventoryLotId, lotId),
-        eq(stockMovements.kind, "deduction")
-      )
-    );
   return row?.total ?? 0;
 }
 
@@ -113,11 +97,12 @@ export async function listLots(
   if (!auth.ok) return auth;
 
   const [item] = await db
-    .select({ name: inventoryItems.name })
+    .select({ name: inventoryItems.name, unit: inventoryItems.unit })
     .from(inventoryItems)
     .where(eq(inventoryItems.id, inventoryItemId));
 
   const itemName = item?.name ?? inventoryItemId;
+  const isCup = item?.unit === "cup";
 
   const lots = await db
     .select()
@@ -125,25 +110,59 @@ export async function listLots(
     .where(eq(inventoryLots.inventoryItemId, inventoryItemId))
     .orderBy(desc(inventoryLots.receivedAt));
 
-  const result: InventoryLot[] = await Promise.all(
-    lots.map(async (lot) => ({
-      id: lot.id,
-      inventoryItemId: lot.inventoryItemId,
-      inventoryItemName: itemName,
-      sourceName: lot.sourceName,
-      batchNumber: lot.batchNumber,
-      roastDate: lot.roastDate?.toISOString() ?? null,
-      receivedAt: lot.receivedAt.toISOString(),
-      state: lot.state as InventoryLot["state"],
-      origin: lot.origin,
-      unitCostZar: lot.unitCostZar,
-      quantityReceived: lot.quantityReceived,
-      quantityRemaining: await lotRunningStock(lot.id),
-      openedAt: lot.openedAt?.toISOString() ?? null,
-      closedAt: lot.closedAt?.toISOString() ?? null,
-      cupsMade: await lotCupsMade(lot.id),
-    }))
-  );
+  const lotIds = lots.map((l) => l.id);
+
+  // Preload aggregates in two grouped queries (keyed by lot) instead of 2×N
+  // per-lot reads. cupsMade is only needed for cup containers (LotDrawer gates
+  // on item.unit === 'cup'), so skip that query entirely otherwise.
+  const remainingByLot = new Map<string, number>();
+  if (lotIds.length > 0) {
+    const rows = await db
+      .select({
+        lotId: stockMovements.inventoryLotId,
+        total: sql<number>`COALESCE(SUM(${stockMovements.delta}), 0)::int`,
+      })
+      .from(stockMovements)
+      .where(inArray(stockMovements.inventoryLotId, lotIds))
+      .groupBy(stockMovements.inventoryLotId);
+    for (const r of rows) remainingByLot.set(r.lotId, r.total);
+  }
+
+  const cupsMadeByLot = new Map<string, number>();
+  if (isCup && lotIds.length > 0) {
+    const rows = await db
+      .select({
+        lotId: stockMovements.inventoryLotId,
+        total: sql<number>`COALESCE(SUM(-${stockMovements.delta}), 0)::int`,
+      })
+      .from(stockMovements)
+      .where(
+        and(
+          inArray(stockMovements.inventoryLotId, lotIds),
+          eq(stockMovements.kind, "deduction")
+        )
+      )
+      .groupBy(stockMovements.inventoryLotId);
+    for (const r of rows) cupsMadeByLot.set(r.lotId, r.total);
+  }
+
+  const result: InventoryLot[] = lots.map((lot) => ({
+    id: lot.id,
+    inventoryItemId: lot.inventoryItemId,
+    inventoryItemName: itemName,
+    sourceName: lot.sourceName,
+    batchNumber: lot.batchNumber,
+    roastDate: lot.roastDate?.toISOString() ?? null,
+    receivedAt: lot.receivedAt.toISOString(),
+    state: lot.state as InventoryLot["state"],
+    origin: lot.origin,
+    unitCostZar: lot.unitCostZar,
+    quantityReceived: lot.quantityReceived,
+    quantityRemaining: remainingByLot.get(lot.id) ?? 0,
+    openedAt: lot.openedAt?.toISOString() ?? null,
+    closedAt: lot.closedAt?.toISOString() ?? null,
+    ...(isCup ? { cupsMade: cupsMadeByLot.get(lot.id) ?? 0 } : {}),
+  }));
 
   return { ok: true, data: { lots: result } };
 }
