@@ -24,6 +24,7 @@ import {
 import PackPurchaseDialog from "@/components/pos/PackPurchaseDialog";
 import { toast } from "sonner";
 import ActiveBeanCard from "@/components/pos/ActiveBeanCard";
+import OpenContainersCard from "@/components/pos/OpenContainersCard";
 import StaffPushOptIn from "@/components/pos/StaffPushOptIn";
 import StockBadge from "@/components/pos/StockBadge";
 import StockBanner from "@/components/pos/StockBanner";
@@ -467,6 +468,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             </button>
           )}
           <div className="shrink-0 hidden lg:block"><ActiveBeanCard /></div>
+          <div className="shrink-0 hidden lg:block"><OpenContainersCard /></div>
           <span className="favo-small text-cool-steel shrink-0 hidden lg:block">{staffName}</span>
           {/* M15 — connectivity pill; tap opens the sync drawer */}
           <ConnectivityPill
