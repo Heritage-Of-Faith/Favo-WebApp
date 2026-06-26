@@ -152,6 +152,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   // are confirmed by the backend via paymentStatus instead.
   const [chargeOrder, setChargeOrder] = useState<Order | null>(null);
   const [paidLocally, setPaidLocally] = useState<Set<string>>(() => new Set());
+  // Optimistic cancel: immediately remove from the queue on success rather than
+  // waiting for the SSE round-trip (notifyOrderChange → pg_notify → LISTEN → client).
+  const [cancelledIds, setCancelledIds] = useState<Set<string>>(() => new Set());
 
   // Mark a queued order paid → lets it advance, and drop the cached copy so the
   // next expand refetches the authoritative paymentStatus.
@@ -160,10 +163,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     setFullOrders(prev => { const n = { ...prev }; delete n[orderId]; return n; });
   }
 
-  const sortedOrders = [...activeOrders].sort((a, b) => {
-    const sp = STATE_PRIORITY[a.state] - STATE_PRIORITY[b.state];
-    return sp !== 0 ? sp : b.lastUpdatedAt.localeCompare(a.lastUpdatedAt);
-  });
+  const sortedOrders = [...activeOrders]
+    .filter(o => !cancelledIds.has(o.orderId))
+    .sort((a, b) => {
+      const sp = STATE_PRIORITY[a.state] - STATE_PRIORITY[b.state];
+      return sp !== 0 ? sp : b.lastUpdatedAt.localeCompare(a.lastUpdatedAt);
+    });
 
   // Load menu + active bean lot (parallel — no waterfall)
   useEffect(() => {
@@ -361,6 +366,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     const r = await cancelOrder(orderId, "Cancelled at POS").catch(() => ({ ok: false as const, code: "ERR", message: "Could not cancel." }));
     setAdvancing(prev => ({ ...prev, [orderId]: false }));
     if (r.ok) {
+      setCancelledIds(prev => { const n = new Set(prev); n.add(orderId); return n; });
       setExpandedId(null);
       setFullOrders(prev => { const n = { ...prev }; delete n[orderId]; return n; });
       // M13: cancel + waste are independent. Offer a waste shortcut without
