@@ -16,7 +16,7 @@ Wave 1/2 tables are live on `main`. Wave 3 tables (marked below) landed in the l
 | `recipes` | Drink definition | id, menu_item_id, version |
 | `recipe_ingredients` | Recipe consumption | id, recipe_id, inventory_item_id, quantity, unit, tolerance_pct |
 | `inventory_items` | Stock SKUs | id, name, kind, unit, low_stock_threshold, origin |
-| `inventory_lots` | Batches | id, inventory_item_id, source_name, batch_number, roast_date, received_at, state, unit_cost_zar (numeric, rate only), quantity_received |
+| `inventory_lots` | Batches / containers | id, inventory_item_id, source_name, batch_number, roast_date, received_at, state, opened_at, closed_at, unit_cost_zar (numeric, rate only), quantity_received |
 | `stock_movements` | Stock changes (append-only) | id, inventory_lot_id, delta, kind, related_order_id, at, by_staff_id |
 | `stock_takes` | Counts | id, kind, started_at, completed_at, by_staff_id, variance_pct |
 | `stock_take_lines` | Per-lot count | id, stock_take_id, inventory_lot_id, expected, counted, variance |
@@ -44,8 +44,17 @@ Wave 1/2 tables are live on `main`. Wave 3 tables (marked below) landed in the l
 | `outbox_log` | Offline POS order queue | id, client_uuid (UNIQUE), customer_id, staff_id, payload (jsonb), received_at, applied_at, conflict_id |
 | `magic_link_tokens` | Customer email auth tokens | id, email, token_hash (UNIQUE), expires_at, used_at |
 
+### Container model (milk & beans)
+Milk and beans are tracked as **physical containers** (bottles/bags), not by ml/g.
+Each container is one `inventory_lots` row with `unit='cup'` on its item:
+- **Lifecycle** via `lot_state`: `active` (sealed/on-shelf) → `open` (in use) → `closed` (finished). At most one `open` container per item, enforced by partial unique index `uq_one_open_lot_per_item (inventory_item_id) WHERE state='open'`.
+- `quantity_received` = expected cups the container yields; `unit_cost_zar` = cost per cup (container cost ÷ expected cups). On **receipt** (purchase/seed) a `restock` movement of +expected cups is written; **opening** a container only sets `state='open'` + `opened_at` (no stock movement).
+- Each coffee inserts one `stock_movements` row `delta=-(drinks)`, `kind='deduction'` against the open container (recipe quantity ignored for cup items). Cups made by a container = `-SUM(delta WHERE kind='deduction')`.
+- Closing a container early writes a COGS-neutral `kind='adjustment'` to zero leftover cups. COGS is unchanged: `v_daily_cogs` sums `-delta × unit_cost_zar`.
+- Cups, lids, syrups and other items keep the per-unit/gram recipe deduction.
+
 ## Enums (in `db/enums.ts`)
-`order_state` · `staff_role` · `menu_category` · `inventory_kind` · `inventory_unit` · `lot_state` · `stock_movement_kind` · `stock_take_kind` · `payment_status` · `refund_status` · `waste_category` · `purchase_kind` · `expense_category` · `loyalty_kind` · `charge_kind` · `wallet_txn_kind` · `sync_conflict_kind` · `sync_conflict_status`
+`order_state` · `staff_role` · `menu_category` · `inventory_kind` · `inventory_unit` (g·kg·ml·l·unit·bag·**cup**) · `lot_state` (active·depleted·expired·quarantined·**open**·**closed**) · `stock_movement_kind` · `stock_take_kind` · `payment_status` · `refund_status` · `waste_category` · `purchase_kind` · `expense_category` · `loyalty_kind` · `charge_kind` · `wallet_txn_kind` · `sync_conflict_kind` · `sync_conflict_status`
 
 ### Loyalty enum values (AT-126 verified)
 - `loyalty_kind`: `earn` · `redeem` · `adjustment` · `expiry`

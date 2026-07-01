@@ -14,7 +14,7 @@ Money: integer cents in columns suffixed `_zar`. Timestamps: `timestamp with tim
 | `recipes` | Drink definition | id, menu_item_id, version |
 | `recipe_ingredients` | Recipe consumption | id, recipe_id, inventory_item_id, quantity, unit, tolerance_pct |
 | `inventory_items` | Stock SKUs | id, name, kind, unit, low_stock_threshold, origin |
-| `inventory_lots` | Batches | id, inventory_item_id, source_name, batch_number, roast_date, received_at, state |
+| `inventory_lots` | Batches / containers | id, inventory_item_id, source_name, batch_number, roast_date, received_at, state, opened_at, closed_at |
 | `stock_movements` | Stock changes (append-only) | id, inventory_lot_id, delta, kind, related_order_id, at, by_staff_id |
 | `stock_takes` | Counts | id, kind, started_at, completed_at, by_staff_id, variance_pct |
 | `stock_take_lines` | Per-lot count | id, stock_take_id, inventory_lot_id, expected, counted, variance |
@@ -32,8 +32,17 @@ Money: integer cents in columns suffixed `_zar`. Timestamps: `timestamp with tim
 | `price_history` | Price changes (append-only) | id, menu_item_id, price_zar, effective_from, effective_until |
 | `audit_log` | All-mutation log (append-only) | id, entity_kind, entity_id, action, actor_id, actor_role, at, before (jsonb), after (jsonb), reason |
 
+### Container model (milk & beans)
+Milk and beans are tracked as **physical containers** (bottles/bags) in cups, not ml/g.
+Each container is one `inventory_lots` row with item `unit='cup'`:
+- Lifecycle via `lot_state`: `active` (sealed) → `open` (in use) → `closed`. At most one `open` per item (partial unique index `uq_one_open_lot_per_item ... WHERE state='open'`).
+- `quantity_received` = expected cups; `unit_cost_zar` = cost per cup. On **receipt** (purchase/seed) a `restock` of +expected cups is written; **opening** a container only sets `state='open'` + `opened_at` (no movement).
+- Each coffee deducts one cup per drink from the open container (`kind='deduction'`, `delta=-drinks`), auto-opening the next sealed container when needed. Cups made = `-SUM(delta WHERE kind='deduction')`.
+- Closing early writes a COGS-neutral `adjustment` to zero leftover cups. `v_daily_cogs` (= `-delta × unit_cost_zar`) is unchanged.
+- Cups, lids, syrups keep the per-unit recipe deduction.
+
 ## Enums (in `db/enums.ts`)
-`order_state` · `staff_role` · `menu_category` · `inventory_kind` · `inventory_unit` · `lot_state` · `stock_movement_kind` · `stock_take_kind` · `payment_status` · `refund_status` · `waste_category` · `purchase_kind` · `expense_category` · `loyalty_kind`
+`order_state` · `staff_role` · `menu_category` · `inventory_kind` · `inventory_unit` (+`cup`) · `lot_state` (+`open`,`closed`) · `stock_movement_kind` · `stock_take_kind` · `payment_status` · `refund_status` · `waste_category` · `purchase_kind` · `expense_category` · `loyalty_kind`
 
 ## Append-only invariants
 | Table | Mechanism |

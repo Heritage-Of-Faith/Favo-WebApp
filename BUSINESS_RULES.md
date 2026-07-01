@@ -20,6 +20,7 @@
 | L14 | Staff entitlement: DB-enforced. Weekdays only. Cappuccinos only. | DB UNIQUE + app validation |
 | L15 | Done tap by barista marks order ready. Done button must be the most prominent action on active-order view. | UI |
 | L16 | Wallet top-ups + coffee packs in scope. Counter-only. Barista processes. Packs expire 90 d. | Server action |
+| L17 | Milk & beans use the container model: tracked as bottles/bags (cups), not ml/g. One coffee = one cup from the OPEN container; at most one open container per item; open/close on the POS (auto-opens next sealed so coffee never stalls). | Server action + DB partial unique index |
 
 ## Tunable — Admin can change with a logged config change
 
