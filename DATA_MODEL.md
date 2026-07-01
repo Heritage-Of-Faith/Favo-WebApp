@@ -48,7 +48,7 @@ Wave 1/2 tables are live on `main`. Wave 3 tables (marked below) landed in the l
 Milk and beans are tracked as **physical containers** (bottles/bags), not by ml/g.
 Each container is one `inventory_lots` row with `unit='cup'` on its item:
 - **Lifecycle** via `lot_state`: `active` (sealed/on-shelf) → `open` (in use) → `closed` (finished). At most one `open` container per item, enforced by partial unique index `uq_one_open_lot_per_item (inventory_item_id) WHERE state='open'`.
-- `quantity_received` = expected cups the container yields; `unit_cost_zar` = cost per cup (container cost ÷ expected cups); opening `restock` movement = +expected cups.
+- `quantity_received` = expected cups the container yields; `unit_cost_zar` = cost per cup (container cost ÷ expected cups). On **receipt** (purchase/seed) a `restock` movement of +expected cups is written; **opening** a container only sets `state='open'` + `opened_at` (no stock movement).
 - Each coffee inserts one `stock_movements` row `delta=-(drinks)`, `kind='deduction'` against the open container (recipe quantity ignored for cup items). Cups made by a container = `-SUM(delta WHERE kind='deduction')`.
 - Closing a container early writes a COGS-neutral `kind='adjustment'` to zero leftover cups. COGS is unchanged: `v_daily_cogs` sums `-delta × unit_cost_zar`.
 - Cups, lids, syrups and other items keep the per-unit/gram recipe deduction.

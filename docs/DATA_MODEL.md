@@ -36,7 +36,7 @@ Money: integer cents in columns suffixed `_zar`. Timestamps: `timestamp with tim
 Milk and beans are tracked as **physical containers** (bottles/bags) in cups, not ml/g.
 Each container is one `inventory_lots` row with item `unit='cup'`:
 - Lifecycle via `lot_state`: `active` (sealed) → `open` (in use) → `closed`. At most one `open` per item (partial unique index `uq_one_open_lot_per_item ... WHERE state='open'`).
-- `quantity_received` = expected cups; `unit_cost_zar` = cost per cup; opening `restock` = +expected cups.
+- `quantity_received` = expected cups; `unit_cost_zar` = cost per cup. On **receipt** (purchase/seed) a `restock` of +expected cups is written; **opening** a container only sets `state='open'` + `opened_at` (no movement).
 - Each coffee deducts one cup per drink from the open container (`kind='deduction'`, `delta=-drinks`), auto-opening the next sealed container when needed. Cups made = `-SUM(delta WHERE kind='deduction')`.
 - Closing early writes a COGS-neutral `adjustment` to zero leftover cups. `v_daily_cogs` (= `-delta × unit_cost_zar`) is unchanged.
 - Cups, lids, syrups keep the per-unit recipe deduction.

@@ -16,7 +16,7 @@ Server Actions for mutations (`src/server/actions/*`). Route handlers for querie
 | `logWaste(input)` | Server action | barista | Insert `waste_log` + `stock_movements(kind='waste')` atomically. |
 | `runStockTake(kind)` | Server action | admin+ | Create `stock_takes`; walk `active`+`open` lots; compute variance on close. |
 | `openContainer(itemId)` | Server action | barista/admin | Container model (milk/beans): open the FIFO-oldest sealed container. 409 if one already open, 404 if none sealed. |
-| `closeContainer(lotId)` | Server action | barista/admin | Close an open container; leftover cups written off with a COGS-neutral `adjustment`. 409 unless open. |
+| `closeContainer(lotId)` | Server action | barista/admin | Close an open container; leftover cups written off with a COGS-neutral `adjustment`. 404 if the lot doesn't exist; 409 unless open. |
 | `listOpenContainers()` | Server action | barista/admin | Per cup-item: the open container + sealed count. Drives the POS open-containers card. |
 | `checkLowStock()` | Cron 15 m | system | Push to `stock_alert_recipients` when stock ≤ threshold. |
 | `requestRefund(orderId, reason)` | Server action | any staff | Insert pending refund. |
