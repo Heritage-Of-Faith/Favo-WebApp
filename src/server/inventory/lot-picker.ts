@@ -8,7 +8,12 @@
 //   DeductionError                        → typed error for OUT_OF_STOCK
 
 import { eq, and, asc, sql } from "drizzle-orm";
-import { inventoryLots, stockMovements } from "@db/schema";
+import {
+  inventoryLots,
+  stockMovements,
+  recipeIngredients,
+  inventoryItems,
+} from "@db/schema";
 import type { DB } from "@/lib/db";
 
 // ─── Exported pure helpers ────────────────────────────────────────────────────
@@ -190,4 +195,96 @@ export async function pickOpenContainer(
 
   const stock = await lotRunningStock(newId, tx);
   return { id: newId, currentStock: stock };
+}
+
+// ─── checkRecipeStock ─────────────────────────────────────────────────────────
+
+export type StockCheckResult = { ok: true } | { ok: false; itemName: string };
+
+/**
+ * Read-only pre-check: would `deductForOrder` be able to fulfil this recipe at
+ * `orderQty`? Mirrors the exact rules `pickOpenContainer`/`pickActiveLot` use so
+ * a barista can't take payment for a drink that can't be made:
+ *   - cup items: total cups across the open + sealed containers must cover the
+ *     order (deductCups spans multiple containers within one order).
+ *   - other items: only the FIFO-oldest active lot counts (deductQuantity never
+ *     falls through to a second lot), matching current deduction behaviour.
+ *
+ * Not the source of truth — it runs outside any lock, so stock can still change
+ * between this check and the transactional deduction on `in_progress`. That
+ * deduction (with SELECT … FOR UPDATE) remains the authoritative guard; this is
+ * purely an early UX gate to avoid charging for an unfulfillable order.
+ */
+export async function checkRecipeStock(
+  recipeId: string,
+  orderQty: number,
+  executor: DB
+): Promise<StockCheckResult> {
+  const ingredients = await executor
+    .select({
+      inventoryItemId: recipeIngredients.inventoryItemId,
+      itemName: inventoryItems.name,
+      quantity: recipeIngredients.quantity,
+      itemUnit: inventoryItems.unit,
+    })
+    .from(recipeIngredients)
+    .innerJoin(
+      inventoryItems,
+      eq(recipeIngredients.inventoryItemId, inventoryItems.id)
+    )
+    .where(eq(recipeIngredients.recipeId, recipeId));
+
+  for (const ing of ingredients) {
+    if (ing.itemUnit === "cup") {
+      const [row] = await executor
+        .select({
+          total: sql<number>`COALESCE(SUM(${stockMovements.delta}), 0)::int`,
+        })
+        .from(stockMovements)
+        .innerJoin(
+          inventoryLots,
+          eq(inventoryLots.id, stockMovements.inventoryLotId)
+        )
+        .where(
+          and(
+            eq(inventoryLots.inventoryItemId, ing.inventoryItemId),
+            sql`${inventoryLots.state} IN ('open', 'active')`
+          )
+        );
+
+      if ((row?.total ?? 0) < orderQty) {
+        return { ok: false, itemName: ing.itemName };
+      }
+    } else {
+      const needed = ing.quantity * orderQty;
+      const [oldest] = await executor
+        .select({ id: inventoryLots.id })
+        .from(inventoryLots)
+        .where(
+          and(
+            eq(inventoryLots.inventoryItemId, ing.inventoryItemId),
+            eq(inventoryLots.state, "active")
+          )
+        )
+        .orderBy(asc(inventoryLots.receivedAt))
+        .limit(1);
+
+      if (!oldest) {
+        return { ok: false, itemName: ing.itemName };
+      }
+
+      const [stockRow] = await executor
+        .select({
+          total: sql<number>`COALESCE(SUM(${stockMovements.delta}), 0)::int`,
+        })
+        .from(stockMovements)
+        .where(eq(stockMovements.inventoryLotId, oldest.id));
+
+      if ((stockRow?.total ?? 0) < needed) {
+        return { ok: false, itemName: ing.itemName };
+      }
+    }
+  }
+
+  return { ok: true };
 }

@@ -20,6 +20,7 @@ import { authorize } from "@/server/auth/guard";
 import { revenueDay } from "@/lib/format";
 import { canTransition } from "@/server/orders/state-machine";
 import { deductForOrder, DeductionError } from "@/server/orders/deduction";
+import { checkRecipeStock } from "@/server/inventory/lot-picker";
 import type { DB } from "@/lib/db";
 import {
   computeOrderTotalZar,
@@ -104,6 +105,20 @@ export async function createOrder(
         code: "UNKNOWN_MENU_ITEM",
         message: `Unknown menu item: ${item.menuItemId}`,
       };
+    }
+    // Reject before payment if a recipe ingredient can't be fulfilled — the
+    // barista shouldn't charge a customer for a drink that's out of stock and
+    // then discover it when they hit "Start Making" (rule L01 still holds: no
+    // stock is actually deducted here, this is a read-only availability check).
+    if (mi.recipeId) {
+      const stock = await checkRecipeStock(mi.recipeId, item.quantity, db);
+      if (!stock.ok) {
+        return {
+          ok: false,
+          code: "OUT_OF_STOCK",
+          message: `${mi.name} is unavailable right now — out of ${stock.itemName}.`,
+        };
+      }
     }
     const mods = item.modifications.map((id) => ({
       priceDeltaZar: modById.get(id)?.priceDeltaZar ?? 0,
