@@ -98,16 +98,16 @@ export default function Hero() {
         <div className="reveal">
           <p style={S.eyebrow}>Heritage of Faith · Emalahleni</p>
           <h1 style={S.headline}>
-            Coffee for<br />
-            the family.
+            Your FAVO<br />
+            Coffee Stop
           </h1>
           <p style={S.body}>
-            FAVO is the café at Heritage of Faith Ministries.
-            Our baristas are iXchange interns — people learning to serve
-            the community, one drink at a time. Come as you are.
+            FAVO is the little café at Heritage of Faith Ministries.
+            Every cup you order is made by an iXchanger, someone building
+            real skills one order at a time. Grab a seat and enjoy the fellowship.
           </p>
           <a href="/signup" style={S.cta}>
-            Join the loyalty programme →
+            Join our loyalty programme →
           </a>
         </div>
 

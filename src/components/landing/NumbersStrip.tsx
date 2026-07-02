@@ -3,10 +3,10 @@
 // Responsive via .landing-numbers-grid in globals.css.
 
 const facts = [
-  { number: "07:50",   label: "Opens Sundays",           sub: "Before morning service · 07:50–09:15" },
-  { number: "5",       label: "Drinks on the menu",       sub: "Cappuccino, Americano, Mocha & more" },
+  { number: "07:50",   label: "Open on Sundays",           sub: "Before the morning service · 07:50–09:15" },
+  { number: "4",       label: "Drinks on the board",       sub: "Cappuccino, americano, mocha and more" },
   { number: "Mon–Fri", label: "Open on weekdays",         sub: "After morning prayer · hours vary" },
-  { number: "3",       label: "iXchangers serving",       sub: "Interns learning to serve you" },
+  { number: "3",       label: "iXchangers on the bar",    sub: "iXchangers serving the community" },
 ] as const;
 
 const S = {

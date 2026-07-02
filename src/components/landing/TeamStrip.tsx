@@ -118,7 +118,7 @@ export default function TeamStrip() {
 
       <div style={S.inner}>
         <p style={S.eyebrow}>The team</p>
-        <h2 style={S.heading}>Made by hand. Served with heart.</h2>
+        <h2 style={S.heading}>The people who pull your shots.</h2>
 
         <div style={S.grid} className="team-strip-grid reveal-stagger">
           {BARISTAS.map((b) => (
@@ -133,7 +133,7 @@ export default function TeamStrip() {
                 />
               </div>
               <p style={S.name}>{b.name}</p>
-              <p style={S.role}>iXchange intern</p>
+              <p style={S.role}>iXchanger</p>
             </div>
           ))}
         </div>
