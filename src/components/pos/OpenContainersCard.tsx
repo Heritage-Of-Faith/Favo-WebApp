@@ -40,9 +40,12 @@ export default function OpenContainersCard() {
     setBusy(itemId);
     const r = await openContainer(itemId);
     setBusy(null);
+    // Always resync with the server, success or failure — a CONFLICT here means
+    // our local `rows` is stale (e.g. an earlier attempt on this device already
+    // succeeded), so trust the server's view over whatever we're showing.
+    load();
     if (r.ok) {
       toast.success("Container opened");
-      load();
     } else {
       toast.error(r.message ?? "Could not open container.");
     }
@@ -52,9 +55,9 @@ export default function OpenContainersCard() {
     setBusy(itemId);
     const r = await closeContainer(lotId);
     setBusy(null);
+    load();
     if (r.ok) {
       toast.success("Container closed");
-      load();
     } else {
       toast.error(r.message ?? "Could not close container.");
     }
