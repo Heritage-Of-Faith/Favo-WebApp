@@ -127,7 +127,7 @@ export default function AuthForm({ mode }: Props) {
           style={{
             color: "var(--color-porcelain)",
             textDecoration: "none",
-            fontSize: "clamp(1.75rem, 6vw, 2.5rem)",
+            fontSize: "clamp(3rem, 11vw, 4.5rem)",
           }}
         >
           FAVO
@@ -197,14 +197,14 @@ export default function AuthForm({ mode }: Props) {
           style={{
             color: "var(--color-porcelain)",
             textDecoration: "none",
-            fontSize: "clamp(2.25rem, 8vw, 3.25rem)",
+            fontSize: "clamp(3rem, 11vw, 4.5rem)",
           }}
         >
           FAVO
         </Link>
         <h1
           className="favo-h2 mt-5 text-porcelain"
-          style={{ fontSize: "clamp(2.25rem, 7vw, 4rem)" }}
+          style={{ fontSize: "clamp(3rem, 10vw, 5.5rem)" }}
         >
           {copy.heading}
         </h1>
