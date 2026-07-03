@@ -99,6 +99,7 @@ const DRINKS = [
   { name: "Americano", price: "R20" },
   { name: "Hot Chocolate", price: "R20" },
   { name: "Mocha", price: "R25" },
+  { name: "Chai Latte", price: "R25" },
 ] as const;
 
 export default function AboutSection() {
