@@ -19,13 +19,16 @@ export async function GET(req: NextRequest) {
 
   // Count orders from the last 30 minutes that have no corresponding audit_log row.
   // A gap here means writeAudit() was not called on a mutation (business rule violation).
+  // NB: the orders table's creation timestamp column is `placed_at` (there is no
+  // `created_at`); using the wrong column made this query throw. PRD SC09 requires
+  // this to run and return 0. See docs/FAVO_PRD_v4.md §04 (Audit coverage).
   const result = await db.execute<{ gap_count: string }>(sql`
     SELECT COUNT(*) AS gap_count
     FROM orders o
-    WHERE o.created_at > NOW() - INTERVAL '30 minutes'
+    WHERE o.placed_at > NOW() - INTERVAL '30 minutes'
       AND NOT EXISTS (
         SELECT 1 FROM audit_log a
-        WHERE a.entity_kind = 'orders'
+        WHERE a.entity_kind = 'order'
           AND a.entity_id = o.id
       )
   `);

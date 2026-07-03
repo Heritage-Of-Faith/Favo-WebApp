@@ -5,13 +5,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
-vi.mock("@db/index", () => ({
-  db: {
+vi.mock("@db/index", () => {
+  // tx used inside db.transaction for the succeeded path (mark successful + earn).
+  const txMock = {
+    update: vi.fn(() => ({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    })),
     select: vi.fn(),
-    update: vi.fn(),
     insert: vi.fn(),
-  },
-}));
+  };
+  return {
+    db: {
+      select: vi.fn(),
+      update: vi.fn(),
+      insert: vi.fn(),
+      transaction: vi.fn(async (cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
+    },
+    __txMock: txMock,
+  };
+});
 
 vi.mock("@/server/audit", () => ({
   writeAudit: vi.fn().mockResolvedValue(undefined),
@@ -19,6 +31,20 @@ vi.mock("@/server/audit", () => ({
 
 vi.mock("@/server/yoco/client", () => ({
   getCheckoutStatus: vi.fn(),
+}));
+
+// Loyalty accrual is unit-tested separately; here we mock it and assert it is
+// invoked on the succeeded path (L06 — deferred payments must earn too).
+vi.mock("@/server/loyalty/accrue", () => ({
+  accrueOrderLoyalty: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("@/server/push/send", () => ({
+  sendPointsEarnedPush: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock("@/server/push/payload", () => ({
+  isValidPushSubscription: vi.fn(() => false),
 }));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -59,10 +85,6 @@ describe("retryDeferredPayments", () => {
       from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([makePayment()]) }),
     } as unknown as ReturnType<typeof db.select>);
 
-    const updateWhere = vi.fn().mockResolvedValue([]);
-    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
-    vi.mocked(db.update).mockReturnValue({ set: updateSet } as unknown as ReturnType<typeof db.update>);
-
     vi.mocked(getCheckoutStatus).mockResolvedValue({ status: "succeeded" });
 
     const { retryDeferredPayments } = await import("@/server/crons/retry-deferred-payments");
@@ -70,10 +92,39 @@ describe("retryDeferredPayments", () => {
 
     expect(res.resolved).toBe(1);
     expect(res.conflicted).toBe(0);
-    expect(db.update).toHaveBeenCalled();
+    // Mark-successful + earn happen atomically inside a transaction now.
+    expect(db.transaction).toHaveBeenCalled();
     expect(vi.mocked(writeAudit)).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "payment.deferred_resolved" })
+      expect.objectContaining({ action: "payment.deferred_resolved" }),
+      expect.anything()
     );
+  });
+
+  it("accrues loyalty and pushes when a deferred payment resolves (L06)", async () => {
+    const { db } = await import("@db/index");
+    const { getCheckoutStatus } = await import("@/server/yoco/client");
+    const { accrueOrderLoyalty } = await import("@/server/loyalty/accrue");
+    const { sendPointsEarnedPush } = await import("@/server/push/send");
+    const { isValidPushSubscription } = await import("@/server/push/payload");
+
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([makePayment()]) }),
+    } as unknown as ReturnType<typeof db.select>);
+    vi.mocked(getCheckoutStatus).mockResolvedValue({ status: "succeeded" });
+    vi.mocked(accrueOrderLoyalty).mockResolvedValue({
+      earnedPoints: 22,
+      newLoyaltyBalance: 122,
+      subscription: { fake: true },
+    });
+    vi.mocked(isValidPushSubscription).mockReturnValue(true);
+
+    const { retryDeferredPayments } = await import("@/server/crons/retry-deferred-payments");
+    const res = await retryDeferredPayments();
+
+    expect(res.resolved).toBe(1);
+    // Deferred confirmation must accrue loyalty (regression guard for F6-1).
+    expect(vi.mocked(accrueOrderLoyalty)).toHaveBeenCalledWith("ord-1", expect.anything());
+    expect(vi.mocked(sendPointsEarnedPush)).toHaveBeenCalledWith({ fake: true }, 22, 122);
   });
 
   it("opens a sync_conflict when Yoco reports failed", async () => {

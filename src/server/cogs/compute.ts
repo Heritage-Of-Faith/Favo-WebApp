@@ -48,6 +48,15 @@ export async function getCogsLive(date: string): Promise<CogsLive> {
   );
   const cogsZar = parseInt(cogsRow?.cogs_zar ?? "0", 10) || 0;
 
+  // ── Expenses ─────────────────────────────────────────────────────────────
+  // Non-stock operating expenses for the day (rent, utilities, wages, …).
+  // PRD §04 SC01 requires the live dashboard to show expenses and a net that
+  // accounts for them — previously hard-coded to 0.
+  const [expRow] = await db.execute<{ expenses_zar: string | null }>(
+    sql`SELECT expenses_zar FROM v_daily_expenses WHERE sast_date = ${date}::date`
+  );
+  const expensesZar = parseInt(expRow?.expenses_zar ?? "0", 10) || 0;
+
   // ── cost_estimated_warning (R10) ───────────────────────────────────────────
   // A lot is considered "estimated" if its creation audit row contains
   // 'cost_estimated' in the reason field.
@@ -64,15 +73,16 @@ export async function getCogsLive(date: string): Promise<CogsLive> {
   const costEstimatedWarning = parseInt(warnRow?.cnt ?? "0", 10) > 0;
 
   const grossMarginZar = revenueZar - cogsZar;
+  const netZar = grossMarginZar - expensesZar;
 
   return {
     date,
     revenueZar,
     cogsZar,
-    expensesZar: 0,
+    expensesZar,
     grossMarginZar,
-    netZar: grossMarginZar,
-    profit: grossMarginZar > 0,
+    netZar,
+    profit: netZar > 0,
     costEstimatedWarning,
   };
 }

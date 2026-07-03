@@ -81,43 +81,15 @@ vi.mock("@db/index", () => {
   };
 });
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const CUSTOMER_ID = "cust_louis";
-const ORDER_ID = "order_001";
-
-const VALID_PUSH_SUB = {
-  endpoint: "https://push.example.com/abc",
-  keys: { p256dh: "key-p256dh", auth: "key-auth" },
-};
-
-function setupSelectSequence(
-  db: { select: ReturnType<typeof vi.fn> },
-  rows: unknown[][]
-) {
-  let call = 0;
-  db.select.mockImplementation(() => {
-    const rowsForCall = rows[call++] ?? [];
-    return {
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          orderBy: vi.fn().mockReturnValue({
-            limit: vi.fn().mockReturnValue({
-              offset: vi.fn().mockImplementation(() => ({
-                then: (resolve: (v: unknown[]) => void) => resolve(rowsForCall),
-                [Symbol.toStringTag]: "Promise",
-              })),
-            }),
-          }),
-          then: (resolve: (v: unknown[]) => void) => resolve(rowsForCall),
-          [Symbol.toStringTag]: "Promise",
-        }),
-        then: (resolve: (v: unknown[]) => void) => resolve(rowsForCall),
-        [Symbol.toStringTag]: "Promise",
-      }),
-    };
-  });
-}
+// Customer reads run inside withCustomerScope (RLS, F2/L13). Bypass the real
+// transaction/role switch in unit tests and run the callback against the mocked
+// db (DB-layer isolation is covered in tests/db/).
+vi.mock("@/lib/db-rls", async () => {
+  const { db } = await import("@db/index");
+  return {
+    withCustomerScope: (_customerId: string, fn: (tx: unknown) => unknown) => fn(db),
+  };
+});
 
 // ─── listCustomerLoyaltyHistory ───────────────────────────────────────────────
 
@@ -257,109 +229,12 @@ describe("listCustomerLoyaltyHistory — rows sorted newest first with running b
   });
 });
 
-// ─── transitionOrder push tests ───────────────────────────────────────────────
-
-function makeOrder(overrides: Record<string, unknown> = {}) {
-  return {
-    id: ORDER_ID,
-    customerId: CUSTOMER_ID,
-    state: "ordered",
-    totalZar: 5000, // R50 → earnPoints(5000) > 0
-    isStaffDiscount: false,
-    completedAt: null,
-    ...overrides,
-  };
-}
-
-function makeCustomer(overrides: Record<string, unknown> = {}) {
-  return {
-    name: "Louis",
-    pushSubscription: VALID_PUSH_SUB,
-    loyaltyPoints: 50,
-    ...overrides,
-  };
-}
-
-/**
- * Sets up the txMock.select to return rows in sequence for each call inside the transaction.
- */
-function setupTxSelectSequence(
-  txMock: { select: ReturnType<typeof vi.fn> },
-  rows: unknown[][]
-) {
-  let call = 0;
-  txMock.select.mockImplementation(() => {
-    const rowsForCall = rows[call++] ?? [];
-    return {
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          for: vi.fn().mockImplementation(() => ({
-            then: (resolve: (v: unknown[]) => void) => resolve(rowsForCall),
-            [Symbol.toStringTag]: "Promise",
-          })),
-          then: (resolve: (v: unknown[]) => void) => resolve(rowsForCall),
-          [Symbol.toStringTag]: "Promise",
-        }),
-      }),
-    };
-  });
-}
-
-describe("transitionOrder → in_progress: push notification for earned points", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("calls sendPointsEarnedPush when customer earns points and has a push subscription", async () => {
-    const { db, __txMock } = await import("@db/index") as unknown as {
-      db: { select: ReturnType<typeof vi.fn>; transaction: ReturnType<typeof vi.fn> };
-      __txMock: { select: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-    };
-
-    // db.select for fast existence check
-    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [{ id: ORDER_ID }],
-    ]);
-
-    // tx.select sequence: [0] lock row, [1] customer for push (after loyalty update)
-    setupTxSelectSequence(__txMock, [
-      [makeOrder()],                          // SELECT FOR UPDATE
-      [makeCustomer({ loyaltyPoints: 75 })],  // customer re-fetch (after +25 pts earn on R50)
-    ]);
-
-    const { sendPointsEarnedPush } = await import("@/server/push/send");
-    const { transitionOrder } = await import("@/server/actions/orders");
-
-    await transitionOrder(ORDER_ID, "in_progress");
-
-    // Give microtasks a chance to settle (fire-and-forget)
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(vi.mocked(sendPointsEarnedPush)).toHaveBeenCalledOnce();
-    const [, pointsArg, balanceArg] = vi.mocked(sendPointsEarnedPush).mock.calls[0];
-    expect(pointsArg).toBeGreaterThan(0);
-    expect(balanceArg).toBe(75);
-  });
-
-  it("does NOT call sendPointsEarnedPush when customer has no push subscription", async () => {
-    const { db, __txMock } = await import("@db/index") as unknown as {
-      db: { select: ReturnType<typeof vi.fn>; transaction: ReturnType<typeof vi.fn> };
-      __txMock: { select: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-    };
-
-    setupSelectSequence(db as unknown as { select: ReturnType<typeof vi.fn> }, [
-      [{ id: ORDER_ID }],
-    ]);
-
-    setupTxSelectSequence(__txMock, [
-      [makeOrder()],
-      [makeCustomer({ pushSubscription: null, loyaltyPoints: 75 })],
-    ]);
-
-    const { sendPointsEarnedPush } = await import("@/server/push/send");
-    const { transitionOrder } = await import("@/server/actions/orders");
-
-    await transitionOrder(ORDER_ID, "in_progress");
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(vi.mocked(sendPointsEarnedPush)).not.toHaveBeenCalled();
-  });
-});
+// ─── points-earned push (moved to the Yoco webhook — F6 / L06) ────────────────
+//
+// The points-earned push previously fired from transitionOrder(→in_progress).
+// Earn now triggers on the Yoco webhook (payment.succeeded), so the push fires
+// there too. Those scenarios are covered in webhook-earn.test.ts:
+//   W8 — push fires with the new balance when a subscription is present
+//   W9 — no push when the customer has no valid subscription
+// transitionOrder no longer earns or pushes points (see earn-scenarios.test.ts,
+// "transitionOrder must NOT earn").

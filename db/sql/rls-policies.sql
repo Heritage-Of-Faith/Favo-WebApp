@@ -1,15 +1,76 @@
 -- Row-Level Security policies for FAVO Café
 -- Tenant: hofmi (single-tenant)
--- Roles: customer, barista, roaster, manager, admin, finance, owner
+--
+-- CANONICAL SOURCE: the CUSTOMER-isolation surface (the part actually applied
+-- to the live DB) now lives in drizzle/0023_rls_customer_isolation.sql and is
+-- applied via `bun db:migrate`. This file is kept IN SYNC with that migration
+-- for the customer section and additionally documents the intended
+-- staff/barista/admin/finance/owner policy design (aspirational — the live app
+-- runs staff/admin/system on the OWNER connection, which bypasses non-forced
+-- RLS, so those role policies are not required for correctness today).
+--
+-- Roles: favo_customer (enforced), barista, admin, finance, owner (design)
 
--- Enable RLS on all tables
-ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+-- ─── Customer isolation (ENFORCED — mirrors 0023 migration) ───────────────────
+-- Dedicated non-owner, NOLOGIN role. The app SET LOCAL ROLE's to it inside a
+-- transaction (src/lib/db-rls.ts → withCustomerScope) and sets
+-- app.current_customer_id. RLS is ENABLED (not FORCED) so the owner connection
+-- used by staff/admin/system is unaffected.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'favo_customer') THEN
+    CREATE ROLE favo_customer NOLOGIN NOINHERIT;
+  END IF;
+END
+$$;
+DO $$ BEGIN EXECUTE format('GRANT favo_customer TO %I', current_user); END $$;
+
+GRANT USAGE ON SCHEMA public TO favo_customer;
+GRANT SELECT ON customers, orders, order_items, loyalty_transactions,
+  wallet_transactions, coffee_packs, menu_items TO favo_customer;
+
+ALTER TABLE customers            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE loyalty_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wallet_transactions  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE coffee_packs         ENABLE ROW LEVEL SECURITY;
+-- menu_items: public reference data — RLS intentionally NOT enabled (SELECT
+-- grant is enough; menu is public). See 0023 migration for rationale.
+
+CREATE POLICY customer_own_row ON customers
+  FOR SELECT TO favo_customer
+  USING (id::text = current_setting('app.current_customer_id', true));
+
+CREATE POLICY customer_own_orders ON orders
+  FOR SELECT TO favo_customer
+  USING (customer_id::text = current_setting('app.current_customer_id', true));
+
+CREATE POLICY customer_own_order_items ON order_items
+  FOR SELECT TO favo_customer
+  USING (EXISTS (
+    SELECT 1 FROM orders o
+    WHERE o.id = order_items.order_id
+      AND o.customer_id::text = current_setting('app.current_customer_id', true)
+  ));
+
+CREATE POLICY customer_own_loyalty ON loyalty_transactions
+  FOR SELECT TO favo_customer
+  USING (customer_id::text = current_setting('app.current_customer_id', true));
+
+CREATE POLICY customer_own_wallet ON wallet_transactions
+  FOR SELECT TO favo_customer
+  USING (customer_id::text = current_setting('app.current_customer_id', true));
+
+CREATE POLICY customer_own_packs ON coffee_packs
+  FOR SELECT TO favo_customer
+  USING (customer_id::text = current_setting('app.current_customer_id', true));
+
+-- ─── Staff/admin/finance/owner (DESIGN reference only — not applied) ──────────
+-- The live app runs these on the owner connection which bypasses non-forced
+-- RLS, so the policies below are documentation of intent, not enforced today.
 ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_entitlement_log ENABLE ROW LEVEL SECURITY;
-ALTER TABLE menu_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE menu_customisations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory_items ENABLE ROW LEVEL SECURITY;
@@ -24,17 +85,6 @@ ALTER TABLE refunds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE operating_hours ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
-
--- ─── Customer role ────────────────────────────────────────────────────────────
--- Customers can only see their own orders and loyalty transactions. Read-only.
-
-CREATE POLICY customer_own_orders ON orders
-  FOR SELECT TO customer
-  USING (customer_id = current_setting('app.current_customer_id', true));
-
-CREATE POLICY customer_own_loyalty ON loyalty_transactions
-  FOR SELECT TO customer
-  USING (customer_id = current_setting('app.current_customer_id', true));
 
 -- ─── Barista role ─────────────────────────────────────────────────────────────
 -- Baristas: RW on orders, order_items, waste_log, staff_entitlement_log

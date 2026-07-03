@@ -16,6 +16,7 @@
     "lint": "eslint src db tests proxy.ts auth.ts",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
+    "test:db": "vitest run --config vitest.db.config.ts",
     "test:e2e": "playwright test",
     "test:e2e:ci": "playwright test --reporter=github",
     "db:generate": "drizzle-kit generate",

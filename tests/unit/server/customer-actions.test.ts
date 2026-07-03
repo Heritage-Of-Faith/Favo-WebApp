@@ -14,6 +14,16 @@ vi.mock("@db/index", () => ({
   },
 }));
 
+// Customer reads now run inside withCustomerScope (RLS, F2/L13). For unit tests
+// we bypass the real transaction/role switch and run the callback against the
+// mocked db — DB-layer isolation is covered separately in tests/db/.
+vi.mock("@/lib/db-rls", async () => {
+  const { db } = await import("@db/index");
+  return {
+    withCustomerScope: (_customerId: string, fn: (tx: unknown) => unknown) => fn(db),
+  };
+});
+
 vi.mock("@/server/audit", () => ({
   writeAudit: vi.fn().mockResolvedValue(undefined),
 }));

@@ -12,6 +12,9 @@ import { writeAudit } from "@/server/audit";
 import { verifyYocoSignature } from "@/server/yoco/signature";
 import { parseYocoEvent } from "@/server/yoco/webhook";
 import { activatePendingCharge } from "@/server/actions/loyalty";
+import { accrueOrderLoyalty } from "@/server/loyalty/accrue";
+import { sendPointsEarnedPush } from "@/server/push/send";
+import { isValidPushSubscription } from "@/server/push/payload";
 import type { DB } from "@/lib/db";
 
 const SIGNATURE_HEADER = "webhook-signature";
@@ -104,6 +107,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, skipped: "no matching payment" });
   }
 
+  // Loyalty earn details captured inside the transaction for the post-commit
+  // points-earned push (L06 / AT-128). Populated only when points are accrued.
+  let earnPush: {
+    subscription: unknown;
+    earnedPoints: number;
+    newLoyaltyBalance: number;
+  } | null = null;
+
   // BUG-Y3 fix: SELECT FOR UPDATE prevents concurrent webhook deliveries from
   // double-processing the same event. The lock ensures only the first delivery
   // runs the updates; subsequent ones see status !== 'pending' and no-op.
@@ -126,6 +137,14 @@ export async function POST(request: Request) {
         .update(payments)
         .set({ status: "successful", webhookReceivedAt: new Date(), ...paymentIdSet })
         .where(eq(payments.id, locked.id));
+
+      // ── Loyalty accrual on payment confirmation (L06) ────────────────────
+      // Earn triggers here — on the Yoco webhook — NOT on the order state
+      // change. Shared with the deferred-payment retry cron so every
+      // confirmation site earns consistently and idempotently.
+      if (locked.orderId) {
+        earnPush = await accrueOrderLoyalty(locked.orderId, txDb);
+      }
     } else if (event.type === "payment.failed") {
       await tx
         .update(payments)
@@ -171,6 +190,26 @@ export async function POST(request: Request) {
       txDb
     );
   });
+
+  // ── Post-transaction side effect: points-earned push (AT-128) ─────────────
+  // Fire-and-forget after the transaction commits — mirrors transitionOrder's
+  // previous behaviour. Only fires when this delivery actually accrued points.
+  const push = earnPush as {
+    subscription: unknown;
+    earnedPoints: number;
+    newLoyaltyBalance: number;
+  } | null;
+  if (push && push.subscription && isValidPushSubscription(push.subscription)) {
+    const { subscription, earnedPoints, newLoyaltyBalance } = push;
+    sendPointsEarnedPush(subscription, earnedPoints, newLoyaltyBalance)
+      .then(() => {
+        // Subscription expiry is logged inside sendPointsEarnedPush; pruning of
+        // stale subscriptions is handled by the order-ready push path.
+      })
+      .catch((err: unknown) => {
+        console.error("[push] sendPointsEarnedPush failed for order", existingPayment!.orderId, err);
+      });
+  }
 
   return NextResponse.json({ ok: true });
 }

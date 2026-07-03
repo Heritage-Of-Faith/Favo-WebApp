@@ -18,6 +18,7 @@ import {
   loyaltyTransactions,
 } from "@db/schema";
 import { getCustomerSession } from "@/server/auth/customer-session";
+import { withCustomerScope } from "@/lib/db-rls";
 import { writeAudit } from "@/server/audit";
 import type { ActionResult } from "@/lib/types";
 import type {
@@ -25,6 +26,17 @@ import type {
   CustomerOrder,
   PacksView,
 } from "@/lib/customer/contract";
+
+// Row shape returned by the order_items + menu_items join in listCustomerOrders.
+type CustomerOrderItemRow = {
+  id: string;
+  orderId: string;
+  menuItemId: string;
+  menuItemName: string | null;
+  quantity: number;
+  unitPriceZar: number;
+  modifications: unknown;
+};
 
 // ─── Session guard ────────────────────────────────────────────────────────────
 
@@ -44,31 +56,37 @@ export async function getCustomerSummary(): Promise<ActionResult<CustomerSummary
   const session = await requireCustomer();
   if (!session.ok) return session;
 
-  const [customer] = await db
-    .select({
-      id: customers.id,
-      name: customers.name,
-      loyaltyPoints: customers.loyaltyPoints,
-      hasPushSubscription: sql<boolean>`(push_subscription IS NOT NULL)`,
-    })
-    .from(customers)
-    .where(eq(customers.id, session.customerId));
+  const { customer, packCount } = await withCustomerScope(session.customerId, async (tx) => {
+    const [customer] = await tx
+      .select({
+        id: customers.id,
+        name: customers.name,
+        loyaltyPoints: customers.loyaltyPoints,
+        hasPushSubscription: sql<boolean>`(push_subscription IS NOT NULL)`,
+      })
+      .from(customers)
+      .where(eq(customers.id, session.customerId));
+
+    // Short-circuit: no customer row → no need to run the pack-count query.
+    if (!customer) return { customer: undefined, packCount: undefined };
+
+    const now = new Date();
+    const [packCount] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(coffeePacks)
+      .where(
+        and(
+          eq(coffeePacks.customerId, session.customerId),
+          gt(coffeePacks.expiresAt, now),
+          gt(coffeePacks.qtyRemaining, 0)
+        )
+      );
+    return { customer, packCount };
+  });
 
   if (!customer) {
     return { ok: false, code: "NOT_FOUND", message: "Customer account not found." };
   }
-
-  const now = new Date();
-  const [packCount] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(coffeePacks)
-    .where(
-      and(
-        eq(coffeePacks.customerId, session.customerId),
-        gt(coffeePacks.expiresAt, now),
-        gt(coffeePacks.qtyRemaining, 0)
-      )
-    );
 
   return {
     ok: true,
@@ -88,37 +106,45 @@ export async function listCustomerOrders(limit = 10): Promise<ActionResult<Custo
   const session = await requireCustomer();
   if (!session.ok) return session;
 
-  const customerOrders = await db
-    .select({
-      id: orders.id,
-      state: orders.state,
-      placedAt: orders.placedAt,
-      completedAt: orders.completedAt,
-      totalZar: orders.totalZar,
-    })
-    .from(orders)
-    .where(eq(orders.customerId, session.customerId))
-    .orderBy(desc(orders.placedAt))
-    .limit(limit);
+  const { customerOrders, items } = await withCustomerScope(session.customerId, async (tx) => {
+    const customerOrders = await tx
+      .select({
+        id: orders.id,
+        state: orders.state,
+        placedAt: orders.placedAt,
+        completedAt: orders.completedAt,
+        totalZar: orders.totalZar,
+      })
+      .from(orders)
+      .where(eq(orders.customerId, session.customerId))
+      .orderBy(desc(orders.placedAt))
+      .limit(limit);
+
+    if (customerOrders.length === 0) {
+      return { customerOrders, items: [] as CustomerOrderItemRow[] };
+    }
+
+    const orderIds = customerOrders.map((o) => o.id);
+    const items = await tx
+      .select({
+        id: orderItems.id,
+        orderId: orderItems.orderId,
+        menuItemId: orderItems.menuItemId,
+        menuItemName: menuItems.name,
+        quantity: orderItems.quantity,
+        unitPriceZar: orderItems.unitPriceZar,
+        modifications: orderItems.modifications,
+      })
+      .from(orderItems)
+      .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
+      .where(inArray(orderItems.orderId, orderIds));
+
+    return { customerOrders, items };
+  });
 
   if (customerOrders.length === 0) {
     return { ok: true, data: [] };
   }
-
-  const orderIds = customerOrders.map((o) => o.id);
-  const items = await db
-    .select({
-      id: orderItems.id,
-      orderId: orderItems.orderId,
-      menuItemId: orderItems.menuItemId,
-      menuItemName: menuItems.name,
-      quantity: orderItems.quantity,
-      unitPriceZar: orderItems.unitPriceZar,
-      modifications: orderItems.modifications,
-    })
-    .from(orderItems)
-    .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
-    .where(inArray(orderItems.orderId, orderIds));
 
   const itemsByOrder = new Map<string, typeof items>();
   for (const item of items) {
@@ -154,20 +180,22 @@ export async function getPacks(): Promise<ActionResult<PacksView>> {
 
   const now = new Date();
 
-  const packs = await db
-    .select({
-      id: coffeePacks.id,
-      menuItemId: coffeePacks.menuItemId,
-      itemName: menuItems.name,
-      qtyOriginal: coffeePacks.qtyOriginal,
-      qtyRemaining: coffeePacks.qtyRemaining,
-      expiresAt: coffeePacks.expiresAt,
-      createdAt: coffeePacks.createdAt,
-    })
-    .from(coffeePacks)
-    .leftJoin(menuItems, eq(coffeePacks.menuItemId, menuItems.id))
-    .where(eq(coffeePacks.customerId, session.customerId))
-    .orderBy(desc(coffeePacks.createdAt));
+  const packs = await withCustomerScope(session.customerId, (tx) =>
+    tx
+      .select({
+        id: coffeePacks.id,
+        menuItemId: coffeePacks.menuItemId,
+        itemName: menuItems.name,
+        qtyOriginal: coffeePacks.qtyOriginal,
+        qtyRemaining: coffeePacks.qtyRemaining,
+        expiresAt: coffeePacks.expiresAt,
+        createdAt: coffeePacks.createdAt,
+      })
+      .from(coffeePacks)
+      .leftJoin(menuItems, eq(coffeePacks.menuItemId, menuItems.id))
+      .where(eq(coffeePacks.customerId, session.customerId))
+      .orderBy(desc(coffeePacks.createdAt))
+  );
 
   const active = packs
     .filter((p) => p.expiresAt > now && p.qtyRemaining > 0)
@@ -202,10 +230,12 @@ export async function getCustomerProfile(): Promise<
   const session = await requireCustomer();
   if (!session.ok) return session;
 
-  const [customer] = await db
-    .select({ id: customers.id, name: customers.name, email: customers.email, phone: customers.phone })
-    .from(customers)
-    .where(eq(customers.id, session.customerId));
+  const [customer] = await withCustomerScope(session.customerId, (tx) =>
+    tx
+      .select({ id: customers.id, name: customers.name, email: customers.email, phone: customers.phone })
+      .from(customers)
+      .where(eq(customers.id, session.customerId))
+  );
 
   if (!customer) {
     return { ok: false, code: "NOT_FOUND", message: "Customer account not found." };
@@ -288,29 +318,31 @@ export async function listCustomerLoyaltyHistory(
     [{ total: number } | undefined],
   ];
   try {
-    queryResult = await Promise.all([
-      db
-        .select({ loyaltyPoints: customers.loyaltyPoints })
-        .from(customers)
-        .where(eq(customers.id, session.customerId)),
-      db
-        .select({
-          id: loyaltyTransactions.id,
-          delta: loyaltyTransactions.delta,
-          kind: loyaltyTransactions.kind,
-          reason: loyaltyTransactions.reason,
-          at: loyaltyTransactions.at,
-        })
-        .from(loyaltyTransactions)
-        .where(eq(loyaltyTransactions.customerId, session.customerId))
-        .orderBy(desc(loyaltyTransactions.at))
-        .limit(HISTORY_PAGE_SIZE)
-        .offset(page * HISTORY_PAGE_SIZE),
-      db
-        .select({ total: count() })
-        .from(loyaltyTransactions)
-        .where(eq(loyaltyTransactions.customerId, session.customerId)),
-    ]) as typeof queryResult;
+    queryResult = (await withCustomerScope(session.customerId, (tx) =>
+      Promise.all([
+        tx
+          .select({ loyaltyPoints: customers.loyaltyPoints })
+          .from(customers)
+          .where(eq(customers.id, session.customerId)),
+        tx
+          .select({
+            id: loyaltyTransactions.id,
+            delta: loyaltyTransactions.delta,
+            kind: loyaltyTransactions.kind,
+            reason: loyaltyTransactions.reason,
+            at: loyaltyTransactions.at,
+          })
+          .from(loyaltyTransactions)
+          .where(eq(loyaltyTransactions.customerId, session.customerId))
+          .orderBy(desc(loyaltyTransactions.at))
+          .limit(HISTORY_PAGE_SIZE)
+          .offset(page * HISTORY_PAGE_SIZE),
+        tx
+          .select({ total: count() })
+          .from(loyaltyTransactions)
+          .where(eq(loyaltyTransactions.customerId, session.customerId)),
+      ])
+    )) as typeof queryResult;
   } catch {
     return { ok: false, code: "DB_ERROR", message: "Could not load loyalty history." };
   }
