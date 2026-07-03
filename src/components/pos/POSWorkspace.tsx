@@ -457,7 +457,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           </div>
           {customer && (
             <span className="favo-caption text-crimson-carrot shrink-0 flex items-center gap-1">
-              <Star size={10} strokeWidth={2} />{customer.name}
+              <Star size={10} strokeWidth={2} />{customer.name} · {customer.loyaltyPoints} pts
             </span>
           )}
           {customer && (
