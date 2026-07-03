@@ -17,6 +17,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Validate ruleset (hard fail on invalid config)
+        # A malformed ruleset makes Semgrep load 0 rules and exit 7, which the
+        # scan step below treats as non-fatal — silently turning the security
+        # gate into a no-op. Validate first and fail hard if the config is
+        # invalid, so a broken ruleset can never masquerade as "0 findings".
+        run: |
+          semgrep --config .semgrep/favo-rules.yml --validate
+          echo "Ruleset is valid — all custom rules loaded."
+
       - name: Run FAVO custom rules
         # --error exits non-zero if any ERROR-severity finding is produced.
         # WARNING-severity findings (mutation-without-audit) are reported but
@@ -28,8 +37,13 @@ jobs:
             --error \
             --json \
             --output semgrep-favo.json \
-            src/ db/ auth.ts middleware.ts \
+            src/ db/ auth.ts proxy.ts \
           || EXIT=$?
+          # NB: scan `src/ db/ auth.ts proxy.ts`. The old target `middleware.ts`
+          # was a phantom path (the file lives at src/middleware.ts, covered by
+          # src/) — a nonexistent target makes Semgrep exit 2, which the exit-7
+          # reset below does NOT catch, so it silently failed the job once the
+          # ruleset actually loaded. proxy.ts is the real root route-gating file.
           # Exit code 7 is a parse error (not a finding), not a security failure.
           if [ "${EXIT:-0}" -eq 7 ]; then EXIT=0; fi
           cat semgrep-favo.json | python3 -c "
