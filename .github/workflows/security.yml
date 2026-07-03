@@ -32,20 +32,26 @@ jobs:
         # do not fail the build — they require human review.
         # Exit code 7 = parse errors in target files (not rule violations) — treat as non-fatal.
         run: |
+          # Gate on ERROR-severity findings ONLY. WARNING-severity findings
+          # (e.g. mutation-without-audit) are reported for human review but do
+          # NOT fail the build — matching this job's stated policy. NB: dropping
+          # `--error` here is deliberate: `semgrep --error` exits 1 on ANY
+          # finding (including warnings), so we derive pass/fail from the JSON
+          # ERROR count instead. Scan target `src/ db/ auth.ts proxy.ts` —
+          # middleware lives at src/middleware.ts (covered by src/); proxy.ts is
+          # the root route-gating file.
           semgrep \
             --config .semgrep/favo-rules.yml \
-            --error \
             --json \
             --output semgrep-favo.json \
             src/ db/ auth.ts proxy.ts \
           || EXIT=$?
-          # NB: scan `src/ db/ auth.ts proxy.ts`. The old target `middleware.ts`
-          # was a phantom path (the file lives at src/middleware.ts, covered by
-          # src/) — a nonexistent target makes Semgrep exit 2, which the exit-7
-          # reset below does NOT catch, so it silently failed the job once the
-          # ruleset actually loaded. proxy.ts is the real root route-gating file.
-          # Exit code 7 is a parse error (not a finding), not a security failure.
+          # Exit code 7 is a parse error in a scanned file (not a finding) — non-fatal.
           if [ "${EXIT:-0}" -eq 7 ]; then EXIT=0; fi
+          # A real Semgrep error (exit >= 2) means the scan is unreliable — fail hard.
+          if [ "${EXIT:-0}" -ge 2 ]; then
+            echo "Semgrep exited ${EXIT} (scan error)."; exit "${EXIT}"
+          fi
           cat semgrep-favo.json | python3 -c "
           import json, sys
           d = json.load(sys.stdin)
@@ -59,8 +65,9 @@ jobs:
             line = f.get('start', {}).get('line', '?')
             rule = f.get('check_id', '?')
             print(f'  [{sev}] {path}:{line}  ({rule})')
+          # ERROR-severity is the hard gate (FAVO §05); warnings are advisory.
+          sys.exit(1 if errors else 0)
           "
-          exit ${EXIT:-0}
 
       - name: Run OWASP ruleset (informational — non-blocking)
         continue-on-error: true
