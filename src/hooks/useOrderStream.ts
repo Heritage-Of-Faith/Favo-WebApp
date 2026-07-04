@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { QueueEvent, OrderState } from "@/lib/types";
+import { listActiveOrders } from "@/server/actions/orders";
 
 export type LiveOrder = {
   orderId: string;
@@ -33,6 +34,26 @@ export function useOrderStream(initialOrders?: LiveOrder[]) {
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
 
+  // Full poll of the authoritative active-order set. Runs on every (re)connect
+  // so that any state_change events emitted while the stream was down are caught
+  // — PRD §10 R9: "Missed events caught by full poll on reconnect." SSE frames
+  // alone are lossy across a disconnect window (Vercel function recycle, network
+  // blip, Sunday-peak LISTEN/NOTIFY lag); this snapshot re-syncs the board and
+  // removes any order that left the active set (e.g. collected) while offline.
+  const resync = useCallback(async () => {
+    try {
+      const res = await listActiveOrders();
+      if (!mountedRef.current || !res.ok) return;
+      setOrders(() => {
+        const next = new Map<string, LiveOrder>();
+        for (const o of res.data) next.set(o.orderId, o);
+        return next;
+      });
+    } catch {
+      // Snapshot fetch failed — keep the current Map; heartbeat/SSE will recover.
+    }
+  }, []);
+
   const connect = useCallback(() => {
     if (!mountedRef.current) return;
     setStatus("connecting");
@@ -44,6 +65,8 @@ export function useOrderStream(initialOrders?: LiveOrder[]) {
       if (!mountedRef.current) return;
       backoffRef.current = INITIAL_BACKOFF_MS; // reset on successful connect
       setStatus("connected");
+      // Re-poll the authoritative snapshot on connect and every reconnect (R9).
+      void resync();
     };
 
     es.onmessage = (event: MessageEvent<string>) => {
@@ -85,7 +108,7 @@ export function useOrderStream(initialOrders?: LiveOrder[]) {
         if (mountedRef.current) connect();
       }, delay);
     };
-  }, []);
+  }, [resync]);
 
   useEffect(() => {
     mountedRef.current = true;

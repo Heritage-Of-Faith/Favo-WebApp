@@ -52,7 +52,7 @@ rules:
       cwe: CWE-312
       owasp: A02:2021 - Cryptographic Failures
     patterns:
-      - pattern: writeAudit({..., $KEY: $X, ...})
+      - pattern: "writeAudit({..., $KEY: $X, ...})"
       - metavariable-regex:
           metavariable: $X
           regex: '["''`].*\b\d{13,19}\b.*["''`]'

@@ -71,6 +71,15 @@ jobs:
       - name: Seed test DB
         run: bun db:seed
 
+      # ── DB integration tests — BLOCKING. ──
+      # These exercise DB-layer invariants that cannot be verified without a real
+      # Postgres: the append-only audit_log trigger (L08/L12), the
+      # loyalty_points >= 0 CHECK (L06), and RLS customer isolation (L13). They
+      # SKIP when no DB is reachable (e.g. local dev), so they only assert here,
+      # against the freshly migrated + seeded test DB.
+      - name: DB integration tests (trigger · CHECK · RLS isolation)
+        run: bun test:db
+
       - name: E2E tests (non-blocking signal)
         run: bun test:e2e:ci
         continue-on-error: true

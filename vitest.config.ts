@@ -11,8 +11,17 @@ export default defineConfig({
     include: ["tests/unit/**/*.test.{ts,tsx}"],
     // Dummy DB URL so modules importing the (lazy) Drizzle client load without a real DB.
     // Unit tests never open a connection — they assert on pure data and logic.
+    //
+    // YOCO_SECRET_KEY is forced empty so transitionOrder's cash-remove payment
+    // gate (AT-122) stays in its "Yoco not configured" bypass branch during
+    // tests, regardless of whatever placeholder value a developer's local
+    // .env.local defines — Vite auto-loads .env.local into process.env, and
+    // without this override that placeholder makes the gate active and tests
+    // that don't mock a `payments` row (earn-scenarios, loyalty-history) fail
+    // with PAYMENT_REQUIRED on any machine that has a real .env.local.
     env: {
       DATABASE_URL: "postgresql://test:test@localhost:5432/favo_test",
+      YOCO_SECRET_KEY: "",
     },
     coverage: {
       reporter: ["text", "lcov"],

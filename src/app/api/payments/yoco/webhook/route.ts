@@ -12,6 +12,9 @@ import { writeAudit } from "@/server/audit";
 import { verifyYocoSignature } from "@/server/yoco/signature";
 import { parseYocoEvent } from "@/server/yoco/webhook";
 import { activatePendingCharge } from "@/server/actions/loyalty";
+import { accrueOrderLoyalty, reverseOrderLoyalty } from "@/server/loyalty/accrue";
+import { sendPointsEarnedPush } from "@/server/push/send";
+import { isValidPushSubscription } from "@/server/push/payload";
 import type { DB } from "@/lib/db";
 
 const SIGNATURE_HEADER = "webhook-signature";
@@ -104,6 +107,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, skipped: "no matching payment" });
   }
 
+  // Loyalty earn details captured inside the transaction for the post-commit
+  // points-earned push (L06 / AT-128). Populated only when points are accrued.
+  let earnPush: {
+    subscription: unknown;
+    earnedPoints: number;
+    newLoyaltyBalance: number;
+  } | null = null;
+
   // BUG-Y3 fix: SELECT FOR UPDATE prevents concurrent webhook deliveries from
   // double-processing the same event. The lock ensures only the first delivery
   // runs the updates; subsequent ones see status !== 'pending' and no-op.
@@ -116,7 +127,14 @@ export async function POST(request: Request) {
       .where(eq(payments.id, existingPayment!.id))
       .for("update");
 
-    if (!locked || locked.status !== "pending") return; // idempotent no-op
+    if (!locked) return;
+    // succeeded/failed act only on a still-pending payment. A refund, by
+    // contrast, arrives against an already-successful payment — so it has its
+    // own guard. Both are idempotent: a repeat delivery finds the terminal
+    // status and no-ops.
+    const isRefund = event.type === "refund.succeeded";
+    if (!isRefund && locked.status !== "pending") return;
+    if (isRefund && locked.status !== "successful") return;
 
     // Backfill yocoPaymentId so future webhook lookups hit the fast path.
     const paymentIdSet = { yocoPaymentId: event.paymentId };
@@ -126,6 +144,14 @@ export async function POST(request: Request) {
         .update(payments)
         .set({ status: "successful", webhookReceivedAt: new Date(), ...paymentIdSet })
         .where(eq(payments.id, locked.id));
+
+      // ── Loyalty accrual on payment confirmation (L06) ────────────────────
+      // Earn triggers here — on the Yoco webhook — NOT on the order state
+      // change. Shared with the deferred-payment retry cron so every
+      // confirmation site earns consistently and idempotently.
+      if (locked.orderId) {
+        earnPush = await accrueOrderLoyalty(locked.orderId, txDb);
+      }
     } else if (event.type === "payment.failed") {
       await tx
         .update(payments)
@@ -154,10 +180,18 @@ export async function POST(request: Request) {
         );
       }
     } else if (event.type === "refund.succeeded") {
+      // Do NOT overwrite yocoPaymentId here — a refund event carries the
+      // refund's id, not the original payment's, and the column is unique.
       await tx
         .update(payments)
-        .set({ status: "refunded", webhookReceivedAt: new Date(), ...paymentIdSet })
+        .set({ status: "refunded", webhookReceivedAt: new Date() })
         .where(eq(payments.id, locked.id));
+
+      // Claw back any loyalty earned on this order (idempotent, clamped to the
+      // customer's balance) so a refunded order doesn't leave points behind.
+      if (locked.orderId) {
+        await reverseOrderLoyalty(locked.orderId, txDb, { role: "system", reason: "refund" });
+      }
     }
 
     await writeAudit(
@@ -171,6 +205,26 @@ export async function POST(request: Request) {
       txDb
     );
   });
+
+  // ── Post-transaction side effect: points-earned push (AT-128) ─────────────
+  // Fire-and-forget after the transaction commits — mirrors transitionOrder's
+  // previous behaviour. Only fires when this delivery actually accrued points.
+  const push = earnPush as {
+    subscription: unknown;
+    earnedPoints: number;
+    newLoyaltyBalance: number;
+  } | null;
+  if (push && push.subscription && isValidPushSubscription(push.subscription)) {
+    const { subscription, earnedPoints, newLoyaltyBalance } = push;
+    sendPointsEarnedPush(subscription, earnedPoints, newLoyaltyBalance)
+      .then(() => {
+        // Subscription expiry is logged inside sendPointsEarnedPush; pruning of
+        // stale subscriptions is handled by the order-ready push path.
+      })
+      .catch((err: unknown) => {
+        console.error("[push] sendPointsEarnedPush failed for order", existingPayment!.orderId, err);
+      });
+  }
 
   return NextResponse.json({ ok: true });
 }

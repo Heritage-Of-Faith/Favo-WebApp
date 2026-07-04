@@ -19,6 +19,16 @@ import type { DB } from "@/lib/db";
 
 const PACK_EXPIRY_DAYS = 90;
 
+// Postgres check_violation. The customers_loyalty_points_non_negative CHECK
+// (migration 0020) fires when a concurrent redemption/adjustment would drive the
+// balance below zero — a lost-update race two callers can win the clamp check on.
+// Callers map it to a clean CONFLICT rather than letting the action throw.
+const PG_CHECK_VIOLATION = "23514";
+function isCheckViolation(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err &&
+    (err as { code?: string }).code === PG_CHECK_VIOLATION;
+}
+
 // ─── redeemLoyalty ────────────────────────────────────────────────────────────
 
 /**
@@ -97,51 +107,61 @@ export async function redeemLoyalty(
     }
   }
 
-  await db.transaction(async (tx) => {
-    const txDb = tx as unknown as DB;
+  try {
+    await db.transaction(async (tx) => {
+      const txDb = tx as unknown as DB;
 
-    await tx
-      .update(orders)
-      .set({ totalZar: newTotalZar })
-      .where(eq(orders.id, orderId));
+      await tx
+        .update(orders)
+        .set({ totalZar: newTotalZar })
+        .where(eq(orders.id, orderId));
 
-    // Atomic point deduction — DB CHECK (loyalty_points >= 0) is the safety net.
-    await tx
-      .update(customers)
-      .set({ loyaltyPoints: sql`${customers.loyaltyPoints} - ${pointsUsed}` })
-      .where(eq(customers.id, customerId));
+      // Atomic point deduction — DB CHECK (loyalty_points >= 0) is the safety net.
+      await tx
+        .update(customers)
+        .set({ loyaltyPoints: sql`${customers.loyaltyPoints} - ${pointsUsed}` })
+        .where(eq(customers.id, customerId));
 
-    // Partial unique index (loyalty_txn_redeem_order_unique) makes this idempotent.
-    await tx.insert(loyaltyTransactions).values({
-      customerId,
-      orderId,
-      delta: -pointsUsed,
-      kind: "redeem",
+      // Partial unique index (loyalty_txn_redeem_order_unique) makes this idempotent.
+      await tx.insert(loyaltyTransactions).values({
+        customerId,
+        orderId,
+        delta: -pointsUsed,
+        kind: "redeem",
+      });
+
+      // Update payment record to reflect the new total and new checkout ID.
+      await tx
+        .update(payments)
+        .set({
+          amountZar: newTotalZar,
+          ...(newClientSecret ? { yocoCheckoutId: newClientSecret } : {}),
+          status: newTotalZar === 0 ? "successful" : "pending",
+        })
+        .where(eq(payments.orderId, orderId));
+
+      await writeAudit(
+        {
+          entityKind: "order",
+          entityId: orderId,
+          action: "redeem_loyalty",
+          actorId: session.id,
+          actorRole: session.role,
+          before: { totalZar: order.totalZar, loyaltyPoints: customer.loyaltyPoints },
+          after: { totalZar: newTotalZar, discountZar, pointsUsed, clampedUnits },
+        },
+        txDb
+      );
     });
-
-    // Update payment record to reflect the new total and new checkout ID.
-    await tx
-      .update(payments)
-      .set({
-        amountZar: newTotalZar,
-        ...(newClientSecret ? { yocoCheckoutId: newClientSecret } : {}),
-        status: newTotalZar === 0 ? "successful" : "pending",
-      })
-      .where(eq(payments.orderId, orderId));
-
-    await writeAudit(
-      {
-        entityKind: "order",
-        entityId: orderId,
-        action: "redeem_loyalty",
-        actorId: session.id,
-        actorRole: session.role,
-        before: { totalZar: order.totalZar, loyaltyPoints: customer.loyaltyPoints },
-        after: { totalZar: newTotalZar, discountZar, pointsUsed, clampedUnits },
-      },
-      txDb
-    );
-  });
+  } catch (err) {
+    // Concurrent redemption already spent these points — the balance clamp we
+    // read is stale and the DB CHECK rejected the deduction. Surface a clean
+    // CONFLICT instead of a 500 (a Yoco checkout may already have been created).
+    if (isCheckViolation(err)) {
+      return { ok: false, code: "CONFLICT", message: "Points balance changed — please retry the redemption." };
+    }
+    throw err;
+  }
 
   return { ok: true, data: { discountZar, pointsUsed, newTotalZar, clientSecret: newClientSecret } };
 }
@@ -727,37 +747,46 @@ export async function adjustLoyalty(
 
   let newBalance = 0;
 
-  await db.transaction(async (tx) => {
-    const txDb = tx as unknown as DB;
+  try {
+    await db.transaction(async (tx) => {
+      const txDb = tx as unknown as DB;
 
-    await tx.insert(loyaltyTransactions).values({
-      customerId,
-      delta,
-      kind: "adjustment",
-      reason: trimmedReason,
+      await tx.insert(loyaltyTransactions).values({
+        customerId,
+        delta,
+        kind: "adjustment",
+        reason: trimmedReason,
+      });
+
+      const [updated] = await tx
+        .update(customers)
+        .set({ loyaltyPoints: sql`${customers.loyaltyPoints} + ${delta}` })
+        .where(eq(customers.id, customerId))
+        .returning({ loyaltyPoints: customers.loyaltyPoints });
+
+      newBalance = updated?.loyaltyPoints ?? customer.loyaltyPoints + delta;
+
+      await writeAudit(
+        {
+          entityKind: "customer",
+          entityId: customerId,
+          action: "loyalty_adjustment",
+          actorId: session.id,
+          actorRole: session.role,
+          before: { loyaltyPoints: customer.loyaltyPoints },
+          after: { loyaltyPoints: newBalance, reason: trimmedReason },
+        },
+        txDb,
+      );
     });
-
-    const [updated] = await tx
-      .update(customers)
-      .set({ loyaltyPoints: sql`${customers.loyaltyPoints} + ${delta}` })
-      .where(eq(customers.id, customerId))
-      .returning({ loyaltyPoints: customers.loyaltyPoints });
-
-    newBalance = updated?.loyaltyPoints ?? customer.loyaltyPoints + delta;
-
-    await writeAudit(
-      {
-        entityKind: "customer",
-        entityId: customerId,
-        action: "loyalty_adjustment",
-        actorId: session.id,
-        actorRole: session.role,
-        before: { loyaltyPoints: customer.loyaltyPoints },
-        after: { loyaltyPoints: newBalance, reason: trimmedReason },
-      },
-      txDb,
-    );
-  });
+  } catch (err) {
+    // A concurrent deduction won the race; our floor check was stale and the DB
+    // CHECK rejected the write. Return CONFLICT rather than throwing.
+    if (isCheckViolation(err)) {
+      return { ok: false, code: "CONFLICT", message: "Balance changed concurrently — please retry the adjustment." };
+    }
+    throw err;
+  }
 
   return { ok: true, data: { newBalance } };
 }

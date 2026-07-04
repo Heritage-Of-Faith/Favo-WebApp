@@ -1,0 +1,1 @@
+ALTER TABLE "customers" ADD CONSTRAINT "customers_loyalty_points_non_negative" CHECK (loyalty_points >= 0);

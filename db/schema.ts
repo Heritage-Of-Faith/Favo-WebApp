@@ -73,6 +73,8 @@ export const customers = pgTable(
   () => [
     // AT-114: wallet balance can never go negative (L16).
     check("customers_wallet_zar_non_negative", sql`wallet_zar >= 0`),
+    // L06: loyalty points balance can never go negative.
+    check("customers_loyalty_points_non_negative", sql`loyalty_points >= 0`),
   ]
 );
 

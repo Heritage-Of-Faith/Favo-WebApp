@@ -11,6 +11,10 @@ import { db } from "@/lib/db";
 import { payments, orders, syncConflicts } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { getCheckoutStatus } from "@/server/yoco/client";
+import { accrueOrderLoyalty, type EarnResult } from "@/server/loyalty/accrue";
+import { sendPointsEarnedPush } from "@/server/push/send";
+import { isValidPushSubscription } from "@/server/push/payload";
+import type { DB } from "@/lib/db";
 
 export type DeferredRetryResult = {
   checked: number;
@@ -45,19 +49,40 @@ export async function retryDeferredPayments(): Promise<DeferredRetryResult> {
     }
 
     if (yocoStatus === "succeeded") {
-      await db
-        .update(payments)
-        .set({ status: "successful", webhookReceivedAt: new Date() })
-        .where(eq(payments.id, payment.id));
+      // Mark successful + accrue loyalty in one transaction so the earn is
+      // atomic with the confirmation. accrueOrderLoyalty is idempotent (partial
+      // unique index), so if the Yoco webhook also confirms this same order the
+      // points are credited exactly once (L06).
+      const earn: EarnResult = await db.transaction(async (tx) => {
+        const txDb = tx as unknown as DB;
 
-      await writeAudit({
-        actorId: "system",
-        actorRole: "admin",
-        action: "payment.deferred_resolved",
-        entityKind: "payments",
-        entityId: payment.id,
-        after: { status: "successful", resolvedBy: "retry_cron" },
+        await tx
+          .update(payments)
+          .set({ status: "successful", webhookReceivedAt: new Date() })
+          .where(eq(payments.id, payment.id));
+
+        await writeAudit(
+          {
+            actorId: "system",
+            actorRole: "admin",
+            action: "payment.deferred_resolved",
+            entityKind: "payments",
+            entityId: payment.id,
+            after: { status: "successful", resolvedBy: "retry_cron" },
+          },
+          txDb
+        );
+
+        return accrueOrderLoyalty(payment.orderId, txDb);
       });
+
+      // Points-earned push, fire-and-forget after commit (L06 / AT-128).
+      if (earn && isValidPushSubscription(earn.subscription)) {
+        sendPointsEarnedPush(earn.subscription, earn.earnedPoints, earn.newLoyaltyBalance).catch(
+          (err: unknown) =>
+            console.error("[retry-deferred] points-earned push failed", payment.orderId, err)
+        );
+      }
 
       resolved++;
     } else if (yocoStatus === "failed" || yocoStatus === "expired") {

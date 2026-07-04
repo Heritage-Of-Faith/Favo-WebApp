@@ -26,7 +26,9 @@ export type AuditInput = {
  *            Defaults to the global `db` singleton when called outside
  *            a transaction (legacy callsites remain unaffected).
  */
-export async function writeAudit(input: AuditInput, tx?: DB): Promise<void> {
+// This function IS writeAudit — the mutation-without-audit rule flags it as a
+// definitional false positive; the rule's own docs prescribe annotating it.
+export async function writeAudit(input: AuditInput, tx?: DB): Promise<void> { // nosemgrep: mutation-without-audit
   const client = tx ?? db;
   await client.insert(auditLog).values({
     entityKind: input.entityKind,

@@ -141,6 +141,48 @@
       "when": 1782473037652,
       "tag": "0019_sparkling_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1783070065982,
+      "tag": "0020_loyalty_points_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1783070074683,
+      "tag": "0021_audit_log_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1783070097696,
+      "tag": "0022_fix_weekly_variance_view",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1783070138784,
+      "tag": "0023_rls_customer_isolation",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783091196885,
+      "tag": "0024_order_fulfillment_percentiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1783091200885,
+      "tag": "0025_audit_log_no_truncate",
+      "breakpoints": true
     }
   ]
 }

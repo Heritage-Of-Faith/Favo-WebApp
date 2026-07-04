@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isWeekdayInSAST,
-  isCappuccino,
+  isCoffeeCategory,
   checkStaffDiscountEligibility,
 } from "@/server/orders/discount";
 
@@ -29,33 +29,42 @@ describe("discount: weekday in SAST", () => {
   });
 });
 
-describe("discount: cappuccino check", () => {
-  it("matches Cappuccino case-insensitively and trimmed", () => {
-    expect(isCappuccino("Cappuccino")).toBe(true);
-    expect(isCappuccino("  cappuccino ")).toBe(true);
+describe("discount: coffee-category check (L03/L14)", () => {
+  it("treats category='coffee' as eligible", () => {
+    expect(isCoffeeCategory("coffee")).toBe(true);
   });
 
-  it("rejects other drinks", () => {
-    expect(isCappuccino("Latte")).toBe(false);
-    expect(isCappuccino("Flat White")).toBe(false);
+  it("rejects non-coffee categories", () => {
+    // Any category other than 'coffee' (e.g. hot chocolate, teas) does not qualify.
+    expect(isCoffeeCategory("non_coffee")).toBe(false);
+    expect(isCoffeeCategory("hot_chocolate")).toBe(false);
+    expect(isCoffeeCategory("tea")).toBe(false);
+    expect(isCoffeeCategory(null)).toBe(false);
+    expect(isCoffeeCategory(undefined)).toBe(false);
   });
 });
 
 describe("discount: eligibility gate", () => {
-  it("allows a Cappuccino on a weekday", () => {
-    expect(checkStaffDiscountEligibility("Cappuccino", FRIDAY)).toEqual({
+  it("allows an order with a coffee item on a weekday", () => {
+    expect(checkStaffDiscountEligibility(true, FRIDAY)).toEqual({
       eligible: true,
     });
   });
 
-  it("rejects a non-cappuccino even on a weekday", () => {
-    const result = checkStaffDiscountEligibility("Latte", FRIDAY);
-    expect(result.eligible).toBe(false);
-    if (!result.eligible) expect(result.code).toBe("NOT_CAPPUCCINO");
+  it("accepts ANY coffee item, not just Cappuccino (L03/L14)", () => {
+    // The gate is category-based: as long as the order has a coffee item
+    // (latte, espresso, flat white, …) it is eligible on a weekday.
+    expect(checkStaffDiscountEligibility(true, MONDAY).eligible).toBe(true);
   });
 
-  it("rejects a Cappuccino on a weekend", () => {
-    const result = checkStaffDiscountEligibility("Cappuccino", SATURDAY);
+  it("rejects an order with no coffee item even on a weekday", () => {
+    const result = checkStaffDiscountEligibility(false, FRIDAY);
+    expect(result.eligible).toBe(false);
+    if (!result.eligible) expect(result.code).toBe("NOT_COFFEE");
+  });
+
+  it("rejects a coffee order on a weekend", () => {
+    const result = checkStaffDiscountEligibility(true, SATURDAY);
     expect(result.eligible).toBe(false);
     if (!result.eligible) expect(result.code).toBe("NOT_WEEKDAY");
   });

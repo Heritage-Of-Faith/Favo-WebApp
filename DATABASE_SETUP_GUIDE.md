@@ -6,6 +6,28 @@
 
 ---
 
+> **Security invariants are applied via Drizzle migrations — not by hand.**
+> As of migrations `0021`–`0023`:
+> - **Audit trigger (append-only, L08/L12):** `drizzle/0021_audit_log_append_only.sql`
+>   installs `audit_log_immutable()` + BEFORE UPDATE/DELETE triggers on
+>   `audit_log`. No role can update or delete an audit row.
+> - **Row-Level Security (customer isolation, L13):** `drizzle/0023_rls_customer_isolation.sql`
+>   creates the `favo_customer` NOLOGIN role, enables (does **not** force) RLS on
+>   the customer-readable tables, and adds SELECT policies scoped to
+>   `current_setting('app.current_customer_id')`. Customer dashboard reads run
+>   through `withCustomerScope()` (`src/lib/db-rls.ts`), which `SET LOCAL ROLE
+>   favo_customer` inside a transaction. Staff/admin/system use the owner
+>   connection and bypass RLS (owner is exempt from non-forced RLS), so they are
+>   unaffected.
+> - **CHECK constraints:** `wallet_zar >= 0` and `loyalty_points >= 0` (L06,
+>   `drizzle/0016_*` and `drizzle/0020_loyalty_points_check.sql`).
+>
+> The `db/sql/*.sql` files are design references kept in sync with these
+> migrations; the migrations are the canonical, applied definitions. Run
+> `bun db:migrate` to apply.
+
+---
+
 ## 📋 What You'll Learn
 
 By the end of this guide, you'll have:

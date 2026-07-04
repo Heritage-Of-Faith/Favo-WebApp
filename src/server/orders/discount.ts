@@ -1,8 +1,10 @@
 // Staff discount eligibility — task G5
 // Rules L03 + L14: staff free coffee is 1 per staff per weekday, 100% off,
-// Cappuccinos only. Weekday is evaluated in Africa/Johannesburg (rule L07 tz).
-// The once-per-day limit is enforced by the DB UNIQUE(staff_id, day) constraint;
-// this module covers the weekday + cappuccino eligibility gate.
+// on ANY menu item where category='coffee' (hot chocolate, teas and other
+// non-coffee items do NOT qualify). Weekday is evaluated in Africa/Johannesburg
+// (rule L07 tz). The once-per-day limit is enforced by the DB
+// UNIQUE(staff_id, day) constraint; this module covers the weekday + coffee
+// category eligibility gate.
 
 const SAST = "Africa/Johannesburg";
 
@@ -15,28 +17,33 @@ export function isWeekdayInSAST(date: Date): boolean {
   return ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(weekday);
 }
 
-/** A menu item qualifies for the staff freebie only if it is a Cappuccino. */
-export function isCappuccino(menuItemName: string): boolean {
-  return menuItemName.trim().toLowerCase() === "cappuccino";
+/**
+ * Whether a menu item's category qualifies for the staff freebie.
+ * Rule L03/L14: only items with category='coffee' qualify.
+ */
+export function isCoffeeCategory(category: string | null | undefined): boolean {
+  return category === "coffee";
 }
 
 export type DiscountEligibility =
   | { eligible: true }
-  | { eligible: false; code: "NOT_CAPPUCCINO" | "NOT_WEEKDAY"; message: string };
+  | { eligible: false; code: "NOT_COFFEE" | "NOT_WEEKDAY"; message: string };
 
 /**
- * Whether the staff free-coffee discount may be applied to this item now.
- * Does NOT check the once-per-day limit (DB UNIQUE handles that on insert).
+ * Whether the staff free-coffee discount may be applied to this order now.
+ * `hasCoffeeItem` must be true iff the order contains at least one line whose
+ * menu item has category='coffee'. Does NOT check the once-per-day limit
+ * (DB UNIQUE handles that on insert).
  */
 export function checkStaffDiscountEligibility(
-  menuItemName: string,
+  hasCoffeeItem: boolean,
   now: Date
 ): DiscountEligibility {
-  if (!isCappuccino(menuItemName)) {
+  if (!hasCoffeeItem) {
     return {
       eligible: false,
-      code: "NOT_CAPPUCCINO",
-      message: "Staff discount applies to Cappuccinos only (rule L03).",
+      code: "NOT_COFFEE",
+      message: "Staff discount applies to coffee items only (rule L03/L14).",
     };
   }
   if (!isWeekdayInSAST(now)) {
