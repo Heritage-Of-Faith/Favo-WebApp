@@ -165,7 +165,7 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     actorId: item.staffId,
     actorRole: "barista",
     action: "order.sync_applied",
-    entityKind: "orders",
+    entityKind: "order",
     entityId: orderId,
     after: { clientUuid: item.clientUuid, paymentMode: item.paymentMode, totalZar: serverTotalZar },
   });

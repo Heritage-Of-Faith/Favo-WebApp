@@ -12,7 +12,7 @@ import { writeAudit } from "@/server/audit";
 import { verifyYocoSignature } from "@/server/yoco/signature";
 import { parseYocoEvent } from "@/server/yoco/webhook";
 import { activatePendingCharge } from "@/server/actions/loyalty";
-import { accrueOrderLoyalty } from "@/server/loyalty/accrue";
+import { accrueOrderLoyalty, reverseOrderLoyalty } from "@/server/loyalty/accrue";
 import { sendPointsEarnedPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
 import type { DB } from "@/lib/db";
@@ -127,7 +127,14 @@ export async function POST(request: Request) {
       .where(eq(payments.id, existingPayment!.id))
       .for("update");
 
-    if (!locked || locked.status !== "pending") return; // idempotent no-op
+    if (!locked) return;
+    // succeeded/failed act only on a still-pending payment. A refund, by
+    // contrast, arrives against an already-successful payment — so it has its
+    // own guard. Both are idempotent: a repeat delivery finds the terminal
+    // status and no-ops.
+    const isRefund = event.type === "refund.succeeded";
+    if (!isRefund && locked.status !== "pending") return;
+    if (isRefund && locked.status !== "successful") return;
 
     // Backfill yocoPaymentId so future webhook lookups hit the fast path.
     const paymentIdSet = { yocoPaymentId: event.paymentId };
@@ -173,10 +180,18 @@ export async function POST(request: Request) {
         );
       }
     } else if (event.type === "refund.succeeded") {
+      // Do NOT overwrite yocoPaymentId here — a refund event carries the
+      // refund's id, not the original payment's, and the column is unique.
       await tx
         .update(payments)
-        .set({ status: "refunded", webhookReceivedAt: new Date(), ...paymentIdSet })
+        .set({ status: "refunded", webhookReceivedAt: new Date() })
         .where(eq(payments.id, locked.id));
+
+      // Claw back any loyalty earned on this order (idempotent, clamped to the
+      // customer's balance) so a refunded order doesn't leave points behind.
+      if (locked.orderId) {
+        await reverseOrderLoyalty(locked.orderId, txDb, { role: "system", reason: "refund" });
+      }
     }
 
     await writeAudit(

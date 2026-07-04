@@ -6,7 +6,7 @@
 
 import { and, gte, lt, sql, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders, weeklyReports } from "@db/schema";
+import { orders, weeklyReports, expenses } from "@db/schema";
 import { pingFavoOps, formatZarField, pnlColor } from "@/server/discord/webhook";
 
 // Africa/Johannesburg = UTC+2 (no DST)
@@ -81,13 +81,23 @@ export async function generateWeeklyPnL(
   `);
   const cogsZar = parseInt(cogsRow?.total ?? "0", 10) || 0;
 
+  // ── Expenses ─────────────────────────────────────────────────────────────
+  // Operating expenses (rent, utilities, staff, …) incurred within the week.
+  // Net P&L must subtract these, not just COGS — a report that ignores them
+  // overstates profit and disagrees with the live COGS/expenses figures (SC01).
+  const [expRow] = await db
+    .select({ total: sql<number>`COALESCE(SUM(${expenses.amountZar}), 0)::int` })
+    .from(expenses)
+    .where(and(gte(expenses.incurredAt, start), lt(expenses.incurredAt, end)));
+  const expensesZar = expRow?.total ?? 0;
+
   const grossMarginZar = revenueZar - cogsZar;
-  const netZar = grossMarginZar;
+  const netZar = grossMarginZar - expensesZar;
 
   // ── Insert report ──────────────────────────────────────────────────────────
   const [report] = await db
     .insert(weeklyReports)
-    .values({ weekStarting, revenueZar, cogsZar, expensesZar: 0, grossMarginZar, netZar })
+    .values({ weekStarting, revenueZar, cogsZar, expensesZar, grossMarginZar, netZar })
     .returning({ id: weeklyReports.id });
 
   // ── Discord ping ───────────────────────────────────────────────────────────
@@ -97,6 +107,7 @@ export async function generateWeeklyPnL(
     fields: [
       { name: "Revenue", value: formatZarField(revenueZar), inline: true },
       { name: "COGS", value: formatZarField(cogsZar), inline: true },
+      { name: "Expenses", value: formatZarField(expensesZar), inline: true },
       { name: "Gross Margin", value: formatZarField(grossMarginZar), inline: true },
       { name: "Net P&L", value: formatZarField(netZar), inline: true },
       {

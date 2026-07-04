@@ -14,9 +14,10 @@ maybe("audit_log append-only trigger (F1)", () => {
 
   beforeAll(async () => {
     sql = connect();
-    // Ensure the trigger exists (idempotent migration). Safe on a DB that
-    // already ran it via db:migrate.
+    // Ensure the triggers exist (idempotent migrations). Safe on a DB that
+    // already ran them via db:migrate.
     await sql.unsafe(migrationSql("0021_audit_log_append_only.sql"));
+    await sql.unsafe(migrationSql("0025_audit_log_no_truncate.sql"));
     // Insert one audit row to attempt to mutate.
     const inserted = await sql`
       INSERT INTO audit_log (entity_kind, entity_id, action)
@@ -44,6 +45,11 @@ maybe("audit_log append-only trigger (F1)", () => {
     await expect(
       sql`DELETE FROM audit_log WHERE id = ${rowId}`
     ).rejects.toThrow(/append-only/i);
+  });
+
+  it("rejects TRUNCATE with the append-only error (statement-level guard, 0025)", async () => {
+    // Row-level triggers don't fire on TRUNCATE — the statement-level guard must.
+    await expect(sql`TRUNCATE audit_log`).rejects.toThrow(/append-only/i);
   });
 
   it("row still present after failed mutations", async () => {

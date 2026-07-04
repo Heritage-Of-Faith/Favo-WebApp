@@ -176,6 +176,13 @@
       "when": 1783091196885,
       "tag": "0024_order_fulfillment_percentiles",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1783091200885,
+      "tag": "0025_audit_log_no_truncate",
+      "breakpoints": true
     }
   ]
 }
