@@ -1140,7 +1140,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           customerId={customer.id}
           customerName={customer.name}
           walletZar={customer.walletZar}
-          onToppedUp={(newWalletZar) => setCustomer({ ...customer, walletZar: newWalletZar })}
           onClose={() => setTopUpOpen(false)}
         />
       )}

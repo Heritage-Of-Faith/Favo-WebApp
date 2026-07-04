@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { listStuckCharges, resolveStuckCharge, type StuckChargeRow } from "@/server/actions/loyalty";
-import { formatZar } from "@/lib/format";
+import { formatZar, formatDate } from "@/lib/format";
 
 const KIND_LABEL: Record<StuckChargeRow["kind"], string> = {
   wallet_topup: "Wallet top-up",
@@ -74,14 +74,14 @@ export default function StuckChargesSection() {
                   {c.customerName} · {formatZar(c.amountZar)}
                 </p>
                 <p className="favo-caption text-text-muted truncate">
-                  {KIND_LABEL[c.kind]} · {new Date(c.createdAt).toLocaleString("en-ZA")} · {c.yocoCheckoutId}
+                  {KIND_LABEL[c.kind]} · {formatDate(c.createdAt)} · {c.yocoCheckoutId}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => resolve(c.id)}
                 disabled={resolvingId === c.id}
-                className="shrink-0 rounded-[var(--radius-btn)] bg-crimson-carrot px-4 py-2 min-h-[40px] favo-small font-semibold text-porcelain transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
+                className="shrink-0 rounded-[var(--radius-btn)] bg-crimson-carrot px-4 py-2 min-h-[40px] favo-small font-semibold text-porcelain transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
               >
                 {resolvingId === c.id ? "Resolving…" : "Resolve"}
               </button>

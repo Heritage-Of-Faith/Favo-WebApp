@@ -26,14 +26,12 @@ export type Props = {
   customerName: string;
   /** Current wallet balance in integer cents (for the max-balance guard + display). */
   walletZar: number;
-  /** Called with the new (optimistic) balance after a successful top-up. */
-  onToppedUp?: (newWalletZar: number) => void;
   onClose: () => void;
 };
 
 type Step = "configure" | "pay" | "done";
 
-export default function WalletTopUpDialog({ customerId, customerName, walletZar, onToppedUp, onClose }: Props) {
+export default function WalletTopUpDialog({ customerId, customerName, walletZar, onClose }: Props) {
   const [step, setStep] = useState<Step>("configure");
   const [amountCents, setAmountCents] = useState(0);
   const [clientSecret, setClientSecret] = useState("");
@@ -107,8 +105,7 @@ export default function WalletTopUpDialog({ customerId, customerName, walletZar,
               amountZar={amountCents}
               onSuccess={() => {
                 setStep("done");
-                onToppedUp?.(walletZar + amountCents);
-                toast.success(`${formatZar(amountCents)} added to ${customerName}'s wallet`);
+                toast.success(`Payment received for ${customerName}`);
               }}
               onCancel={() => setStep("configure")}
             />
@@ -117,9 +114,10 @@ export default function WalletTopUpDialog({ customerId, customerName, walletZar,
           {step === "done" && (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
               <CheckCircle size={40} strokeWidth={2} className="text-[var(--color-success)]" />
-              <p className="favo-subhead text-porcelain">Wallet topped up</p>
+              <p className="favo-subhead text-porcelain">Payment received</p>
               <p className="favo-small text-cool-steel">
-                {formatZar(amountCents)} added to {customerName}&apos;s wallet · new balance {formatZar(walletZar + amountCents)}.
+                {formatZar(amountCents)} will be added to {customerName}&apos;s wallet once the payment is
+                confirmed — usually within seconds. The balance refreshes on next lookup.
               </p>
               <button type="button" onClick={onClose}
                 className="mt-2 rounded-[var(--radius-btn)] border border-cool-steel/30 px-5 py-2 min-h-[44px] favo-small text-porcelain hover:bg-porcelain/10">
