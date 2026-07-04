@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import ConflictRow from "@/components/admin/ConflictRow";
+import StuckChargesSection from "@/components/admin/StuckChargesSection";
 import {
   listSyncConflicts,
   type SyncConflictRow,
@@ -80,6 +81,9 @@ export default function SyncConflictsPage() {
           </div>
         </section>
       )}
+
+      {/* Stuck charges — payment succeeded but webhook never arrived (BUG-O2) */}
+      <StuckChargesSection />
     </div>
   );
 }

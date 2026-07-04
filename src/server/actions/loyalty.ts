@@ -4,7 +4,7 @@
 // AT-127 (getLoyaltyLiabilityReport)
 // Docs: docs/API.md · BUSINESS_RULES.md L06, L16
 
-import { desc, eq, sql, count, and, gte, lte, gt, max, sum } from "drizzle-orm";
+import { desc, eq, sql, count, and, gte, lte, lt, gt, max, sum } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, customers, loyaltyTransactions, pendingCharges, coffeePacks, menuItems, payments, walletTransactions } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -444,6 +444,65 @@ export async function resolveStuckCharge(
   });
 
   return { ok: true, data: { status: "completed" } };
+}
+
+// ─── listStuckCharges (BUG-O2, admin recovery surface) ───────────────────────
+
+// A pending charge older than this without a successful webhook is "stuck":
+// Yoco webhooks normally land within seconds, so a few minutes is generous.
+const STUCK_CHARGE_AGE_MINUTES = 5;
+
+export type StuckChargeRow = {
+  id: string;
+  kind: "wallet_topup" | "coffee_pack";
+  customerId: string;
+  customerName: string;
+  amountZar: number;
+  yocoCheckoutId: string;
+  createdAt: string; // ISO-8601
+};
+
+/**
+ * Admin-only: list pending charges whose Yoco webhook never arrived (older than
+ * STUCK_CHARGE_AGE_MINUTES). Feeds the "Stuck charges" recovery UI, from which
+ * an admin invokes resolveStuckCharge to manually activate each one.
+ */
+export async function listStuckCharges(): Promise<ActionResult<{ rows: StuckChargeRow[] }>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+
+  const cutoff = new Date(Date.now() - STUCK_CHARGE_AGE_MINUTES * 60 * 1000);
+
+  const rows = await db
+    .select({
+      id: pendingCharges.id,
+      kind: pendingCharges.kind,
+      customerId: pendingCharges.customerId,
+      customerName: customers.name,
+      amountZar: pendingCharges.amountZar,
+      yocoCheckoutId: pendingCharges.yocoCheckoutId,
+      createdAt: pendingCharges.createdAt,
+    })
+    .from(pendingCharges)
+    .innerJoin(customers, eq(pendingCharges.customerId, customers.id))
+    .where(and(eq(pendingCharges.status, "pending"), lt(pendingCharges.createdAt, cutoff)))
+    .orderBy(desc(pendingCharges.createdAt))
+    .limit(200);
+
+  return {
+    ok: true,
+    data: {
+      rows: rows.map((r) => ({
+        id: r.id,
+        kind: r.kind as StuckChargeRow["kind"],
+        customerId: r.customerId,
+        customerName: r.customerName,
+        amountZar: r.amountZar,
+        yocoCheckoutId: r.yocoCheckoutId,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    },
+  };
 }
 
 // ─── listLoyaltyAudit (AT-120) ────────────────────────────────────────────────

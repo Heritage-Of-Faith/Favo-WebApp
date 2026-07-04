@@ -19,9 +19,10 @@ import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, X, Plus, Minus, Trash2, ChevronDown, ChevronUp,
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
-  CheckCircle, AlertCircle, Tag, Star, ShieldCheck, Package, CreditCard,
+  CheckCircle, AlertCircle, Tag, Star, ShieldCheck, Package, CreditCard, Wallet,
 } from "lucide-react";
 import PackPurchaseDialog from "@/components/pos/PackPurchaseDialog";
+import WalletTopUpDialog from "@/components/pos/WalletTopUpDialog";
 import { toast } from "sonner";
 import ActiveBeanCard from "@/components/pos/ActiveBeanCard";
 import OpenContainersCard from "@/components/pos/OpenContainersCard";
@@ -148,6 +149,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [wasteOpen, setWasteOpen] = useState(false);
   const [wasteCategory, setWasteCategory] = useState<LogWasteInput["category"]>("spilled");
   const [packOpen, setPackOpen] = useState(false);
+  const [topUpOpen, setTopUpOpen] = useState(false);
   // Charge-after-order: which queued order is being charged, and a session-local
   // set of orders confirmed paid in person (cash / card machine) — card payments
   // are confirmed by the backend via paymentStatus instead.
@@ -465,6 +467,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               className="shrink-0 flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-porcelain/10 hover:text-porcelain min-h-[32px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
               aria-label="Buy coffee pack">
               <Package size={12} strokeWidth={2.25} /> Pack
+            </button>
+          )}
+          {customer && (
+            <button type="button" onClick={() => setTopUpOpen(true)}
+              className="shrink-0 flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-porcelain/10 hover:text-porcelain min-h-[32px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+              aria-label="Top up wallet">
+              <Wallet size={12} strokeWidth={2.25} /> Top up
             </button>
           )}
           <div className="shrink-0 hidden lg:block"><ActiveBeanCard /></div>
@@ -1122,6 +1131,16 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           customerName={customer.name}
           coffeeItems={menu.filter((m) => m.category === "coffee")}
           onClose={() => setPackOpen(false)}
+        />
+      )}
+
+      {/* ════════ WALLET TOP-UP (L16) ════════ */}
+      {topUpOpen && customer && (
+        <WalletTopUpDialog
+          customerId={customer.id}
+          customerName={customer.name}
+          walletZar={customer.walletZar}
+          onClose={() => setTopUpOpen(false)}
         />
       )}
 
