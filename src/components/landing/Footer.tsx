@@ -71,8 +71,8 @@ export default function Footer() {
           <div>
             <p style={S.wordmark}>FAVO</p>
             <p style={S.tagline}>
-              The café at Heritage of Faith Ministries — served by iXchange interns
-              learning to serve the community.
+              The café at Heritage of Faith Ministries where iXchangers
+              make good coffee for the community.
             </p>
           </div>
 

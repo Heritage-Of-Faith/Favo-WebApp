@@ -6,6 +6,15 @@ const S = {
     backgroundColor: "var(--color-porcelain)",
     borderTop: "1px solid var(--color-porcelain-soft)",
   } satisfies React.CSSProperties,
+  eyebrow: {
+    fontFamily: "'DM Sans', sans-serif",
+    fontWeight: 300,
+    fontSize: 11,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase" as const,
+    color: "var(--color-crimson-carrot)",
+    marginBottom: 16,
+  } satisfies React.CSSProperties,
   heading: {
     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
     fontWeight: 900,
@@ -15,7 +24,7 @@ const S = {
     textTransform: "uppercase" as const,
     color: "var(--color-coffee-bean)",
     margin: 0,
-    marginBottom: 32,
+    marginBottom: 28,
   } satisfies React.CSSProperties,
   address: {
     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
@@ -24,8 +33,8 @@ const S = {
     lineHeight: 1.1,
     letterSpacing: "0.06em",
     textTransform: "uppercase" as const,
-    color: "var(--color-coffee-bean)",
-    margin: "0 0 8px",
+    color: "var(--color-dark-teal)",
+    margin: "0 0 6px",
     fontStyle: "normal",
   } satisfies React.CSSProperties,
   addressSub: {
@@ -33,7 +42,7 @@ const S = {
     fontWeight: 400,
     fontSize: 14,
     color: "var(--color-cool-steel)",
-    margin: "0 0 40px",
+    margin: "0 0 44px",
     fontStyle: "normal",
   } satisfies React.CSSProperties,
 } as const;
@@ -42,6 +51,7 @@ export default function VisitSection() {
   return (
     <section id="visit" style={{ ...S.section, scrollMarginTop: 64 }} className="landing-section-pad-l">
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+        <p style={S.eyebrow}>Visit</p>
         <h2 style={S.heading}>Come in.<br />We&rsquo;ll be here.</h2>
         <address style={{ display: "block", fontStyle: "normal" }}>
           <p style={S.address}>7 Duiker Street</p>
@@ -58,7 +68,7 @@ export default function VisitSection() {
             fontSize: 12,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
-            color: "var(--color-cool-steel)",
+            color: "var(--color-crimson-carrot)",
             textDecoration: "none",
           }}
         >

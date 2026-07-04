@@ -120,16 +120,14 @@ export default function AboutSection() {
         {/* Left: story */}
         <div className="reveal">
           <p style={S.eyebrow}>Who we are</p>
-          <h2 style={S.heading}>Built on<br />service.</h2>
+          <h2 style={S.heading}>Rooted in<br />serving.</h2>
           <p style={S.body}>
-            FAVO started as a simple idea inside Heritage of Faith Ministries:
-            give the iXchange Life Interns a real place to practice hospitality.
-            Not a simulation — an actual café, serving the HOFMI community.
+            Heritage of Faith Ministries runs FAVO as a working café.
+            iXchangers serve customers from HOFMI here every day.
           </p>
           <p style={S.body}>
-            Every cup is made by someone who chose to be here. The skills are
-            real, the coffee is good, and the people behind the counter are
-            learning what it means to genuinely serve.
+            Every order is handled by an iXchanger who&rsquo;s here on purpose.
+            Good coffee, honest welcome.
           </p>
         </div>
 

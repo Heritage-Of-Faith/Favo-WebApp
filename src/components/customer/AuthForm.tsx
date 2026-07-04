@@ -30,7 +30,7 @@ const COPY: Record<Mode, {
   altLabel: string;
 }> = {
   signin: {
-    heading: "Welcome back",
+    heading: "You're back",
     sub: "Sign in to your FAVO rewards account.",
     cta: "Sign in",
     submitting: "Signing in…",
@@ -123,8 +123,12 @@ export default function AuthForm({ mode }: Props) {
         <Link
           href="/"
           aria-label="Back to FAVO home"
-          className="favo-hero inline-block text-[clamp(2.75rem,10vw,4.5rem)] leading-none"
-          style={{ color: "var(--color-porcelain)", textDecoration: "none" }}
+          className="favo-hero inline-block leading-none"
+          style={{
+            color: "var(--color-porcelain)",
+            textDecoration: "none",
+            fontSize: "clamp(3rem, 11vw, 4.5rem)",
+          }}
         >
           FAVO
         </Link>
@@ -189,13 +193,22 @@ export default function AuthForm({ mode }: Props) {
         <Link
           href="/"
           aria-label="Back to FAVO home"
-          className="favo-hero inline-block text-[clamp(2.75rem,10vw,4.5rem)] leading-none"
-          style={{ color: "var(--color-porcelain)", textDecoration: "none" }}
+          className="favo-hero inline-block leading-none"
+          style={{
+            color: "var(--color-porcelain)",
+            textDecoration: "none",
+            fontSize: "clamp(2.5rem, 9vw, 3.75rem)",
+          }}
         >
           FAVO
         </Link>
-        <h1 className="favo-h2 mt-5 text-porcelain">{copy.heading}</h1>
-        <p className="favo-body mt-3 text-porcelain/80">{copy.sub}</p>
+        <h1
+          className="favo-h2 mt-5 text-porcelain"
+          style={{ fontSize: "clamp(3.5rem, 12vw, 6.5rem)" }}
+        >
+          {copy.heading}
+        </h1>
+        <p className="favo-body mt-3" style={{ color: "var(--color-porcelain)", opacity: 0.85 }}>{copy.sub}</p>
       </div>
 
       <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4" noValidate>
@@ -262,30 +275,9 @@ export default function AuthForm({ mode }: Props) {
 
         {/* Password */}
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between">
-            <label htmlFor="password" className="favo-label text-cool-steel">
-              Password
-            </label>
-            {mode === "signin" && (
-              <button
-                type="button"
-                disabled={sendingReset}
-                onClick={async () => {
-                  if (!email) {
-                    setError("Enter your email above, then click Forgot password.");
-                    return;
-                  }
-                  setSendingReset(true);
-                  await requestPasswordReset(email);
-                  setSendingReset(false);
-                  setForgotSent(true);
-                }}
-                className="favo-small text-crimson-carrot underline underline-offset-2 disabled:opacity-50"
-              >
-                {sendingReset ? "Sending…" : "Forgot password?"}
-              </button>
-            )}
-          </div>
+          <label htmlFor="password" className="favo-label text-cool-steel">
+            Password
+          </label>
           <input
             id="password"
             name="password"
@@ -297,6 +289,25 @@ export default function AuthForm({ mode }: Props) {
             className={inputClass}
             placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
           />
+          {mode === "signin" && (
+            <button
+              type="button"
+              disabled={sendingReset}
+              onClick={async () => {
+                if (!email) {
+                  setError("Enter your email above, then click Forgot password.");
+                  return;
+                }
+                setSendingReset(true);
+                await requestPasswordReset(email);
+                setSendingReset(false);
+                setForgotSent(true);
+              }}
+              className="favo-small self-end text-crimson-carrot underline underline-offset-2 disabled:opacity-50"
+            >
+              {sendingReset ? "Sending…" : "Forgot password?"}
+            </button>
+          )}
           {forgotSent && (
             <p className="favo-small text-porcelain/70">
               If that email is registered you&apos;ll receive a reset link shortly.
