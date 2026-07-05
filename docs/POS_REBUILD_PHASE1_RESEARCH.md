@@ -50,7 +50,7 @@ Five agents researched in parallel — one per angle below — each required to 
 - Points are a real financial liability (Delta: $3.9B, Marriott: $2.6B outstanding) — argues for a hard, system-enforced redemption cap, not staff judgment. *(Chun & Iancu, Stanford GSB/MIT Sloan working paper)*
 - Totals must recalculate live, before commit, so the operator can visually catch an error. *(Stripe, "Checkout UI design strategies")*
 
-**Recommendation:** currency-first balance display ("Loyalty balance: R24.00 (240 pts)" — see naming decision below); single-tap redemption defaulting to max eligible, hard-capped at order total; live total recalculation; every redemption logged against its transaction.
+**Recommendation:** currency-first balance display ("Loyalty balance: R20.00 (100 pts)" — see naming decision below); single-tap redemption defaulting to max eligible, hard-capped at order total; live total recalculation; every redemption logged against its transaction.
 
 ## E — Browsing vs. filter columns (answers: filter column doesn't scale) — **deferred, then dropped**
 

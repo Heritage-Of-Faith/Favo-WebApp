@@ -6,7 +6,7 @@
 
 | Zone | Contents |
 |---|---|
-| **A — Customer** | Search/attach customer (name, email, or phone) · Loyalty balance ("R24.00 (240 pts)") · "Reorder their Favo" (if set) |
+| **A — Customer** | Search/attach customer (name, email, or phone) · Loyalty balance ("R20.00 (100 pts)") · "Reorder their Favo" (if set) |
 | **B — Order builder** | Fixed 5-item grid, same position always · customisation popover on tap |
 | **C — Running order** | Line items, live total · redemption stepper (if eligible) · Charge button |
 

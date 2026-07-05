@@ -9,7 +9,7 @@ Confirmed by Nikao, 2026-07-05, emphatically ("I DO NOT WANT IT ANYWHERE"). This
 - No top-up flow, anywhere (POS, customer PWA, admin).
 - No "spend from balance" payment method.
 - No wallet balance shown anywhere, in any label.
-- The word **"wallet" does not appear** in any new UI copy, ticket, or code comment for this feature area. The only money-value display is the **loyalty points balance**, shown as currency-first: `"Loyalty balance: R24.00 (240 pts)"`.
+- The word **"wallet" does not appear** in any new UI copy, ticket, or code comment for this feature area. The only money-value display is the **loyalty points balance**, shown as currency-first: `"Loyalty balance: R20.00 (100 pts)"`.
 - Confirmed 2026-07-05: no real customer had a wallet balance at that time, so removal is a clean deletion — **but re-run that check immediately before deleting `wallet_zar`/the wallet ledger table**, since time may have passed.
 
 **If you see a PR, ticket, or design that reintroduces a top-up or stored-balance concept, it contradicts this decision — flag it, don't build it.**

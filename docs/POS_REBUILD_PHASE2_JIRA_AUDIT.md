@@ -58,7 +58,7 @@ Read-only audit — nothing in Jira (project **AT**, "AI Team", cloudId `c5930bf
 1. **Menu trim: 14 items → 5 signature items.** Content/data ticket; everything downstream depends on this landing first.
 2. **Epic: POS UX/layout rebuild.** iPad split-view structure (persistent nav + content pane + fixed, non-collapsible order/cart region), replacing the category-sidebar + 3-column grid. Absorbs the layout portion of AT-12 and the UI portion of AT-110.
 3. **Touch-target & interactivity audit.** 44×44pt floor with 8–12pt spacing across every POS control; automated overlapping-hit-area check.
-4. **Loyalty balance display (money-first, no "wallet" wording).** "Loyalty balance: R24.00 (240 pts)" on POS, customer PWA, and admin — the only money-value surface once the wallet is gone.
+4. **Loyalty balance display (money-first, no "wallet" wording).** "Loyalty balance: R20.00 (100 pts)" on POS, customer PWA, and admin — the only money-value surface once the wallet is gone.
 5. **Redemption UI rebuild + discoverability QA.** Single-tap-to-max redemption in the new fixed cart region, live total recalculation, plus a fresh live-walkthrough QA pass (don't assume the existing dialog just needs a re-skin). Re-verify AT-115 as a dependency.
 6. **"The Favo" — saved usual order.** Customer-side set-up on the loyalty page, barista-side set/edit in POS (secondary, tucked away), one-tap reorder at checkout, plus a schema ticket for the saved-order template.
 7. **Opening-time prompt + push notification.** Barista sets the café's opening time each morning; submitting triggers a push notification to every logged-in web-app user. Confirmed distinct from AT-26/63/67/76.
