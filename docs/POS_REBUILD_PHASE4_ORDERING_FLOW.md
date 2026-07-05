@@ -1,6 +1,6 @@
 # FAVO POS Rebuild — Phase 4: Ordering Flow Design
 
-**Status:** Round 2 — updated per 2026-07-05 review, awaiting re-review · **Phase 4 of 6**
+**Status:** AGREED (2026-07-05) · **Phase 4 of 6** — this is the Phase 5 wireframe brief.
 
 ## Screen structure — three fixed zones, always visible
 
@@ -14,7 +14,11 @@ Zone C is never a drawer or modal — always on screen (Phase 1's checkout-visib
 
 ## Step by step
 
-**0. Opening-time prompt — now every login, not once per day.** Every time a barista logs in, they're prompted to set/confirm today's opening time. If already set that day, the prompt pre-fills the existing value with a quick "Confirm" — if changed, or if this is the first submission of the day, it fires a push notification to every logged-in web-app user. Still **dismissible** ("Remind me later") — never blocks order-taking. This value also needs to reach the admin dashboard's operating-hours screen (see open question below) so admin and POS aren't tracking two disconnected versions of "today's hours."
+**0. Opening-time prompt — every login, supports multiple sessions per day.** Every time a barista logs in, they're prompted to set/confirm today's opening time. If already set and unchanged, the prompt pre-fills it with a quick "Confirm" and **does not** re-send the notification. A push notification fires only on the **first submission of the day** or an **actual change/new entry** — including a genuine reopening later that day (see below), which correctly counts as a new event worth notifying about. Still **dismissible** ("Remind me later") — never blocks order-taking.
+
+**Multiple opening sessions per day.** Confirmed: the café sometimes closes and reopens more than once in a day (e.g. a midday break), which the admin dashboard currently has no way to represent — it only supports one set of hours per day.
+- **Admin side:** the operating-hours screen gets a "today's sessions" section where admin can plan ahead — First opening, Second opening, and so on, each as a start (and optionally an expected end) time. This is a same-day override on top of the existing recurring weekly schedule (AT-26 family), which stays as the default for a normal, single-session day.
+- **Barista side stays simple, as requested:** the barista never manages a list or picks "which session." They just get the one-field prompt — "What time are you opening?" — every login. Submitting it appends a new session-start entry for today. If the café is reopening after being closed, the barista simply enters the new time; it's recorded as a new session (distinct from the earlier one that day) and triggers a fresh notification, same as the very first opening would. **The barista never records a closing time** — that stays admin-only (either planned in advance, or simply left open-ended for a normal single-session day). This is the one assumption in this design: flag it if closing time needs barista-side tracking too, but nothing in the brief suggested that.
 
 **1. Barista login.** Unchanged (existing PIN login).
 
@@ -39,19 +43,14 @@ Zone C is never a drawer or modal — always on screen (Phase 1's checkout-visib
 
 **8. Daily order history — new, but mostly already built.** A simple, barista-accessible view (reachable from a menu) showing what was made per day — e.g. "20 coffees today, 10 yesterday." This substantially reuses the existing `TodayCard.tsx` / `getPosToday()` (task M12) — that already shows today's order count, revenue, and waste events to any barista+. It needs two extensions: (a) a per-item breakdown (counts by drink, not just a total order count), and (b) the ability to look at a previous day, not only today. Same permission level as the existing feature (barista + admin) — nothing new is exposed.
 
-## Decisions locked this round
+## Decisions locked, all rounds
 
-1. Opening-time prompt: every login (not once/day), still dismissible, pre-fills if already set.
-2. Customer search: name, email, or phone.
-3. Milk customisation: normal is not a selectable option, only the macadamia alternative is a clickable toggle. Customisation UI changes from a full sheet to a popover (Apple HIG-backed).
-4. Loyalty redemption: confirmed as the existing R20-unit stepper, defaulting to 0/not-redeemed until the barista opts in — no new design needed, just correct placement in Zone C.
-5. New: daily order-history view, extending the existing TodayCard rather than building new.
+1. Opening-time prompt: every login, dismissible, pre-fills if already set.
+2. Notification: fires only on first submission of the day or an actual change/new session — never on re-confirming an unchanged value.
+3. Multi-session days: admin dashboard gets a "today's sessions" planner (First opening, Second opening, ...) as a same-day override on the weekly schedule; barista side stays a single simple "what time are you opening" prompt per login, which appends a new session and re-notifies on genuine reopening. Barista never records a closing time.
+4. Customer search: name, email, or phone.
+5. Milk customisation: normal is not a selectable option, only the macadamia alternative is a clickable toggle. Customisation UI changes from a full sheet to a popover (Apple HIG-backed).
+6. Loyalty redemption: confirmed as the existing R20-unit stepper, defaulting to 0/not-redeemed until the barista opts in — no new design needed, just correct placement in Zone C.
+7. New: daily order-history view, extending the existing TodayCard rather than building new.
 
-## Open questions (need your call)
-
-1. **Does re-confirming an unchanged opening time on a second login the same day re-send the notification, or only the first submission / an actual change?** Re-sending every login could spam customers with repeat "we're open!" pushes; only notifying on first-set-or-change avoids that but means a barista can't manually "re-announce."
-2. **How should the barista's daily time relate to the admin dashboard's operating-hours screen?** Proposed default: the admin's weekly schedule stays the general-purpose fallback (unchanged, AT-26 family); the barista's daily entry is a same-day override that admin can also see and edit from the dashboard if needed (e.g., pre-setting a holiday closing time without a barista present). Confirm this is the right relationship, or if you want it to work differently (e.g., barista's time must fall within some tolerance of admin's default, with a warning if it doesn't).
-
-## Next
-
-Once these are settled, Phase 5 — wireframe this flow, plus a handover doc tying every decision back to the Phase 1 citations and this flow.
+No open questions remain. This is the Phase 5 wireframe brief.
