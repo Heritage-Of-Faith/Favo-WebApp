@@ -59,6 +59,13 @@ Every decision below traces back to a specific Phase 1–4 finding — this sect
 - Reachable via a menu icon from the main POS screen, not a primary always-visible surface.
 - Per day: total item count + a per-item breakdown (name + count). Today and at least the prior day; further history is a "nice to have," not required for v1 (AT-146 keeps this simple by design).
 
+### Top bar — carried over unchanged, not redesigned
+Caught in review (2026-07-05): the wireframe initially dropped the active-bean-lot tile and the milk/bean container Open/Close controls entirely, since they don't belong to the Zone A/B/C ordering flow. They're restored to the persistent top bar, in the same position and with the same behavior as the current live POS:
+- **Active bean lot** (`ActiveBeanCard`) — read-only tile, origin + days-since-roast, no interaction. Unchanged.
+- **Container open/close** (`OpenContainersCard`) — one compact pill per tracked container (milk, beans), showing which lot/carton is open (or "None open") and its sealed-container count, with an Open or Close button. Opening the next container is disabled when the sealed count is 0. This is exactly the live component's existing behavior (`listOpenContainers` / `openContainer` / `closeContainer` server actions) — **no changes needed**, per the Phase 3 strategy's reuse call on the container/lot inventory system. It just needed to be explicitly re-placed in this new layout rather than assumed to carry over silently.
+
+This is a good general rule for Phase 6: anything in the current POS that isn't explicitly called out as changed/removed in the Phase 1–4 docs should be assumed to carry over as-is, in a sensible equivalent location — but "sensible equivalent location" still needs to be stated somewhere, as this gap showed. If build finds another current POS element with nowhere obvious to go in the new layout, flag it rather than silently dropping it.
+
 ## What Phase 6 build needs to know
 
 - **Sequencing:** follow the four waves in `docs/POS_REBUILD_PHASE3_STRATEGY.md`. This wireframe only becomes buildable after Wave 1 (menu trim, AT-136; customisation/deduction fix, AT-145) lands — the fixed grid and popover both assume the final 5-item menu and working macadamia/shot logic already exist.
