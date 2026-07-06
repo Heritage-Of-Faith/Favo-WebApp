@@ -14,7 +14,7 @@
 2. Reload the POS. Confirm the 5 items are in the exact same position as before reload. **Fail if:** anything has moved — this is the whole point of dropping the dynamic shelf.
 3. Tap Cappuccino. Confirm a customisation option lets you choose Macadamia Milk as a free alternative to the default dairy milk (R0 price difference either way). **Fail if:** it's priced, or if it's missing entirely.
 4. On the same order line, add 3 extra shots. Confirm the price increases by 3 × R10 = R30, not a flat R10 regardless of quantity. **Fail if:** it's still a toggle (max 1 shot) or priced at R12/shot.
-5. Repeat steps 3–4 for Mocha, Chai Latte, and Hot Chocolate.
+5. Repeat step 4 (extra-shot stepper, R10/shot) for Mocha only — it's the only remaining espresso-based drink besides Americano and Cappuccino. Repeat step 3 (Macadamia Milk toggle) for Chai Latte and Hot Chocolate, but **not** step 4 — neither has an espresso shot and neither should show a shot stepper. **Fail if:** Chai Latte or Hot Chocolate's popover offers a shot stepper at all.
 6. Add an Americano with no customisation. Confirm it doesn't force a milk choice (unless you've since decided Americano should offer one — check `POS_REBUILD_DECISIONS.md` for the current assumption).
 
 ## 2. Inventory deduction (the part that's easy to get silently wrong)
