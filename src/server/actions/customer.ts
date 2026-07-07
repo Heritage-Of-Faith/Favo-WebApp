@@ -1,6 +1,6 @@
 "use server";
 
-// Customer-data server actions — G18 (wallet/packs) + G19 (orders, summary, profile)
+// Customer-data server actions — G18 (packs) + G19 (orders, summary, profile)
 // The customer is always resolved from the signed cookie via getCustomerSession().
 // No customerId argument — session is the source of truth (L05: customer PWA is read-only).
 // Implements the CustomerDataApi contract from src/lib/customer/contract.ts.

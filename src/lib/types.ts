@@ -39,7 +39,6 @@ export type Customer = {
   phone: string | null;
   email: string | null;
   loyaltyPoints: number;
-  walletZar: number;
   activePackCount: number;
 };
 

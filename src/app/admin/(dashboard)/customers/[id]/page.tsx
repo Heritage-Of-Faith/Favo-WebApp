@@ -1,9 +1,9 @@
 // Customer detail page — owner: Mia (AT-78 A16 + AT-79 A17)
 // Read-only — no mutation entry points (POPIA-friendly).
-// Tabs (Orders · Loyalty · Wallet · Packs) handled client-side in CustomerBalanceTabs.
+// Tabs (Orders · Loyalty · Packs) handled client-side in CustomerBalanceTabs.
 import { notFound } from "next/navigation";
 import { getCustomerDetail } from "@/server/actions/customers";
-import { formatZar, formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import CustomerBalanceTabs from "@/components/admin/CustomerBalanceTabs";
 
 export const dynamic = "force-dynamic";
@@ -57,14 +57,12 @@ export default async function CustomerDetailPage({
       {/* KPI strip — always visible regardless of active tab */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Stat label="Loyalty points" value={String(c.loyaltyPoints)} />
-        <Stat label="Wallet balance" value={formatZar(c.walletZar)} />
         <Stat label="Active packs" value={String(c.activePacks.length)} />
       </div>
 
       {/* Tabbed history — all data passed down; no additional fetching on tab switch */}
       <CustomerBalanceTabs
         loyaltyTxns={c.loyaltyTxns}
-        walletTxns={c.walletTxns}
         activePacks={c.activePacks}
         expiredPacks={c.expiredPacks}
         recentOrders={c.recentOrders}

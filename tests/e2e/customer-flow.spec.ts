@@ -3,9 +3,8 @@
  *
  * Covers the Phase 3 customer acceptance:
  *   - Account creation (sign-up)
- *   - Dashboard renders (loyalty, wallet, packs, order history)
+ *   - Dashboard renders (loyalty, packs, order history)
  *   - Push opt-in granted via Playwright context permissions
- *   - Wallet page renders
  *   - Packs page renders
  *
  * Seeded data (G3 + phase2/phase3 seed):
@@ -73,11 +72,6 @@ test.describe("1. Landing page", () => {
 
   test("unauthenticated /customer redirects to /login", async ({ page }) => {
     await page.goto("/customer", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
-  });
-
-  test("unauthenticated /wallet redirects to /login", async ({ page }) => {
-    await page.goto("/wallet", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
   });
 
@@ -150,15 +144,6 @@ test.describe("3. Customer dashboard", () => {
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto("/customer", { waitUntil: "networkidle" });
     expect(errors.filter((e) => !e.includes("ResizeObserver"))).toHaveLength(0);
-    await page.close();
-  });
-
-  test("wallet page renders for authenticated customer", async ({ context }) => {
-    await signIn(context, sharedEmail);
-    const page = await context.newPage();
-    await page.goto("/wallet", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/wallet/);
-    await expect(page.getByText(/balance/i).or(page.getByText(/wallet/i)).first()).toBeVisible({ timeout: 15_000 });
     await page.close();
   });
 

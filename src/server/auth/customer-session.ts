@@ -1,6 +1,6 @@
 // Customer session — thin wrapper over Supabase Auth SSR.
 // Returns the internal customers.id (text nanoid), not the Supabase UUID,
-// so all downstream callers (orders, wallet, push) remain unchanged.
+// so all downstream callers (orders, push) remain unchanged.
 
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";

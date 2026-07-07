@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import LoyaltyCard from "@/components/customer/LoyaltyCard";
-import WalletCard from "@/components/customer/WalletCard";
+import LoyaltyValueCard from "@/components/customer/LoyaltyValueCard";
 import PackList from "@/components/customer/PackList";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
 import type { CustomerOrder } from "@/lib/customer/contract";
@@ -23,21 +23,21 @@ describe("LoyaltyCard", () => {
   });
 });
 
-describe("WalletCard", () => {
+describe("LoyaltyValueCard", () => {
   it("shows R20 for 100 pts (one whole redemption unit) and redeem prompt", () => {
-    render(<WalletCard loyaltyPoints={100} />);
+    render(<LoyaltyValueCard loyaltyPoints={100} />);
     expect(screen.getByText(/20,00/)).toBeInTheDocument();
     expect(screen.getByText(/redeem at the counter/i)).toBeInTheDocument();
   });
 
   it("floors to whole redemption units: 250 pts shows R40 (2 units), not R50", () => {
-    render(<WalletCard loyaltyPoints={250} />);
+    render(<LoyaltyValueCard loyaltyPoints={250} />);
     expect(screen.getByText(/40,00/)).toBeInTheDocument();
     expect(screen.getByText(/redeem at the counter/i)).toBeInTheDocument();
   });
 
   it("shows R0 and not-enough message when under 100 pts", () => {
-    render(<WalletCard loyaltyPoints={45} />);
+    render(<LoyaltyValueCard loyaltyPoints={45} />);
     expect(screen.getByText(/0,00/)).toBeInTheDocument();
     expect(screen.getByText(/not enough points to redeem yet/i)).toBeInTheDocument();
   });

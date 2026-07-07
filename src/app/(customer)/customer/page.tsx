@@ -9,7 +9,7 @@ import { redirect } from "next/navigation";
 import { getCustomerSummary, listCustomerOrders } from "@/server/actions/customer";
 import { getOperatingHours } from "@/server/actions/hours";
 import LoyaltyCard from "@/components/customer/LoyaltyCard";
-import WalletCard from "@/components/customer/WalletCard";
+import LoyaltyValueCard from "@/components/customer/LoyaltyValueCard";
 import PackList from "@/components/customer/PackList";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
 import WelcomeModal from "@/components/customer/WelcomeModal";
@@ -164,7 +164,7 @@ export default async function CustomerDashboard() {
         <LoyaltyCard points={summary?.loyaltyPoints ?? 0} />
 
         <div style={S.twoCol}>
-          <WalletCard loyaltyPoints={summary?.loyaltyPoints ?? 0} />
+          <LoyaltyValueCard loyaltyPoints={summary?.loyaltyPoints ?? 0} />
           <PackList activePackCount={summary?.activePackCount ?? 0} />
         </div>
 

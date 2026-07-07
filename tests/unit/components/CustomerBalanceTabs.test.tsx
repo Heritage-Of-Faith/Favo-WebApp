@@ -8,7 +8,6 @@ import type { CustomerBalanceTabsProps } from "@/components/admin/CustomerBalanc
 
 const EMPTY: CustomerBalanceTabsProps = {
   loyaltyTxns: [],
-  walletTxns: [],
   activePacks: [],
   expiredPacks: [],
   recentOrders: [],
@@ -29,14 +28,6 @@ const LOYALTY_TXN = {
   at: "2026-06-01T08:00:00+02:00",
 };
 
-const WALLET_TXN = {
-  id: "wt1",
-  deltaZar: 10000,
-  kind: "topup",
-  description: "Counter top-up",
-  at: "2026-06-01T08:00:00+02:00",
-};
-
 const ACTIVE_PACK = {
   id: "pk1",
   menuItemName: "Flat White",
@@ -54,11 +45,10 @@ const EXPIRED_PACK = {
 };
 
 describe("CustomerBalanceTabs — tab navigation", () => {
-  it("renders all 4 tab buttons", () => {
+  it("renders all 3 tab buttons", () => {
     render(<CustomerBalanceTabs {...EMPTY} />);
     expect(screen.getByRole("tab", { name: /orders/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /loyalty/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /wallet/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /packs/i })).toBeInTheDocument();
   });
 
@@ -73,12 +63,6 @@ describe("CustomerBalanceTabs — tab navigation", () => {
     fireEvent.click(screen.getByRole("tab", { name: /loyalty/i }));
     expect(screen.getByRole("tab", { name: /loyalty/i })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: /orders/i })).toHaveAttribute("aria-selected", "false");
-  });
-
-  it("switching to Wallet tab makes it selected", () => {
-    render(<CustomerBalanceTabs {...EMPTY} />);
-    fireEvent.click(screen.getByRole("tab", { name: /wallet/i }));
-    expect(screen.getByRole("tab", { name: /wallet/i })).toHaveAttribute("aria-selected", "true");
   });
 
   it("switching to Packs tab makes it selected", () => {
@@ -98,12 +82,6 @@ describe("CustomerBalanceTabs — empty states", () => {
     render(<CustomerBalanceTabs {...EMPTY} />);
     fireEvent.click(screen.getByRole("tab", { name: /loyalty/i }));
     expect(screen.getByText(/no loyalty transactions/i)).toBeInTheDocument();
-  });
-
-  it("shows empty state for wallet when list is empty", () => {
-    render(<CustomerBalanceTabs {...EMPTY} />);
-    fireEvent.click(screen.getByRole("tab", { name: /wallet/i }));
-    expect(screen.getByText(/no wallet transactions/i)).toBeInTheDocument();
   });
 
   it("shows empty state for packs when both lists are empty", () => {
@@ -129,16 +107,6 @@ describe("CustomerBalanceTabs — data rendering", () => {
     fireEvent.click(screen.getByRole("tab", { name: /loyalty/i }));
     expect(screen.getByText("Earned")).toBeInTheDocument();
     expect(screen.getByText("+10")).toBeInTheDocument();
-  });
-
-  it("renders a wallet top-up row with description and formatted amount", () => {
-    render(<CustomerBalanceTabs {...EMPTY} walletTxns={[WALLET_TXN]} />);
-    fireEvent.click(screen.getByRole("tab", { name: /wallet/i }));
-    expect(screen.getAllByText(/top-up/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Counter top-up")).toBeInTheDocument();
-    // 10000 cents = R 100.00, positive → prefixed with +
-    expect(screen.getByText(/\+/)).toBeInTheDocument();
-    expect(screen.getByText(/R 100/)).toBeInTheDocument();
   });
 
   it("renders active and expired packs under the Packs tab", () => {
@@ -176,7 +144,6 @@ describe("CustomerBalanceTabs — no mutation surfaces", () => {
       <CustomerBalanceTabs
         recentOrders={[ORDER]}
         loyaltyTxns={[LOYALTY_TXN]}
-        walletTxns={[WALLET_TXN]}
         activePacks={[ACTIVE_PACK]}
         expiredPacks={[EXPIRED_PACK]}
       />
@@ -190,14 +157,13 @@ describe("CustomerBalanceTabs — no mutation surfaces", () => {
       <CustomerBalanceTabs
         recentOrders={[ORDER]}
         loyaltyTxns={[LOYALTY_TXN]}
-        walletTxns={[WALLET_TXN]}
         activePacks={[ACTIVE_PACK]}
         expiredPacks={[EXPIRED_PACK]}
       />
     );
-    // Only the 4 tab buttons should be present — no action buttons (tabs use role="tab")
+    // Only the 3 tab buttons should be present — no action buttons (tabs use role="tab")
     const tabs = screen.getAllByRole("tab");
-    expect(tabs).toHaveLength(4);
+    expect(tabs).toHaveLength(3);
     // No submit/action buttons exist
     expect(screen.queryAllByRole("button")).toHaveLength(0);
   });

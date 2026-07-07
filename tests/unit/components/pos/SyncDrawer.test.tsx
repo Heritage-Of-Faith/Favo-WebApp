@@ -7,7 +7,7 @@ import type { OfflineOrder } from "@/hooks/useOfflineOutbox";
 
 const ORDERS: OfflineOrder[] = [
   { clientUuid: "a", staffId: "s1", items: [{ menuItemId: "m1", quantity: 2, modifications: [] }], paymentMode: "yoco_deferred", clientTotalZar: 6000, clientTimestamp: "2026-06-15T08:00:00Z" },
-  { clientUuid: "b", staffId: "s1", items: [{ menuItemId: "m2", quantity: 1, modifications: [] }], paymentMode: "wallet", clientTotalZar: 3000, clientTimestamp: "2026-06-15T09:00:00Z" },
+  { clientUuid: "b", staffId: "s1", items: [{ menuItemId: "m2", quantity: 1, modifications: [] }], paymentMode: "yoco_deferred", clientTotalZar: 3000, clientTimestamp: "2026-06-15T09:00:00Z" },
 ];
 
 function base() {

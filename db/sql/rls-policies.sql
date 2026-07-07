@@ -27,13 +27,12 @@ DO $$ BEGIN EXECUTE format('GRANT favo_customer TO %I', current_user); END $$;
 
 GRANT USAGE ON SCHEMA public TO favo_customer;
 GRANT SELECT ON customers, orders, order_items, loyalty_transactions,
-  wallet_transactions, coffee_packs, menu_items TO favo_customer;
+  coffee_packs, menu_items TO favo_customer;
 
 ALTER TABLE customers            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE loyalty_transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE wallet_transactions  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE coffee_packs         ENABLE ROW LEVEL SECURITY;
 -- menu_items: public reference data — RLS intentionally NOT enabled (SELECT
 -- grant is enough; menu is public). See 0023 migration for rationale.
@@ -55,10 +54,6 @@ CREATE POLICY customer_own_order_items ON order_items
   ));
 
 CREATE POLICY customer_own_loyalty ON loyalty_transactions
-  FOR SELECT TO favo_customer
-  USING (customer_id::text = current_setting('app.current_customer_id', true));
-
-CREATE POLICY customer_own_wallet ON wallet_transactions
   FOR SELECT TO favo_customer
   USING (customer_id::text = current_setting('app.current_customer_id', true));
 

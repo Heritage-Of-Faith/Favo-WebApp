@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unrecognised event" }, { status: 400 });
   }
 
-  // ── Pending charge path (wallet_topup, coffee_pack) ───────────────────────
+  // ── Pending charge path (coffee_pack) ──────────────────────────────────────
   // BUG-Y2 fix: match by checkoutId (what we stored at charge creation).
   // The paymentId in the event is the *payment transaction* ID; checkoutId is
   // the *checkout session* ID we stored in yoco_checkout_id.
