@@ -11,14 +11,17 @@ import { ALERT_RECIPIENTS } from "@db/seed/alert-recipients";
 // ── Inventory items ───────────────────────────────────────────────────────────
 
 describe("seed: inventory items", () => {
-  it("has exactly 10 items (8 base + 2 cup-container items)", () => {
-    expect(INVENTORY_ITEMS).toHaveLength(10);
+  it("has exactly 11 items (6 base + 5 cup-container items)", () => {
+    expect(INVENTORY_ITEMS).toHaveLength(11);
   });
 
-  it("includes cup-container items for beans and milk", () => {
+  it("includes cup-container items for beans and all milks (AT-145)", () => {
     const cupItems = INVENTORY_ITEMS.filter((i) => i.unit === "cup");
     expect(cupItems.map((i) => i.id).sort()).toEqual([
+      "inv_item_almond_milk",
       "inv_item_beans_cups",
+      "inv_item_macadamia_milk",
+      "inv_item_oat_milk",
       "inv_item_whole_milk_cups",
     ]);
     // Container items are milk/bean kinds tracked in cups.
@@ -59,19 +62,28 @@ describe("seed: inventory items", () => {
 describe("seed: inventory lots", () => {
   const itemIds = new Set(INVENTORY_ITEMS.map((i) => i.id));
 
-  it("non-container items have exactly one lot; container items have several", () => {
+  it("non-container items have exactly one lot; high-volume containers have several", () => {
     // Non-container (g/ml/unit) items: one starter lot each.
     const nonContainerItems = INVENTORY_ITEMS.filter((i) => i.unit !== "cup");
     for (const item of nonContainerItems) {
       const lots = INVENTORY_LOTS.filter((l) => l.inventoryItemId === item.id);
       expect(lots).toHaveLength(1);
     }
-    // Container (cup) items: multiple bottles/bags, exactly one seeded "open".
-    const containerItems = INVENTORY_ITEMS.filter((i) => i.unit === "cup");
-    for (const item of containerItems) {
-      const lots = INVENTORY_LOTS.filter((l) => l.inventoryItemId === item.id);
+    // High-volume containers (beans, dairy milk): multiple bottles/bags,
+    // exactly one seeded "open".
+    const highVolumeContainerIds = ["inv_item_beans_cups", "inv_item_whole_milk_cups"];
+    for (const id of highVolumeContainerIds) {
+      const lots = INVENTORY_LOTS.filter((l) => l.inventoryItemId === id);
       expect(lots.length).toBeGreaterThan(1);
       expect(lots.filter((l) => l.state === "open")).toHaveLength(1);
+    }
+    // AT-145: lower-volume alt-milk containers seed with a single sealed lot —
+    // nothing pre-opened, since nothing has used them yet.
+    const altMilkIds = ["inv_item_oat_milk", "inv_item_macadamia_milk", "inv_item_almond_milk"];
+    for (const id of altMilkIds) {
+      const lots = INVENTORY_LOTS.filter((l) => l.inventoryItemId === id);
+      expect(lots).toHaveLength(1);
+      expect(lots[0]!.state ?? "active").toBe("active");
     }
   });
 

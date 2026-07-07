@@ -31,20 +31,6 @@ export const INVENTORY_ITEMS: SeedInventoryItem[] = [
     lowStockThreshold: 2000, // 2 L
   },
   {
-    id: "inv_item_oat_milk",
-    name: "Oat Milk",
-    kind: "milk",
-    unit: "ml",
-    lowStockThreshold: 1000, // 1 L
-  },
-  {
-    id: "inv_item_macadamia_milk",
-    name: "Macadamia Milk",
-    kind: "milk",
-    unit: "ml",
-    lowStockThreshold: 500, // 0.5 L
-  },
-  {
     id: "inv_item_cup_8oz",
     name: "8 oz Cup",
     kind: "packaging",
@@ -89,6 +75,30 @@ export const INVENTORY_ITEMS: SeedInventoryItem[] = [
     kind: "milk",
     unit: "cup",
     lowStockThreshold: 20, // re-order when < ~2 cartons of cups left
+  },
+  // AT-145: Oat/Macadamia/Almond Milk are cup-tracked like dairy, not ml/FIFO —
+  // Almond Milk never had inventory tracking before this. Real cost/supplier and
+  // cups-per-carton are placeholders pending real numbers (see db/seed/lots.ts).
+  {
+    id: "inv_item_oat_milk",
+    name: "Oat Milk",
+    kind: "milk",
+    unit: "cup",
+    lowStockThreshold: 2,
+  },
+  {
+    id: "inv_item_macadamia_milk",
+    name: "Macadamia Milk",
+    kind: "milk",
+    unit: "cup",
+    lowStockThreshold: 2,
+  },
+  {
+    id: "inv_item_almond_milk",
+    name: "Almond Milk",
+    kind: "milk",
+    unit: "cup",
+    lowStockThreshold: 2,
   },
 ];
 

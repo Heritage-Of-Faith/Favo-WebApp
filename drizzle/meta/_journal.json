@@ -183,6 +183,13 @@
       "when": 1783091200885,
       "tag": "0025_audit_log_no_truncate",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1783419042305,
+      "tag": "0026_at145_customisation_inventory_effects",
+      "breakpoints": true
     }
   ]
 }

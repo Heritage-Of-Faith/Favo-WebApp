@@ -77,7 +77,14 @@ const loadMenu = unstable_cache(
     const custByItem = new Map<string, MenuCustomisation[]>();
     for (const c of customisations) {
       const list = custByItem.get(c.menuItemId) ?? [];
-      list.push({ id: c.id, name: c.name, priceDeltaZar: c.priceDeltaZar });
+      list.push({
+        id: c.id,
+        name: c.name,
+        priceDeltaZar: c.priceDeltaZar,
+        substitutesInventoryItemId: c.substitutesInventoryItemId,
+        addsInventoryItemId: c.addsInventoryItemId,
+        addsQuantity: c.addsQuantity,
+      });
       custByItem.set(c.menuItemId, list);
     }
 
@@ -214,6 +221,9 @@ export async function setMenuItemPrice(input: {
         id: c.id,
         name: c.name,
         priceDeltaZar: c.priceDeltaZar,
+        substitutesInventoryItemId: c.substitutesInventoryItemId,
+        addsInventoryItemId: c.addsInventoryItemId,
+        addsQuantity: c.addsQuantity,
       })),
     },
   };
@@ -268,7 +278,14 @@ export async function getMenuAdmin(): Promise<ActionResult<MenuItem[]>> {
   const custByItem = new Map<string, MenuCustomisation[]>();
   for (const c of customisations) {
     const list = custByItem.get(c.menuItemId) ?? [];
-    list.push({ id: c.id, name: c.name, priceDeltaZar: c.priceDeltaZar });
+    list.push({
+      id: c.id,
+      name: c.name,
+      priceDeltaZar: c.priceDeltaZar,
+      substitutesInventoryItemId: c.substitutesInventoryItemId,
+      addsInventoryItemId: c.addsInventoryItemId,
+      addsQuantity: c.addsQuantity,
+    });
     custByItem.set(c.menuItemId, list);
   }
 

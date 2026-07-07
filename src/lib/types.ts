@@ -47,6 +47,12 @@ export type MenuCustomisation = {
   id: string;
   name: string;
   priceDeltaZar: number;
+  // AT-145 — present when fetched via getMenu() (drives UI: a customisation
+  // with addsInventoryItemId set renders as a stepper, not a toggle). Absent
+  // on the snapshot stored in an order's modifications — not needed there.
+  substitutesInventoryItemId?: string | null;
+  addsInventoryItemId?: string | null;
+  addsQuantity?: number | null;
 };
 
 export type MenuItem = {
