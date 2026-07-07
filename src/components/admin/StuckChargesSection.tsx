@@ -3,7 +3,7 @@
 /**
  * StuckChargesSection — admin recovery surface for BUG-O2.
  *
- * Lists pending wallet-top-up / coffee-pack charges whose Yoco webhook never
+ * Lists pending coffee-pack charges whose Yoco webhook never
  * arrived (via listStuckCharges) and lets an admin manually activate each one
  * (via resolveStuckCharge). Idempotent server-side: resolving an
  * already-settled charge is a no-op. Lives on the Sync Conflicts page — the
@@ -16,7 +16,6 @@ import { listStuckCharges, resolveStuckCharge, type StuckChargeRow } from "@/ser
 import { formatZar, formatDate } from "@/lib/format";
 
 const KIND_LABEL: Record<StuckChargeRow["kind"], string> = {
-  wallet_topup: "Wallet top-up",
   coffee_pack: "Coffee pack",
 };
 

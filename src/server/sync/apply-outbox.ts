@@ -33,7 +33,7 @@ export const outboxItemSchema = z.object({
       })
     )
     .min(1),
-  paymentMode: z.enum(["wallet", "yoco_deferred", "free"]),
+  paymentMode: z.enum(["yoco_deferred", "free"]),
   clientTotalZar: z.number().int().nonnegative(),
   clientTimestamp: z.string().datetime(),
 });

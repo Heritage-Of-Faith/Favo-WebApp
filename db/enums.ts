@@ -104,15 +104,7 @@ export const loyaltyKind = pgEnum("loyalty_kind", [
 ]);
 
 export const chargeKind = pgEnum("charge_kind", [
-  "wallet_topup",
   "coffee_pack",
-]);
-
-export const walletTxnKind = pgEnum("wallet_txn_kind", [
-  "topup",
-  "spend",
-  "refund",
-  "adjustment",
 ]);
 
 export const syncConflictKind = pgEnum("sync_conflict_kind", [

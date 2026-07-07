@@ -5,20 +5,13 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import CustomerCard from "@/components/pos/CustomerCard";
 import type { Customer } from "@/lib/types";
 
-const CUST: Customer = { id: "c1", name: "Thandeka", phone: null, email: null, loyaltyPoints: 145, walletZar: 0, activePackCount: 0 };
+const CUST: Customer = { id: "c1", name: "Thandeka", phone: null, email: null, loyaltyPoints: 145, activePackCount: 0 };
 
 describe("CustomerCard", () => {
   it("always shows name and loyalty points", () => {
     render(<CustomerCard customer={CUST} />);
     expect(screen.getByText("Thandeka")).toBeDefined();
     expect(screen.getByText(/145 pts/)).toBeDefined();
-  });
-
-  it("shows wallet balance only when supplied", () => {
-    const { rerender } = render(<CustomerCard customer={CUST} />);
-    expect(screen.queryByText(/R/)).toBeNull();
-    rerender(<CustomerCard customer={CUST} walletBalanceZar={5000} />);
-    expect(screen.getByText(/50,00/)).toBeDefined();
   });
 
   it("shows pack count only when > 0", () => {

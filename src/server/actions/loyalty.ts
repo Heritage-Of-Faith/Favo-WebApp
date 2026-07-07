@@ -1,12 +1,12 @@
 "use server";
 
-// Loyalty server actions — AT-109 (redeemLoyalty multi-unit), G9 (topUpWallet, purchasePack)
+// Loyalty server actions — AT-109 (redeemLoyalty multi-unit), G9 (purchasePack)
 // AT-127 (getLoyaltyLiabilityReport)
 // Docs: docs/API.md · BUSINESS_RULES.md L06, L16
 
 import { desc, eq, sql, count, and, gte, lte, lt, gt, max, sum } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders, customers, loyaltyTransactions, pendingCharges, coffeePacks, menuItems, payments, walletTransactions } from "@db/schema";
+import { orders, customers, loyaltyTransactions, pendingCharges, coffeePacks, menuItems, payments } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import {
@@ -166,75 +166,6 @@ export async function redeemLoyalty(
   return { ok: true, data: { discountZar, pointsUsed, newTotalZar, clientSecret: newClientSecret } };
 }
 
-// ─── topUpWallet ──────────────────────────────────────────────────────────────
-
-/**
- * Create a Yoco checkout for a wallet top-up. The webhook credits wallet_zar
- * on payment success (L16). Returns the clientSecret for the Yoco hosted-fields
- * form on the POS. Barista-initiated — counter-only (L16).
- */
-export async function topUpWallet(
-  customerId: string,
-  amountZar: number
-): Promise<ActionResult<{ yocoClientSecret: string }>> {
-  const auth = await authorize("barista", "admin");
-  if (!auth.ok) return auth;
-  const session = auth.session;
-
-  const MAX_TOPUP_ZAR = 100_000;   // R1,000 per top-up (L16)
-  const MAX_BALANCE_ZAR = 250_000; // R2,500 max wallet balance (L16)
-
-  if (!customerId || !Number.isInteger(amountZar) || amountZar <= 0) {
-    return { ok: false, code: "VALIDATION_ERROR", message: "customerId and a positive integer amountZar are required." };
-  }
-  if (amountZar > MAX_TOPUP_ZAR) {
-    return { ok: false, code: "VALIDATION_ERROR", message: `Single top-up cannot exceed R${MAX_TOPUP_ZAR / 100}.` };
-  }
-
-  const [customer] = await db
-    .select({ id: customers.id, walletZar: customers.walletZar })
-    .from(customers)
-    .where(eq(customers.id, customerId));
-
-  if (!customer) {
-    return { ok: false, code: "NOT_FOUND", message: "Customer not found." };
-  }
-  if (customer.walletZar + amountZar > MAX_BALANCE_ZAR) {
-    return { ok: false, code: "CONFLICT", message: `Top-up would exceed max wallet balance of R${MAX_BALANCE_ZAR / 100}.` };
-  }
-
-  let checkoutId: string;
-  try {
-    const intent = await createPaymentIntent({
-      amountZar,
-      metadata: { chargeKind: "wallet_topup", customerId },
-    });
-    checkoutId = intent.id;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Yoco checkout creation failed.";
-    return { ok: false, code: "PAYMENT_ERROR", message };
-  }
-
-  await db.insert(pendingCharges).values({
-    yocoCheckoutId: checkoutId,
-    kind: "wallet_topup",
-    customerId,
-    amountZar,
-    status: "pending",
-  });
-
-  await writeAudit({
-    entityKind: "customer",
-    entityId: customerId,
-    action: "wallet_topup_initiated",
-    actorId: session.id,
-    actorRole: session.role,
-    after: { yocoCheckoutId: checkoutId, amountZar },
-  });
-
-  return { ok: true, data: { yocoClientSecret: checkoutId } };
-}
-
 // ─── purchasePack ─────────────────────────────────────────────────────────────
 
 /**
@@ -310,9 +241,9 @@ export async function purchasePack(
 // ─── Internal: activate a pending charge after successful Yoco webhook ────────
 
 /**
- * Called by the webhook handler when a wallet_topup or coffee_pack payment
- * succeeds. Runs inside a transaction that also marks the pendingCharge as
- * successful, so the whole operation is atomic and idempotent.
+ * Called by the webhook handler when a coffee_pack payment succeeds. Runs
+ * inside a transaction that also marks the pendingCharge as successful, so
+ * the whole operation is atomic and idempotent.
  */
 export async function activatePendingCharge(
   chargeId: string,
@@ -330,32 +261,7 @@ export async function activatePendingCharge(
     .set({ status: "successful" })
     .where(eq(pendingCharges.id, chargeId));
 
-  if (charge.kind === "wallet_topup") {
-    await tx
-      .update(customers)
-      .set({ walletZar: sql`${customers.walletZar} + ${charge.amountZar}` })
-      .where(eq(customers.id, charge.customerId));
-
-    // Append wallet ledger entry for this top-up (AT-114).
-    // No loyalty points on top-up — no double-dip (L16).
-    await tx.insert(walletTransactions).values({
-      customerId: charge.customerId,
-      deltaZar: charge.amountZar,
-      kind: "topup",
-      relatedPendingChargeId: chargeId,
-    });
-
-    await writeAudit(
-      {
-        entityKind: "customer",
-        entityId: charge.customerId,
-        action: "wallet_credited",
-        actorRole: "system",
-        after: { creditedZar: charge.amountZar, pendingChargeId: chargeId },
-      },
-      tx
-    );
-  } else if (charge.kind === "coffee_pack") {
+  if (charge.kind === "coffee_pack") {
     const meta = charge.metadata as { menuItemId?: string; qty?: number } | null;
     const menuItemId = meta?.menuItemId;
     const qty = Number(meta?.qty ?? 1);
@@ -454,7 +360,7 @@ const STUCK_CHARGE_AGE_MINUTES = 5;
 
 export type StuckChargeRow = {
   id: string;
-  kind: "wallet_topup" | "coffee_pack";
+  kind: "coffee_pack";
   customerId: string;
   customerName: string;
   amountZar: number;

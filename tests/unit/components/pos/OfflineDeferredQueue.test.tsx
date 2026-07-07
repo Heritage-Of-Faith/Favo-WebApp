@@ -20,7 +20,7 @@ vi.mock("@/server/actions/recipes", () => ({ listRecipes: vi.fn().mockResolvedVa
 vi.mock("@/server/actions/waste", () => ({ logWaste: vi.fn() }));
 vi.mock("@/lib/push/staff-subscribe", () => ({ enableStaffPush: vi.fn() }));
 // POSWorkspace now pulls in the loyalty dialogs (M16/M17/M18) → loyalty actions.
-vi.mock("@/server/actions/loyalty", () => ({ topUpWallet: vi.fn(), purchasePack: vi.fn(), redeemLoyalty: vi.fn() }));
+vi.mock("@/server/actions/loyalty", () => ({ purchasePack: vi.fn(), redeemLoyalty: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), message: vi.fn() } }));
 vi.mock("@/hooks/useOrderStream", () => ({ useOrderStream: () => ({ activeOrders: [], status: "connected" }) }));
 

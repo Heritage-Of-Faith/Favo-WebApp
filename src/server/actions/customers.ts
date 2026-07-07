@@ -2,7 +2,7 @@
 
 import { or, ilike, eq, desc, asc, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { customers, orders, loyaltyTransactions, walletTransactions, coffeePacks, menuItems } from "@db/schema";
+import { customers, orders, loyaltyTransactions, coffeePacks, menuItems } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import type { ActionResult, Customer } from "@/lib/types";
 
@@ -29,7 +29,6 @@ export async function searchCustomer(
       phone: customers.phone,
       email: customers.email,
       loyaltyPoints: customers.loyaltyPoints,
-      walletZar: customers.walletZar,
       activePackCount: sql<number>`(
         SELECT COUNT(*)::int
         FROM coffee_packs
@@ -48,7 +47,6 @@ export async function searchCustomer(
     phone: c.phone,
     email: c.email,
     loyaltyPoints: c.loyaltyPoints,
-    walletZar: c.walletZar,
     activePackCount: c.activePackCount,
   }));
 
@@ -63,7 +61,6 @@ export type CustomerListItem = {
   email: string | null;
   phone: string | null;
   loyaltyPoints: number;
-  walletZar: number;
   createdAt: string; // ISO
 };
 
@@ -97,7 +94,6 @@ export async function listCustomers(opts?: {
       email: c.email,
       phone: c.phone,
       loyaltyPoints: c.loyaltyPoints,
-      walletZar: c.walletZar,
       createdAt: c.createdAt.toISOString(),
     })),
   };
@@ -110,14 +106,6 @@ export type LoyaltyTxnRow = {
   delta: number;
   kind: string;
   orderId: string | null;
-  at: string;
-};
-
-export type WalletTxnRow = {
-  id: string;
-  deltaZar: number;
-  kind: string;
-  description: string | null;
   at: string;
 };
 
@@ -142,10 +130,8 @@ export type CustomerDetail = {
   email: string | null;
   phone: string | null;
   loyaltyPoints: number;
-  walletZar: number;
   createdAt: string;
   loyaltyTxns: LoyaltyTxnRow[];
-  walletTxns: WalletTxnRow[];
   activePacks: AdminPackRow[];
   expiredPacks: AdminPackRow[];
   recentOrders: AdminOrderRow[];
@@ -169,19 +155,12 @@ export async function getCustomerDetail(
 
   const now = new Date();
 
-  const [loyaltyTxns, walletTxns, packs, recentOrders] = await Promise.all([
+  const [loyaltyTxns, packs, recentOrders] = await Promise.all([
     db
       .select()
       .from(loyaltyTransactions)
       .where(eq(loyaltyTransactions.customerId, customerId))
       .orderBy(desc(loyaltyTransactions.at))
-      .limit(50),
-
-    db
-      .select()
-      .from(walletTransactions)
-      .where(eq(walletTransactions.customerId, customerId))
-      .orderBy(desc(walletTransactions.at))
       .limit(50),
 
     db
@@ -237,20 +216,12 @@ export async function getCustomerDetail(
       email: customer.email,
       phone: customer.phone,
       loyaltyPoints: customer.loyaltyPoints,
-      walletZar: customer.walletZar,
       createdAt: customer.createdAt.toISOString(),
       loyaltyTxns: loyaltyTxns.map((t) => ({
         id: t.id,
         delta: t.delta,
         kind: t.kind,
         orderId: t.orderId,
-        at: t.at.toISOString(),
-      })),
-      walletTxns: walletTxns.map((t) => ({
-        id: t.id,
-        deltaZar: t.deltaZar,
-        kind: t.kind,
-        description: t.description,
         at: t.at.toISOString(),
       })),
       activePacks,

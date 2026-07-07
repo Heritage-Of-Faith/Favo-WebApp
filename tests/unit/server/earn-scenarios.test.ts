@@ -4,7 +4,6 @@
 // webhook (payment.succeeded) — positive earn scenarios are in webhook-earn.test.ts.
 //
 // Coverage is NEW — not duplicated by:
-//   wallet-spend.test.ts  (checks writeAudit.after.pointsEarned only)
 //   redeem-pack.test.ts   (no loyalty assertions at all)
 //   orders.test.ts        (state machine pure logic only, no transitionOrder action)
 
@@ -129,8 +128,8 @@ function mockOrder(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
-function mockCustomer(walletZar = 50000) {
-  return { walletZar, loyaltyPoints: 0, pushSubscription: null, name: "Louis" };
+function mockCustomer() {
+  return { loyaltyPoints: 0, pushSubscription: null, name: "Louis" };
 }
 function mockOrderLine(unitPriceZar = 4500) {
   return { id: LINE_REF, orderId: ORDER_ID, menuItemId: "menu_latte", unitPriceZar };
@@ -144,7 +143,7 @@ function mockPack() {
 
 /**
  * Set up db.select (outer, pre-transaction reads) to return rows in sequence.
- * Handles the chaining patterns used by walletSpend and redeemPack.
+ * Handles the chaining patterns used by redeemPack.
  */
 function setupSelectSequence(db: { select: ReturnType<typeof vi.fn> }, rows: unknown[][]) {
   let call = 0;
@@ -210,7 +209,6 @@ function setupTxSelectSequence(
 //
 // Drizzle table objects have their column names as direct properties.
 // loyaltyTransactions columns: customerId, orderId, delta, kind (no deltaZar)
-// walletTransactions columns:  customerId, deltaZar, kind, relatedOrderId
 // packRedemptions columns:     packId, customerId, orderId, orderLineRef
 //
 // We identify the loyalty insert by the presence of "delta" (not "deltaZar").
@@ -312,7 +310,7 @@ describe("earn-scenarios — transitionOrder must NOT earn (moved to webhook)", 
     expect(findLoyaltyInsert(vi.mocked(txMock.insert))).toBeUndefined();
   });
 
-  it("S8: wallet-reduced total (1000) → in_progress inserts NO loyaltyTransactions row", async () => {
+  it("S8: discount-reduced total (1000) → in_progress inserts NO loyaltyTransactions row", async () => {
     const txMock = await runTransition(1000);
     expect(findLoyaltyInsert(vi.mocked(txMock.insert))).toBeUndefined();
   });

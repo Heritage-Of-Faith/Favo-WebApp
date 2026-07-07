@@ -1,6 +1,6 @@
 {
-  "id": "f1ced61d-100f-4035-a71f-96f042408dae",
-  "prevId": "c3566107-9949-4125-886b-90505c64ed60",
+  "id": "7bafc8d2-620b-4c11-8a5c-b6e538bfc073",
+  "prevId": "f1ced61d-100f-4035-a71f-96f042408dae",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -96,9 +96,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "audit_log_actor_idx": {
           "name": "audit_log_actor_idx",
@@ -111,9 +111,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "audit_log_at_idx": {
           "name": "audit_log_at_idx",
@@ -126,9 +126,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -205,41 +205,41 @@
         "coffee_packs_customer_id_customers_id_fk": {
           "name": "coffee_packs_customer_id_customers_id_fk",
           "tableFrom": "coffee_packs",
+          "tableTo": "customers",
           "columnsFrom": [
             "customer_id"
           ],
-          "tableTo": "customers",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "coffee_packs_menu_item_id_menu_items_id_fk": {
           "name": "coffee_packs_menu_item_id_menu_items_id_fk",
           "tableFrom": "coffee_packs",
+          "tableTo": "menu_items",
           "columnsFrom": [
             "menu_item_id"
           ],
-          "tableTo": "menu_items",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "coffee_packs_pending_charge_id_pending_charges_id_fk": {
           "name": "coffee_packs_pending_charge_id_pending_charges_id_fk",
           "tableFrom": "coffee_packs",
+          "tableTo": "pending_charges",
           "columnsFrom": [
             "pending_charge_id"
           ],
-          "tableTo": "pending_charges",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -303,13 +303,6 @@
           "notNull": true,
           "default": 0
         },
-        "wallet_zar": {
-          "name": "wallet_zar",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -324,25 +317,21 @@
       "uniqueConstraints": {
         "customers_auth_id_unique": {
           "name": "customers_auth_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "auth_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "customers_email_unique": {
           "name": "customers_email_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "email"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
       "checkConstraints": {
-        "customers_wallet_zar_non_negative": {
-          "name": "customers_wallet_zar_non_negative",
-          "value": "wallet_zar >= 0"
-        },
         "customers_loyalty_points_non_negative": {
           "name": "customers_loyalty_points_non_negative",
           "value": "loyalty_points >= 0"
@@ -400,15 +389,15 @@
         "expenses_logged_by_staff_id_fk": {
           "name": "expenses_logged_by_staff_id_fk",
           "tableFrom": "expenses",
+          "tableTo": "staff",
           "columnsFrom": [
             "logged_by"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -577,25 +566,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"inventory_lots\".\"state\" = 'open'",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
         "inventory_lots_inventory_item_id_inventory_items_id_fk": {
           "name": "inventory_lots_inventory_item_id_inventory_items_id_fk",
           "tableFrom": "inventory_lots",
+          "tableTo": "inventory_items",
           "columnsFrom": [
             "inventory_item_id"
           ],
-          "tableTo": "inventory_items",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -653,28 +642,28 @@
         "low_stock_pings_inventory_item_id_inventory_items_id_fk": {
           "name": "low_stock_pings_inventory_item_id_inventory_items_id_fk",
           "tableFrom": "low_stock_pings",
+          "tableTo": "inventory_items",
           "columnsFrom": [
             "inventory_item_id"
           ],
-          "tableTo": "inventory_items",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "low_stock_pings_staff_id_staff_id_fk": {
           "name": "low_stock_pings_staff_id_staff_id_fk",
           "tableFrom": "low_stock_pings",
+          "tableTo": "staff",
           "columnsFrom": [
             "staff_id"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -752,10 +741,10 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "kind = 'earn'",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "loyalty_txn_redeem_order_unique": {
           "name": "loyalty_txn_redeem_order_unique",
@@ -768,38 +757,38 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "kind = 'redeem'",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
         "loyalty_transactions_customer_id_customers_id_fk": {
           "name": "loyalty_transactions_customer_id_customers_id_fk",
           "tableFrom": "loyalty_transactions",
+          "tableTo": "customers",
           "columnsFrom": [
             "customer_id"
           ],
-          "tableTo": "customers",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "loyalty_transactions_order_id_orders_id_fk": {
           "name": "loyalty_transactions_order_id_orders_id_fk",
           "tableFrom": "loyalty_transactions",
+          "tableTo": "orders",
           "columnsFrom": [
             "order_id"
           ],
-          "tableTo": "orders",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -857,10 +846,10 @@
       "uniqueConstraints": {
         "magic_link_tokens_token_hash_unique": {
           "name": "magic_link_tokens_token_hash_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "token_hash"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -910,15 +899,15 @@
         "menu_customisations_menu_item_id_menu_items_id_fk": {
           "name": "menu_customisations_menu_item_id_menu_items_id_fk",
           "tableFrom": "menu_customisations",
+          "tableTo": "menu_items",
           "columnsFrom": [
             "menu_item_id"
           ],
-          "tableTo": "menu_items",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1073,10 +1062,10 @@
       "uniqueConstraints": {
         "monthly_reports_month_unique": {
           "name": "monthly_reports_month_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "month"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1194,28 +1183,28 @@
         "order_items_order_id_orders_id_fk": {
           "name": "order_items_order_id_orders_id_fk",
           "tableFrom": "order_items",
+          "tableTo": "orders",
           "columnsFrom": [
             "order_id"
           ],
-          "tableTo": "orders",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "order_items_menu_item_id_menu_items_id_fk": {
           "name": "order_items_menu_item_id_menu_items_id_fk",
           "tableFrom": "order_items",
+          "tableTo": "menu_items",
           "columnsFrom": [
             "menu_item_id"
           ],
-          "tableTo": "menu_items",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1306,28 +1295,28 @@
         "orders_customer_id_customers_id_fk": {
           "name": "orders_customer_id_customers_id_fk",
           "tableFrom": "orders",
+          "tableTo": "customers",
           "columnsFrom": [
             "customer_id"
           ],
-          "tableTo": "customers",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "orders_staff_id_staff_id_fk": {
           "name": "orders_staff_id_staff_id_fk",
           "tableFrom": "orders",
+          "tableTo": "staff",
           "columnsFrom": [
             "staff_id"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1403,51 +1392,51 @@
         "outbox_log_customer_id_customers_id_fk": {
           "name": "outbox_log_customer_id_customers_id_fk",
           "tableFrom": "outbox_log",
+          "tableTo": "customers",
           "columnsFrom": [
             "customer_id"
           ],
-          "tableTo": "customers",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "outbox_log_staff_id_staff_id_fk": {
           "name": "outbox_log_staff_id_staff_id_fk",
           "tableFrom": "outbox_log",
+          "tableTo": "staff",
           "columnsFrom": [
             "staff_id"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "outbox_log_conflict_id_sync_conflicts_id_fk": {
           "name": "outbox_log_conflict_id_sync_conflicts_id_fk",
           "tableFrom": "outbox_log",
+          "tableTo": "sync_conflicts",
           "columnsFrom": [
             "conflict_id"
           ],
-          "tableTo": "sync_conflicts",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "outbox_log_client_uuid_unique": {
           "name": "outbox_log_client_uuid_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "client_uuid"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1515,41 +1504,41 @@
         "pack_redemptions_pack_id_coffee_packs_id_fk": {
           "name": "pack_redemptions_pack_id_coffee_packs_id_fk",
           "tableFrom": "pack_redemptions",
+          "tableTo": "coffee_packs",
           "columnsFrom": [
             "pack_id"
           ],
-          "tableTo": "coffee_packs",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "pack_redemptions_customer_id_customers_id_fk": {
           "name": "pack_redemptions_customer_id_customers_id_fk",
           "tableFrom": "pack_redemptions",
+          "tableTo": "customers",
           "columnsFrom": [
             "customer_id"
           ],
-          "tableTo": "customers",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "pack_redemptions_order_id_orders_id_fk": {
           "name": "pack_redemptions_order_id_orders_id_fk",
           "tableFrom": "pack_redemptions",
+          "tableTo": "orders",
           "columnsFrom": [
             "order_id"
           ],
-          "tableTo": "orders",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1620,25 +1609,25 @@
         "payments_order_id_orders_id_fk": {
           "name": "payments_order_id_orders_id_fk",
           "tableFrom": "payments",
+          "tableTo": "orders",
           "columnsFrom": [
             "order_id"
           ],
-          "tableTo": "orders",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "payments_yoco_payment_id_unique": {
           "name": "payments_yoco_payment_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "yoco_payment_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1715,25 +1704,25 @@
         "pending_charges_customer_id_customers_id_fk": {
           "name": "pending_charges_customer_id_customers_id_fk",
           "tableFrom": "pending_charges",
+          "tableTo": "customers",
           "columnsFrom": [
             "customer_id"
           ],
-          "tableTo": "customers",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "pending_charges_yoco_checkout_id_unique": {
           "name": "pending_charges_yoco_checkout_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "yoco_checkout_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1789,15 +1778,15 @@
         "price_history_menu_item_id_menu_items_id_fk": {
           "name": "price_history_menu_item_id_menu_items_id_fk",
           "tableFrom": "price_history",
+          "tableTo": "menu_items",
           "columnsFrom": [
             "menu_item_id"
           ],
-          "tableTo": "menu_items",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1875,28 +1864,28 @@
         "purchases_inventory_lot_id_inventory_lots_id_fk": {
           "name": "purchases_inventory_lot_id_inventory_lots_id_fk",
           "tableFrom": "purchases",
+          "tableTo": "inventory_lots",
           "columnsFrom": [
             "inventory_lot_id"
           ],
-          "tableTo": "inventory_lots",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "purchases_admin_approved_by_staff_id_fk": {
           "name": "purchases_admin_approved_by_staff_id_fk",
           "tableFrom": "purchases",
+          "tableTo": "staff",
           "columnsFrom": [
             "admin_approved_by"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1959,15 +1948,15 @@
         "recipe_ingredients_recipe_id_recipes_id_fk": {
           "name": "recipe_ingredients_recipe_id_recipes_id_fk",
           "tableFrom": "recipe_ingredients",
+          "tableTo": "recipes",
           "columnsFrom": [
             "recipe_id"
           ],
-          "tableTo": "recipes",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2013,15 +2002,15 @@
         "recipes_menu_item_id_menu_items_id_fk": {
           "name": "recipes_menu_item_id_menu_items_id_fk",
           "tableFrom": "recipes",
+          "tableTo": "menu_items",
           "columnsFrom": [
             "menu_item_id"
           ],
-          "tableTo": "menu_items",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2092,41 +2081,41 @@
         "refunds_order_id_orders_id_fk": {
           "name": "refunds_order_id_orders_id_fk",
           "tableFrom": "refunds",
+          "tableTo": "orders",
           "columnsFrom": [
             "order_id"
           ],
-          "tableTo": "orders",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "refunds_requested_by_staff_id_fk": {
           "name": "refunds_requested_by_staff_id_fk",
           "tableFrom": "refunds",
+          "tableTo": "staff",
           "columnsFrom": [
             "requested_by"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "refunds_approved_by_staff_id_fk": {
           "name": "refunds_approved_by_staff_id_fk",
           "tableFrom": "refunds",
+          "tableTo": "staff",
           "columnsFrom": [
             "approved_by"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2249,52 +2238,52 @@
         "staff_entitlement_log_staff_id_staff_id_fk": {
           "name": "staff_entitlement_log_staff_id_staff_id_fk",
           "tableFrom": "staff_entitlement_log",
+          "tableTo": "staff",
           "columnsFrom": [
             "staff_id"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "staff_entitlement_log_applied_by_staff_id_staff_id_fk": {
           "name": "staff_entitlement_log_applied_by_staff_id_staff_id_fk",
           "tableFrom": "staff_entitlement_log",
+          "tableTo": "staff",
           "columnsFrom": [
             "applied_by_staff_id"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "staff_entitlement_log_order_id_orders_id_fk": {
           "name": "staff_entitlement_log_order_id_orders_id_fk",
           "tableFrom": "staff_entitlement_log",
+          "tableTo": "orders",
           "columnsFrom": [
             "order_id"
           ],
-          "tableTo": "orders",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "staff_entitlement_log_staff_id_day_unique": {
           "name": "staff_entitlement_log_staff_id_day_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "staff_id",
             "day"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -2337,28 +2326,28 @@
         "stock_alert_recipients_inventory_item_id_inventory_items_id_fk": {
           "name": "stock_alert_recipients_inventory_item_id_inventory_items_id_fk",
           "tableFrom": "stock_alert_recipients",
+          "tableTo": "inventory_items",
           "columnsFrom": [
             "inventory_item_id"
           ],
-          "tableTo": "inventory_items",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "stock_alert_recipients_staff_id_staff_id_fk": {
           "name": "stock_alert_recipients_staff_id_staff_id_fk",
           "tableFrom": "stock_alert_recipients",
+          "tableTo": "staff",
           "columnsFrom": [
             "staff_id"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2429,28 +2418,28 @@
         "stock_movements_inventory_lot_id_inventory_lots_id_fk": {
           "name": "stock_movements_inventory_lot_id_inventory_lots_id_fk",
           "tableFrom": "stock_movements",
+          "tableTo": "inventory_lots",
           "columnsFrom": [
             "inventory_lot_id"
           ],
-          "tableTo": "inventory_lots",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "stock_movements_by_staff_id_staff_id_fk": {
           "name": "stock_movements_by_staff_id_staff_id_fk",
           "tableFrom": "stock_movements",
+          "tableTo": "staff",
           "columnsFrom": [
             "by_staff_id"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2506,28 +2495,28 @@
         "stock_take_lines_stock_take_id_stock_takes_id_fk": {
           "name": "stock_take_lines_stock_take_id_stock_takes_id_fk",
           "tableFrom": "stock_take_lines",
+          "tableTo": "stock_takes",
           "columnsFrom": [
             "stock_take_id"
           ],
-          "tableTo": "stock_takes",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "stock_take_lines_inventory_lot_id_inventory_lots_id_fk": {
           "name": "stock_take_lines_inventory_lot_id_inventory_lots_id_fk",
           "tableFrom": "stock_take_lines",
+          "tableTo": "inventory_lots",
           "columnsFrom": [
             "inventory_lot_id"
           ],
-          "tableTo": "inventory_lots",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2592,15 +2581,15 @@
         "stock_takes_by_staff_id_staff_id_fk": {
           "name": "stock_takes_by_staff_id_staff_id_fk",
           "tableFrom": "stock_takes",
+          "tableTo": "staff",
           "columnsFrom": [
             "by_staff_id"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2691,139 +2680,28 @@
         "sync_conflicts_order_id_orders_id_fk": {
           "name": "sync_conflicts_order_id_orders_id_fk",
           "tableFrom": "sync_conflicts",
+          "tableTo": "orders",
           "columnsFrom": [
             "order_id"
           ],
-          "tableTo": "orders",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "sync_conflicts_resolved_by_staff_id_fk": {
           "name": "sync_conflicts_resolved_by_staff_id_fk",
           "tableFrom": "sync_conflicts",
+          "tableTo": "staff",
           "columnsFrom": [
             "resolved_by"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.wallet_transactions": {
-      "name": "wallet_transactions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'hofmi'"
-        },
-        "customer_id": {
-          "name": "customer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "delta_zar": {
-          "name": "delta_zar",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "wallet_txn_kind",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "related_order_id": {
-          "name": "related_order_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "related_pending_charge_id": {
-          "name": "related_pending_charge_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "at": {
-          "name": "at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "wallet_transactions_customer_id_customers_id_fk": {
-          "name": "wallet_transactions_customer_id_customers_id_fk",
-          "tableFrom": "wallet_transactions",
-          "columnsFrom": [
-            "customer_id"
-          ],
-          "tableTo": "customers",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
-        },
-        "wallet_transactions_related_order_id_orders_id_fk": {
-          "name": "wallet_transactions_related_order_id_orders_id_fk",
-          "tableFrom": "wallet_transactions",
-          "columnsFrom": [
-            "related_order_id"
-          ],
-          "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
-        },
-        "wallet_transactions_related_pending_charge_id_pending_charges_id_fk": {
-          "name": "wallet_transactions_related_pending_charge_id_pending_charges_id_fk",
-          "tableFrom": "wallet_transactions",
-          "columnsFrom": [
-            "related_pending_charge_id"
-          ],
-          "tableTo": "pending_charges",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2894,28 +2772,28 @@
         "waste_log_inventory_lot_id_inventory_lots_id_fk": {
           "name": "waste_log_inventory_lot_id_inventory_lots_id_fk",
           "tableFrom": "waste_log",
+          "tableTo": "inventory_lots",
           "columnsFrom": [
             "inventory_lot_id"
           ],
-          "tableTo": "inventory_lots",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "waste_log_by_staff_id_staff_id_fk": {
           "name": "waste_log_by_staff_id_staff_id_fk",
           "tableFrom": "waste_log",
+          "tableTo": "staff",
           "columnsFrom": [
             "by_staff_id"
           ],
-          "tableTo": "staff",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2992,10 +2870,10 @@
       "uniqueConstraints": {
         "weekly_reports_week_starting_unique": {
           "name": "weekly_reports_week_starting_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "week_starting"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -3008,7 +2886,6 @@
       "name": "charge_kind",
       "schema": "public",
       "values": [
-        "wallet_topup",
         "coffee_pack"
       ]
     },
@@ -3167,16 +3044,6 @@
         "dismissed"
       ]
     },
-    "public.wallet_txn_kind": {
-      "name": "wallet_txn_kind",
-      "schema": "public",
-      "values": [
-        "topup",
-        "spend",
-        "refund",
-        "adjustment"
-      ]
-    },
     "public.waste_category": {
       "name": "waste_category",
       "schema": "public",
@@ -3190,10 +3057,10 @@
     }
   },
   "schemas": {},
-  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
+  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

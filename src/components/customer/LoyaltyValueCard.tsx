@@ -1,11 +1,11 @@
-// WalletCard — owner: Nikao (task N13, AT-65)
+// LoyaltyValueCard — owner: Nikao (task N13, AT-65)
 // Presentational + server-safe. Shows the monetary value of the customer's loyalty points.
 // Formula: 100 pts = R20 (whole redemption units only, matching REDEEM_AT in LoyaltyCard).
 
 import type { CSSProperties } from "react";
 import { formatZar } from "@/lib/format";
 
-export interface WalletCardProps {
+export interface LoyaltyValueCardProps {
   loyaltyPoints: number;
 }
 
@@ -29,7 +29,7 @@ const label: CSSProperties = {
   margin: 0,
 };
 
-export default function WalletCard({ loyaltyPoints }: WalletCardProps) {
+export default function LoyaltyValueCard({ loyaltyPoints }: LoyaltyValueCardProps) {
   const valueZar = Math.floor(loyaltyPoints / 100) * 2000;
   const canRedeem = loyaltyPoints >= 100;
 
