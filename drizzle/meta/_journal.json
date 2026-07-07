@@ -190,6 +190,13 @@
       "when": 1783416226069,
       "tag": "0026_at141_remove_wallet",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1783425247744,
+      "tag": "0027_at145_customisation_inventory_effects",
+      "breakpoints": true
     }
   ]
 }

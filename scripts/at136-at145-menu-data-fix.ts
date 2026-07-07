@@ -1,7 +1,11 @@
 // Standalone bun script — one-time data fix for AT-136 (menu trim) + AT-145
-// (customisation inventory effects). Run AFTER migration 0026 is applied
+// (customisation inventory effects). Run AFTER migration 0027 is applied
 // (menu_customisations.substitutes_inventory_item_id / adds_inventory_item_id
 // / adds_quantity must exist).
+//
+// NOTE: this was already run against production — see drizzle/0027_at145_
+// customisation_inventory_effects.sql for why the migration number changed
+// from 0026 after the fact. This file is idempotent, safe to leave as-is.
 //
 // Usage: DATABASE_URL="$DATABASE_URL_SESSION" bun scripts/at136-at145-menu-data-fix.ts
 //
