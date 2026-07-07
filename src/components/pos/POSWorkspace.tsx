@@ -96,11 +96,6 @@ const ADVANCE_LABEL: Partial<Record<OrderState, string>> = {
 const STATE_PRIORITY: Record<OrderState, number> = {
   ready: 0, in_progress: 1, ordered: 2, collected: 3, cancelled: 4,
 };
-const CATEGORY_LABEL: Record<string, string> = {
-  coffee: "Coffee", tea: "Tea", cold_brew: "Cold Brew",
-  food: "Food", merchandise: "Merch", other: "Other",
-};
-
 type Props = {
   staffName: string;
   staffId: string;
@@ -115,7 +110,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   // ── Left panel ─────────────────────────────────────────────────────────────
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [menuLoading, setMenuLoading] = useState(true);
-  const [activeCategory, setActiveCategory] = useState("");
   const [modTarget, setModTarget] = useState<MenuItem | null>(null);
   const [selectedMods, setSelectedMods] = useState<MenuCustomisation[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -191,11 +185,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   // Load menu + active bean lot (parallel — no waterfall)
   useEffect(() => {
     getMenu().then(r => {
-      if (r.ok) {
-        setMenu(r.data);
-        const cats = [...new Set(r.data.map(i => i.category))];
-        if (cats.length) setActiveCategory(cats[0]);
-      }
+      if (r.ok) setMenu(r.data);
     }).finally(() => setMenuLoading(false));
 
     // M9: fetch active bean lot for freshness indicator
@@ -265,11 +255,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   }, [expandedId]);
 
   // ── Order building ─────────────────────────────────────────────────────────
-  const grouped = menu.reduce<Record<string, MenuItem[]>>((acc, item) => {
-    if (!acc[item.category]) acc[item.category] = [];
-    acc[item.category].push(item);
-    return acc;
-  }, {});
 
   async function handlePlaceOrder() {
     if (items.length === 0 || submitting) return;
@@ -417,13 +402,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     router.push("/pos");
   }
 
-  // Quick Keys — top 5 most-ordered items pinned for fast access
-  const quickKeys = menu.length > 0 ? [
-    ...menu.filter(i => i.category === "coffee").slice(0, 3),
-    ...menu.filter(i => i.category === "food").slice(0, 1),
-    ...menu.filter(i => i.category === "cold_brew").slice(0, 1),
-  ].slice(0, 5) : [];
-
   return (
     <main className="flex flex-col h-screen overflow-hidden">
 
@@ -526,83 +504,34 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           })()}
           <div className="flex flex-1 overflow-hidden">
 
-            {/* ── Vertical category sidebar ── */}
-            <div className="flex flex-col border-r border-cool-steel/15 shrink-0 pt-2" style={{ width: "13%" }}>
-              {Object.keys(grouped).map(cat => {
-                const active = activeCategory === cat;
-                return (
-                  <button key={cat} type="button" onClick={() => setActiveCategory(cat)}
-                    className="text-left py-3 px-2 transition-colors min-h-[44px]"
-                    style={{
-                      fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13,
-                      letterSpacing: "0.06em", textTransform: "uppercase",
-                      color: active ? "var(--color-crimson-carrot)" : "var(--color-cool-steel)",
-                      borderLeft: active ? "3px solid var(--color-crimson-carrot)" : "3px solid transparent",
-                      background: active ? "rgba(245,86,12,0.08)" : "none",
-                    }}>
-                    {CATEGORY_LABEL[cat] ?? cat}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* ── Menu area: Quick Keys + grid ── */}
-            <div className="flex flex-col flex-1 overflow-hidden">
-
-              {/* Quick Keys row */}
-              {quickKeys.length > 0 && (
-                <div className="shrink-0 border-b border-cool-steel/15 px-3 pt-2 pb-2">
-                  <p className="favo-label mb-1.5">Quick Keys</p>
-                  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${quickKeys.length}, 1fr)` }}>
-                    {quickKeys.map(item => {
-                      const stock = menuItemStock(item.id);
-                      const oos = stock === "out";
-                      return (
-                        <button key={`qk-${item.id}`} type="button"
-                          disabled={oos}
-                          onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); } }}
-                          className="relative flex flex-col items-start rounded-[2px] p-2 min-h-[52px] text-left transition-all active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot disabled:cursor-not-allowed"
-                          style={{ background: "rgba(245,86,12,0.1)", border: "1px solid rgba(245,86,12,0.25)", opacity: oos ? 0.4 : 1 }}>
-                          <span className="text-coffee-bean font-semibold leading-tight" style={{ fontSize: 12 }}>{item.name}</span>
-                          <span className="text-coffee-bean/70 mt-auto" style={{ fontSize: 11 }}>{formatZar(item.currentPriceZar)}</span>
-                          {stock !== "ok" && (
-                            <span className="absolute top-1 right-1"><StockBadge state={stock} /></span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+            {/* ── Fixed menu grid (AT-136/Phase 5 wireframe: no categories, no ──
+                sidebar, no search — the trimmed 5-item menu fits on one screen) */}
+            <div className="flex-1 overflow-y-auto px-3 pt-2 pb-2">
+              {menuLoading ? (
+                <div className="flex items-center justify-center h-32 text-cool-steel gap-2">
+                  <Loader2 size={18} strokeWidth={2} className="animate-spin" />
+                  <span className="favo-small">Loading…</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {menu.map(item => {
+                    const stock = menuItemStock(item.id);
+                    const oos = stock === "out";
+                    return (
+                      <button key={item.id} type="button"
+                        disabled={oos}
+                        onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); } }}
+                        className="relative flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-porcelain/5">
+                        <span className="favo-small text-coffee-bean font-semibold leading-tight">{item.name}</span>
+                        <span className="favo-caption text-coffee-bean/70 mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
+                        {stock !== "ok" && (
+                          <span className="absolute top-1.5 right-1.5"><StockBadge state={stock} /></span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
-
-              {/* Menu grid */}
-              <div className="flex-1 overflow-y-auto px-3 pt-2 pb-2">
-                {menuLoading ? (
-                  <div className="flex items-center justify-center h-32 text-cool-steel gap-2">
-                    <Loader2 size={18} strokeWidth={2} className="animate-spin" />
-                    <span className="favo-small">Loading…</span>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-2">
-                    {(grouped[activeCategory] ?? []).map(item => {
-                      const stock = menuItemStock(item.id);
-                      const oos = stock === "out";
-                      return (
-                        <button key={item.id} type="button"
-                          disabled={oos}
-                          onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); } }}
-                          className="relative flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-porcelain/5">
-                          <span className="favo-small text-coffee-bean font-semibold leading-tight">{item.name}</span>
-                          <span className="favo-caption text-coffee-bean/70 mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
-                          {stock !== "ok" && (
-                            <span className="absolute top-1.5 right-1.5"><StockBadge state={stock} /></span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
             </div>
           </div>
 
