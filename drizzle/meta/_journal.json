@@ -187,8 +187,8 @@
     {
       "idx": 26,
       "version": "7",
-      "when": 1783419042305,
-      "tag": "0026_at145_customisation_inventory_effects",
+      "when": 1783416226069,
+      "tag": "0026_at141_remove_wallet",
       "breakpoints": true
     }
   ]

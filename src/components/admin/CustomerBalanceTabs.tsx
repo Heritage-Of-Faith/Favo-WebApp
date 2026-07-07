@@ -1,7 +1,7 @@
 "use client";
 
 // CustomerBalanceTabs — owner: Mia (AT-79, A17)
-// Tabbed view of a customer's Orders · Loyalty · Wallet · Packs.
+// Tabbed view of a customer's Orders · Loyalty · Packs.
 // All data is passed as props from the server component — tab switching is instant, no fetching.
 // Read-only: no mutation buttons or forms (L06, L16 are barista-only flows).
 
@@ -9,30 +9,21 @@ import { useState } from "react";
 import { formatZar, formatDate } from "@/lib/format";
 import type {
   LoyaltyTxnRow,
-  WalletTxnRow,
   AdminPackRow,
   AdminOrderRow,
 } from "@/server/actions/customers";
 
-type Tab = "orders" | "loyalty" | "wallet" | "packs";
+type Tab = "orders" | "loyalty" | "packs";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "orders", label: "Orders" },
   { key: "loyalty", label: "Loyalty" },
-  { key: "wallet", label: "Wallet" },
   { key: "packs", label: "Packs" },
 ];
 
 const LOYALTY_KIND: Record<string, string> = {
   earn: "Earned",
   redeem: "Redeemed",
-  adjustment: "Adjustment",
-};
-
-const WALLET_KIND: Record<string, string> = {
-  topup: "Top-up",
-  spend: "Spend",
-  refund: "Refund",
   adjustment: "Adjustment",
 };
 
@@ -46,7 +37,6 @@ const ORDER_STATE: Record<string, string> = {
 
 export interface CustomerBalanceTabsProps {
   loyaltyTxns: LoyaltyTxnRow[];
-  walletTxns: WalletTxnRow[];
   activePacks: AdminPackRow[];
   expiredPacks: AdminPackRow[];
   recentOrders: AdminOrderRow[];
@@ -58,7 +48,6 @@ function EmptyState({ text }: { text: string }) {
 
 export default function CustomerBalanceTabs({
   loyaltyTxns,
-  walletTxns,
   activePacks,
   expiredPacks,
   recentOrders,
@@ -151,45 +140,6 @@ export default function CustomerBalanceTabs({
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">
                         {t.delta > 0 ? `+${t.delta}` : t.delta}
-                      </td>
-                      <td className="px-4 py-2.5 text-text-muted">{formatDate(t.at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Wallet */}
-      {active === "wallet" && (
-        <div role="tabpanel" aria-label="Wallet">
-          {walletTxns.length === 0 ? (
-            <EmptyState text="No wallet transactions." />
-          ) : (
-            <div className="overflow-x-auto rounded-md border border-border-subtle">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border-subtle bg-elevated">
-                    <th className="px-4 py-2.5 text-left font-medium text-text-muted">Type</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-text-muted">Description</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-text-muted">Amount</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-text-muted">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {walletTxns.map((t) => (
-                    <tr key={t.id} className="border-b border-border-subtle last:border-0">
-                      <td className="px-4 py-2.5 text-xs uppercase tracking-wider text-text-muted">
-                        {WALLET_KIND[t.kind] ?? t.kind}
-                      </td>
-                      <td className="px-4 py-2.5 text-text-strong">
-                        {t.description ?? "—"}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
-                        {t.deltaZar >= 0 ? "+" : ""}
-                        {formatZar(Math.abs(t.deltaZar))}
                       </td>
                       <td className="px-4 py-2.5 text-text-muted">{formatDate(t.at)}</td>
                     </tr>

@@ -1,8 +1,8 @@
 // Customer-data contract — owner: Nikao (Phase 3 integration seam)
 //
 // This file declares the EXACT shapes + signatures that Gian's Phase 3 backend
-// (G18 wallet/packs, G19 orders, customer summary) will implement as real Server
-// Actions. The customer PWA pages (N13 dashboard, N17 wallet/packs) build against
+// (G18 packs, G19 orders, customer summary) will implement as real Server
+// Actions. The customer PWA pages (N13 dashboard, N17 packs) build against
 // THIS contract — never against the mock directly — so that when the real actions
 // land, the only change is the re-export in `./data.ts`.
 //
@@ -36,27 +36,6 @@ export type CustomerOrder = Pick<
   Order,
   "id" | "state" | "placedAt" | "completedAt" | "totalZar" | "items"
 >;
-
-// ─── Wallet ─────────────────────────────────────────────────────────────────
-
-export type WalletTransactionKind = "topup" | "spend" | "refund" | "adjustment";
-
-export type WalletTransaction = {
-  id: string;
-  /** Signed integer cents: positive = credit (topup/refund), negative = spend. */
-  deltaZar: number;
-  kind: WalletTransactionKind;
-  description: string | null;
-  /** ISO timestamp. */
-  at: string;
-};
-
-export type WalletView = {
-  /** Current balance in integer cents — equals the sum of all transaction deltas. */
-  balanceZar: number;
-  /** Most-recent-first transaction history. */
-  transactions: WalletTransaction[];
-};
 
 // ─── Coffee packs ─────────────────────────────────────────────────────────────
 
@@ -95,7 +74,6 @@ export type CustomerProfileInput = {
 export interface CustomerDataApi {
   getCustomerSummary(): Promise<ActionResult<CustomerSummary>>;
   listCustomerOrders(limit?: number): Promise<ActionResult<CustomerOrder[]>>;
-  getWallet(): Promise<ActionResult<WalletView>>;
   getPacks(): Promise<ActionResult<PacksView>>;
   updateCustomerProfile(input: CustomerProfileInput): Promise<ActionResult<{ id: string }>>;
 }

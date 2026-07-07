@@ -61,7 +61,7 @@ vi.mock("@/server/audit", () => ({
 // ─── Test data ────────────────────────────────────────────────────────────────
 
 const CHARGE_ID = "pc_test123";
-const PENDING_ROW = { id: CHARGE_ID, status: "pending", kind: "wallet_topup", customerId: "cust_1", amountZar: 5000, metadata: null };
+const PENDING_ROW = { id: CHARGE_ID, status: "pending", kind: "coffee_pack", customerId: "cust_1", amountZar: 5000, metadata: null };
 const SUCCESSFUL_ROW = { id: CHARGE_ID, status: "successful" };
 
 // ─── RBAC ─────────────────────────────────────────────────────────────────────
@@ -143,14 +143,8 @@ describe("resolveStuckCharge — happy path", () => {
         where: vi.fn().mockResolvedValue([]),
       }),
     });
-    // Transaction: UPDATE customers (wallet_topup path inside activatePendingCharge)
-    mockTxUpdate.mockReturnValue({
-      set: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
-      }),
-    });
-    // Defensive: coffee_pack path would call tx.insert().values(); set it up so
-    // the mock doesn't throw if the code path changes.
+    // coffee_pack path (inside activatePendingCharge) calls tx.insert().values();
+    // set it up so the mock doesn't throw.
     mockTxInsert.mockReturnValue({
       values: vi.fn().mockResolvedValue([]),
     });

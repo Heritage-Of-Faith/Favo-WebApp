@@ -26,7 +26,7 @@ function makeOutboxItem(overrides: Partial<Record<string, unknown>> = {}) {
     staffId: "staff-1",
     customerId: undefined,
     items: [{ menuItemId: "mi-capp", quantity: 1, modifications: [] }],
-    paymentMode: "wallet" as const,
+    paymentMode: "yoco_deferred" as const,
     clientTotalZar: 4500,
     clientTimestamp: "2026-06-13T07:00:00Z",
     ...overrides,
@@ -74,7 +74,7 @@ describe("outboxItemSchema", () => {
 
   it("accepts all valid paymentModes", async () => {
     const { outboxItemSchema } = await import("@/server/sync/apply-outbox");
-    for (const mode of ["wallet", "yoco_deferred", "free"]) {
+    for (const mode of ["yoco_deferred", "free"]) {
       const result = outboxItemSchema.safeParse(makeOutboxItem({ paymentMode: mode }));
       expect(result.success).toBe(true);
     }

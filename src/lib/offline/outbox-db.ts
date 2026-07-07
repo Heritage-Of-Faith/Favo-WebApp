@@ -15,7 +15,7 @@ export type OfflineOrder = {
     quantity: number;
     modifications: string[];
   }>;
-  paymentMode: "wallet" | "yoco_deferred" | "free";
+  paymentMode: "yoco_deferred" | "free";
   clientTotalZar: number;
   clientTimestamp: string;
 };

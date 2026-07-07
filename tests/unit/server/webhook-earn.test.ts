@@ -5,7 +5,7 @@
 //
 // Covers:
 //   - earn on payment.succeeded for an order with a customer (earns on current total)
-//   - earnPoints(0) = 0 ⇒ no loyalty insert (zero-total / full wallet/pack coverage)
+//   - earnPoints(0) = 0 ⇒ no loyalty insert (zero-total / full pack coverage)
 //   - no customer ⇒ no earn
 //   - idempotency: duplicate delivery uses onConflictDoNothing() and does not double-credit
 //   - payment.failed ⇒ no earn
@@ -196,7 +196,7 @@ describe("webhook earn — payment.succeeded accrues loyalty (L06)", () => {
     expect(vals.customerId).toBe("cust_1");
   });
 
-  it("W2: pack/wallet-reduced total earns on the current (reduced) total, not the original", async () => {
+  it("W2: discount-reduced total earns on the current (reduced) total, not the original", async () => {
     // Order total was reduced to R20.00 before payment; earn must be on 2000.
     state.order = [{ customerId: "cust_1", totalZar: 2000 }];
     const { POST } = await import("@/app/api/payments/yoco/webhook/route");

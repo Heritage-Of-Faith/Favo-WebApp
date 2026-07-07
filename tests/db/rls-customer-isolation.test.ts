@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql } from "postgres";
-import { connect, hasRealDb, migrationSql } from "./helpers";
+import { connect, hasRealDb } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -25,8 +25,12 @@ maybe("RLS customer isolation (F2)", () => {
 
   beforeAll(async () => {
     sql = connect();
-    // Apply the RLS migration (idempotent guards inside). Safe if already run.
-    await sql.unsafe(migrationSql("0023_rls_customer_isolation.sql"));
+    // The RLS migration (0023) is already applied by the CI "Migrate test DB"
+    // step (bun db:migrate) that runs before this suite — no need to replay it
+    // here. (It used to be re-applied inline for idempotency insurance, but
+    // that raw-SQL replay broke once AT-141 dropped wallet_transactions, a
+    // table 0023 also referenced — migrations are immutable, so the fix is to
+    // rely on the real migrate step instead of re-running historical SQL.)
 
     // Fixtures created as owner (bypasses RLS).
     const staff = await sql`

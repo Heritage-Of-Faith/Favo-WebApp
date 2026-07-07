@@ -30,7 +30,6 @@ import {
   expenseCategory,
   loyaltyKind,
   chargeKind,
-  walletTxnKind,
   syncConflictKind,
   syncConflictStatus,
 } from "./enums";
@@ -67,12 +66,9 @@ export const customers = pgTable(
     phone: text("phone"),
     pushSubscription: jsonb("push_subscription"),
     loyaltyPoints: integer("loyalty_points").default(0).notNull(),
-    walletZar: integer("wallet_zar").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   () => [
-    // AT-114: wallet balance can never go negative (L16).
-    check("customers_wallet_zar_non_negative", sql`wallet_zar >= 0`),
     // L06: loyalty points balance can never go negative.
     check("customers_loyalty_points_non_negative", sql`loyalty_points >= 0`),
   ]
@@ -238,7 +234,7 @@ export const orders = pgTable("orders", {
   isStaffDiscount: boolean("is_staff_discount").default(false).notNull(),
   // Tracks how offline orders were tendered. null = normal Yoco flow.
   paymentMode: text("payment_mode", {
-    enum: ["yoco", "wallet", "yoco_deferred", "free"],
+    enum: ["yoco", "yoco_deferred", "free"],
   }),
 });
 
@@ -471,7 +467,7 @@ export const weeklyReports = pgTable("weekly_reports", {
   generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// ─── Pending charges (G9 — wallet top-ups + coffee packs via Yoco) ────────────
+// ─── Pending charges (G9 — coffee packs via Yoco) ─────────────────────────────
 
 export const pendingCharges = pgTable("pending_charges", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -512,21 +508,6 @@ export const packRedemptions = pgTable("pack_redemptions", {
   redeemedAt: timestamp("redeemed_at", { withTimezone: true }).defaultNow().notNull(),
   /** Null unless the order was cancelled. Set by cancelOrder — never deleted. */
   reversedAt: timestamp("reversed_at", { withTimezone: true }),
-});
-
-// ─── Wallet transactions (G17 — append-only ledger) ──────────────────────────
-
-export const walletTransactions = pgTable("wallet_transactions", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: tenantId(),
-  customerId: text("customer_id").notNull().references(() => customers.id),
-  /** Signed integer cents: positive = credit, negative = debit. */
-  deltaZar: integer("delta_zar").notNull(),
-  kind: walletTxnKind("kind").notNull(),
-  relatedOrderId: text("related_order_id").references(() => orders.id),
-  relatedPendingChargeId: text("related_pending_charge_id").references(() => pendingCharges.id),
-  description: text("description"),
-  at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // ─── Sync conflicts (G17 — offline sync conflict log) ────────────────────────
