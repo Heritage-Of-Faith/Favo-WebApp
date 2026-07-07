@@ -122,6 +122,19 @@ export const RECIPES: RecipeSpec[] = [
     ],
   },
 
+  // ── Hot Chocolate (AT-136/145) ───────────────────────────────────────────────
+  // Mirrors Mocha, minus beans — no espresso.
+  {
+    id: "recipe_hot_chocolate",
+    menuItemId: "menu_hot_chocolate",
+    ingredients: [
+      { inventoryItemId: HOT_CHOC, quantity: 20, unit: "g", tolerancePct: 10 },
+      { inventoryItemId: WHOLE_MILK, quantity: 1, unit: "cup", tolerancePct: 10 },
+      { inventoryItemId: CUP_12OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
+      { inventoryItemId: LID, quantity: 1, unit: "unit", tolerancePct: 0 },
+    ],
+  },
+
   // ── Cold Brew ─────────────────────────────────────────────────────────────
   // Cold brew concentrate uses more beans (coarse grind, 18 h steep)
   {

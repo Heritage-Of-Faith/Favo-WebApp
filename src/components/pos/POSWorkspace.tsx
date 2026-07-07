@@ -44,6 +44,23 @@ import type { LogWasteInput } from "@/server/actions/waste";
 import type { Customer, MenuItem, MenuCustomisation, Order, OrderState, InventoryLot } from "@/lib/types";
 import WasteLogModal from "@/components/pos/WasteLogModal";
 
+/**
+ * AT-145: quantity-based customisations (e.g. Extra Shot) appear once per unit
+ * selected in `modifications`, so a naive `.map(name).join(", ")` would render
+ * "Extra Shot, Extra Shot, Extra Shot". Group by id and show "×N" for repeats.
+ */
+function formatModifications(mods: MenuCustomisation[]): string {
+  const counts = new Map<string, { name: string; count: number }>();
+  for (const m of mods) {
+    const entry = counts.get(m.id);
+    if (entry) entry.count += 1;
+    else counts.set(m.id, { name: m.name, count: 1 });
+  }
+  return [...counts.values()]
+    .map(({ name, count }) => (count > 1 ? `${name} ×${count}` : name))
+    .join(", ");
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATE_LABEL: Record<OrderState, string> = {
   ordered: "Waiting", in_progress: "Making", ready: "Ready ✓",
@@ -630,7 +647,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                       <div className="flex-1 min-w-0">
                         <p className="favo-small text-coffee-bean truncate">{item.menuItemName}</p>
                         {item.modifications.length > 0 && (
-                          <p className="favo-caption text-cool-steel truncate">{item.modifications.map(m => m.name).join(", ")}</p>
+                          <p className="favo-caption text-cool-steel truncate">{formatModifications(item.modifications)}</p>
                         )}
                       </div>
                       <span className="favo-small text-coffee-bean shrink-0">
@@ -897,7 +914,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                                   {item.menuItemName || `Item #${item.id.slice(-4)}`}
                                 </p>
                                 {item.modifications.length > 0 && (
-                                  <p className="favo-caption text-cool-steel">{item.modifications.map(m => m.name).join(", ")}</p>
+                                  <p className="favo-caption text-cool-steel">{formatModifications(item.modifications)}</p>
                                 )}
                               </div>
                               <span className="favo-small text-coffee-bean shrink-0 ml-3">
@@ -1073,6 +1090,40 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               : (
                 <ul className="grid grid-cols-2 gap-2 mb-4">
                   {modTarget.customisations.map(mod => {
+                    // AT-145: a customisation that ADDS an inventory item (e.g. Extra
+                    // Shot) is quantity-based — repeat selections stack, so it renders
+                    // as a stepper, not a toggle. Count = occurrences in selectedMods.
+                    if (mod.addsInventoryItemId) {
+                      const count = selectedMods.filter(m => m.id === mod.id).length;
+                      return (
+                        <li key={mod.id} className="col-span-2">
+                          <div className="flex w-full items-center justify-between rounded-[2px] border border-cool-steel/30 bg-coffee-bean/5 px-3 py-2 min-h-[44px]">
+                            <span className="favo-small font-semibold text-coffee-bean">
+                              {mod.name}
+                              {mod.priceDeltaZar !== 0 && (
+                                <span className="favo-caption text-cool-steel ml-1">+{formatZar(mod.priceDeltaZar)} ea</span>
+                              )}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button type="button" aria-label={`Decrease ${mod.name}`} disabled={count === 0}
+                                onClick={() => setSelectedMods(prev => {
+                                  const idx = prev.findIndex(m => m.id === mod.id);
+                                  return idx === -1 ? prev : [...prev.slice(0, idx), ...prev.slice(idx + 1)];
+                                })}
+                                className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 text-coffee-bean hover:bg-coffee-bean/8 disabled:opacity-30">
+                                <Minus size={14} strokeWidth={2.25} />
+                              </button>
+                              <span className="favo-subhead w-5 text-center text-coffee-bean">{count}</span>
+                              <button type="button" aria-label={`Increase ${mod.name}`}
+                                onClick={() => setSelectedMods(prev => [...prev, mod])}
+                                className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 text-coffee-bean hover:bg-coffee-bean/8">
+                                <Plus size={14} strokeWidth={2.25} />
+                              </button>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    }
                     const on = selectedMods.some(m => m.id === mod.id);
                     return (
                       <li key={mod.id}>

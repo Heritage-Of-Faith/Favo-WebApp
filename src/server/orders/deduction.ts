@@ -9,10 +9,11 @@
 //
 // Docs: docs/API.md → transitionOrder · docs/BUSINESS_RULES.md L01 L08 R5
 
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, inArray } from "drizzle-orm";
 import {
   orderItems,
   menuItems,
+  menuCustomisations,
   recipeIngredients,
   inventoryItems,
   inventoryLots,
@@ -45,6 +46,18 @@ export { DeductionError };
  *   - All other items (cups, lids, powder): deduct `quantity × orderQty` in the
  *     item's own unit from the FIFO-oldest active lot, as before.
  *
+ * AT-145: an order line's chosen customisations (orderItems.modifications) can
+ * change what actually gets deducted, via two effect fields on
+ * menu_customisations (mutually exclusive per row):
+ *   - substitutesInventoryItemId: replaces whichever base recipe ingredient
+ *     shares its inventory `kind` (e.g. Oat Milk replaces the recipe's milk
+ *     ingredient, whatever that is) — a recipe has at most one ingredient per
+ *     kind, so this is unambiguous.
+ *   - addsInventoryItemId + addsQuantity: deducts extra units on top of the
+ *     base recipe, once per occurrence in `modifications` (so 3 Extra Shot
+ *     selections deduct 3×addsQuantity, not 1×).
+ * A customisation with neither field (e.g. Decaf) has no deduction effect.
+ *
  * Throws `DeductionError` (caught by `transitionOrder`) when:
  *   - An order item's menu item has no recipe (skipped — food items allowed)
  *   - No active lot exists for an ingredient        → code NO_ACTIVE_LOT
@@ -62,6 +75,7 @@ export async function deductForOrder(
       menuItemId: orderItems.menuItemId,
       orderQty: orderItems.quantity,
       recipeId: menuItems.recipeId,
+      modifications: orderItems.modifications,
     })
     .from(orderItems)
     .innerJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
@@ -75,13 +89,52 @@ export async function deductForOrder(
       continue;
     }
 
-    // 2. Load recipe ingredients for this item, joined to the inventory item so
+    const mods = (line.modifications as OrderModification[] | null) ?? [];
+    const modIds = mods.map((m) => m.id);
+
+    // 2. Resolve the chosen customisations' inventory effects (substitution
+    //    target kind + addition target/quantity), if any were selected.
+    const modRows = modIds.length
+      ? await tx
+          .select({
+            id: menuCustomisations.id,
+            substitutesInventoryItemId: menuCustomisations.substitutesInventoryItemId,
+            addsInventoryItemId: menuCustomisations.addsInventoryItemId,
+            addsQuantity: menuCustomisations.addsQuantity,
+          })
+          .from(menuCustomisations)
+          .where(inArray(menuCustomisations.id, modIds))
+      : [];
+    const modById = new Map(modRows.map((m) => [m.id, m]));
+
+    const effectInventoryIds = [
+      ...modRows.map((m) => m.substitutesInventoryItemId),
+      ...modRows.map((m) => m.addsInventoryItemId),
+    ].filter((id): id is string => Boolean(id));
+    const effectItemRows = effectInventoryIds.length
+      ? await tx
+          .select({ id: inventoryItems.id, kind: inventoryItems.kind, unit: inventoryItems.unit })
+          .from(inventoryItems)
+          .where(inArray(inventoryItems.id, effectInventoryIds))
+      : [];
+    const effectItemById = new Map(effectItemRows.map((r) => [r.id, r]));
+
+    // kind → substitute inventory item id (a recipe has ≤1 ingredient per kind)
+    const substituteByKind = new Map<string, string>();
+    for (const row of modRows) {
+      if (!row.substitutesInventoryItemId) continue;
+      const kind = effectItemById.get(row.substitutesInventoryItemId)?.kind;
+      if (kind) substituteByKind.set(kind, row.substitutesInventoryItemId);
+    }
+
+    // 3. Load recipe ingredients for this item, joined to the inventory item so
     //    we know its authoritative unit (cup = container model) and kind.
     const ingredients = await tx
       .select({
         inventoryItemId: recipeIngredients.inventoryItemId,
         quantity: recipeIngredients.quantity,
         itemUnit: inventoryItems.unit,
+        itemKind: inventoryItems.kind,
       })
       .from(recipeIngredients)
       .innerJoin(
@@ -91,19 +144,67 @@ export async function deductForOrder(
       .where(eq(recipeIngredients.recipeId, line.recipeId));
 
     for (const ing of ingredients) {
-      if (ing.itemUnit === "cup") {
+      const substituteId = substituteByKind.get(ing.itemKind);
+      const effectiveInventoryItemId = substituteId ?? ing.inventoryItemId;
+      // A substitute can have a DIFFERENT unit than the base ingredient it
+      // replaces (e.g. dairy is container-tracked in cups, but Oat/Almond/
+      // Macadamia Milk are tracked by volume in ml) — use its own unit, never
+      // assume it matches the base.
+      const effectiveUnit = substituteId
+        ? effectItemById.get(substituteId)?.unit
+        : ing.itemUnit;
+
+      if (!effectiveUnit) {
+        // Should be unreachable (every id in substituteByKind was resolved
+        // from effectItemById above) — fail loudly rather than silently
+        // deduct the wrong thing, which is the exact bug this fixes.
+        throw new DeductionError(
+          "NO_ACTIVE_LOT",
+          `Could not resolve unit for substitute inventory item ${effectiveInventoryItemId}.`
+        );
+      }
+
+      if (effectiveUnit === "cup") {
         // ── Container model (milk & beans): one cup per drink ──────────────────
-        await deductCups(ing.inventoryItemId, line.orderQty, orderId, staffId, tx);
-      } else {
-        // ── Quantity model (cups, lids, powder): unchanged ─────────────────────
+        await deductCups(effectiveInventoryItemId, line.orderQty, orderId, staffId, tx);
+      } else if (!substituteId) {
+        // ── Quantity model (cups, lids, powder), no substitution: unchanged ────
         await deductQuantity(
-          ing.inventoryItemId,
+          effectiveInventoryItemId,
           ing.quantity * line.orderQty,
-          ing.itemUnit,
+          effectiveUnit,
           orderId,
           staffId,
           tx
         );
+      } else {
+        // A cup-tracked base ingredient (recipe quantity is meaningless for
+        // cups — see container-model note above) substituted with a
+        // non-cup-tracked item has no defined per-drink quantity today; a
+        // customisation-level quantity would be needed to deduct this
+        // correctly instead of guessing. Fail loudly instead of deducting an
+        // arbitrary amount.
+        throw new DeductionError(
+          "NO_ACTIVE_LOT",
+          `${effectiveInventoryItemId} substitutes a container-tracked ingredient but isn't itself ` +
+            `cup-tracked — no defined per-drink quantity. Needs a customisation-level quantity field.`
+        );
+      }
+    }
+
+    // 4. Additive customisations (e.g. Extra Shot): one deduction per
+    //    occurrence in `modifications`, so N selections deduct N times.
+    for (const mod of mods) {
+      const full = modById.get(mod.id);
+      if (!full?.addsInventoryItemId) continue;
+      const addItem = effectItemById.get(full.addsInventoryItemId);
+      if (!addItem) continue;
+      const addQty = (full.addsQuantity ?? 1) * line.orderQty;
+
+      if (addItem.unit === "cup") {
+        await deductCups(full.addsInventoryItemId, addQty, orderId, staffId, tx);
+      } else {
+        await deductQuantity(full.addsInventoryItemId, addQty, addItem.unit, orderId, staffId, tx);
       }
     }
   }
@@ -113,6 +214,8 @@ export async function deductForOrder(
     sql`SELECT pg_notify('inventory_changes', ${JSON.stringify({ orderId })})`
   );
 }
+
+type OrderModification = { id: string; name: string; priceDeltaZar: number };
 
 // ─── deductCups (container model) ──────────────────────────────────────────────
 

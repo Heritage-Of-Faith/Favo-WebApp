@@ -62,24 +62,6 @@ export const INVENTORY_LOTS: SeedLot[] = [
     openingDelta: 4000,
   },
   {
-    id: "lot_oat_milk_001",
-    inventoryItemId: "inv_item_oat_milk",
-    sourceName: "Oatly SA",
-    batchNumber: "OAT-2026-05-01",
-    unitCostZar: "0.0450",
-    quantityReceived: "2000.00", // 2 L
-    openingDelta: 2000,
-  },
-  {
-    id: "lot_macadamia_milk_001",
-    inventoryItemId: "inv_item_macadamia_milk",
-    sourceName: "Natura Foods",
-    batchNumber: "NAT-2026-05-01",
-    unitCostZar: "0.0600",
-    quantityReceived: "1000.00", // 1 L
-    openingDelta: 1000,
-  },
-  {
     id: "lot_cup_8oz_001",
     inventoryItemId: "inv_item_cup_8oz",
     sourceName: "Bunzl SA",
@@ -187,6 +169,39 @@ export const INVENTORY_LOTS: SeedLot[] = [
     unitCostZar: "509.0909",
     quantityReceived: "11.00",
     openingDelta: 11,
+  },
+
+  // ── Container model: alt-milk cartons (cups) — AT-145 ───────────────────────
+  // Oat/Macadamia/Almond Milk are cup-tracked like dairy now, not ml/FIFO.
+  // Quantity (10 cups/carton) and cost are PLACEHOLDERS pending real supplier
+  // numbers — correct via the admin stock-take UI, no code change needed.
+  // Almond Milk never had a seed lot before this (no inventory item existed).
+  {
+    id: "lot_oat_milk_cups_001",
+    inventoryItemId: "inv_item_oat_milk",
+    sourceName: "Placeholder — needs real supplier",
+    batchNumber: "OAT-CUP-001",
+    unitCostZar: "0.0000",
+    quantityReceived: "10.00",
+    openingDelta: 10,
+  },
+  {
+    id: "lot_macadamia_milk_cups_001",
+    inventoryItemId: "inv_item_macadamia_milk",
+    sourceName: "Placeholder — needs real supplier",
+    batchNumber: "NAT-CUP-001",
+    unitCostZar: "0.0000",
+    quantityReceived: "10.00",
+    openingDelta: 10,
+  },
+  {
+    id: "lot_almond_milk_cups_001",
+    inventoryItemId: "inv_item_almond_milk",
+    sourceName: "Placeholder — needs real supplier",
+    batchNumber: "ALM-CUP-001",
+    unitCostZar: "0.0000",
+    quantityReceived: "10.00",
+    openingDelta: 10,
   },
 ];
 

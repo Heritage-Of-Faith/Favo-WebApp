@@ -92,6 +92,19 @@ export const menuCustomisations = pgTable("menu_customisations", {
   menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
   name: text("name").notNull(),
   priceDeltaZar: integer("price_delta_zar").default(0).notNull(),
+  // AT-145: inventory effects, so deductForOrder can actually read what was
+  // chosen instead of always deducting the base recipe. At most one of these
+  // is set per customisation — they're mutually exclusive kinds of effect.
+  //   substitutesInventoryItemId: this customisation REPLACES whichever recipe
+  //     ingredient shares its inventory kind (e.g. Oat Milk replaces the
+  //     recipe's milk ingredient, whatever it is). One-per-selection, toggle UI.
+  //   addsInventoryItemId + addsQuantity: this customisation ADDS extra units
+  //     of an ingredient on top of the base recipe (e.g. Extra Shot adds
+  //     addsQuantity cups of beans). Repeatable — appears once per unit in
+  //     orderItems.modifications, so 3 selections = 3 additions. Stepper UI.
+  substitutesInventoryItemId: text("substitutes_inventory_item_id").references(() => inventoryItems.id),
+  addsInventoryItemId: text("adds_inventory_item_id").references(() => inventoryItems.id),
+  addsQuantity: integer("adds_quantity"),
 });
 
 export const priceHistory = pgTable("price_history", {
