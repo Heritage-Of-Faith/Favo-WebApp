@@ -3,6 +3,9 @@
 Project: FAVO Café Web App · single-tenant café POS + admin
 Repo: `github.com/Heritage-Of-Faith/Favo-WebApp` · Deploy: `favo.hofmi.org`
 
+## ⚠️ Read `docs/POS_REBUILD_DECISIONS.md` before touching POS/loyalty/wallet code
+POS rebuild in progress (Jira epics AT-132/133/134). Most important locked decision: **the stored-value wallet is being removed entirely — do not build, restore, or reference any top-up / wallet-balance / wallet-spend feature.** The only money-value display is "Loyalty balance," never "wallet." Full decision ledger, current menu (5 items, 2 of which are new), and customisation requirements are in that file — read it first if a task touches any of this.
+
 ## Stack snapshot
 Next.js 16 (App Router) · React 19 · TS 5.6 strict · Tailwind v4 + shadcn/ui · PG 17 (Supabase) + Drizzle ORM · Auth.js v5 · Yoco Online API · Web Push + VAPID · SSE via PG LISTEN/NOTIFY · Bun · Cloudflare
 
