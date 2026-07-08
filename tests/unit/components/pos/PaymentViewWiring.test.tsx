@@ -56,7 +56,8 @@ beforeEach(() => {
 
 async function placeOrder() {
   render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
-  await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /place order/i })); });
+  // Phase 5 layout: the place-order button is the running-order "Charge Rxx.xx" CTA.
+  await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /^charge r/i })); });
 }
 
 describe("M4 payment view wiring", () => {

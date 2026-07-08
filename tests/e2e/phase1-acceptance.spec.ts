@@ -130,14 +130,14 @@ test.describe("4. Payment", () => {
     await page.getByText("Cappuccino").first().click();
     await page.getByRole("button", { name: /add to order/i }).click();
     await expect(
-      page.getByRole("button", { name: /place order/i })
+      page.getByRole("button", { name: /^charge r/i })
     ).toBeVisible({ timeout: 5000 });
   });
 
   test("placing an order shows Yoco hosted fields or order confirmation", async ({ page }) => {
     await page.getByText("Cappuccino").first().click();
     await page.getByRole("button", { name: /add to order/i }).click();
-    await page.getByRole("button", { name: /place order/i }).click();
+    await page.getByRole("button", { name: /^charge r/i }).click();
     // With Yoco: shows hosted fields iframe. Without Yoco (dev): shows "Order placed" banner.
     await expect(
       page.frameLocator("iframe").first().locator("input").first()

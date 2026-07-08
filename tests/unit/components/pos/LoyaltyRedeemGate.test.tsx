@@ -54,7 +54,8 @@ beforeEach(() => {
 
 async function placeOrderAndReachPayment() {
   render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
-  const place = await screen.findByRole("button", { name: /place order/i });
+  // Phase 5 layout: the place-order button is the running-order "Charge Rxx.xx" CTA.
+  const place = await screen.findByRole("button", { name: /^charge r/i });
   await act(async () => { fireEvent.click(place); });
 }
 
