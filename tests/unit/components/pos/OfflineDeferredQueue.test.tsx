@@ -54,7 +54,8 @@ describe("M19 — offline deferred queue", () => {
   it("Place Order offline → deferred notice → confirm queues yoco_deferred", async () => {
     render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
 
-    const place = await screen.findByRole("button", { name: /place order/i });
+    // Phase 5 layout: the place-order button is the running-order "Charge Rxx.xx" CTA.
+    const place = await screen.findByRole("button", { name: /^charge r/i });
     await act(async () => { fireEvent.click(place); });
 
     // Deferred-payment notice is shown instead of Yoco.

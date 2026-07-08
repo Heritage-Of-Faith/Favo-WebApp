@@ -31,7 +31,6 @@ import StockBanner from "@/components/pos/StockBanner";
 import WasteDialog from "@/components/pos/WasteDialog";
 import ConnectivityPill from "@/components/pos/ConnectivityPill";
 import SyncDrawer from "@/components/pos/SyncDrawer";
-import CustomerCard from "@/components/pos/CustomerCard";
 import LoyaltyRedeemDialog from "@/components/pos/LoyaltyRedeemDialog";
 import PackRedeemSection from "@/components/pos/PackRedeemSection";
 import OfflineBanner from "@/components/pos/OfflineBanner";
@@ -402,41 +401,23 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     router.push("/pos");
   }
 
-  return (
-    <main className="flex flex-col h-screen overflow-hidden">
-
-      {/* ════════ OFFLINE BANNER (M19) ════════ */}
-      <OfflineBanner pendingCount={pendingCount} />
-
-      {/* ════════ OUT-OF-STOCK BANNER (M9) ════════ */}
-      <StockBanner outOfStockItems={outOfStockItems} />
-
-      <div className="flex flex-1 overflow-hidden">
-
-      {/* ════════ LEFT — ORDER BUILDER ════════ */}
-      <div className="flex flex-col border-r border-cool-steel/20" style={{ width: "60%" }}>
-
-        {/* Top header: logo + customer search + staff + logout */}
-        <div className="flex items-center gap-3 px-3 py-2 border-b border-cool-steel/20 shrink-0">
-          <Image src="/brand/logos/logo-monogram.svg" alt="FAVO" width={24} height={24} className="opacity-80 shrink-0" />
-          {/* Customer search — inline in header */}
-          <div className="flex-1 relative">
+  // ── Zone A top — customer search/attach panel (Phase 5 wireframe states A1-A4) ──
+  function renderCustomerPanel() {
+    return (
+      <div className="zone flex flex-col gap-2 p-3 border-b border-cool-steel/20 shrink-0">
+        <span className="favo-label text-cool-steel">Customer</span>
+        {!customer ? (
+          <div className="relative">
             <Search size={13} strokeWidth={2} className="absolute left-2 top-1/2 -translate-y-1/2 text-cool-steel pointer-events-none" />
             <input type="search" inputMode="text" autoComplete="off"
-              placeholder="Customer name or phone (optional)…"
+              placeholder="Search name, email, or phone…"
               value={query}
               onChange={e => { setQuery(e.target.value); if (!e.target.value) setCustomer(null); }}
               onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
               onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
               className="w-full rounded-[4px] border border-cool-steel/20 bg-coffee-bean/5 pl-7 pr-7 py-1.5 text-coffee-bean placeholder:text-cool-steel text-xs focus:border-crimson-carrot focus:outline-none min-h-[34px]"
             />
-            {customer && (
-              <button type="button" onClick={() => { setCustomer(null); setQuery(""); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-cool-steel hover:text-coffee-bean">
-                <X size={12} strokeWidth={2} />
-              </button>
-            )}
-            {searchOpen && searchResults.length > 0 && !customer && (
+            {searchOpen && searchResults.length > 0 && (
               <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface shadow-[var(--shadow-2)] overflow-hidden">
                 {searchResults.map(c => (
                   <li key={c.id}>
@@ -450,186 +431,296 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               </ul>
             )}
           </div>
-          {customer && (
-            <span className="favo-caption text-crimson-carrot shrink-0 flex items-center gap-1">
-              <Star size={10} strokeWidth={2} />{customer.name} · {customer.loyaltyPoints} pts
-            </span>
-          )}
-          {customer && (
+        ) : (
+          <>
+            <p className="favo-small text-coffee-bean font-semibold">{customer.name}</p>
+            <p className="favo-caption text-cool-steel">{customer.loyaltyPoints} pts</p>
             <button type="button" onClick={() => setPackOpen(true)}
-              className="shrink-0 flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-porcelain/10 hover:text-porcelain min-h-[32px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+              className="self-start flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-coffee-bean/8 min-h-[32px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
               aria-label="Buy coffee pack">
               <Package size={12} strokeWidth={2.25} /> Pack
             </button>
-          )}
-          <div className="shrink-0 hidden lg:block"><ActiveBeanCard /></div>
-          <div className="shrink-0 hidden lg:block"><OpenContainersCard /></div>
-          <span className="favo-small text-cool-steel shrink-0 hidden lg:block">{staffName}</span>
-          {/* M15 — connectivity pill; tap opens the sync drawer */}
-          <ConnectivityPill
-            pendingCount={pendingCount}
-            syncing={syncing}
-            onClick={() => { refresh(); setSyncDrawerOpen(true); }}
-          />
+            {/* AT-142/143/144 (Favo) not built yet — "Reorder their Favo" / "Manage
+                Favo" per the wireframe hang off this panel once that backend lands. */}
+            <button type="button" onClick={() => { setCustomer(null); setQuery(""); }}
+              className="favo-caption text-cool-steel hover:text-coffee-bean underline underline-offset-2 mt-auto self-start min-h-[28px]">
+              Detach customer
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ── Zone A bottom — inline drink customisation (Phase 5 wireframe: no longer
+  // a popover docked over the tiles — it lives under the customer card) ──────────
+  function renderCustomisationPanel() {
+    if (!modTarget) {
+      return (
+        <div className="zone flex-1 flex items-center justify-center p-3 min-h-0">
+          <p className="favo-small text-cool-steel/60 text-center">Tap an item to customise</p>
+        </div>
+      );
+    }
+    return (
+      <div className="zone flex-1 flex flex-col gap-2 p-3 min-h-0 overflow-y-auto">
+        <span className="favo-label text-cool-steel">{modTarget.name} · {formatZar(modTarget.currentPriceZar)}</span>
+        {modTarget.customisations.length === 0 ? (
+          <p className="favo-small text-cool-steel">No customisations.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {modTarget.customisations.map(mod => {
+              // AT-145: a customisation that ADDS an inventory item (e.g. Extra
+              // Shot) is quantity-based — repeat selections stack, so it renders
+              // as a stepper, not a toggle. Count = occurrences in selectedMods.
+              if (mod.addsInventoryItemId) {
+                const count = selectedMods.filter(m => m.id === mod.id).length;
+                return (
+                  <li key={mod.id}>
+                    <div className="flex w-full items-center justify-between rounded-[2px] border border-cool-steel/30 bg-coffee-bean/5 px-3 py-2 min-h-[44px]">
+                      <span className="favo-small font-semibold text-coffee-bean">
+                        {mod.name}
+                        {mod.priceDeltaZar !== 0 && (
+                          <span className="favo-caption text-cool-steel ml-1">+{formatZar(mod.priceDeltaZar)} ea</span>
+                        )}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button type="button" aria-label={`Decrease ${mod.name}`} disabled={count === 0}
+                          onClick={() => setSelectedMods(prev => {
+                            const idx = prev.findIndex(m => m.id === mod.id);
+                            return idx === -1 ? prev : [...prev.slice(0, idx), ...prev.slice(idx + 1)];
+                          })}
+                          className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 text-coffee-bean hover:bg-coffee-bean/8 disabled:opacity-30">
+                          <Minus size={14} strokeWidth={2.25} />
+                        </button>
+                        <span className="favo-subhead w-5 text-center text-coffee-bean">{count}</span>
+                        <button type="button" aria-label={`Increase ${mod.name}`}
+                          onClick={() => setSelectedMods(prev => [...prev, mod])}
+                          className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 text-coffee-bean hover:bg-coffee-bean/8">
+                          <Plus size={14} strokeWidth={2.25} />
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+              const on = selectedMods.some(m => m.id === mod.id);
+              return (
+                <li key={mod.id}>
+                  <button type="button" onClick={() => setSelectedMods(prev =>
+                    prev.some(m => m.id === mod.id) ? prev.filter(m => m.id !== mod.id) : [...prev, mod]
+                  )} aria-pressed={on}
+                    className={["flex w-full items-center justify-between rounded-[2px] border px-3 py-2 min-h-[44px] transition-colors",
+                      on ? "border-crimson-carrot bg-crimson-carrot/10 text-coffee-bean" : "border-cool-steel/30 bg-coffee-bean/5 text-coffee-bean hover:bg-coffee-bean/8"
+                    ].join(" ")}>
+                    <span className="favo-small font-semibold">{mod.name}</span>
+                    {mod.priceDeltaZar !== 0 && <span className="favo-caption text-cool-steel">+{formatZar(mod.priceDeltaZar)}</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <button type="button"
+          onClick={() => {
+            addItem({ menuItemId: modTarget.id, menuItemName: modTarget.name, unitPriceZar: modTarget.currentPriceZar, modifications: selectedMods });
+            setModTarget(null);
+          }}
+          className="mt-auto flex w-full items-center justify-center rounded-[4px] py-2.5 min-h-[44px]"
+          style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
+          Add to order
+        </button>
+      </div>
+    );
+  }
+
+  // ── Zone B bottom — running order / cart (Phase 5 wireframe: moved out of ──
+  // Zone C, which is now the open-orders board) ─────────────────────────────────
+  function renderRunningOrder() {
+    return (
+      <div className="zone flex flex-col gap-2 p-3 border-t border-cool-steel/20 shrink-0 bg-coffee-bean/5" style={{ maxHeight: "50%" }}>
+        <span className="favo-label text-cool-steel">Running order</span>
+        {items.length === 0 ? (
+          <p className="favo-small text-cool-steel/60">No items yet</p>
+        ) : (
+          <div className="space-y-1.5 overflow-y-auto">
+            {items.map(item => (
+              <div key={lineKey(item)} className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity - 1)}
+                    className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
+                    <Minus size={12} strokeWidth={2} />
+                  </button>
+                  <span className="favo-small text-coffee-bean w-5 text-center">{item.quantity}</span>
+                  <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity + 1)}
+                    className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
+                    <Plus size={12} strokeWidth={2} />
+                  </button>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="favo-small text-coffee-bean truncate">{item.menuItemName}</p>
+                  {item.modifications.length > 0 && (
+                    <p className="favo-caption text-cool-steel truncate">{formatModifications(item.modifications)}</p>
+                  )}
+                </div>
+                <span className="favo-small text-coffee-bean shrink-0">
+                  {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
+                </span>
+                <button type="button" onClick={() => removeItem(lineKey(item))}
+                  className="flex h-7 w-7 items-center justify-center text-cool-steel hover:text-[var(--color-error)]">
+                  <Trash2 size={12} strokeWidth={2} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {orderError && <p className="favo-small text-[var(--color-error)]" role="alert">{orderError}</p>}
+        {orderSuccess && (
+          <p className="favo-small rounded px-3 py-2" role="status" aria-live="polite"
+            style={{ background: "color-mix(in srgb, var(--color-success) 15%, transparent)", color: "var(--color-success)" }}>
+            ✓ {orderSuccess}
+          </p>
+        )}
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="favo-label text-cool-steel">Total</p>
+            <p className="favo-subhead text-coffee-bean">{formatZar(totalZar)}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowWasteModal(true)}
+              className="favo-caption text-cool-steel/60 hover:text-cool-steel flex items-center gap-1 px-2 min-h-[44px] rounded-[4px] hover:bg-coffee-bean/5 transition-colors"
+              aria-label="Log waste"
+            >
+              <Trash2 size={12} strokeWidth={2} aria-hidden />
+              <span>Waste</span>
+            </button>
+            <button type="button" onClick={() => reset()} disabled={items.length === 0}
+              className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel hover:bg-coffee-bean/8 min-h-[44px] disabled:opacity-40">
+              Clear
+            </button>
+            <button type="button" onClick={handlePlaceOrder} disabled={submitting || items.length === 0}
+              className="flex items-center gap-2 rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
+              style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
+              {submitting
+                ? <Loader2 size={14} strokeWidth={2} className="animate-spin" />
+                : `Charge ${formatZar(totalZar)}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <main className="flex flex-col h-screen overflow-hidden">
+
+      {/* ════════ OFFLINE BANNER (M19) ════════ */}
+      <OfflineBanner pendingCount={pendingCount} />
+
+      {/* ════════ OUT-OF-STOCK BANNER (M9) ════════ */}
+      <StockBanner outOfStockItems={outOfStockItems} />
+
+      {/* ════════ TOP BAR ════════ */}
+      <div className="flex items-center gap-3 px-3 py-2 border-b border-cool-steel/20 shrink-0">
+        <Image src="/brand/logos/logo-monogram.svg" alt="FAVO" width={24} height={24} className="opacity-80 shrink-0" />
+        <span className="favo-h3 text-coffee-bean mr-auto">FAVO · POS</span>
+        <div className="shrink-0 hidden lg:block"><ActiveBeanCard /></div>
+        <div className="shrink-0 hidden lg:block"><OpenContainersCard /></div>
+        <span className="favo-small text-cool-steel shrink-0 hidden lg:block">{staffName}</span>
+        {/* M15 — connectivity pill; tap opens the sync drawer */}
+        <ConnectivityPill
+          pendingCount={pendingCount}
+          syncing={syncing}
+          onClick={() => { refresh(); setSyncDrawerOpen(true); }}
+        />
+        {role === "admin" && (
+          <a href="/admin" aria-label="Go to admin"
+            className="flex h-9 items-center px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
+            Admin
+          </a>
+        )}
+        <button type="button" onClick={handleSignOut} aria-label="Sign out"
+          className="flex h-9 w-9 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
+          <LogOut size={16} strokeWidth={2} />
+        </button>
+      </div>
+
+      {/* M9 — Bean freshness alert banner */}
+      {activeBeanLot?.roastDate && (() => {
+        const f = freshness(activeBeanLot.roastDate!);
+        if (f === "fresh") return null;
+        const days = daysSinceRoast(activeBeanLot.roastDate!);
+        const isStale = f === "stale";
+        return (
+          <div
+            className="shrink-0 flex items-center gap-2 px-3 py-1.5 favo-caption"
+            style={{
+              background: isStale
+                ? "color-mix(in srgb, var(--color-error, #dc2626) 12%, transparent)"
+                : "color-mix(in srgb, var(--color-warning, #eab308) 12%, transparent)",
+              color: isStale ? "var(--color-error, #dc2626)" : "var(--color-warning, #eab308)",
+              borderBottom: "1px solid currentColor",
+              opacity: 0.9,
+            }}
+            role="alert"
+          >
+            <span aria-hidden>{isStale ? "●" : "▲"}</span>
+            <span>
+              Beans {isStale ? "past peak" : "ageing"} ({days}d since roast)
+              {activeBeanLot.sourceName ? ` — ${activeBeanLot.sourceName}` : ""}
+            </span>
+          </div>
+        );
+      })()}
+
+      <div className="flex flex-1 overflow-hidden">
+
+      {!showPayment ? (
+        <>
+        {/* ════════ ZONE A — CUSTOMER + CUSTOMISATION ════════ */}
+        <div className="flex flex-col border-r border-cool-steel/20 min-h-0" style={{ width: "24%" }}>
+          {renderCustomerPanel()}
+          {renderCustomisationPanel()}
         </div>
 
-        {!showPayment ? (
-          <>
-          {/* M9 — Bean freshness alert banner */}
-          {activeBeanLot?.roastDate && (() => {
-            const f = freshness(activeBeanLot.roastDate!);
-            if (f === "fresh") return null;
-            const days = daysSinceRoast(activeBeanLot.roastDate!);
-            const isStale = f === "stale";
-            return (
-              <div
-                className="shrink-0 flex items-center gap-2 px-3 py-1.5 favo-caption"
-                style={{
-                  background: isStale
-                    ? "color-mix(in srgb, var(--color-error, #dc2626) 12%, transparent)"
-                    : "color-mix(in srgb, var(--color-warning, #eab308) 12%, transparent)",
-                  color: isStale ? "var(--color-error, #dc2626)" : "var(--color-warning, #eab308)",
-                  borderBottom: "1px solid currentColor",
-                  opacity: 0.9,
-                }}
-                role="alert"
-              >
-                <span aria-hidden>{isStale ? "●" : "▲"}</span>
-                <span>
-                  Beans {isStale ? "past peak" : "ageing"} ({days}d since roast)
-                  {activeBeanLot.sourceName ? ` — ${activeBeanLot.sourceName}` : ""}
-                </span>
+        {/* ════════ ZONE B — ORDER BUILDER + RUNNING ORDER ════════ */}
+        <div className="flex flex-col border-r border-cool-steel/20 min-h-0" style={{ width: "44%" }}>
+          <div className="flex-1 overflow-y-auto px-3 pt-2 pb-2 min-h-0">
+            {menuLoading ? (
+              <div className="flex items-center justify-center h-32 text-cool-steel gap-2">
+                <Loader2 size={18} strokeWidth={2} className="animate-spin" />
+                <span className="favo-small">Loading…</span>
               </div>
-            );
-          })()}
-          <div className="flex flex-1 overflow-hidden">
-
-            {/* ── Fixed menu grid (AT-136/Phase 5 wireframe: no categories, no ──
-                sidebar, no search — the trimmed 5-item menu fits on one screen) */}
-            <div className="flex-1 overflow-y-auto px-3 pt-2 pb-2">
-              {menuLoading ? (
-                <div className="flex items-center justify-center h-32 text-cool-steel gap-2">
-                  <Loader2 size={18} strokeWidth={2} className="animate-spin" />
-                  <span className="favo-small">Loading…</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-2">
-                  {menu.map(item => {
-                    const stock = menuItemStock(item.id);
-                    const oos = stock === "out";
-                    return (
-                      <button key={item.id} type="button"
-                        disabled={oos}
-                        onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); } }}
-                        className="relative flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-porcelain/5">
-                        <span className="favo-small text-coffee-bean font-semibold leading-tight">{item.name}</span>
-                        <span className="favo-caption text-coffee-bean/70 mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
-                        {stock !== "ok" && (
-                          <span className="absolute top-1.5 right-1.5"><StockBadge state={stock} /></span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-
-            {/* Order placed success banner — outside items gate so it shows after reset() */}
-          {orderSuccess && (
-            <div className="border-t border-cool-steel/20 px-4 py-3 shrink-0">
-              <p className="favo-small rounded px-3 py-2" role="status" aria-live="polite"
-                style={{ background: "color-mix(in srgb, var(--color-success) 15%, transparent)", color: "var(--color-success)" }}>
-                ✓ {orderSuccess}
-              </p>
-            </div>
-          )}
-
-          {/* Order summary */}
-            {items.length > 0 && (
-              <div className="border-t border-cool-steel/20 px-4 py-3 shrink-0 bg-coffee-bean/5">
-                {/* M18 — loyalty standing for the attached customer */}
-                {customer && (
-                  <div className="mb-2">
-                    <CustomerCard
-                      customer={customer}
-                      activePackCount={customer.activePackCount}
-                      onClear={() => setCustomer(null)}
-                    />
-                  </div>
-                )}
-                <p className="favo-label text-cool-steel mb-2">Order</p>
-                <div className="space-y-1.5 max-h-[160px] overflow-y-auto mb-3">
-                  {items.map(item => (
-                    <div key={lineKey(item)} className="flex items-center gap-2">
-                      <div className="flex items-center gap-1">
-                        <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity - 1)}
-                          className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
-                          <Minus size={12} strokeWidth={2} />
-                        </button>
-                        <span className="favo-small text-coffee-bean w-5 text-center">{item.quantity}</span>
-                        <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity + 1)}
-                          className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
-                          <Plus size={12} strokeWidth={2} />
-                        </button>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="favo-small text-coffee-bean truncate">{item.menuItemName}</p>
-                        {item.modifications.length > 0 && (
-                          <p className="favo-caption text-cool-steel truncate">{formatModifications(item.modifications)}</p>
-                        )}
-                      </div>
-                      <span className="favo-small text-coffee-bean shrink-0">
-                        {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
-                      </span>
-                      <button type="button" onClick={() => removeItem(lineKey(item))}
-                        className="flex h-7 w-7 items-center justify-center text-cool-steel hover:text-[var(--color-error)]">
-                        <Trash2 size={12} strokeWidth={2} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                {orderError && <p className="favo-small text-[var(--color-error)] mb-2" role="alert">{orderError}</p>}
-                {orderSuccess && (
-                  <p className="favo-small mb-2 rounded px-3 py-2" role="status"
-                    style={{ background: "color-mix(in srgb, var(--color-success) 15%, transparent)", color: "var(--color-success)" }}>
-                    ✓ {orderSuccess}
-                  </p>
-                )}
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="favo-label text-cool-steel">Total</p>
-                    <p className="favo-subhead text-coffee-bean">{formatZar(totalZar)}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowWasteModal(true)}
-                      className="favo-caption text-cool-steel/60 hover:text-cool-steel flex items-center gap-1 px-2 min-h-[44px] rounded-[4px] hover:bg-coffee-bean/5 transition-colors"
-                      aria-label="Log waste"
-                    >
-                      <Trash2 size={12} strokeWidth={2} aria-hidden />
-                      <span>Waste</span>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {menu.map(item => {
+                  const stock = menuItemStock(item.id);
+                  const oos = stock === "out";
+                  return (
+                    <button key={item.id} type="button"
+                      disabled={oos}
+                      onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); } }}
+                      className="relative flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-porcelain/5">
+                      <span className="favo-small text-coffee-bean font-semibold leading-tight">{item.name}</span>
+                      <span className="favo-caption text-coffee-bean/70 mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
+                      {stock !== "ok" && (
+                        <span className="absolute top-1.5 right-1.5"><StockBadge state={stock} /></span>
+                      )}
                     </button>
-                    <button type="button" onClick={() => reset()}
-                      className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel hover:bg-coffee-bean/8 min-h-[44px]">
-                      Clear
-                    </button>
-                    <button type="button" onClick={handlePlaceOrder} disabled={submitting}
-                      className="flex items-center gap-2 rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
-                      style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
-                      {submitting
-                        ? <Loader2 size={14} strokeWidth={2} className="animate-spin" />
-                        : "Place Order"}
-                    </button>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
             )}
-          </>
-        ) : (
-          /* Payment view */
-          (() => {
+          </div>
+          {renderRunningOrder()}
+        </div>
+        </>
+      ) : (
+        <div className="flex flex-col flex-1 border-r border-cool-steel/20 min-h-0">
+          {/* Payment view */}
+          {(() => {
             // Amount due: loyalty (AT-110) → pack savings (AT-116), capped at zero.
             const loyaltyReducedTotal = redeemedData ? redeemedData.newTotalZar : totalZar;
             const amountDueZar = Math.max(0, loyaltyReducedTotal - packSavings);
@@ -727,17 +818,17 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 </div>
               </div>
             );
-          })()
-        )}
-      </div>
+          })()}
+        </div>
+      )}
 
-      {/* ════════ RIGHT — LIVE QUEUE ════════ */}
-      <div className="flex flex-col" style={{ width: "40%" }}>
+      {/* ════════ ZONE C — OPEN ORDERS BOARD ════════ */}
+      <div className="flex flex-col" style={{ width: "32%" }}>
 
         {/* Queue header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-cool-steel/20 shrink-0">
           <div className="flex items-center gap-2">
-            <h2 className="favo-h3 text-coffee-bean">Queue</h2>
+            <h2 className="favo-h3 text-coffee-bean">Open Orders</h2>
             <StreamChip status={status} />
           </div>
           <div className="flex items-center gap-1">
@@ -1005,83 +1096,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           onClose={() => setShowWasteModal(false)}
           onLogged={() => setShowWasteModal(false)}
         />
-      )}
-
-      {/* ════════ MOD SHEET ════════ */}
-      {modTarget && (
-        <div className="fixed inset-0 z-50 flex items-end bg-coffee-bean/60"
-          onClick={e => e.target === e.currentTarget && setModTarget(null)}>
-          <div className="w-full max-w-[560px] mx-auto rounded-t-[2px] border-t border-cool-steel/20 bg-surface p-5">
-            <p className="favo-h3 text-coffee-bean mb-1">{modTarget.name}</p>
-            <p className="favo-small text-cool-steel mb-3">{formatZar(modTarget.currentPriceZar)} — add-ons</p>
-            {modTarget.customisations.length === 0
-              ? <p className="favo-small text-cool-steel mb-4">No customisations.</p>
-              : (
-                <ul className="grid grid-cols-2 gap-2 mb-4">
-                  {modTarget.customisations.map(mod => {
-                    // AT-145: a customisation that ADDS an inventory item (e.g. Extra
-                    // Shot) is quantity-based — repeat selections stack, so it renders
-                    // as a stepper, not a toggle. Count = occurrences in selectedMods.
-                    if (mod.addsInventoryItemId) {
-                      const count = selectedMods.filter(m => m.id === mod.id).length;
-                      return (
-                        <li key={mod.id} className="col-span-2">
-                          <div className="flex w-full items-center justify-between rounded-[2px] border border-cool-steel/30 bg-coffee-bean/5 px-3 py-2 min-h-[44px]">
-                            <span className="favo-small font-semibold text-coffee-bean">
-                              {mod.name}
-                              {mod.priceDeltaZar !== 0 && (
-                                <span className="favo-caption text-cool-steel ml-1">+{formatZar(mod.priceDeltaZar)} ea</span>
-                              )}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <button type="button" aria-label={`Decrease ${mod.name}`} disabled={count === 0}
-                                onClick={() => setSelectedMods(prev => {
-                                  const idx = prev.findIndex(m => m.id === mod.id);
-                                  return idx === -1 ? prev : [...prev.slice(0, idx), ...prev.slice(idx + 1)];
-                                })}
-                                className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 text-coffee-bean hover:bg-coffee-bean/8 disabled:opacity-30">
-                                <Minus size={14} strokeWidth={2.25} />
-                              </button>
-                              <span className="favo-subhead w-5 text-center text-coffee-bean">{count}</span>
-                              <button type="button" aria-label={`Increase ${mod.name}`}
-                                onClick={() => setSelectedMods(prev => [...prev, mod])}
-                                className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 text-coffee-bean hover:bg-coffee-bean/8">
-                                <Plus size={14} strokeWidth={2.25} />
-                              </button>
-                            </div>
-                          </div>
-                        </li>
-                      );
-                    }
-                    const on = selectedMods.some(m => m.id === mod.id);
-                    return (
-                      <li key={mod.id}>
-                        <button type="button" onClick={() => setSelectedMods(prev =>
-                          prev.some(m => m.id === mod.id) ? prev.filter(m => m.id !== mod.id) : [...prev, mod]
-                        )} aria-pressed={on}
-                          className={["flex w-full items-center justify-between rounded-[2px] border px-3 py-2 min-h-[44px] transition-colors",
-                            on ? "border-crimson-carrot bg-crimson-carrot/10 text-coffee-bean" : "border-cool-steel/30 bg-coffee-bean/5 text-coffee-bean hover:bg-coffee-bean/8"
-                          ].join(" ")}>
-                          <span className="favo-small font-semibold">{mod.name}</span>
-                          {mod.priceDeltaZar !== 0 && <span className="favo-caption text-cool-steel">+{formatZar(mod.priceDeltaZar)}</span>}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )
-            }
-            <button type="button"
-              onClick={() => {
-                addItem({ menuItemId: modTarget.id, menuItemName: modTarget.name, unitPriceZar: modTarget.currentPriceZar, modifications: selectedMods });
-                setModTarget(null);
-              }}
-              className="flex w-full items-center justify-center rounded-[4px] py-3 min-h-[48px]"
-              style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
-              Add to order
-            </button>
-          </div>
-        </div>
       )}
 
       {/* ════════ WASTE DIALOG (M13 — cancel→waste shortcut) ════════ */}

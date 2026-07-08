@@ -41,7 +41,7 @@ test("barista can take an order and drive it through the full queue lifecycle", 
   await expect(page.getByText(/R\s*\d+[,.]\d{2}/).first()).toBeVisible();
 
   // ── 2. Place the order ───────────────────────────────────────────────────────
-  await page.getByRole("button", { name: /place order/i }).click();
+  await page.getByRole("button", { name: /^charge r/i }).click();
 
   // ── 3. The order appears in the live queue as "Waiting" ─────────────────────
   // createOrder auto-expands the new order, so its card body is open.
