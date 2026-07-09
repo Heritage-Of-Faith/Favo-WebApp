@@ -1,7 +1,8 @@
 "use client";
 
 // Single-screen POS workspace — owner: Mine
-// Left panel: build order  |  Right panel: live queue (accordion cards)
+// Phase 5 layout (AT-137/138/139): Zone A customer + customisation |
+// Zone B menu grid + running order | Zone C open-orders board.
 // Zero page navigation — everything lives on this one screen.
 
 import { useState, useEffect, useRef } from "react";
@@ -12,6 +13,9 @@ import { searchCustomer } from "@/server/actions/customers";
 import { getMenu } from "@/server/actions/menu";
 import { getActiveBeanLot } from "@/server/actions/inventory";
 import { createOrder, transitionOrder, cancelOrder, applyStaffDiscount } from "@/server/actions/orders";
+import { getFavo } from "@/server/actions/favo";
+import type { FavoView } from "@/server/favo/schema";
+import FavoPicker from "@/components/favo/FavoPicker";
 import { useOrderStream } from "@/hooks/useOrderStream";
 import { useDraftOrder, lineKey } from "@/store/draftOrder";
 import { formatZar, formatDate } from "@/lib/format";
@@ -138,6 +142,45 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [searchOpen, setSearchOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { customer, items, totalZar, setCustomer, addItem, removeItem, updateQuantity, reset } = useDraftOrder();
+
+  // AT-144 — the attached customer's Favo (saved usual order) + the Manage
+  // Favo blocking modal (wireframe screens 6 + 2a).
+  const [customerFavo, setCustomerFavo] = useState<FavoView | null>(null);
+  const [manageFavoOpen, setManageFavoOpen] = useState(false);
+  const customerIdForFavo = customer?.id ?? null;
+  useEffect(() => {
+    // Keyed on the id (not the object) so re-renders with a fresh customer
+    // reference don't wipe an open modal — only an actual attach/detach does.
+    setCustomerFavo(null);
+    setManageFavoOpen(false);
+    if (!customerIdForFavo) return;
+    let stale = false;
+    getFavo(customerIdForFavo).then(r => {
+      if (!stale && r.ok) setCustomerFavo(r.data.favo);
+    }).catch(() => { /* favo stays null — the panel just omits the reorder CTA */ });
+    return () => { stale = true; };
+  }, [customerIdForFavo]);
+
+  // One-tap reorder: replay the saved template into the draft order, resolving
+  // customisation ids to live objects (duplicates preserved — Extra Shot ×2).
+  function reorderFavo() {
+    if (!customerFavo) return;
+    let added = 0, skipped = 0;
+    for (const line of customerFavo.items) {
+      const mi = menu.find(m => m.id === line.menuItemId);
+      if (!mi) { skipped++; continue; }
+      const mods = line.modifications
+        .map(id => mi.customisations.find(c => c.id === id))
+        .filter((m): m is MenuCustomisation => Boolean(m));
+      addItem({
+        menuItemId: mi.id, menuItemName: mi.name,
+        unitPriceZar: mi.currentPriceZar, modifications: mods, quantity: line.quantity,
+      });
+      added++;
+    }
+    if (added > 0) toast.success(`${customer?.name}'s Favo added to the order`);
+    if (skipped > 0) toast.warning("Some Favo items are no longer on the menu and were skipped.");
+  }
 
   // ── Inventory awareness (M9) ────────────────────────────────────────────────
   const { menuItemStock, outOfStockItems } = useStockStatus();
@@ -436,13 +479,25 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           <>
             <p className="favo-small text-coffee-bean font-semibold">{customer.name}</p>
             <p className="favo-caption text-cool-steel">Loyalty balance: {formatLoyaltyBalance(customer.loyaltyPoints)}</p>
+            {/* AT-144 (wireframe screen 6): primary reorder CTA when a Favo
+                exists; Manage Favo stays a deliberately low-emphasis link. */}
+            {customerFavo && (
+              <button type="button" onClick={reorderFavo}
+                className="flex w-full items-center justify-center gap-1 rounded-[var(--radius-btn)] py-2 min-h-[44px] favo-small font-bold uppercase"
+                style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", letterSpacing: "var(--tracking-cta)" }}
+                aria-label="Reorder their Favo">
+                <RefreshCw size={13} strokeWidth={2.5} /> Reorder their Favo
+              </button>
+            )}
             <button type="button" onClick={() => setPackOpen(true)}
               className="self-start flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-coffee-bean/8 min-h-[32px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
               aria-label="Buy coffee pack">
               <Package size={12} strokeWidth={2.25} /> Pack
             </button>
-            {/* AT-142/143/144 (Favo) not built yet — "Reorder their Favo" / "Manage
-                Favo" per the wireframe hang off this panel once that backend lands. */}
+            <button type="button" onClick={() => setManageFavoOpen(true)}
+              className="favo-caption text-cool-steel/70 hover:text-coffee-bean underline underline-offset-2 self-start min-h-[28px]">
+              Manage Favo
+            </button>
             <button type="button" onClick={() => { setCustomer(null); setQuery(""); }}
               className="favo-caption text-cool-steel hover:text-coffee-bean underline underline-offset-2 mt-auto self-start min-h-[28px]">
               Detach customer
@@ -1114,6 +1169,31 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
 
       {/* ════════ STAFF PUSH OPT-IN (M10) ════════ */}
       <StaffPushOptIn />
+
+      {/* ════════ MANAGE FAVO (AT-144, wireframe 2a) — full blocking modal ════════
+          The scrim is deliberately inert: tapping it does nothing, so mid-edit
+          state can't be lost by a stray tap. Only Cancel/Save (inside the
+          picker, with its own unsaved-changes guard) dismiss it. The cart and
+          attached customer are untouched either way. */}
+      {manageFavoOpen && customer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-coffee-bean/60 px-4"
+          role="dialog" aria-modal="true" aria-label={`Manage ${customer.name}'s Favo`}>
+          <div className="w-full max-w-[520px] max-h-[90vh] overflow-y-auto">
+            <FavoPicker
+              customerId={customer.id}
+              title={`${customer.name}'s Favo`}
+              menu={menu}
+              initialFavo={customerFavo}
+              onSaved={(saved) => {
+                setCustomerFavo(saved);
+                setManageFavoOpen(false);
+                toast.success(`${customer.name}'s Favo saved`);
+              }}
+              onCancel={() => setManageFavoOpen(false)}
+            />
+          </div>
+        </div>
+      )}
 
       {/* ════════ COFFEE PACK PURCHASE (M17) ════════ */}
       {packOpen && customer && (
