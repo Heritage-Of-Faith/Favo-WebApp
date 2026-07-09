@@ -118,3 +118,63 @@ describe("getPosToday — zero/null handling", () => {
     }
   });
 });
+
+// ─── getDailyItemHistory (AT-146) ─────────────────────────────────────────────
+
+const MENU = [
+  { id: "menu_americano", name: "Americano" },
+  { id: "menu_cappuccino", name: "Cappuccino" },
+  { id: "menu_hot_chocolate", name: "Hot Chocolate" },
+];
+
+describe("getDailyItemHistory — AT-146", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("rejects unauthenticated callers", async () => {
+    const { authorize } = await import("@/server/auth/guard");
+    vi.mocked(authorize).mockResolvedValueOnce(UNAUTHORIZED_RESULT);
+    const { getDailyItemHistory } = await import("@/server/actions/pos-summary");
+    const result = await getDailyItemHistory();
+    expect(result.ok).toBe(false);
+  });
+
+  it("zero-fills every active menu item for every day, today first", async () => {
+    const { db } = await import("@db/index");
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce(MENU as never) // active menu
+      .mockResolvedValueOnce([
+        // only some day/item combinations have sales
+        { day: "2026-06-14", menu_item_id: "menu_americano", qty: "7" },
+        { day: "2026-06-13", menu_item_id: "menu_cappuccino", qty: "4" },
+      ] as never);
+
+    const { getDailyItemHistory } = await import("@/server/actions/pos-summary");
+    const result = await getDailyItemHistory(3);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const { days } = result.data;
+    expect(days).toHaveLength(3);
+    expect(days.map((d) => d.date)).toEqual(["2026-06-14", "2026-06-13", "2026-06-12"]);
+
+    // Every day lists ALL active items, in stable order, zeros included.
+    for (const day of days) {
+      expect(day.items.map((i) => i.name)).toEqual(["Americano", "Cappuccino", "Hot Chocolate"]);
+    }
+    expect(days[0].items.map((i) => i.quantity)).toEqual([7, 0, 0]);
+    expect(days[0].totalItems).toBe(7);
+    expect(days[1].items.map((i) => i.quantity)).toEqual([0, 4, 0]);
+    expect(days[2].totalItems).toBe(0);
+  });
+
+  it("clamps the requested span to a sane range", async () => {
+    const { db } = await import("@db/index");
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce(MENU as never)
+      .mockResolvedValueOnce([] as never);
+    const { getDailyItemHistory } = await import("@/server/actions/pos-summary");
+    const result = await getDailyItemHistory(0);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.days).toHaveLength(1);
+  });
+});
