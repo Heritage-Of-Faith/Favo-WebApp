@@ -636,6 +636,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           syncing={syncing}
           onClick={() => { refresh(); setSyncDrawerOpen(true); }}
         />
+        {/* AT-146 — daily order history (wireframe screen 4) */}
+        <a href="/pos/history" aria-label="Order history"
+          className="flex h-9 items-center px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
+          History
+        </a>
         {role === "admin" && (
           <a href="/admin" aria-label="Go to admin"
             className="flex h-9 items-center px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">

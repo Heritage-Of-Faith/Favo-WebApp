@@ -48,3 +48,78 @@ export async function getPosToday(): Promise<ActionResult<PosTodaySummary>> {
 
   return { ok: true, data: { date, orderCount, revenueZar, wasteCount } };
 }
+
+// ─── AT-146 — daily item history ──────────────────────────────────────────────
+
+export type DailyItemCount = { menuItemId: string; name: string; quantity: number };
+export type DailyHistoryDay = {
+  /** SAST calendar date, YYYY-MM-DD. */
+  date: string;
+  totalItems: number;
+  /** Every active menu item, zero-filled, in stable name order. */
+  items: DailyItemCount[];
+};
+
+const HISTORY_MAX_DAYS = 31;
+
+/**
+ * Per-menu-item "items made" counts for the last `days` SAST days (today
+ * first). Counts sum order_items.quantity for orders that were actually made
+ * (in_progress / ready / collected — same state filter as getPosToday), so
+ * cancelled and never-started orders don't inflate the tally. Every active
+ * menu item appears in every day, zero-filled, so the list stays scannable
+ * (wireframe screen 4). Counts only — no revenue.
+ */
+export async function getDailyItemHistory(
+  days = 7
+): Promise<ActionResult<{ days: DailyHistoryDay[] }>> {
+  const auth = await authorize(...POS_ROLES);
+  if (!auth.ok) return auth;
+
+  const span = Math.min(Math.max(Math.trunc(days), 1), HISTORY_MAX_DAYS);
+  const today = todaySast();
+
+  const [menuRows, countRows] = await Promise.all([
+    db.execute<{ id: string; name: string }>(
+      sql`SELECT id, name FROM menu_items WHERE active = true ORDER BY name`
+    ),
+    db.execute<{ day: string; menu_item_id: string; qty: string }>(
+      sql`SELECT (o.placed_at AT TIME ZONE 'Africa/Johannesburg')::date::text AS day,
+                 oi.menu_item_id,
+                 SUM(oi.quantity)::text AS qty
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+          WHERE o.state IN ('in_progress','ready','collected')
+            AND (o.placed_at AT TIME ZONE 'Africa/Johannesburg')::date
+                > (${today}::date - ${span}::int)
+          GROUP BY 1, 2`
+    ),
+  ]);
+
+  const byDayItem = new Map<string, number>();
+  for (const r of countRows) {
+    byDayItem.set(`${r.day}|${r.menu_item_id}`, parseInt(r.qty, 10) || 0);
+  }
+
+  // Build the day list in Node (today backwards) rather than a generate_series
+  // join — the span is tiny and this keeps the SQL to one aggregate.
+  const result: DailyHistoryDay[] = [];
+  const todayUtc = new Date(`${today}T00:00:00Z`);
+  for (let i = 0; i < span; i++) {
+    const d = new Date(todayUtc);
+    d.setUTCDate(d.getUTCDate() - i);
+    const date = d.toISOString().slice(0, 10);
+    const items = [...menuRows].map((m) => ({
+      menuItemId: m.id,
+      name: m.name,
+      quantity: byDayItem.get(`${date}|${m.id}`) ?? 0,
+    }));
+    result.push({
+      date,
+      totalItems: items.reduce((sum, it) => sum + it.quantity, 0),
+      items,
+    });
+  }
+
+  return { ok: true, data: { days: result } };
+}
