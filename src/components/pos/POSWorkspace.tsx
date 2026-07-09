@@ -15,6 +15,7 @@ import { createOrder, transitionOrder, cancelOrder, applyStaffDiscount } from "@
 import { useOrderStream } from "@/hooks/useOrderStream";
 import { useDraftOrder, lineKey } from "@/store/draftOrder";
 import { formatZar, formatDate } from "@/lib/format";
+import { formatLoyaltyBalance } from "@/server/loyalty/calc";
 import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, X, Plus, Minus, Trash2, ChevronDown, ChevronUp,
@@ -424,7 +425,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                     <button type="button" onMouseDown={() => { setCustomer(c); setQuery(""); setSearchOpen(false); }}
                       className="flex w-full items-center justify-between px-3 py-2 min-h-[36px] hover:bg-coffee-bean/8 text-left">
                       <span className="favo-small text-coffee-bean font-semibold">{c.name}</span>
-                      {c.loyaltyPoints > 0 && <span className="favo-caption text-crimson-carrot">{c.loyaltyPoints} pts</span>}
+                      {c.loyaltyPoints > 0 && <span className="favo-caption text-crimson-carrot">{formatLoyaltyBalance(c.loyaltyPoints)}</span>}
                     </button>
                   </li>
                 ))}
@@ -434,7 +435,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
         ) : (
           <>
             <p className="favo-small text-coffee-bean font-semibold">{customer.name}</p>
-            <p className="favo-caption text-cool-steel">{customer.loyaltyPoints} pts</p>
+            <p className="favo-caption text-cool-steel">Loyalty balance: {formatLoyaltyBalance(customer.loyaltyPoints)}</p>
             <button type="button" onClick={() => setPackOpen(true)}
               className="self-start flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-coffee-bean/8 min-h-[32px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
               aria-label="Buy coffee pack">

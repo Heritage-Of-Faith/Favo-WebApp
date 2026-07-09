@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { listCustomers, type CustomerListItem } from "@/server/actions/customers";
 import { formatDate } from "@/lib/format";
+import { formatLoyaltyBalance } from "@/server/loyalty/calc";
 
 export interface CustomerTableProps {
   initialQuery?: string;
@@ -68,7 +69,7 @@ export default function CustomerTable({ initialQuery = "" }: CustomerTableProps)
                 <th className="px-4 py-3 text-left font-medium text-text-muted">Name</th>
                 <th className="px-4 py-3 text-left font-medium text-text-muted">Email</th>
                 <th className="px-4 py-3 text-left font-medium text-text-muted">Phone</th>
-                <th className="px-4 py-3 text-right font-medium text-text-muted">Points</th>
+                <th className="px-4 py-3 text-right font-medium text-text-muted">Loyalty balance</th>
                 <th className="px-4 py-3 text-left font-medium text-text-muted">Joined</th>
               </tr>
             </thead>
@@ -88,7 +89,7 @@ export default function CustomerTable({ initialQuery = "" }: CustomerTableProps)
                   </td>
                   <td className="px-4 py-3 text-text-muted">{c.email ?? "—"}</td>
                   <td className="px-4 py-3 text-text-muted">{c.phone ?? "—"}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{c.loyaltyPoints}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatLoyaltyBalance(c.loyaltyPoints)}</td>
                   <td className="px-4 py-3 text-text-muted">
                     {formatDate(c.createdAt)}
                   </td>

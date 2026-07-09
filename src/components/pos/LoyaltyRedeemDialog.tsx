@@ -13,6 +13,7 @@ import { useState, useCallback } from "react";
 import { X, Loader2, Star, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { redeemLoyalty } from "@/server/actions/loyalty";
+import { formatLoyaltyBalance } from "@/server/loyalty/calc";
 
 const REDEEM_POINTS_UNIT = 100;
 const REDEEM_VALUE_ZAR = 2000; // R20 in cents — display only; server is source of truth.
@@ -105,7 +106,7 @@ export default function LoyaltyRedeemDialog({
         <div className="px-5 py-4 flex flex-col gap-4">
           {/* Customer context */}
           <p className="favo-small text-porcelain">
-            {customerName} · <span className="text-crimson-carrot font-bold">{loyaltyPoints} pts</span> available
+            {customerName} · <span className="text-crimson-carrot font-bold">{formatLoyaltyBalance(loyaltyPoints)}</span> available
           </p>
 
           {/* Units stepper */}

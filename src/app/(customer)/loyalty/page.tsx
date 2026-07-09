@@ -6,7 +6,8 @@ import type { CSSProperties } from "react";
 import { redirect } from "next/navigation";
 import { listCustomerLoyaltyHistory } from "@/server/actions/customer";
 import { getOperatingHours } from "@/server/actions/hours";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatZar } from "@/lib/format";
+import { pointsValueZar } from "@/server/loyalty/calc";
 
 export const dynamic = "force-dynamic";
 
@@ -293,9 +294,9 @@ export default async function LoyaltyPage({
       <main style={S.main}>
         {/* Balance hero */}
         <section aria-label="Loyalty balance">
-          <p style={S.eyebrow}>Loyalty points</p>
-          <p style={S.balance}>{currentBalance}</p>
-          <p style={S.balanceSub}>pts</p>
+          <p style={S.eyebrow}>Loyalty balance</p>
+          <p style={S.balance}>{formatZar(pointsValueZar(currentBalance))}</p>
+          <p style={S.balanceSub}>{currentBalance} pts</p>
           <p style={S.earnInfo}>
             Earn 5 pts per R10 spent. Redeem 100 pts = R20 off.
           </p>

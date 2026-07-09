@@ -4,6 +4,7 @@
 
 import type { CSSProperties } from "react";
 import { formatZar } from "@/lib/format";
+import { pointsValueZar } from "@/server/loyalty/calc";
 
 export interface LoyaltyValueCardProps {
   loyaltyPoints: number;
@@ -30,12 +31,12 @@ const label: CSSProperties = {
 };
 
 export default function LoyaltyValueCard({ loyaltyPoints }: LoyaltyValueCardProps) {
-  const valueZar = Math.floor(loyaltyPoints / 100) * 2000;
+  const valueZar = pointsValueZar(loyaltyPoints);
   const canRedeem = loyaltyPoints >= 100;
 
   return (
-    <section style={card} aria-label="Points value">
-      <p style={label}>Points value</p>
+    <section style={card} aria-label="Loyalty balance">
+      <p style={label}>Loyalty balance</p>
       <p
         style={{
           fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
@@ -46,7 +47,10 @@ export default function LoyaltyValueCard({ loyaltyPoints }: LoyaltyValueCardProp
           margin: 0,
         }}
       >
-        {formatZar(valueZar)}
+        {formatZar(valueZar)}{" "}
+        <span style={{ fontSize: "0.45em", fontWeight: 400, color: "var(--color-cool-steel)" }}>
+          ({loyaltyPoints} pts)
+        </span>
       </p>
       <p
         style={{

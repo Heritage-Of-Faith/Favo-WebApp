@@ -3,8 +3,10 @@ import {
   earnPoints,
   canRedeem,
   pointsValueZar,
+  formatLoyaltyBalance,
   MIN_REDEEM_POINTS,
 } from "@/server/loyalty/calc";
+import { formatZar } from "@/lib/format";
 
 describe("loyalty: earning (5 pts per R10)", () => {
   it("earns 5 points per whole R10", () => {
@@ -41,5 +43,25 @@ describe("loyalty: points value (100 pts = R20)", () => {
   it("is zero below the redemption unit", () => {
     expect(pointsValueZar(99)).toBe(0);
     expect(pointsValueZar(0)).toBe(0);
+  });
+});
+
+describe("loyalty: balance display (AT-139 — money-first, points parenthetical)", () => {
+  // Exact currency punctuation varies with the runtime's ICU data, so assert
+  // structure via formatZar (which has its own tests) rather than literals.
+  it("formats redeemable value first with points in parentheses", () => {
+    expect(formatLoyaltyBalance(100)).toBe(`${formatZar(2000)} (100 pts)`);
+    expect(formatLoyaltyBalance(250)).toBe(`${formatZar(4000)} (250 pts)`);
+  });
+
+  it("shows zero rand below the redemption unit but still shows the points", () => {
+    expect(formatLoyaltyBalance(60)).toBe(`${formatZar(0)} (60 pts)`);
+    expect(formatLoyaltyBalance(0)).toBe(`${formatZar(0)} (0 pts)`);
+  });
+
+  it("puts the money before the points and never says wallet", () => {
+    const s = formatLoyaltyBalance(500);
+    expect(s.indexOf("R")).toBeLessThan(s.indexOf("pts"));
+    expect(s.toLowerCase()).not.toContain("wallet");
   });
 });

@@ -3,6 +3,8 @@
 // full redemption only. Pure functions — the server is the source of truth;
 // the customer PWA mirrors these for display.
 
+import { formatZar } from "@/lib/format";
+
 export const POINTS_PER_R10 = 5; // 5 points per 1000 cents
 export const CENTS_PER_EARN_UNIT = 1000; // R10
 export const MIN_REDEEM_POINTS = 100;
@@ -27,4 +29,14 @@ export function canRedeem(points: number): boolean {
 export function pointsValueZar(points: number): number {
   if (points < REDEEM_POINTS_UNIT) return 0;
   return Math.floor(points / REDEEM_POINTS_UNIT) * REDEEM_VALUE_ZAR;
+}
+
+/**
+ * AT-139 — the one loyalty-balance display string, money-first:
+ * `"R20,00 (100 pts)"`. Every surface (POS, customer PWA, admin) renders
+ * balances through this so the wording can't drift. The rand value is the
+ * redeemable value (whole 100-pt units), not a linear cents-per-point figure.
+ */
+export function formatLoyaltyBalance(points: number): string {
+  return `${formatZar(pointsValueZar(points))} (${points} pts)`;
 }

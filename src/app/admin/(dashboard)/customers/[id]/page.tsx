@@ -4,6 +4,7 @@
 import { notFound } from "next/navigation";
 import { getCustomerDetail } from "@/server/actions/customers";
 import { formatDate } from "@/lib/format";
+import { formatLoyaltyBalance } from "@/server/loyalty/calc";
 import CustomerBalanceTabs from "@/components/admin/CustomerBalanceTabs";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ export default async function CustomerDetailPage({
 
       {/* KPI strip — always visible regardless of active tab */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Stat label="Loyalty points" value={String(c.loyaltyPoints)} />
+        <Stat label="Loyalty balance" value={formatLoyaltyBalance(c.loyaltyPoints)} />
         <Stat label="Active packs" value={String(c.activePacks.length)} />
       </div>
 
