@@ -495,6 +495,21 @@ export const coffeePacks = pgTable("coffee_packs", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// ─── The Favo (AT-142 — one saved order template per customer) ────────────────
+// `items` holds FavoItem[] — the exact shape of CreateOrderInput["items"]
+// ({ menuItemId, quantity, modifications: customisation-id[] }), validated by
+// the shared Zod schema in src/server/favo/schema.ts. One row per customer.
+
+export const favos = pgTable("favos", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  customerId: text("customer_id").notNull().unique().references(() => customers.id),
+  items: jsonb("items").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  /** Null when the customer saved it themselves on the PWA; the staff member otherwise. */
+  updatedByStaffId: text("updated_by_staff_id").references(() => staff.id),
+});
+
 // ─── Pack redemptions (AT-111 — append-only; reversals via reversed_at) ──────
 
 export const packRedemptions = pgTable("pack_redemptions", {

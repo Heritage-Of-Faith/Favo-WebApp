@@ -197,6 +197,13 @@
       "when": 1783425247744,
       "tag": "0027_at145_customisation_inventory_effects",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1783585967189,
+      "tag": "0028_at142_favo_table",
+      "breakpoints": true
     }
   ]
 }
