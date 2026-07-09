@@ -4,8 +4,11 @@
 
 import type { CSSProperties } from "react";
 import { redirect } from "next/navigation";
-import { listCustomerLoyaltyHistory } from "@/server/actions/customer";
+import { listCustomerLoyaltyHistory, getCustomerSummary } from "@/server/actions/customer";
 import { getOperatingHours } from "@/server/actions/hours";
+import { getMenu } from "@/server/actions/menu";
+import { getFavo } from "@/server/actions/favo";
+import FavoSection from "@/components/customer/FavoSection";
 import { formatDate, formatZar } from "@/lib/format";
 import { pointsValueZar } from "@/server/loyalty/calc";
 
@@ -260,10 +263,21 @@ export default async function LoyaltyPage({
   const params = await searchParams;
   const page = Math.max(0, parseInt(params.page ?? "0", 10) || 0);
 
-  const [res, hoursRes] = await Promise.all([
+  const [res, hoursRes, summaryRes, menuRes] = await Promise.all([
     listCustomerLoyaltyHistory(page),
     getOperatingHours().catch(() => ({ ok: false as const, code: "FETCH_ERROR", message: "Hours unavailable" })),
+    getCustomerSummary().catch(() => ({ ok: false as const, code: "FETCH_ERROR", message: "Summary unavailable" })),
+    getMenu().catch(() => ({ ok: false as const, code: "FETCH_ERROR", message: "Menu unavailable" })),
   ]);
+
+  // AT-143 — the Favo section needs the customer's id + the live menu; the
+  // saved Favo itself is fetched only once we know who they are.
+  const favoCustomerId = summaryRes.ok ? summaryRes.data.customerId : null;
+  const favoMenu = menuRes.ok ? menuRes.data : [];
+  const favoRes = favoCustomerId
+    ? await getFavo(favoCustomerId).catch(() => ({ ok: false as const, code: "FETCH_ERROR", message: "Favo unavailable" }))
+    : null;
+  const initialFavo = favoRes?.ok ? favoRes.data.favo : null;
 
   const todayDow = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Africa/Johannesburg" })
@@ -301,6 +315,11 @@ export default async function LoyaltyPage({
             Earn 5 pts per R10 spent. Redeem 100 pts = R20 off.
           </p>
         </section>
+
+        {/* AT-143 — Your Favo (saved usual order) */}
+        {favoCustomerId && favoMenu.length > 0 && (
+          <FavoSection customerId={favoCustomerId} menu={favoMenu} initialFavo={initialFavo} />
+        )}
 
         {/* Today's cafe hours */}
         {todayHours && (
