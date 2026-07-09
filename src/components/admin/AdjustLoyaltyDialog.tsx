@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { searchCustomer } from "@/server/actions/customers";
 import { adjustLoyalty } from "@/server/actions/loyalty";
+import { formatLoyaltyBalance } from "@/server/loyalty/calc";
 import type { Customer } from "@/lib/types";
 
 type Props = {
@@ -86,7 +87,7 @@ export default function AdjustLoyaltyDialog({ open, onOpenChange, onSuccess }: P
         setError(res.message);
         return;
       }
-      setSuccessMsg(`Done. New balance: ${res.data.newBalance} pts`);
+      setSuccessMsg(`Done. New balance: ${formatLoyaltyBalance(res.data.newBalance)}`);
       // Reset form after short delay then close
       setTimeout(() => {
         resetForm();
@@ -147,7 +148,7 @@ export default function AdjustLoyaltyDialog({ open, onOpenChange, onSuccess }: P
                       {c.phone && (
                         <span className="ml-2 text-text-muted">{c.phone}</span>
                       )}
-                      <span className="ml-2 text-text-muted">· {c.loyaltyPoints} pts</span>
+                      <span className="ml-2 text-text-muted">· {formatLoyaltyBalance(c.loyaltyPoints)}</span>
                     </button>
                   </li>
                 ))}
@@ -156,7 +157,7 @@ export default function AdjustLoyaltyDialog({ open, onOpenChange, onSuccess }: P
             {selected && (
               <p className="text-xs text-text-muted mt-1">
                 Current balance:{" "}
-                <span className="font-semibold text-text-strong">{selected.loyaltyPoints} pts</span>
+                <span className="font-semibold text-text-strong">{formatLoyaltyBalance(selected.loyaltyPoints)}</span>
               </p>
             )}
           </div>
