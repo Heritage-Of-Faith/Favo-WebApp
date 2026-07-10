@@ -30,7 +30,7 @@ export default async function StaffLoginPage() {
       <div className="flex items-center px-[var(--spacing-m)] pt-[var(--spacing-m)]">
         <Link
           href="/"
-          className="favo-small flex items-center gap-1.5 text-text-muted hover:text-text-strong transition-colors duration-[var(--dur-fast)]"
+          className="favo-small flex min-h-[44px] items-center gap-1.5 px-1 text-text-muted hover:text-text-strong transition-colors duration-[var(--dur-fast)]"
           aria-label="Back to home page"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">

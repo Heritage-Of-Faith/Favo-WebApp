@@ -99,7 +99,7 @@ export default function OpenContainersCard() {
               <button
                 type="button"
                 onClick={() => handleClose(row.inventoryItemId, row.openLotId!)}
-                className="rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 text-cool-steel hover:bg-porcelain/10 hover:text-porcelain focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 text-cool-steel hover:bg-porcelain/10 hover:text-porcelain focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
                 style={{ fontSize: 10 }}
               >
                 Close
@@ -109,7 +109,7 @@ export default function OpenContainersCard() {
                 type="button"
                 disabled={row.sealedCount === 0}
                 onClick={() => handleOpen(row.inventoryItemId)}
-                className="rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 text-cool-steel hover:bg-porcelain/10 hover:text-porcelain disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 text-cool-steel hover:bg-porcelain/10 hover:text-porcelain disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
                 style={{ fontSize: 10 }}
               >
                 Open

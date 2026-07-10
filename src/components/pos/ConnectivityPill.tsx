@@ -63,7 +63,7 @@ export default function ConnectivityPill({ pendingCount, syncing, onClick }: Pro
       aria-live="polite"
       aria-label={`Connectivity: ${label}. Open sync panel.`}
       data-band={band}
-      className="shrink-0 flex items-center gap-1.5 rounded-[var(--radius-pill)] border px-2.5 py-1 favo-caption min-h-[32px] transition-all hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+      className="shrink-0 flex items-center gap-1.5 rounded-[var(--radius-pill)] border px-2.5 py-1 favo-caption min-h-[44px] transition-all hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
       style={{ color: s.color, background: s.bg, borderColor: s.border }}
     >
       <Icon size={12} strokeWidth={2.5} className={syncing ? "animate-spin" : undefined} aria-hidden />
