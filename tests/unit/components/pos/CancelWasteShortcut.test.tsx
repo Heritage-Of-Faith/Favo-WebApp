@@ -18,6 +18,7 @@ vi.mock("@/server/actions/orders", () => ({
   applyStaffDiscount: vi.fn(),
 }));
 vi.mock("@/server/actions/auth", () => ({ signOut: vi.fn() }));
+vi.mock("@/server/actions/favo", () => ({ getFavo: vi.fn().mockResolvedValue({ ok: true, data: { favo: null } }), setFavo: vi.fn(), clearFavo: vi.fn() }));
 vi.mock("@/server/actions/customers", () => ({ searchCustomer: vi.fn() }));
 vi.mock("@/server/actions/menu", () => ({ getMenu: vi.fn().mockResolvedValue({ ok: true, data: [] }) }));
 vi.mock("@/server/actions/inventory", () => ({
