@@ -24,7 +24,7 @@ import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, X, Plus, Minus, Trash2, ChevronDown, ChevronUp,
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
-  CheckCircle, AlertCircle, Tag, Star, ShieldCheck, Package, CreditCard,
+  CheckCircle, AlertCircle, Tag, ShieldCheck, Package, CreditCard,
 } from "lucide-react";
 import PackPurchaseDialog from "@/components/pos/PackPurchaseDialog";
 import { toast } from "sonner";
@@ -36,7 +36,7 @@ import StockBanner from "@/components/pos/StockBanner";
 import WasteDialog from "@/components/pos/WasteDialog";
 import ConnectivityPill from "@/components/pos/ConnectivityPill";
 import SyncDrawer from "@/components/pos/SyncDrawer";
-import LoyaltyRedeemDialog from "@/components/pos/LoyaltyRedeemDialog";
+import LoyaltyRedeemInline from "@/components/pos/LoyaltyRedeemInline";
 import PackRedeemSection from "@/components/pos/PackRedeemSection";
 import OfflineBanner from "@/components/pos/OfflineBanner";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
@@ -125,7 +125,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   // M18 — loyalty redemption on the payment step (order already in `ordered`).
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
-  const [redeemOpen, setRedeemOpen] = useState(false);
   const [redeemedData, setRedeemedData] = useState<{ pointsUsed: number; discountZar: number; newTotalZar: number } | null>(null);
   // AT-116 — pack redemption savings (cumulative, sum of line prices redeemed).
   const [packSavings, setPackSavings] = useState(0);
@@ -829,14 +828,21 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 </div>
 
                 <div className="flex flex-col gap-3 w-full max-w-[320px]">
-                  {/* M18 — loyalty redemption (L06): 100 pts → R20 off, capped at the order total.
-                      Offered only at ≥100 pts and when the order is worth ≥ R20. */}
+                  {/* AT-140 — loyalty redemption (L06): 100 pts → R20 off, capped at the
+                      order total. Offered only at ≥100 pts and when the order is worth
+                      ≥ R20. Rebuilt inline in this cart region — no side dialog. */}
                   {customer && customer.loyaltyPoints >= 100 && amountDueZar >= 2000 && redeemedData === null && paymentOrderId && (
-                    <button type="button" onClick={() => setRedeemOpen(true)}
-                      className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-crimson-carrot/50 py-3 min-h-[48px] favo-small text-crimson-carrot hover:bg-crimson-carrot/8 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
-                      <Star size={14} strokeWidth={2.25} />
-                      Redeem loyalty points
-                    </button>
+                    <LoyaltyRedeemInline
+                      customerId={customer.id}
+                      customerName={customer.name}
+                      orderId={paymentOrderId}
+                      loyaltyPoints={customer.loyaltyPoints}
+                      orderTotalZar={totalZar}
+                      onRedeemed={(result) => {
+                        setRedeemedData(result);
+                        setCustomer({ ...customer, loyaltyPoints: customer.loyaltyPoints - result.pointsUsed });
+                      }}
+                    />
                   )}
 
                   {/* AT-116 — pack redemption (L16): per-line "Use pack" buttons for coffee items. */}
@@ -1202,22 +1208,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           customerName={customer.name}
           coffeeItems={menu.filter((m) => m.category === "coffee")}
           onClose={() => setPackOpen(false)}
-        />
-      )}
-
-      {/* ════════ LOYALTY REDEMPTION (M18) ════════ */}
-      {redeemOpen && customer && paymentOrderId && (
-        <LoyaltyRedeemDialog
-          customerId={customer.id}
-          customerName={customer.name}
-          orderId={paymentOrderId}
-          loyaltyPoints={customer.loyaltyPoints}
-          orderTotalZar={totalZar}
-          onRedeemed={(result) => {
-            setRedeemedData(result);
-            setCustomer({ ...customer, loyaltyPoints: customer.loyaltyPoints - result.pointsUsed });
-          }}
-          onClose={() => setRedeemOpen(false)}
         />
       )}
 
