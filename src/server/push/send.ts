@@ -69,6 +69,39 @@ export async function sendHoursPostedPush(
 }
 
 /**
+ * Push an "opening today" notification to a single subscription (AT-134).
+ * `isReopening` = a later session on a day that already had one (the café
+ * closed and is opening again).
+ * Returns false if the subscription is gone (410/404) so the caller can prune it.
+ */
+export async function sendOpeningPush(
+  subscription: PushSubscriptionShape,
+  opensAt: string,
+  isReopening: boolean
+): Promise<boolean> {
+  initVapid();
+  const payload = JSON.stringify({
+    title: isReopening ? "FAVO is reopening ☕" : "FAVO is opening today ☕",
+    body: isReopening
+      ? `We're opening again at ${opensAt} — see you there.`
+      : `We're opening at ${opensAt} today.`,
+    data: { url: "/loyalty" },
+    tag: "favo-opening",
+  });
+  try {
+    await webpush.sendNotification(subscription, payload);
+    return true;
+  } catch (err) {
+    const statusCode = (err as { statusCode?: number }).statusCode;
+    if (statusCode === 404 || statusCode === 410) {
+      return false;
+    }
+    console.error("[push] webpush.sendNotification error", { statusCode, endpoint: subscription.endpoint }, err);
+    throw err;
+  }
+}
+
+/**
  * Push a "points earned" notification to a single subscription (AT-128).
  * Returns false if the subscription is gone (410/404) so the caller can handle it.
  * Fire-and-forget — never blocks the order flow.

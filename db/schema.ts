@@ -361,6 +361,29 @@ export const purchases = pgTable(
 
 // ─── Operating Hours ──────────────────────────────────────────────────────────
 
+// ─── Opening sessions (AT-134 — same-day override on the weekly schedule) ─────
+// One row per opening that day (multi-session days are real: the café can
+// close and reopen). Created by the barista's opening-time prompt (via_pos)
+// or planned by admin in the Today's Hours screen. The barista never records
+// a closing time — closes_at is admin-only and open-ended (null) until set.
+
+export const openingSessions = pgTable(
+  "opening_sessions",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    sessionDate: text("session_date").notNull(), // YYYY-MM-DD (SAST revenue day)
+    opensAt: text("opens_at").notNull(),         // "07:30"
+    closesAt: text("closes_at"),                 // null = open-ended
+    viaPos: boolean("via_pos").default(false).notNull(),
+    createdByStaffId: text("created_by_staff_id").references(() => staff.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    /** Set when the customer push for this session was sent — the dedupe record. */
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+  },
+  (t) => [unique("opening_sessions_date_opens_unique").on(t.sessionDate, t.opensAt)]
+);
+
 export const operatingHours = pgTable("operating_hours", {
   id: serial("id").primaryKey(),
   tenantId: tenantId(),
