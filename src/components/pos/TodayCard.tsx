@@ -36,17 +36,17 @@ export default function TodayCard() {
             type="button"
             onClick={() => router.push("/pos/queue")}
             aria-label="Back to POS"
-            className="flex h-9 w-9 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
+            className="flex h-11 w-11 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
           >
             <ArrowLeft size={18} strokeWidth={2} />
           </button>
-          <span className="favo-h3 text-porcelain">Today</span>
+          <h1 className="favo-h3 text-porcelain">Today</h1>
         </div>
         <button
           type="button"
           onClick={load}
           aria-label="Refresh"
-          className="flex h-9 w-9 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
+          className="flex h-11 w-11 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
         >
           {loading ? <Loader2 size={16} strokeWidth={2} className="animate-spin" /> : <RefreshCw size={16} strokeWidth={2} />}
         </button>

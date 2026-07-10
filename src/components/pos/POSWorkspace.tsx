@@ -458,14 +458,14 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               onChange={e => { setQuery(e.target.value); if (!e.target.value) setCustomer(null); }}
               onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
               onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
-              className="w-full rounded-[4px] border border-cool-steel/20 bg-coffee-bean/5 pl-7 pr-7 py-1.5 text-coffee-bean placeholder:text-cool-steel text-xs focus:border-crimson-carrot focus:outline-none min-h-[34px]"
+              className="w-full rounded-[4px] border border-cool-steel/20 bg-coffee-bean/5 pl-7 pr-7 py-1.5 text-coffee-bean placeholder:text-cool-steel text-xs focus:border-crimson-carrot focus:outline-none min-h-[44px]"
             />
             {searchOpen && searchResults.length > 0 && (
               <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface shadow-[var(--shadow-2)] overflow-hidden">
                 {searchResults.map(c => (
                   <li key={c.id}>
                     <button type="button" onMouseDown={() => { setCustomer(c); setQuery(""); setSearchOpen(false); }}
-                      className="flex w-full items-center justify-between px-3 py-2 min-h-[36px] hover:bg-coffee-bean/8 text-left">
+                      className="flex w-full items-center justify-between px-3 py-2 min-h-[44px] hover:bg-coffee-bean/8 text-left">
                       <span className="favo-small text-coffee-bean font-semibold">{c.name}</span>
                       {c.loyaltyPoints > 0 && <span className="favo-caption text-crimson-carrot">{formatLoyaltyBalance(c.loyaltyPoints)}</span>}
                     </button>
@@ -489,16 +489,16 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               </button>
             )}
             <button type="button" onClick={() => setPackOpen(true)}
-              className="self-start flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-coffee-bean/8 min-h-[32px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
+              className="self-start flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-coffee-bean/8 min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
               aria-label="Buy coffee pack">
               <Package size={12} strokeWidth={2.25} /> Pack
             </button>
             <button type="button" onClick={() => setManageFavoOpen(true)}
-              className="favo-caption text-cool-steel/70 hover:text-coffee-bean underline underline-offset-2 self-start min-h-[28px]">
+              className="favo-caption text-cool-steel/70 hover:text-coffee-bean underline underline-offset-2 self-start min-h-[44px]">
               Manage Favo
             </button>
             <button type="button" onClick={() => { setCustomer(null); setQuery(""); }}
-              className="favo-caption text-cool-steel hover:text-coffee-bean underline underline-offset-2 mt-auto self-start min-h-[28px]">
+              className="favo-caption text-cool-steel hover:text-coffee-bean underline underline-offset-2 mt-auto self-start min-h-[44px]">
               Detach customer
             </button>
           </>
@@ -545,13 +545,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                             const idx = prev.findIndex(m => m.id === mod.id);
                             return idx === -1 ? prev : [...prev.slice(0, idx), ...prev.slice(idx + 1)];
                           })}
-                          className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 text-coffee-bean hover:bg-coffee-bean/8 disabled:opacity-30">
+                          className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 text-coffee-bean hover:bg-coffee-bean/8 disabled:opacity-30">
                           <Minus size={14} strokeWidth={2.25} />
                         </button>
                         <span className="favo-subhead w-5 text-center text-coffee-bean">{count}</span>
                         <button type="button" aria-label={`Increase ${mod.name}`}
                           onClick={() => setSelectedMods(prev => [...prev, mod])}
-                          className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 text-coffee-bean hover:bg-coffee-bean/8">
+                          className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 text-coffee-bean hover:bg-coffee-bean/8">
                           <Plus size={14} strokeWidth={2.25} />
                         </button>
                       </div>
@@ -603,12 +603,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               <div key={lineKey(item)} className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
                   <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity - 1)}
-                    className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
+                    className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
                     <Minus size={12} strokeWidth={2} />
                   </button>
                   <span className="favo-small text-coffee-bean w-5 text-center">{item.quantity}</span>
                   <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity + 1)}
-                    className="flex h-7 w-7 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
+                    className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
                     <Plus size={12} strokeWidth={2} />
                   </button>
                 </div>
@@ -622,7 +622,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                   {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
                 </span>
                 <button type="button" onClick={() => removeItem(lineKey(item))}
-                  className="flex h-7 w-7 items-center justify-center text-cool-steel hover:text-[var(--color-error)]">
+                  className="flex h-11 w-11 items-center justify-center text-cool-steel hover:text-[var(--color-error)]">
                   <Trash2 size={12} strokeWidth={2} />
                 </button>
               </div>
@@ -692,17 +692,17 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
         />
         {/* AT-146 — daily order history (wireframe screen 4) */}
         <a href="/pos/history" aria-label="Order history"
-          className="flex h-9 items-center px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
+          className="flex min-h-[44px] shrink-0 items-center px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
           History
         </a>
         {role === "admin" && (
           <a href="/admin" aria-label="Go to admin"
-            className="flex h-9 items-center px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
+            className="flex min-h-[44px] shrink-0 items-center px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
             Admin
           </a>
         )}
         <button type="button" onClick={handleSignOut} aria-label="Sign out"
-          className="flex h-9 w-9 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
           <LogOut size={16} strokeWidth={2} />
         </button>
       </div>
@@ -901,12 +901,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           <div className="flex items-center gap-1">
             {role === "admin" && (
               <a href="/admin" aria-label="Go to admin"
-                className="flex h-9 items-center px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
+                className="flex min-h-[44px] shrink-0 items-center px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
                 Admin
               </a>
             )}
             <button type="button" onClick={handleSignOut} aria-label="Sign out"
-              className="flex h-9 w-9 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
               <LogOut size={16} strokeWidth={2} />
             </button>
           </div>
@@ -1053,7 +1053,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                               // Pre-fill with the logged-in barista's own ID (L03: most discounts are self-applied)
                               setDiscountId(staffId);
                             }}
-                            className="flex items-center gap-1 favo-caption text-cool-steel hover:text-coffee-bean min-h-[32px] transition-colors">
+                            className="flex items-center gap-1 favo-caption text-cool-steel hover:text-coffee-bean min-h-[44px] transition-colors">
                             <Tag size={11} strokeWidth={2} /> Apply staff discount
                           </button>
                         ) : (
@@ -1063,7 +1063,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                             </p>
                             <input type="text" value={discountId} onChange={e => setDiscountId(e.target.value)}
                               placeholder="Override with different staff ID"
-                              className="w-full rounded-[2px] border border-cool-steel/30 bg-coffee-bean/8 px-2 py-1 text-coffee-bean favo-caption min-h-[32px] focus:border-crimson-carrot focus:outline-none" />
+                              className="w-full rounded-[2px] border border-cool-steel/30 bg-coffee-bean/8 px-2 py-1 text-coffee-bean favo-caption min-h-[44px] focus:border-crimson-carrot focus:outline-none" />
                             {discountMsg && (
                               <p className={["favo-caption", discountMsg.startsWith("✓") ? "text-[var(--color-success)]" : "text-[var(--color-error)]"].join(" ")}>
                                 {discountMsg}
@@ -1071,12 +1071,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                             )}
                             <div className="flex gap-1.5">
                               <button type="button" onClick={() => full && handleApplyDiscount(o.orderId, full)}
-                                className="flex-1 rounded-[2px] py-1 favo-caption min-h-[32px]"
+                                className="flex-1 rounded-[2px] py-1 favo-caption min-h-[44px]"
                                 style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontWeight: 700 }}>
                                 Apply
                               </button>
                               <button type="button" onClick={() => setShowDiscount(null)}
-                                className="rounded-[2px] border border-cool-steel/30 px-2 text-cool-steel hover:bg-coffee-bean/8 min-h-[32px]">
+                                className="rounded-[2px] border border-cool-steel/30 px-2 text-cool-steel hover:bg-coffee-bean/8 min-h-[44px]">
                                 <X size={11} strokeWidth={2} />
                               </button>
                             </div>
@@ -1088,7 +1088,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                     {/* Cancel */}
                     {o.state === "ordered" && cancelConfirm !== o.orderId && (
                       <button type="button" onClick={() => setCancelConfirm(o.orderId)}
-                        className="favo-caption text-cool-steel hover:text-[var(--color-error)] underline underline-offset-2 min-h-[28px] transition-colors">
+                        className="favo-caption text-cool-steel hover:text-[var(--color-error)] underline underline-offset-2 min-h-[44px] transition-colors">
                         Cancel order
                       </button>
                     )}
@@ -1096,11 +1096,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                       <div className="flex items-center gap-2">
                         <span className="favo-caption text-[var(--color-error)]">Cancel?</span>
                         <button type="button" onClick={() => handleCancel(o.orderId)}
-                          className="favo-caption rounded-[2px] border border-[var(--color-error)]/50 px-2 py-0.5 min-h-[28px] text-[var(--color-error)] hover:bg-[var(--color-error)]/10">
+                          className="favo-caption rounded-[2px] border border-[var(--color-error)]/50 px-2 py-0.5 min-h-[44px] text-[var(--color-error)] hover:bg-[var(--color-error)]/10">
                           Yes
                         </button>
                         <button type="button" onClick={() => setCancelConfirm(null)}
-                          className="favo-caption text-cool-steel hover:text-coffee-bean min-h-[28px] px-1 transition-colors">
+                          className="favo-caption text-cool-steel hover:text-coffee-bean min-h-[44px] px-1 transition-colors">
                           Keep
                         </button>
                       </div>

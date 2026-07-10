@@ -56,7 +56,9 @@ export default function StaffPushOptIn() {
   if (!visible) return null;
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-40 w-[calc(100%-2rem)] max-w-[420px] -translate-x-1/2 rounded-[2px] border border-cool-steel/25 bg-dark-teal-deep p-4 shadow-[var(--shadow-2)]">
+    // AT-138: anchored bottom-right rather than bottom-center — centered would
+    // sit directly over Zone B's Charge button and overlap its hit area.
+    <div className="fixed bottom-4 right-4 z-40 w-[calc(100%-2rem)] max-w-[420px] rounded-[2px] border border-cool-steel/25 bg-dark-teal-deep p-4 shadow-[var(--shadow-2)]">
       <div className="flex items-start gap-3">
         <Bell size={18} strokeWidth={2} className="text-crimson-carrot shrink-0 mt-0.5" />
         <div className="flex-1">
@@ -69,7 +71,7 @@ export default function StaffPushOptIn() {
               <p className="favo-small text-cool-steel">
                 Notifications are blocked. Allow them in your browser settings, then refresh.
               </p>
-              <button type="button" onClick={dismiss} className="ml-auto shrink-0 min-h-[40px] rounded-[4px] border border-cool-steel/30 px-4 favo-small text-cool-steel hover:bg-porcelain/10">
+              <button type="button" onClick={dismiss} className="ml-auto shrink-0 min-h-[44px] rounded-[4px] border border-cool-steel/30 px-4 favo-small text-cool-steel hover:bg-porcelain/10">
                 Dismiss
               </button>
             </div>
@@ -79,7 +81,7 @@ export default function StaffPushOptIn() {
                 type="button"
                 onClick={handleEnable}
                 disabled={loading}
-                className="flex min-h-[40px] items-center gap-2 rounded-[4px] bg-crimson-carrot px-4 transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
+                className="flex min-h-[44px] items-center gap-2 rounded-[4px] bg-crimson-carrot px-4 transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
                 style={{ color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}
               >
                 {loading ? <Loader2 size={14} strokeWidth={2} className="animate-spin" /> : "Enable"}
@@ -87,7 +89,7 @@ export default function StaffPushOptIn() {
               <button
                 type="button"
                 onClick={dismiss}
-                className="min-h-[40px] rounded-[4px] border border-cool-steel/30 px-4 favo-small text-cool-steel hover:bg-porcelain/10"
+                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 px-4 favo-small text-cool-steel hover:bg-porcelain/10"
               >
                 Not now
               </button>
@@ -98,7 +100,7 @@ export default function StaffPushOptIn() {
           type="button"
           onClick={dismiss}
           aria-label="Dismiss"
-          className="flex h-7 w-7 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
+          className="flex h-11 w-11 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
         >
           <X size={14} strokeWidth={2} />
         </button>

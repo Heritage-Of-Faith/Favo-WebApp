@@ -37,7 +37,7 @@ export default function StockBanner({ outOfStockItems }: Props) {
         type="button"
         onClick={() => setDismissedKey(key)}
         aria-label="Dismiss"
-        className="flex h-7 w-7 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
+        className="flex h-11 w-11 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
       >
         <X size={14} strokeWidth={2} />
       </button>
