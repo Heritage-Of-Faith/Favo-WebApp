@@ -148,15 +148,28 @@ describe("admin planner CRUD", () => {
     expect((await deleteTodaySession("os_1")).ok).toBe(false);
   });
 
-  it("add inserts silently (no push) and audits", async () => {
+  it("add inserts silently by default (no push) and audits", async () => {
     mockAuthorize.mockResolvedValue(ADMIN);
     mockReturning.mockResolvedValue([{ id: "os_9" }]);
+    selectQueue.push([]);            // isReopening check — no prior sessions today
     selectQueue.push([SESSION_ROW]); // sessions list for the response
     const res = await addTodaySession({ opensAt: "14:00", closesAt: "17:00" });
     await flush();
     expect(res.ok).toBe(true);
     expect(mockWriteAudit).toHaveBeenCalledTimes(1);
     expect(mockSendOpeningPush).not.toHaveBeenCalled();
+  });
+
+  it("add with notify=true pushes an opening notification (AT-134)", async () => {
+    mockAuthorize.mockResolvedValue(ADMIN);
+    mockReturning.mockResolvedValue([{ id: "os_9" }]);
+    selectQueue.push([]);            // isReopening check — no prior sessions today
+    selectQueue.push(SUBS);          // push subscriptions (async fan-out)
+    selectQueue.push([SESSION_ROW]); // sessions list for the response
+    const res = await addTodaySession({ opensAt: "14:00", notify: true });
+    await flush();
+    expect(res.ok).toBe(true);
+    expect(mockSendOpeningPush).toHaveBeenCalledWith(SUBS[0].pushSubscription, "14:00", false);
   });
 
   it("update returns NOT_FOUND for a session that isn't today's", async () => {
