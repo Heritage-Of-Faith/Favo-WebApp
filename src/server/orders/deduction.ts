@@ -30,6 +30,30 @@ import {
 // Re-export so callers only need one import
 export { DeductionError };
 
+// ─── Customisation → stock routing (AT-145) ────────────────────────────────────
+// deductForOrder historically ignored order_items.modifications entirely, so an
+// alt-milk pick still decremented whole milk. The café stocks exactly one
+// alt-milk (macadamia); when a line picks it, its milk comes off macadamia stock
+// instead of the whole-milk container.
+const WHOLE_MILK_CONTAINER = "inv_item_whole_milk_cups";
+const MACADAMIA_MILK_ITEM = "inv_item_macadamia_milk"; // ml-tracked (not a container)
+// A drink's milk serving. The container model treats a drink as "one cup" of
+// whole milk; macadamia is ml-tracked, so we deduct a fixed per-drink volume.
+const MACADAMIA_ML_PER_DRINK = 200;
+
+type OrderModification = { id?: string; name?: string };
+
+/** True when an order line's stored modifications include the macadamia-milk swap. */
+function wantsMacadamiaMilk(modifications: unknown): boolean {
+  if (!Array.isArray(modifications)) return false;
+  return modifications.some((m) => {
+    const mod = m as OrderModification;
+    const name = typeof mod.name === "string" ? mod.name.toLowerCase() : "";
+    const id = typeof mod.id === "string" ? mod.id.toLowerCase() : "";
+    return name.includes("macadamia") || id.includes("macadamia");
+  });
+}
+
 // ─── deductForOrder ───────────────────────────────────────────────────────────
 
 /**
@@ -62,6 +86,7 @@ export async function deductForOrder(
       menuItemId: orderItems.menuItemId,
       orderQty: orderItems.quantity,
       recipeId: menuItems.recipeId,
+      modifications: orderItems.modifications,
     })
     .from(orderItems)
     .innerJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
@@ -90,8 +115,24 @@ export async function deductForOrder(
       )
       .where(eq(recipeIngredients.recipeId, line.recipeId));
 
+    const macadamia = wantsMacadamiaMilk(line.modifications);
+
     for (const ing of ingredients) {
       if (ing.itemUnit === "cup") {
+        if (macadamia && ing.inventoryItemId === WHOLE_MILK_CONTAINER) {
+          // ── Alt-milk swap (AT-145): deduct macadamia (ml) instead of a whole-
+          //    milk cup. Macadamia isn't a container item, so it uses the
+          //    quantity path against a fixed per-drink serving.
+          await deductQuantity(
+            MACADAMIA_MILK_ITEM,
+            MACADAMIA_ML_PER_DRINK * line.orderQty,
+            "ml",
+            orderId,
+            staffId,
+            tx
+          );
+          continue;
+        }
         // ── Container model (milk & beans): one cup per drink ──────────────────
         await deductCups(ing.inventoryItemId, line.orderQty, orderId, staffId, tx);
       } else {

@@ -261,6 +261,70 @@ describe("deductForOrder — mocked DB", () => {
     expect(writeAudit).toHaveBeenCalledTimes(1);
   });
 
+  it("macadamia milk swap (AT-145): deducts macadamia ml, not the whole-milk cup", async () => {
+    const { deductForOrder } = await import("@/server/orders/deduction");
+
+    // Macadamia is ml-tracked → quantity path → pickActiveLot.
+    const pickActiveLot = vi.spyOn(
+      await import("@/server/inventory/lot-picker"),
+      "pickActiveLot"
+    ).mockResolvedValueOnce({ id: "lot_macadamia_001", currentStock: 1000 });
+    const pickOpenContainer = vi.spyOn(
+      await import("@/server/inventory/lot-picker"),
+      "pickOpenContainer"
+    );
+
+    const values = vi.fn().mockResolvedValue([]);
+    const tx = {
+      select: vi.fn()
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([
+                {
+                  orderItemId: "oi_1",
+                  menuItemId: "menu_latte",
+                  orderQty: 1,
+                  recipeId: "recipe_latte",
+                  modifications: [
+                    { id: "mod_latte_macadamia_milk", name: "Macadamia Milk", priceDeltaZar: 800 },
+                  ],
+                },
+              ]),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([
+                { inventoryItemId: "inv_item_whole_milk_cups", quantity: 1, itemUnit: "cup" },
+              ]),
+            }),
+          }),
+        }),
+      insert: vi.fn().mockReturnValue({ values }),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+      }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    await deductForOrder("order_001", tx as never, "staff_sam");
+
+    // Whole-milk container is NOT touched; 200 ml comes off the macadamia lot.
+    expect(pickOpenContainer).not.toHaveBeenCalled();
+    expect(pickActiveLot).toHaveBeenCalledWith("inv_item_macadamia_milk", expect.anything());
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inventoryLotId: "lot_macadamia_001",
+        delta: -200,
+        kind: "deduction",
+        relatedOrderId: "order_001",
+      })
+    );
+  });
+
   it("OUT_OF_STOCK has the correct error code", async () => {
     const { deductForOrder } = await import("@/server/orders/deduction");
 
