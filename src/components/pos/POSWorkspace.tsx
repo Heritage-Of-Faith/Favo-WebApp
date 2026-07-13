@@ -898,18 +898,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             <h2 className="favo-h3 text-coffee-bean">Open Orders</h2>
             <StreamChip status={status} />
           </div>
-          <div className="flex items-center gap-1">
-            {role === "admin" && (
-              <a href="/admin" aria-label="Go to admin"
-                className="flex min-h-[44px] shrink-0 items-center px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
-                Admin
-              </a>
-            )}
-            <button type="button" onClick={handleSignOut} aria-label="Sign out"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
-              <LogOut size={16} strokeWidth={2} />
-            </button>
-          </div>
         </div>
 
         {/* Order cards — accordion */}
