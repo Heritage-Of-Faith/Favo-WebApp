@@ -177,7 +177,7 @@ const adminSessionSchema = z.object({
  * opening/reopening notification only when `notify` is true.
  */
 export async function addTodaySession(
-  input: z.infer<typeof adminSessionSchema>
+  input: z.input<typeof adminSessionSchema>
 ): Promise<ActionResult<{ sessions: OpeningSession[] }>> {
   const auth = await authorize("admin");
   if (!auth.ok) return auth;
@@ -226,7 +226,7 @@ export async function addTodaySession(
  */
 export async function updateTodaySession(
   id: string,
-  input: z.infer<typeof adminSessionSchema>
+  input: z.input<typeof adminSessionSchema>
 ): Promise<ActionResult<{ sessions: OpeningSession[] }>> {
   const auth = await authorize("admin");
   if (!auth.ok) return auth;
