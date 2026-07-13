@@ -58,6 +58,13 @@ export const INVENTORY_ITEMS: SeedInventoryItem[] = [
     unit: "g",
     lowStockThreshold: 200, // 200g
   },
+  {
+    id: "inv_item_chai_powder",
+    name: "Chai Powder",
+    kind: "other",
+    unit: "g",
+    lowStockThreshold: 200, // 200g — mirrors hot chocolate powder
+  },
   // ── Container model (milk & beans) ──────────────────────────────────────────
   // Tracked in cups produced, not g/ml. A lot = one physical bag/carton; it is
   // opened on the POS and every coffee made deducts one cup. Threshold is in

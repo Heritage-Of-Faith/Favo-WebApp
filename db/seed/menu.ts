@@ -48,6 +48,10 @@ export const MENU_ITEMS: SeedMenuItem[] = [
   { id: "menu_mocha", name: "Mocha", category: "coffee", currentPriceZar: 4500 },
   // Hot Chocolate is new (AT-136/145) — no espresso, macadamia-toggle only.
   { id: "menu_hot_chocolate", name: "Hot Chocolate", category: "coffee", currentPriceZar: 4000 },
+  // Chai Latte — 5th item in the locked menu. Chai powder + steamed milk, no
+  // espresso (macadamia-toggle only, like Hot Chocolate). Base ingredient
+  // confirmed 2026-07-13 (Nikao): chai powder, 3–4 tsp + 200 ml milk.
+  { id: "menu_chai", name: "Chai Latte", category: "coffee", currentPriceZar: 2500 },
   // Cold — inactive, outside the locked 5-item menu.
   { id: "menu_cold_brew", name: "Cold Brew", category: "cold_brew", currentPriceZar: 4800, active: false },
   { id: "menu_iced_latte", name: "Iced Latte", category: "cold_brew", currentPriceZar: 4500, active: false },

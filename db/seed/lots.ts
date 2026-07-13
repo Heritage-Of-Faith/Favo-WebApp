@@ -97,6 +97,15 @@ export const INVENTORY_LOTS: SeedLot[] = [
     quantityReceived: "500.00", // 500 g
     openingDelta: 500,
   },
+  {
+    id: "lot_chai_powder_001",
+    inventoryItemId: "inv_item_chai_powder",
+    sourceName: "Placeholder — needs real supplier",
+    batchNumber: "CHAI-2026-05-01",
+    unitCostZar: "0.2000", // ~R200/kg estimate — recost via admin stock-take
+    quantityReceived: "500.00", // 500 g
+    openingDelta: 500,
+  },
 
   // ── Container model: bean bags (cups) ───────────────────────────────────────
   // 1 kg bag ≈ 140 shots → 140 cups. Bag cost R450 = 45000¢ → 321.4286 ¢/cup.

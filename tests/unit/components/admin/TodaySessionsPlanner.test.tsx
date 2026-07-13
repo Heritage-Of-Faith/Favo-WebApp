@@ -38,8 +38,18 @@ describe("TodaySessionsPlanner", () => {
     fireEvent.click(screen.getByRole("button", { name: /add session/i }));
     fireEvent.change(screen.getByLabelText("Opens at"), { target: { value: "14:00" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^save$/i })); });
-    expect(mockAdd).toHaveBeenCalledWith({ opensAt: "14:00", closesAt: null });
+    expect(mockAdd).toHaveBeenCalledWith({ opensAt: "14:00", closesAt: null, notify: false });
     expect(screen.getByText("First opening")).toBeDefined();
+  });
+
+  it("ticking Notify customers passes notify:true (AT-134)", async () => {
+    mockAdd.mockResolvedValue({ ok: true, data: { sessions: SESSIONS } });
+    render(<TodaySessionsPlanner initialSessions={[]} todayLabel="Thu 9 Jul" fallbackLabel="your usual Thursday schedule" />);
+    fireEvent.click(screen.getByRole("button", { name: /add session/i }));
+    fireEvent.change(screen.getByLabelText("Opens at"), { target: { value: "14:00" } });
+    fireEvent.click(screen.getByLabelText("Notify customers"));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^save$/i })); });
+    expect(mockAdd).toHaveBeenCalledWith({ opensAt: "14:00", closesAt: null, notify: true });
   });
 
   it("deletes a session through deleteTodaySession", async () => {
@@ -56,7 +66,7 @@ describe("TodaySessionsPlanner", () => {
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
     fireEvent.change(screen.getByLabelText("Opens at"), { target: { value: "08:00" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^save$/i })); });
-    expect(mockUpdate).toHaveBeenCalledWith("os_1", { opensAt: "08:00", closesAt: "12:00" });
+    expect(mockUpdate).toHaveBeenCalledWith("os_1", { opensAt: "08:00", closesAt: "12:00", notify: false });
     expect(screen.getByText(/08:00/)).toBeDefined();
   });
 

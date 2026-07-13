@@ -82,23 +82,23 @@ export const CUSTOMISATIONS: SeedCustomisation[] = [
   EXTRA_SHOT("americano"),
   DECAF("americano"),
 
-  // Cappuccino — shot + all 3 milk alternatives.
+  // Cappuccino — shot + macadamia. Oat & almond removed 2026-07-13 (Nikao):
+  // macadamia is the only alt-milk the café actually stocks.
   EXTRA_SHOT("cappuccino"),
-  OAT_MILK_OPTION("cappuccino"),
-  ALMOND_MILK_OPTION("cappuccino"),
   MACADAMIA_MILK_OPTION("cappuccino"),
   DECAF("cappuccino"),
 
-  // Mocha — same as Cappuccino.
+  // Mocha — same as Cappuccino (macadamia the only alt-milk).
   EXTRA_SHOT("mocha"),
-  OAT_MILK_OPTION("mocha"),
-  ALMOND_MILK_OPTION("mocha"),
   MACADAMIA_MILK_OPTION("mocha"),
   DECAF("mocha"),
 
   // Hot Chocolate — no espresso: macadamia toggle only, per the locked
   // wireframe brief (no shot stepper, no oat/almond).
   MACADAMIA_MILK_OPTION("hot_chocolate"),
+
+  // Chai Latte — like Hot Chocolate: no espresso, macadamia toggle only.
+  MACADAMIA_MILK_OPTION("chai"),
 
   // Legacy inactive espresso drinks — kept as-is (out of scope, not in the
   // locked 5-item menu, no inventory effects wired).

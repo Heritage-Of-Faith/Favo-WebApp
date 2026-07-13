@@ -11,8 +11,8 @@ import { ALERT_RECIPIENTS } from "@db/seed/alert-recipients";
 // ── Inventory items ───────────────────────────────────────────────────────────
 
 describe("seed: inventory items", () => {
-  it("has exactly 11 items (6 base + 5 cup-container items)", () => {
-    expect(INVENTORY_ITEMS).toHaveLength(11);
+  it("has exactly 12 items (7 base incl. chai powder + 5 cup-container items)", () => {
+    expect(INVENTORY_ITEMS).toHaveLength(12);
   });
 
   it("includes cup-container items for beans and all milks (AT-145)", () => {

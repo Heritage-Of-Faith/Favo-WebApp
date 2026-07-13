@@ -9,8 +9,9 @@
 // Notification rules (locked on the ticket, Nikao 2026-07-05):
 //  - Push fires on the FIRST submission of the day, or on a genuinely NEW
 //    session (a reopening). Re-confirming an existing time never re-sends.
-//  - Only the barista prompt notifies. Admin planning edits are silent —
-//    flagged on the ticket for review rather than assumed.
+//  - The barista prompt notifies automatically. Admin planning edits are silent
+//    by default but can opt in per action via `notify` (resolved 2026-07-13,
+//    Nikao: the admin chooses when a change is worth notifying customers).
 //  - The barista never records a closing time; closes_at is admin-only.
 
 import { z } from "zod";
@@ -133,33 +134,50 @@ export async function submitOpeningTime(
       : { ok: false, code: "DB_ERROR", message: "Could not record the opening time." };
   }
 
-  // Fan out to every subscribed customer — fire-and-forget, mirrors the
-  // operating-hours notify path so a push failure never fails the submit.
+  // Fan out to every subscribed customer — fire-and-forget so a push failure
+  // never fails the submit.
+  fanOutOpeningPush(time, isReopening);
+
+  const sessions = await listToday();
+  return { ok: true, data: { session: toView(inserted), notified: true, sessions } };
+}
+
+/**
+ * Push an opening/reopening notification to every subscribed customer.
+ * Fire-and-forget (mirrors the operating-hours notify path) — a push failure
+ * must never fail the action that triggered it.
+ */
+function fanOutOpeningPush(opensAt: string, isReopening: boolean): void {
   db.select({ id: customers.id, pushSubscription: customers.pushSubscription })
     .from(customers)
     .where(isNotNull(customers.pushSubscription))
     .then((subs) => {
       for (const sub of subs) {
         if (!isValidPushSubscription(sub.pushSubscription)) continue;
-        sendOpeningPush(sub.pushSubscription, time, isReopening).catch(
+        sendOpeningPush(sub.pushSubscription, opensAt, isReopening).catch(
           (err) => console.error("[push] sendOpeningPush failed", { customerId: sub.id }, err)
         );
       }
     })
     .catch((err) => console.error("[push] failed to fetch subscriptions for opening notify", err));
-
-  const sessions = await listToday();
-  return { ok: true, data: { session: toView(inserted), notified: true, sessions } };
 }
 
+// AT-134: admin edits do NOT auto-notify (unlike the barista prompt). The admin
+// opts in per action via `notify` (default false) — Nikao's decision, 2026-07-13:
+// admin planning edits are often quiet corrections, so the push is a deliberate
+// per-change choice, not automatic.
 const adminSessionSchema = z.object({
   opensAt: timeSchema,
   closesAt: timeSchema.nullable().optional(),
+  notify: z.boolean().optional().default(false),
 });
 
-/** Admin planner: add a session for today. Silent — no customer push. */
+/**
+ * Admin planner: add a session for today. Silent by default; pushes an
+ * opening/reopening notification only when `notify` is true.
+ */
 export async function addTodaySession(
-  input: z.infer<typeof adminSessionSchema>
+  input: z.input<typeof adminSessionSchema>
 ): Promise<ActionResult<{ sessions: OpeningSession[] }>> {
   const auth = await authorize("admin");
   if (!auth.ok) return auth;
@@ -167,7 +185,9 @@ export async function addTodaySession(
   if (!parsed.success) return { ok: false, code: "INVALID_INPUT", message: "Times must be HH:mm." };
 
   const date = todaySast();
-  await db.transaction(async (tx) => {
+  // A reopening if today already has at least one session before this add.
+  const isReopening = (await listToday()).length > 0;
+  const inserted = await db.transaction(async (tx) => {
     const txDb = tx as unknown as DB;
     const [row] = await tx
       .insert(openingSessions)
@@ -175,6 +195,7 @@ export async function addTodaySession(
         sessionDate: date, opensAt: parsed.data.opensAt,
         closesAt: parsed.data.closesAt ?? null, viaPos: false,
         createdByStaffId: auth.session.id,
+        notifiedAt: parsed.data.notify ? new Date() : null,
       })
       .onConflictDoNothing({ target: [openingSessions.sessionDate, openingSessions.opensAt] })
       .returning({ id: openingSessions.id });
@@ -188,14 +209,24 @@ export async function addTodaySession(
         txDb
       );
     }
+    return row ?? null;
   });
+
+  // Opt-in notify: only push when the admin asked AND a new row was created
+  // (a duplicate time hits onConflictDoNothing → no row → no push).
+  if (inserted && parsed.data.notify) {
+    fanOutOpeningPush(parsed.data.opensAt, isReopening);
+  }
   return { ok: true, data: { sessions: await listToday() } };
 }
 
-/** Admin planner: edit a session's times. Silent — no customer push. */
+/**
+ * Admin planner: edit a session's times. Silent by default; pushes only when
+ * `notify` is true (opt-in per edit).
+ */
 export async function updateTodaySession(
   id: string,
-  input: z.infer<typeof adminSessionSchema>
+  input: z.input<typeof adminSessionSchema>
 ): Promise<ActionResult<{ sessions: OpeningSession[] }>> {
   const auth = await authorize("admin");
   if (!auth.ok) return auth;
@@ -212,7 +243,11 @@ export async function updateTodaySession(
 
     await tx
       .update(openingSessions)
-      .set({ opensAt: parsed.data.opensAt, closesAt: parsed.data.closesAt ?? null })
+      .set({
+        opensAt: parsed.data.opensAt,
+        closesAt: parsed.data.closesAt ?? null,
+        ...(parsed.data.notify ? { notifiedAt: new Date() } : {}),
+      })
       .where(eq(openingSessions.id, id));
     await writeAudit(
       {
@@ -226,6 +261,8 @@ export async function updateTodaySession(
   });
 
   if (!updated) return { ok: false, code: "NOT_FOUND", message: "Session not found for today." };
+  // Opt-in notify: push the (possibly changed) opening time when the admin asked.
+  if (parsed.data.notify) fanOutOpeningPush(parsed.data.opensAt, false);
   return { ok: true, data: { sessions: await listToday() } };
 }
 
