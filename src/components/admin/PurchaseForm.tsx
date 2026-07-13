@@ -184,7 +184,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                     type="button"
                     onClick={() => setKind(k)}
                     aria-pressed={kind === k}
-                    className="min-h-10 flex-1 rounded-[var(--radius-btn)] border px-3 favo-small capitalize transition-colors"
+                    className="min-h-10 flex-1 rounded-[var(--radius-btn)] border px-3 favo-small capitalize transition-all hover:opacity-85 active:scale-[0.97]"
                     style={{
                       background: kind === k ? "var(--color-text-strong)" : "var(--color-surface)",
                       color: kind === k ? "var(--color-text-inverse)" : "var(--color-text-strong)",
@@ -230,8 +230,8 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                               sizeUnit: defaultSizeUnit(next?.kind),
                             });
                           }}
-                          className="h-10 w-full rounded-[var(--radius-btn)] border px-2 favo-small"
-                          style={{ background: "var(--color-surface)", color: "var(--color-text-strong)", borderColor: "var(--color-border-subtle)" }}
+                          className="h-10 w-full rounded-[var(--radius-btn)] border px-2 favo-small bg-[color:var(--color-surface)] transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
+                          style={{ color: "var(--color-text-strong)", borderColor: "var(--color-border-subtle)" }}
                         >
                           {items.map((it) => (
                             <option key={it.id} value={it.id}>
@@ -278,7 +278,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                         onClick={() => removeLine(i)}
                         disabled={lines.length === 1}
                         aria-label={`Remove line ${i + 1}`}
-                        className="flex h-10 w-9 items-center justify-center rounded-[var(--radius-btn)] disabled:opacity-30"
+                        className="flex h-10 w-9 items-center justify-center rounded-[var(--radius-btn)] transition-colors hover:bg-[color:var(--color-porcelain-soft)] active:scale-[0.94] disabled:opacity-30 disabled:hover:bg-transparent"
                         style={{ color: "var(--color-text-muted)" }}
                       >
                         ✕
@@ -290,7 +290,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
               <button
                 type="button"
                 onClick={addLine}
-                className="self-start min-h-10 favo-small underline"
+                className="self-start min-h-10 favo-small underline transition-opacity hover:opacity-70 active:opacity-50"
                 style={{ color: "var(--color-accent)" }}
               >
                 + Add lot line
