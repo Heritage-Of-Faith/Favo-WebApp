@@ -31,13 +31,6 @@ export const INVENTORY_ITEMS: SeedInventoryItem[] = [
     lowStockThreshold: 2000, // 2 L
   },
   {
-    id: "inv_item_oat_milk",
-    name: "Oat Milk",
-    kind: "milk",
-    unit: "ml",
-    lowStockThreshold: 1000, // 1 L
-  },
-  {
     id: "inv_item_macadamia_milk",
     name: "Macadamia Milk",
     kind: "milk",
@@ -68,6 +61,13 @@ export const INVENTORY_ITEMS: SeedInventoryItem[] = [
   {
     id: "inv_item_hot_choc_powder",
     name: "Hot Chocolate Powder",
+    kind: "other",
+    unit: "g",
+    lowStockThreshold: 200, // 200g
+  },
+  {
+    id: "inv_item_chai_powder",
+    name: "Chai Powder",
     kind: "other",
     unit: "g",
     lowStockThreshold: 200, // 200g

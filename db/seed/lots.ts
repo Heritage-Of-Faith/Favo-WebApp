@@ -36,12 +36,12 @@ export type SeedLot = {
 // SA best-estimate wholesale prices (May 2026):
 //   Specialty roasted beans  R450/kg  → 0.4500 ¢/g
 //   Full-cream milk          R28/L    → 0.0280 ¢/ml
-//   Oat milk                 R45/L    → 0.0450 ¢/ml
 //   Macadamia milk           R60/L    → 0.0600 ¢/ml
 //   8 oz cups                R1.20 ea → 120.0000 ¢/unit
 //   12 oz cups               R1.50 ea → 150.0000 ¢/unit
 //   Cup lids                 R0.80 ea → 80.0000 ¢/unit
 //   Hot chocolate powder     R180/kg  → 0.1800 ¢/g
+//   Chai powder              R200/kg  → 0.2000 ¢/g
 export const INVENTORY_LOTS: SeedLot[] = [
   {
     id: "lot_espresso_beans_001",
@@ -60,15 +60,6 @@ export const INVENTORY_LOTS: SeedLot[] = [
     unitCostZar: "0.0280",
     quantityReceived: "4000.00", // 4 L
     openingDelta: 4000,
-  },
-  {
-    id: "lot_oat_milk_001",
-    inventoryItemId: "inv_item_oat_milk",
-    sourceName: "Oatly SA",
-    batchNumber: "OAT-2026-05-01",
-    unitCostZar: "0.0450",
-    quantityReceived: "2000.00", // 2 L
-    openingDelta: 2000,
   },
   {
     id: "lot_macadamia_milk_001",
@@ -112,6 +103,15 @@ export const INVENTORY_LOTS: SeedLot[] = [
     sourceName: "Afrikoa",
     batchNumber: "AFK-2026-05-01",
     unitCostZar: "0.1800",
+    quantityReceived: "500.00", // 500 g
+    openingDelta: 500,
+  },
+  {
+    id: "lot_chai_powder_001",
+    inventoryItemId: "inv_item_chai_powder",
+    sourceName: "Estimated (recost at handover)",
+    batchNumber: "CHAI-2026-05-01",
+    unitCostZar: "0.2000", // R200/kg estimate — flagged for A8 recost
     quantityReceived: "500.00", // 500 g
     openingDelta: 500,
   },

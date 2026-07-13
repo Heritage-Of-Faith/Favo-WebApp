@@ -40,6 +40,7 @@ const CUP_8OZ = "inv_item_cup_8oz";
 const CUP_12OZ = "inv_item_cup_12oz";
 const LID = "inv_item_lid";
 const HOT_CHOC = "inv_item_hot_choc_powder";
+const CHAI_POWDER = "inv_item_chai_powder";
 
 export const RECIPES: RecipeSpec[] = [
   // ── Espresso ──────────────────────────────────────────────────────────────
@@ -142,6 +143,20 @@ export const RECIPES: RecipeSpec[] = [
       { inventoryItemId: BEANS, quantity: 1, unit: "cup", tolerancePct: 10 },
       { inventoryItemId: WHOLE_MILK, quantity: 1, unit: "cup", tolerancePct: 10 },
       { inventoryItemId: CUP_12OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
+      { inventoryItemId: LID, quantity: 1, unit: "unit", tolerancePct: 0 },
+    ],
+  },
+
+  // ── Chai Latte ────────────────────────────────────────────────────────────
+  // No espresso. 3–4 tsp chai powder (≈10 g) + 200 ml steamed milk (one cup from
+  // the open milk container) in an 8 oz cup.
+  {
+    id: "recipe_chai",
+    menuItemId: "menu_chai",
+    ingredients: [
+      { inventoryItemId: CHAI_POWDER, quantity: 10, unit: "g", tolerancePct: 20 },
+      { inventoryItemId: WHOLE_MILK, quantity: 1, unit: "cup", tolerancePct: 10 },
+      { inventoryItemId: CUP_8OZ, quantity: 1, unit: "unit", tolerancePct: 0 },
       { inventoryItemId: LID, quantity: 1, unit: "unit", tolerancePct: 0 },
     ],
   },

@@ -183,6 +183,13 @@
       "when": 1783091200885,
       "tag": "0025_audit_log_no_truncate",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784000000000,
+      "tag": "0026_chai_activation_milk_cleanup",
+      "breakpoints": true
     }
   ]
 }

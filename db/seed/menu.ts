@@ -47,6 +47,8 @@ export const MENU_ITEMS: SeedMenuItem[] = [
   // Tea
   { id: "menu_rooibos", name: "Rooibos Tea", category: "tea", currentPriceZar: 2800 },
   { id: "menu_english_breakfast", name: "English Breakfast Tea", category: "tea", currentPriceZar: 2800 },
+  // Chai (powder + steamed milk — has an ingredient recipe, unlike plain teas)
+  { id: "menu_chai", name: "Chai Latte", category: "tea", currentPriceZar: 2500 },
   // Food
   { id: "menu_croissant", name: "Butter Croissant", category: "food", currentPriceZar: 3500 },
   { id: "menu_muffin", name: "Blueberry Muffin", category: "food", currentPriceZar: 3000 },
