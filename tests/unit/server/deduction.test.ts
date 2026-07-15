@@ -173,7 +173,7 @@ describe("deductForOrder — mocked DB", () => {
     vi.spyOn(
       await import("@/server/inventory/lot-picker"),
       "pickActiveLot"
-    ).mockResolvedValueOnce({ id: "lot_001", currentStock: 3 });
+    ).mockResolvedValueOnce({ id: "lot_001", currentStock: 3, isLegacyLot: true });
 
     const tx = {
       select: vi.fn()
@@ -216,7 +216,7 @@ describe("deductForOrder — mocked DB", () => {
     vi.spyOn(
       await import("@/server/inventory/lot-picker"),
       "pickOpenContainer"
-    ).mockResolvedValueOnce({ id: "lot_milk_open", currentStock: 11 });
+    ).mockResolvedValueOnce({ id: "lot_milk_open", currentStock: 11, isLegacyLot: true });
 
     const values = vi.fn().mockResolvedValue([]);
     const tx = {
@@ -261,6 +261,59 @@ describe("deductForOrder — mocked DB", () => {
     expect(writeAudit).toHaveBeenCalledTimes(1);
   });
 
+  it("container lot (no predicted quantity): deducts the full amount in one shot, never auto-closes", async () => {
+    const { deductForOrder } = await import("@/server/orders/deduction");
+    const { writeAudit } = await import("@/server/audit");
+
+    // currentStock is already 0/negative (no starting balance) — a legacy lot
+    // would cap the take at 0 and try to span into another container; a
+    // container lot has nothing to cap against and just takes it all.
+    vi.spyOn(
+      await import("@/server/inventory/lot-picker"),
+      "pickOpenContainer"
+    ).mockResolvedValueOnce({ id: "lot_new_milk", currentStock: -12, isLegacyLot: false });
+
+    const values = vi.fn().mockResolvedValue([]);
+    const update = vi.fn().mockReturnValue({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    });
+    const tx = {
+      select: vi.fn()
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([
+                { orderItemId: "oi_1", menuItemId: "menu_latte", orderQty: 3, recipeId: "recipe_latte" },
+              ]),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([
+                { inventoryItemId: "inv_item_whole_milk_cups", quantity: 1, itemUnit: "cup" },
+              ]),
+            }),
+          }),
+        }),
+      insert: vi.fn().mockReturnValue({ values }),
+      update,
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    await deductForOrder("order_002", tx as never, "staff_sam");
+
+    // 3 lattes → all 3 cups taken in one movement, no spanning across lots.
+    expect(values).toHaveBeenCalledTimes(1);
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({ inventoryLotId: "lot_new_milk", delta: -3, kind: "deduction" })
+    );
+    // No countdown to hit zero against — never auto-closes.
+    expect(update).not.toHaveBeenCalled();
+    expect(writeAudit).toHaveBeenCalledTimes(1);
+  });
+
   it("AT-145: substitution deducts the chosen milk, not the base recipe ingredient", async () => {
     const { deductForOrder } = await import("@/server/orders/deduction");
     const { writeAudit } = await import("@/server/audit");
@@ -268,7 +321,7 @@ describe("deductForOrder — mocked DB", () => {
     vi.spyOn(
       await import("@/server/inventory/lot-picker"),
       "pickOpenContainer"
-    ).mockResolvedValueOnce({ id: "lot_oat_milk_open", currentStock: 10 });
+    ).mockResolvedValueOnce({ id: "lot_oat_milk_open", currentStock: 10, isLegacyLot: true });
 
     const values = vi.fn().mockResolvedValue([]);
     const tx = {
@@ -339,7 +392,7 @@ describe("deductForOrder — mocked DB", () => {
     vi.spyOn(
       await import("@/server/inventory/lot-picker"),
       "pickOpenContainer"
-    ).mockResolvedValue({ id: "lot_beans_open", currentStock: 100 });
+    ).mockResolvedValue({ id: "lot_beans_open", currentStock: 100, isLegacyLot: true });
 
     const values = vi.fn().mockResolvedValue([]);
     const tx = {
@@ -410,7 +463,7 @@ describe("deductForOrder — mocked DB", () => {
     vi.spyOn(
       await import("@/server/inventory/lot-picker"),
       "pickActiveLot"
-    ).mockResolvedValueOnce({ id: "lot_001", currentStock: 3 });
+    ).mockResolvedValueOnce({ id: "lot_001", currentStock: 3, isLegacyLot: true });
 
     const tx = {
       select: vi.fn()

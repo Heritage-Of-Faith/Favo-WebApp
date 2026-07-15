@@ -47,7 +47,12 @@ vi.mock("@db/index", () => {
   const tx = {
     execute: vi.fn().mockResolvedValue([]),
     select: vi.fn(() => selectChain()),
-    update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([]) })) })),
+    update: vi.fn(() => ({
+      set: (v: unknown) => {
+        txState.updateSet(v);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    })),
     insert: vi.fn(() => ({ values: (v: unknown) => txState.insertValues(v) })),
   };
   return {
@@ -72,6 +77,7 @@ beforeEach(() => {
   authState.ok = true;
   authState.session = { id: "staff_sam", name: "Sam", role: "barista" };
   txState.insertValues = vi.fn().mockResolvedValue([]);
+  txState.updateSet = vi.fn();
   queueSelects([]);
 });
 
@@ -158,6 +164,34 @@ describe("closeContainer", () => {
     const r = await closeContainer("lot_open");
     expect(r.ok).toBe(true);
     expect(txState.insertValues).not.toHaveBeenCalled();
+  });
+
+  it("container lot (no predicted quantity): finalises unitCostZar to real cost/cup", async () => {
+    // containerCostZar=3299 (R32,99), 38 cups actually made → running stock -38.
+    queueSelects([
+      [{ id: "lot_new", state: "open", containerCostZar: 3299 }],
+      [{ total: -38 }], // lotCups → -38 (no starting balance, just real usage)
+    ]);
+    const { closeContainer } = await import("@/server/actions/containers");
+    const r = await closeContainer("lot_new");
+    expect(r.ok).toBe(true);
+    // No write-off — remaining is negative, not > 0.
+    expect(txState.insertValues).not.toHaveBeenCalled();
+    expect(txState.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ state: "closed", unitCostZar: (3299 / 38).toFixed(4) })
+    );
+  });
+
+  it("legacy lot (predicted quantity): does not touch unitCostZar on close", async () => {
+    queueSelects([
+      [{ id: "lot_legacy", state: "open", containerCostZar: null }],
+      [{ total: 4 }], // 4 predicted cups left unused
+    ]);
+    const { closeContainer } = await import("@/server/actions/containers");
+    const r = await closeContainer("lot_legacy");
+    expect(r.ok).toBe(true);
+    const setArg = txState.updateSet.mock.calls[0][0];
+    expect(setArg).not.toHaveProperty("unitCostZar");
   });
 });
 

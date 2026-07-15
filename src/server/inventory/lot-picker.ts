@@ -47,6 +47,13 @@ export class DeductionError extends Error {
 export type ActiveLot = {
   id: string;
   currentStock: number;
+  /**
+   * True for legacy (predicted-quantity) lots, false for container lots with
+   * no predicted total. Only meaningful for lots returned by pickOpenContainer
+   * — pickActiveLot's quantity-model lots are always legacy and this is
+   * always true there.
+   */
+  isLegacyLot: boolean;
 };
 
 /**
@@ -99,6 +106,7 @@ export async function pickActiveLot(
   return {
     id: lotId,
     currentStock: stockRow?.total ?? 0,
+    isLegacyLot: true,
   };
 }
 
@@ -117,11 +125,19 @@ async function lotRunningStock(lotId: string, tx: DB): Promise<number> {
 
 /**
  * Container model (milk & beans): returns the currently-OPEN container for
- * `inventoryItemId` with cups remaining ≥ 1, opening the FIFO-oldest sealed
- * container if none is open or the open one is empty.
+ * `inventoryItemId`, opening the FIFO-oldest sealed container if none is open.
  *
- * No-delay guarantee: an empty/absent open container does not block the order —
- * the next sealed bottle/bag is opened automatically inside the same transaction.
+ * Two lot flavours, told apart by whether a predicted quantity was ever set:
+ *   - Legacy lots (quantityReceived set): the original countdown model — an
+ *     open lot auto-retires the moment its running stock hits zero, opening
+ *     the next sealed one within the same order if needed.
+ *   - Container lots (quantityReceived null, containerCostZar set): no
+ *     predicted total exists, so there's nothing to count down — the open
+ *     lot is always valid for deduction until a barista explicitly taps
+ *     Close on the POS. Actual cups made are simply tallied as they happen.
+ *
+ * No-delay guarantee: an absent open container does not block the order — the
+ * next sealed bottle/bag is opened automatically inside the same transaction.
  *
  * Concurrency: a per-item transaction advisory lock serialises the open-container
  * resolution so two simultaneous orders can't each open a fresh container (the
@@ -142,7 +158,7 @@ export async function pickOpenContainer(
 
   // 1. Is there an open container? Lock it for the duration of the txn.
   const openRows = await tx
-    .select({ id: inventoryLots.id })
+    .select({ id: inventoryLots.id, quantityReceived: inventoryLots.quantityReceived })
     .from(inventoryLots)
     .where(
       and(
@@ -155,11 +171,18 @@ export async function pickOpenContainer(
 
   if (openRows.length > 0) {
     const openId = openRows[0].id;
+    const isLegacyLot = openRows[0].quantityReceived !== null;
     const stock = await lotRunningStock(openId, tx);
-    if (stock >= 1) {
-      return { id: openId, currentStock: stock };
+
+    if (!isLegacyLot) {
+      // Container model: no predicted total, so no "empty" to detect here —
+      // stays open (and valid) until manually closed.
+      return { id: openId, currentStock: stock, isLegacyLot: false };
     }
-    // Open container is empty — retire it, then open the next sealed one.
+    if (stock >= 1) {
+      return { id: openId, currentStock: stock, isLegacyLot: true };
+    }
+    // Legacy open container is empty — retire it, then open the next sealed one.
     await tx
       .update(inventoryLots)
       .set({ state: "closed", closedAt: sql`now()` })
@@ -168,7 +191,7 @@ export async function pickOpenContainer(
 
   // 2. Open the FIFO-oldest sealed (active) container.
   const sealed = await tx
-    .select({ id: inventoryLots.id })
+    .select({ id: inventoryLots.id, quantityReceived: inventoryLots.quantityReceived })
     .from(inventoryLots)
     .where(
       and(
@@ -194,7 +217,7 @@ export async function pickOpenContainer(
     .where(eq(inventoryLots.id, newId));
 
   const stock = await lotRunningStock(newId, tx);
-  return { id: newId, currentStock: stock };
+  return { id: newId, currentStock: stock, isLegacyLot: sealed[0].quantityReceived !== null };
 }
 
 // ─── checkRecipeStock ─────────────────────────────────────────────────────────
@@ -236,23 +259,23 @@ export async function checkRecipeStock(
 
   for (const ing of ingredients) {
     if (ing.itemUnit === "cup") {
+      // Container lots (no predicted quantity) have no countable "remaining"
+      // to sum against orderQty — the only meaningful early check is whether
+      // a container physically exists to serve from at all. Legacy lots with
+      // a real predicted quantity are covered by the same existence check;
+      // pickOpenContainer/deductCups remain the authoritative guard either way.
       const [row] = await executor
-        .select({
-          total: sql<number>`COALESCE(SUM(${stockMovements.delta}), 0)::int`,
-        })
-        .from(stockMovements)
-        .innerJoin(
-          inventoryLots,
-          eq(inventoryLots.id, stockMovements.inventoryLotId)
-        )
+        .select({ id: inventoryLots.id })
+        .from(inventoryLots)
         .where(
           and(
             eq(inventoryLots.inventoryItemId, ing.inventoryItemId),
             sql`${inventoryLots.state} IN ('open', 'active')`
           )
-        );
+        )
+        .limit(1);
 
-      if ((row?.total ?? 0) < orderQty) {
+      if (!row) {
         return { ok: false, itemName: ing.itemName };
       }
     } else {

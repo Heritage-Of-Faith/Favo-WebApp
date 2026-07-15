@@ -1,9 +1,14 @@
 "use client";
 
 // Record-purchase dialog — task A10 (L10).
-// Source + kind (planned/emergency) + repeatable lot lines. Admin enters what
-// they paid per line (Rands) and the quantity received; unit cost is derived so
-// money stays as integer cents end to end.
+// Source + kind (planned/emergency) + repeatable lot lines.
+//
+// Two line shapes, per item unit:
+//   - Container items (unit='cup': milk & beans) — real-world size bought
+//     (e.g. 1L, 1kg) + what was paid. No cup yield is predicted or entered;
+//     actual cups made are only ever counted as they're used on the POS.
+//   - Everything else — quantity + total paid; unit cost is derived so money
+//     stays as integer cents end to end.
 //
 // L10: an emergency purchase by a non-admin is accepted but held
 // pending_admin_approval — the UI reflects this on submit.
@@ -24,13 +29,15 @@ import { Label } from "@/components/ui/label";
 import AlertTile from "@/components/shared/dashboard/AlertTile";
 import { recordPurchase } from "@/server/actions/purchases";
 import { parseZar } from "@/lib/format";
-import type { PurchaseKind, PurchaseLotItem } from "@/lib/types";
+import type { InventoryUnit, PurchaseKind, PurchaseLotItem } from "@/lib/types";
 // (PurchaseLotItem is the shared lot-line shape consumed by recordPurchase.)
 
 export interface PurchaseItemOption {
   id: string;
   name: string;
   unit: string;
+  /** Used to pick a sensible default size unit for container items (milk → l, bean → kg). */
+  kind?: string;
 }
 
 export interface PurchaseFormProps {
@@ -41,25 +48,40 @@ export interface PurchaseFormProps {
   onSaved: () => void;
 }
 
-type LineDraft = { inventoryItemId: string; quantity: string; total: string };
+const SIZE_UNITS: InventoryUnit[] = ["l", "kg", "ml", "g"];
 
-const emptyLine = (firstItemId: string): LineDraft => ({
-  inventoryItemId: firstItemId,
+function defaultSizeUnit(kind: string | undefined): InventoryUnit {
+  if (kind === "milk") return "l";
+  if (kind === "bean") return "kg";
+  return "l";
+}
+
+type LineDraft = {
+  inventoryItemId: string;
+  /** Container items: real size bought (e.g. "1", "2"). Others: quantity. */
+  quantity: string;
+  sizeUnit: InventoryUnit;
+  total: string;
+};
+
+const emptyLine = (firstItem: PurchaseItemOption | undefined): LineDraft => ({
+  inventoryItemId: firstItem?.id ?? "",
   quantity: "",
+  sizeUnit: defaultSizeUnit(firstItem?.kind),
   total: "",
 });
 
 export default function PurchaseForm({ items, canApprove, onClose, onSaved }: PurchaseFormProps) {
   const [sourceName, setSourceName] = useState("");
   const [kind, setKind] = useState<PurchaseKind>("planned");
-  const [lines, setLines] = useState<LineDraft[]>([emptyLine(items[0]?.id ?? "")]);
+  const [lines, setLines] = useState<LineDraft[]>([emptyLine(items[0])]);
   const [submitting, setSubmitting] = useState(false);
 
   function updateLine(i: number, patch: Partial<LineDraft>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   }
   function addLine() {
-    setLines((prev) => [...prev, emptyLine(items[0]?.id ?? "")]);
+    setLines((prev) => [...prev, emptyLine(items[0])]);
   }
   function removeLine(i: number) {
     setLines((prev) => (prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)));
@@ -81,20 +103,32 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
         return;
       }
       if (!Number.isFinite(qty) || qty <= 0) {
-        toast.error(`Line ${i + 1}: quantity must be greater than 0.`);
+        toast.error(`Line ${i + 1}: size/quantity must be greater than 0.`);
         return;
       }
       if (cents === null || cents <= 0) {
         toast.error(`Line ${i + 1}: enter a valid total paid.`);
         return;
       }
-      // Derive unit cost (cents per base unit) so total + unit cost agree.
-      built.push({
-        inventoryItemId: line.inventoryItemId,
-        quantity: qty,
-        unitCostZar: (cents / qty).toFixed(4),
-        totalZar: cents,
-      });
+
+      const isContainerItem = items.find((it) => it.id === line.inventoryItemId)?.unit === "cup";
+      if (isContainerItem) {
+        // Real size + cost paid — no cup yield predicted or entered.
+        built.push({
+          inventoryItemId: line.inventoryItemId,
+          containerSize: qty,
+          containerSizeUnit: line.sizeUnit,
+          totalZar: cents,
+        });
+      } else {
+        // Derive unit cost (cents per base unit) so total + unit cost agree.
+        built.push({
+          inventoryItemId: line.inventoryItemId,
+          quantity: qty,
+          unitCostZar: (cents / qty).toFixed(4),
+          totalZar: cents,
+        });
+      }
     }
 
     setSubmitting(true);
@@ -180,14 +214,22 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
               <Label>Lots received</Label>
               <div className="space-y-2">
                 {lines.map((line, i) => {
-                  const unit = items.find((it) => it.id === line.inventoryItemId)?.unit ?? "";
+                  const selectedItem = items.find((it) => it.id === line.inventoryItemId);
+                  const isContainerItem = selectedItem?.unit === "cup";
+                  const unit = selectedItem?.unit ?? "";
                   return (
                     <div key={i} className="flex items-end gap-2">
                       <div className="flex-1">
                         <select
                           aria-label={`Line ${i + 1} item`}
                           value={line.inventoryItemId}
-                          onChange={(e) => updateLine(i, { inventoryItemId: e.target.value })}
+                          onChange={(e) => {
+                            const next = items.find((it) => it.id === e.target.value);
+                            updateLine(i, {
+                              inventoryItemId: e.target.value,
+                              sizeUnit: defaultSizeUnit(next?.kind),
+                            });
+                          }}
                           className="h-10 w-full rounded-[var(--radius-btn)] border px-2 favo-small"
                           style={{ background: "var(--color-surface)", color: "var(--color-text-strong)", borderColor: "var(--color-border-subtle)" }}
                         >
@@ -198,15 +240,30 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                           ))}
                         </select>
                       </div>
-                      <div className="w-24">
+                      <div className="w-20">
                         <Input
-                          aria-label={`Line ${i + 1} quantity (${unit})`}
+                          aria-label={isContainerItem ? `Line ${i + 1} size` : `Line ${i + 1} quantity (${unit})`}
                           value={line.quantity}
                           onChange={(e) => updateLine(i, { quantity: e.target.value })}
                           inputMode="decimal"
-                          placeholder={`qty ${unit}`}
+                          placeholder={isContainerItem ? "size" : `qty ${unit}`}
                         />
                       </div>
+                      {isContainerItem && (
+                        <div className="w-20">
+                          <select
+                            aria-label={`Line ${i + 1} size unit`}
+                            value={line.sizeUnit}
+                            onChange={(e) => updateLine(i, { sizeUnit: e.target.value as InventoryUnit })}
+                            className="h-10 w-full rounded-[var(--radius-btn)] border px-2 favo-small bg-[color:var(--color-surface)] transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
+                            style={{ color: "var(--color-text-strong)", borderColor: "var(--color-border-subtle)" }}
+                          >
+                            {SIZE_UNITS.map((u) => (
+                              <option key={u} value={u}>{u}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <div className="w-28">
                         <Input
                           aria-label={`Line ${i + 1} total paid (R)`}

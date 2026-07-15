@@ -12,11 +12,13 @@ import {
   inventoryItems,
   inventoryLots,
   stockMovements,
+  menuItems,
 } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import type {
   ActionResult,
+  ContainerYield,
   InventoryItemStatus,
   InventoryLot,
   InventoryStatusMap,
@@ -49,6 +51,26 @@ async function itemRunningStock(itemId: string): Promise<number> {
     .innerJoin(inventoryLots, eq(stockMovements.inventoryLotId, inventoryLots.id))
     .where(eq(inventoryLots.inventoryItemId, itemId));
   return row?.total ?? 0;
+}
+
+/**
+ * Container items (unit='cup') have no predicted total to sum against a
+ * threshold once any container-model lot exists — the SUM trends negative as
+ * real cups are made from a bottle with no starting balance. "In stock" for
+ * these items just means a container physically exists to serve from.
+ */
+async function hasServableContainer(itemId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: inventoryLots.id })
+    .from(inventoryLots)
+    .where(
+      and(
+        eq(inventoryLots.inventoryItemId, itemId),
+        sql`${inventoryLots.state} IN ('open', 'active')`
+      )
+    )
+    .limit(1);
+  return Boolean(row);
 }
 
 function deriveStatus(
@@ -161,6 +183,9 @@ export async function listLots(
     quantityRemaining: remainingByLot.get(lot.id) ?? 0,
     openedAt: lot.openedAt?.toISOString() ?? null,
     closedAt: lot.closedAt?.toISOString() ?? null,
+    containerSize: lot.containerSize,
+    containerSizeUnit: lot.containerSizeUnit as InventoryLot["containerSizeUnit"],
+    containerCostZar: lot.containerCostZar,
     ...(isCup ? { cupsMade: cupsMadeByLot.get(lot.id) ?? 0 } : {}),
   }));
 
@@ -183,7 +208,10 @@ export async function listInventoryStatus(): Promise<
   const statusMap: InventoryStatusMap = {};
 
   for (const item of items) {
-    const currentStock = await itemRunningStock(item.id);
+    const isContainerItem = item.unit === "cup";
+    const currentStock = isContainerItem
+      ? ((await hasServableContainer(item.id)) ? 1 : 0)
+      : await itemRunningStock(item.id);
     statusMap[item.id] = {
       id: item.id,
       name: item.name,
@@ -191,7 +219,9 @@ export async function listInventoryStatus(): Promise<
       unit: item.unit as InventoryItemStatus["unit"],
       lowStockThreshold: item.lowStockThreshold,
       currentStock,
-      status: deriveStatus(currentStock, item.lowStockThreshold),
+      status: isContainerItem
+        ? (currentStock > 0 ? "ok" : "out")
+        : deriveStatus(currentStock, item.lowStockThreshold),
     };
   }
 
@@ -351,3 +381,102 @@ export async function updateLotCost(
 
 // logWaste moved to src/server/actions/waste.ts (G10)
 // runStockTake moved to src/server/actions/stock-takes.ts (G11)
+
+// ─── getContainerYields ───────────────────────────────────────────────────────
+
+/**
+ * Real yield per container (milk & beans): every closed container-model lot
+ * (real size/cost, no predicted quantity) plus any currently-open one, with
+ * the actual cups made and the real cost/cup that came out of it. Powers the
+ * admin yield report + chart. Legacy (predicted-quantity) lots are excluded —
+ * they never had a real container size/cost to report.
+ */
+export async function getContainerYields(): Promise<
+  ActionResult<{ yields: ContainerYield[] }>
+> {
+  const auth = await authorize(...READER_ROLES);
+  if (!auth.ok) return auth;
+
+  const lots = await db
+    .select({
+      id: inventoryLots.id,
+      inventoryItemId: inventoryLots.inventoryItemId,
+      itemName: inventoryItems.name,
+      itemKind: inventoryItems.kind,
+      sourceName: inventoryLots.sourceName,
+      containerSize: inventoryLots.containerSize,
+      containerSizeUnit: inventoryLots.containerSizeUnit,
+      containerCostZar: inventoryLots.containerCostZar,
+      state: inventoryLots.state,
+      openedAt: inventoryLots.openedAt,
+      closedAt: inventoryLots.closedAt,
+    })
+    .from(inventoryLots)
+    .innerJoin(inventoryItems, eq(inventoryLots.inventoryItemId, inventoryItems.id))
+    .where(
+      and(
+        sql`${inventoryLots.containerCostZar} IS NOT NULL`,
+        sql`${inventoryLots.state} IN ('open', 'closed')`
+      )
+    )
+    .orderBy(desc(inventoryLots.receivedAt));
+
+  if (lots.length === 0) {
+    return { ok: true, data: { yields: [] } };
+  }
+
+  const lotIds = lots.map((l) => l.id);
+  const cupsRows = await db
+    .select({
+      lotId: stockMovements.inventoryLotId,
+      cups: sql<number>`coalesce(sum(-${stockMovements.delta}), 0)::int`,
+    })
+    .from(stockMovements)
+    .where(and(inArray(stockMovements.inventoryLotId, lotIds), eq(stockMovements.kind, "deduction")))
+    .groupBy(stockMovements.inventoryLotId);
+  const cupsByLot = new Map(cupsRows.map((r) => [r.lotId, r.cups]));
+
+  // Per-lot breakdown by drink type — exact (menuItemId is tagged on every
+  // deduction, see stock_movements.menuItemId). Deductions made before that
+  // column existed have no menuItemId and are simply absent from this
+  // breakdown; cupsMade above (which doesn't depend on it) is unaffected.
+  const drinkRows = await db
+    .select({
+      lotId: stockMovements.inventoryLotId,
+      menuItemName: menuItems.name,
+      cups: sql<number>`coalesce(sum(-${stockMovements.delta}), 0)::int`,
+    })
+    .from(stockMovements)
+    .innerJoin(menuItems, eq(stockMovements.menuItemId, menuItems.id))
+    .where(and(inArray(stockMovements.inventoryLotId, lotIds), eq(stockMovements.kind, "deduction")))
+    .groupBy(stockMovements.inventoryLotId, menuItems.name);
+  const drinksByLot = new Map<string, { menuItemName: string; cups: number }[]>();
+  for (const row of drinkRows) {
+    const list = drinksByLot.get(row.lotId) ?? [];
+    list.push({ menuItemName: row.menuItemName, cups: row.cups });
+    drinksByLot.set(row.lotId, list);
+  }
+
+  const yields: ContainerYield[] = lots.map((lot) => {
+    const cupsMade = cupsByLot.get(lot.id) ?? 0;
+    return {
+      lotId: lot.id,
+      inventoryItemId: lot.inventoryItemId,
+      inventoryItemName: lot.itemName,
+      itemKind: lot.itemKind as ContainerYield["itemKind"],
+      sourceName: lot.sourceName,
+      containerSize: lot.containerSize,
+      containerSizeUnit: lot.containerSizeUnit as ContainerYield["containerSizeUnit"],
+      containerCostZar: lot.containerCostZar,
+      cupsMade,
+      costPerCupZar:
+        lot.containerCostZar && cupsMade > 0 ? lot.containerCostZar / cupsMade : null,
+      state: lot.state as "open" | "closed",
+      openedAt: lot.openedAt?.toISOString() ?? null,
+      closedAt: lot.closedAt?.toISOString() ?? null,
+      drinkBreakdown: (drinksByLot.get(lot.id) ?? []).sort((a, b) => b.cups - a.cups),
+    };
+  });
+
+  return { ok: true, data: { yields } };
+}

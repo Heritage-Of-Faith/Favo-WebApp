@@ -166,7 +166,7 @@ export async function deductForOrder(
 
       if (effectiveUnit === "cup") {
         // ── Container model (milk & beans): one cup per drink ──────────────────
-        await deductCups(effectiveInventoryItemId, line.orderQty, orderId, staffId, tx);
+        await deductCups(effectiveInventoryItemId, line.orderQty, orderId, line.menuItemId, staffId, tx);
       } else if (!substituteId) {
         // ── Quantity model (cups, lids, powder), no substitution: unchanged ────
         await deductQuantity(
@@ -174,6 +174,7 @@ export async function deductForOrder(
           ing.quantity * line.orderQty,
           effectiveUnit,
           orderId,
+          line.menuItemId,
           staffId,
           tx
         );
@@ -202,9 +203,9 @@ export async function deductForOrder(
       const addQty = (full.addsQuantity ?? 1) * line.orderQty;
 
       if (addItem.unit === "cup") {
-        await deductCups(full.addsInventoryItemId, addQty, orderId, staffId, tx);
+        await deductCups(full.addsInventoryItemId, addQty, orderId, line.menuItemId, staffId, tx);
       } else {
-        await deductQuantity(full.addsInventoryItemId, addQty, addItem.unit, orderId, staffId, tx);
+        await deductQuantity(full.addsInventoryItemId, addQty, addItem.unit, orderId, line.menuItemId, staffId, tx);
       }
     }
   }
@@ -220,32 +221,40 @@ type OrderModification = { id: string; name: string; priceDeltaZar: number };
 // ─── deductCups (container model) ──────────────────────────────────────────────
 
 /**
- * Deducts `cups` (one per drink) from the open container for `inventoryItemId`,
- * spanning into the next container if the open one runs out mid-order. Closes a
- * container the moment it empties so the POS never shows an empty open container.
+ * Deducts `cups` (one per drink) from the open container for `inventoryItemId`.
+ *
+ * Legacy lots (predicted quantity): spans into the next container if the open
+ * one runs out mid-order, auto-closing the moment it empties — unchanged from
+ * before.
+ *
+ * Container lots (no predicted quantity): there's no countdown to span
+ * against, so all `cups` are simply tallied onto whichever lot is open — it
+ * only stops being used when a barista explicitly taps Close on the POS.
  */
 async function deductCups(
   inventoryItemId: string,
   cups: number,
   orderId: string,
+  menuItemId: string,
   staffId: string,
   tx: DB
 ): Promise<void> {
   let remaining = cups;
   while (remaining > 0) {
-    // Open container with ≥1 cup (opens the next sealed one as needed, or throws).
+    // Open container (opens the next sealed one as needed, or throws).
     const lot = await pickOpenContainer(inventoryItemId, tx);
-    const take = Math.min(remaining, lot.currentStock);
+    const take = lot.isLegacyLot ? Math.min(remaining, lot.currentStock) : remaining;
 
     await tx.insert(stockMovements).values({
       inventoryLotId: lot.id,
       delta: -take,
       kind: "deduction",
       relatedOrderId: orderId,
+      menuItemId,
       byStaffId: staffId,
     });
 
-    const emptied = willDepleteLot(lot.currentStock, take);
+    const emptied = lot.isLegacyLot && willDepleteLot(lot.currentStock, take);
     if (emptied) {
       await tx
         .update(inventoryLots)
@@ -278,6 +287,7 @@ async function deductQuantity(
   needed: number,
   unit: string,
   orderId: string,
+  menuItemId: string,
   staffId: string,
   tx: DB
 ): Promise<void> {
@@ -296,6 +306,7 @@ async function deductQuantity(
     delta: -needed,
     kind: "deduction",
     relatedOrderId: orderId,
+    menuItemId,
     byStaffId: staffId,
   });
 

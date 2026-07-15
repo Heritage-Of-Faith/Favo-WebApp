@@ -169,8 +169,21 @@ export const inventoryLots = pgTable("inventory_lots", {
   // the order level. Admin recosts via A8 after launch (R10 mitigation).
   unitCostZar: numeric("unit_cost_zar", { precision: 10, scale: 4 }),
   // Quantity received when this lot was booked in (in the item's unit).
-  // For cup-unit container lots this is the expected cups the container yields.
+  // Legacy path only (non-cup items: cups, lids, syrup, powder). Cup-unit
+  // container lots (milk & beans) no longer predict a cup yield up front —
+  // see containerSize/containerSizeUnit/containerCostZar below — so this is
+  // null for any lot purchased after that change shipped.
   quantityReceived: numeric("quantity_received", { precision: 10, scale: 2 }),
+  // Real-world container purchase (milk & beans, replacing the predicted-cup-
+  // yield model above): the actual size bought (e.g. 1, 2) and its real unit
+  // (l for milk, kg for beans), plus the real Rand cost paid for that specific
+  // container. No yield is estimated at purchase time — actual cups made are
+  // only ever counted as they're deducted (see cupsMade), and unitCostZar for
+  // these lots is a historical average (see recordPurchase), later replaced by
+  // the lot's own actual cost/cup once closed (see closeContainer).
+  containerSize: numeric("container_size", { precision: 10, scale: 2 }),
+  containerSizeUnit: inventoryUnit("container_size_unit"),
+  containerCostZar: integer("container_cost_zar"),
 }, (t) => [
   // Container model invariant: at most one OPEN container per inventory item.
   // Enforced in the DB so two concurrent orders can't both open a new bottle.
@@ -186,6 +199,12 @@ export const stockMovements = pgTable("stock_movements", {
   delta: integer("delta").notNull(),
   kind: stockMovementKind("kind").notNull(),
   relatedOrderId: text("related_order_id"),
+  // Which drink this deduction came from, when it's a per-order-line deduction
+  // (kind='deduction' from deductForOrder) — lets the yield report break a
+  // container's cups down by drink type exactly, instead of guessing from
+  // relatedOrderId alone (which can't tell two drinks in the same order apart
+  // if both use the same ingredient). Null for restock/adjustment/stock_take.
+  menuItemId: text("menu_item_id").references(() => menuItems.id),
   at: now(),
   byStaffId: text("by_staff_id").references(() => staff.id),
 });
