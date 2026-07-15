@@ -9,16 +9,23 @@
 // LISTEN/NOTIFY needs a persistent Session pooler connection (port 5432) via
 // DATABASE_URL_SESSION. Without it the endpoint still emits heartbeats and the
 // client falls back to periodic polling.
+//
+// The actual LISTEN connection is shared across every connected admin tab
+// (see @/server/queue/broker) — this route only holds its own lightweight
+// stream open and subscribes to it.
 
-import postgres from "postgres";
 import { getSession } from "@/lib/auth/session";
 import { encodeComment } from "@/server/queue/sse";
+import { cogsBroker } from "@/server/queue/broker";
 
 export const dynamic = "force-dynamic";
+// Cost note (2026-07-15): previously unset (relying on the platform default)
+// and each connection opened its own dedicated DB connection — see the same
+// note on /api/queue/stream. Explicit + short, now that LISTEN is shared.
+export const maxDuration = 60;
 
 const ALLOWED_ROLES = new Set(["admin"]);
 const HEARTBEAT_MS = 30_000;
-const CHANNELS = ["cogs_changes", "inventory_changes"] as const;
 
 function encodeChange(channel: string): string {
   return `data: ${JSON.stringify({ type: "cogs_changed", channel, at: new Date().toISOString() })}\n\n`;
@@ -35,7 +42,7 @@ export async function GET() {
 
   const encoder = new TextEncoder();
   let timer: ReturnType<typeof setInterval> | undefined;
-  let listenClient: ReturnType<typeof postgres> | undefined;
+  let unsubscribe: (() => void) | undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -45,29 +52,13 @@ export async function GET() {
         controller.enqueue(encoder.encode(encodeHeartbeat()));
       }, HEARTBEAT_MS);
 
-      const sessionUrl = process.env.DATABASE_URL_SESSION;
-      if (sessionUrl) {
-        listenClient = postgres(sessionUrl, {
-          max: 1,
-          idle_timeout: 0,
-          connect_timeout: 10,
-          prepare: false,
-        });
-
-        for (const channel of CHANNELS) {
-          listenClient
-            .listen(channel, () => {
-              controller.enqueue(encoder.encode(encodeChange(channel)));
-            })
-            .catch(() => {
-              // LISTEN failed — client falls back to polling on heartbeat timeout
-            });
-        }
-      }
+      unsubscribe = cogsBroker.subscribe((channel) => {
+        controller.enqueue(encoder.encode(encodeChange(channel)));
+      });
     },
     cancel() {
       if (timer) clearInterval(timer);
-      void listenClient?.end();
+      unsubscribe?.();
     },
   });
 
