@@ -8,9 +8,11 @@ import type { CSSProperties } from "react";
 import { redirect } from "next/navigation";
 import { getCustomerSummary, listCustomerOrders } from "@/server/actions/customer";
 import { getOperatingHours } from "@/server/actions/hours";
+import { getMenu } from "@/server/actions/menu";
+import { getFavo } from "@/server/actions/favo";
 import LoyaltyCard from "@/components/customer/LoyaltyCard";
-import LoyaltyValueCard from "@/components/customer/LoyaltyValueCard";
 import PackList from "@/components/customer/PackList";
+import FavoSection from "@/components/customer/FavoSection";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
 import WelcomeModal from "@/components/customer/WelcomeModal";
 
@@ -105,11 +107,6 @@ const S: Record<string, CSSProperties> = {
     opacity: 0.55,
     margin: 0,
   },
-  twoCol: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 16,
-  },
 };
 
 export default async function CustomerDashboard() {
@@ -122,11 +119,21 @@ export default async function CustomerDashboard() {
   }
 
   const summary = summaryRes.ok ? summaryRes.data : null;
-  const [ordersRes, hoursRes] = await Promise.all([
+  const [ordersRes, hoursRes, menuRes] = await Promise.all([
     listCustomerOrders(10),
     getOperatingHours().catch(() => ({ ok: false as const, code: "FETCH_ERROR", message: "Hours unavailable" })),
+    getMenu().catch(() => ({ ok: false as const, code: "FETCH_ERROR", message: "Menu unavailable" })),
   ]);
   const orders = ordersRes.ok ? ordersRes.data : [];
+
+  // AT-143 — same pattern as /loyalty: fetch the saved Favo once we know who
+  // the customer is, so it can be edited above "Recent orders" too.
+  const favoCustomerId = summary?.customerId ?? null;
+  const favoMenu = menuRes.ok ? menuRes.data : [];
+  const favoRes = favoCustomerId
+    ? await getFavo(favoCustomerId).catch(() => ({ ok: false as const, code: "FETCH_ERROR", message: "Favo unavailable" }))
+    : null;
+  const initialFavo = favoRes?.ok ? favoRes.data.favo : null;
 
   const todayDow = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Africa/Johannesburg" })
@@ -160,13 +167,15 @@ export default async function CustomerDashboard() {
           </section>
         )}
 
-        {/* Loyalty is the hero card (largest number on the page). */}
+        {/* Loyalty is the hero card (largest number on the page), money-first. */}
         <LoyaltyCard points={summary?.loyaltyPoints ?? 0} />
 
-        <div style={S.twoCol}>
-          <LoyaltyValueCard loyaltyPoints={summary?.loyaltyPoints ?? 0} />
-          <PackList activePackCount={summary?.activePackCount ?? 0} />
-        </div>
+        <PackList activePackCount={summary?.activePackCount ?? 0} />
+
+        {/* AT-143 — Your Favo (saved usual order), same picker as POS/loyalty page */}
+        {favoCustomerId && favoMenu.length > 0 && (
+          <FavoSection customerId={favoCustomerId} menu={favoMenu} initialFavo={initialFavo} />
+        )}
 
         <OrderHistoryList orders={orders} />
 

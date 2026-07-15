@@ -4,42 +4,28 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import LoyaltyCard from "@/components/customer/LoyaltyCard";
-import LoyaltyValueCard from "@/components/customer/LoyaltyValueCard";
 import PackList from "@/components/customer/PackList";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
 import type { CustomerOrder } from "@/lib/customer/contract";
 
 describe("LoyaltyCard", () => {
-  it("shows the points integer prominently", () => {
+  it("shows the Rand value first, points as subtext (money-first, AT-139)", () => {
     render(<LoyaltyCard points={45} />);
-    expect(screen.getByText("45")).toBeInTheDocument();
+    expect(screen.getByText(/0,00/)).toBeInTheDocument();
+    expect(screen.getByText(/45 pts/)).toBeInTheDocument();
     expect(screen.getByText(/55 points to your next R20 reward/i)).toBeInTheDocument();
   });
 
-  it("shows reward-ready message once at/over 100", () => {
+  it("shows R20 for 100 pts (one whole redemption unit) and reward-ready message", () => {
     render(<LoyaltyCard points={120} />);
-    expect(screen.getByText("120")).toBeInTheDocument();
-    expect(screen.getByText(/1 reward ready — R20 off/i)).toBeInTheDocument();
-  });
-});
-
-describe("LoyaltyValueCard", () => {
-  it("shows R20 for 100 pts (one whole redemption unit) and redeem prompt", () => {
-    render(<LoyaltyValueCard loyaltyPoints={100} />);
     expect(screen.getByText(/20,00/)).toBeInTheDocument();
-    expect(screen.getByText(/redeem at the counter/i)).toBeInTheDocument();
+    expect(screen.getByText(/120 pts/)).toBeInTheDocument();
+    expect(screen.getByText(/1 reward ready — R20 off/i)).toBeInTheDocument();
   });
 
   it("floors to whole redemption units: 250 pts shows R40 (2 units), not R50", () => {
-    render(<LoyaltyValueCard loyaltyPoints={250} />);
+    render(<LoyaltyCard points={250} />);
     expect(screen.getByText(/40,00/)).toBeInTheDocument();
-    expect(screen.getByText(/redeem at the counter/i)).toBeInTheDocument();
-  });
-
-  it("shows R0 and not-enough message when under 100 pts", () => {
-    render(<LoyaltyValueCard loyaltyPoints={45} />);
-    expect(screen.getByText(/0,00/)).toBeInTheDocument();
-    expect(screen.getByText(/not enough points to redeem yet/i)).toBeInTheDocument();
   });
 });
 

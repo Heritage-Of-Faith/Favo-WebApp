@@ -1,9 +1,12 @@
 // LoyaltyCard — owner: Nikao (task N13, AT-65)
-// Presentational + server-safe (no client hooks). The points integer is the
-// largest typographic element on the card (acceptance criterion).
+// Presentational + server-safe (no client hooks). Money-first hero, matching
+// the POS/loyalty-page rule (AT-139, POS_REBUILD_DECISIONS.md): the Rand
+// value is the largest element, points are the subtext — never the reverse.
 // Read-only: redemption happens at the counter, never here (L05 / L06 / L16).
 
 import type { CSSProperties } from "react";
+import { formatZar } from "@/lib/format";
+import { pointsValueZar } from "@/server/loyalty/calc";
 
 /** Points needed for one R20 reward (L06: 100 pts = R20 off). */
 const REDEEM_AT = 100;
@@ -34,6 +37,7 @@ const label: CSSProperties = {
 
 export default function LoyaltyCard({ points }: LoyaltyCardProps) {
   const safePoints = Math.max(0, Math.floor(points));
+  const valueZar = pointsValueZar(safePoints);
   const redeemableUnits = Math.floor(safePoints / REDEEM_AT);
   const intoCycle = safePoints % REDEEM_AT;
   const progressPct = (intoCycle / REDEEM_AT) * 100;
@@ -50,9 +54,9 @@ export default function LoyaltyCard({ points }: LoyaltyCardProps) {
 
   return (
     <section style={card} aria-label="Loyalty points">
-      <p style={label}>Loyalty points</p>
+      <p style={label}>Loyalty balance</p>
 
-      {/* Hero number — the largest single element on the card. */}
+      {/* Hero number — the Rand value, largest single element on the card. */}
       <p
         style={{
           fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
@@ -64,7 +68,10 @@ export default function LoyaltyCard({ points }: LoyaltyCardProps) {
           margin: 0,
         }}
       >
-        {safePoints}
+        {formatZar(valueZar)}{" "}
+        <span style={{ fontSize: "0.4em", fontWeight: 400, color: "var(--color-cool-steel)" }}>
+          ({safePoints} pts)
+        </span>
       </p>
 
       {/* Reward pips — one dot per redeemable R20 reward, up to 5 visible. */}
