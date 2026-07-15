@@ -5,17 +5,24 @@
 // LISTEN/NOTIFY requires a persistent Session pooler connection (port 5432).
 // The Transaction pooler (DATABASE_URL, port 6543) does not support LISTEN.
 // Set DATABASE_URL_SESSION to the Supabase Session pooler URL.
+//
+// The actual LISTEN connection is shared across every connected client (see
+// @/server/queue/broker) — this route only holds its own lightweight stream
+// open and subscribes to it.
 
-import postgres from "postgres";
 import { getSession } from "@/lib/auth/session";
 import { encodeSSE, encodeComment, heartbeat, HEARTBEAT_MS } from "@/server/queue/sse";
+import { orderChangesBroker } from "@/server/queue/broker";
 import type { QueueEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-// Allow SSE connections to stay open for up to 5 minutes on Vercel Pro.
-// Without this, the default 10–15s function timeout kills the connection,
-// forcing a reconnect cycle that can delay queue updates by several seconds.
-export const maxDuration = 300;
+// Cost note (2026-07-15): this used to be 300s, with each connection also
+// opening its own dedicated DB connection — weeks of always-on POS/admin tabs
+// blew well past the Vercel plan's included compute. 60s + the shared broker
+// above cuts worst-case per-invocation duration 5x; the client (useOrderStream)
+// already reconnects with backoff + a full resync on every disconnect, so a
+// more frequent reconnect cycle is a minor cost, not a correctness issue.
+export const maxDuration = 60;
 
 export async function GET() {
   const session = await getSession();
@@ -25,7 +32,7 @@ export async function GET() {
 
   const encoder = new TextEncoder();
   let timer: ReturnType<typeof setInterval> | undefined;
-  let listenClient: ReturnType<typeof postgres> | undefined;
+  let unsubscribe: (() => void) | undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -37,36 +44,21 @@ export async function GET() {
         controller.enqueue(encoder.encode(encodeSSE(heartbeat(at))));
       }, HEARTBEAT_MS);
 
-      // Postgres LISTEN → SSE bridge.
-      // Requires DATABASE_URL_SESSION (Session pooler, port 5432).
-      // Without it the endpoint still works — clients get heartbeats only
-      // and the POS falls back to polling on reconnect.
-      const sessionUrl = process.env.DATABASE_URL_SESSION;
-      if (sessionUrl) {
-        listenClient = postgres(sessionUrl, {
-          max: 1,
-          idle_timeout: 0, // keep alive indefinitely for LISTEN
-          connect_timeout: 10,
-          prepare: false,
-        });
-
-        listenClient
-          .listen("order_changes", (payload) => {
-            try {
-              const event = JSON.parse(payload) as QueueEvent;
-              controller.enqueue(encoder.encode(encodeSSE(event)));
-            } catch {
-              // Ignore malformed payloads — don't crash the stream
-            }
-          })
-          .catch(() => {
-            // LISTEN failed — clients will reconnect via heartbeat timeout
-          });
-      }
+      // Shared LISTEN → SSE bridge (see @/server/queue/broker). Without
+      // DATABASE_URL_SESSION configured, subscribers just get heartbeats and
+      // the POS falls back to polling on reconnect.
+      unsubscribe = orderChangesBroker.subscribe((_channel, payload) => {
+        try {
+          const event = JSON.parse(payload) as QueueEvent;
+          controller.enqueue(encoder.encode(encodeSSE(event)));
+        } catch {
+          // Ignore malformed payloads — don't crash the stream
+        }
+      });
     },
     cancel() {
       if (timer) clearInterval(timer);
-      void listenClient?.end();
+      unsubscribe?.();
     },
   });
 
