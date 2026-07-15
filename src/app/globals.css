@@ -112,6 +112,13 @@ a:hover { color: var(--color-coffee-bean); }
 hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(--spacing-l) 0; }
 
 /* ── Semantic type classes ── */
+/* Wrapped in @layer components: Tailwind v4 emits utilities in @layer
+   utilities, and unlayered CSS always beats layered CSS regardless of source
+   order. Without this, a hardcoded color here (favo-body, favo-label/caption,
+   favo-cta) permanently wins over a co-applied text-* utility (e.g.
+   "favo-body text-porcelain/80" on a dark background), no matter which class
+   comes last in the className string. */
+@layer components {
 .favo-hero {
   font-family: var(--font-display);
   font-weight: 900;
@@ -188,6 +195,7 @@ hr { border: 0; border-top: 1px solid var(--color-porcelain-soft); margin: var(-
   letter-spacing: var(--tracking-cta);
   text-transform: uppercase;
   color: var(--color-crimson-carrot);
+}
 }
 
 /* ─── Admin surface headings ───────────────────────────────────────────────── */
