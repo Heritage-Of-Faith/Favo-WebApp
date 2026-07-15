@@ -14,7 +14,7 @@ export default async function PurchasesPage() {
 
   const [purchasesRes, inventoryRes] = await Promise.all([listPurchases(), listInventory()]);
   const items = inventoryRes.ok
-    ? inventoryRes.data.items.map((i) => ({ id: i.id, name: i.name, unit: i.unit }))
+    ? inventoryRes.data.items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, kind: i.kind }))
     : [];
 
   return (

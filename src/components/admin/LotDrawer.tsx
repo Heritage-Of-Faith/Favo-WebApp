@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { listLots, updateLotCost } from "@/server/actions/inventory";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatZar } from "@/lib/format";
 import { freshness } from "@/lib/status/freshness";
 import StatusBadge, { freshnessVariant } from "@/components/shared/StatusBadge";
 import type { InventoryItemStatus, InventoryLot } from "@/lib/types";
@@ -157,8 +157,16 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
                       </span>
                     </Field>
                   )}
+                  {/* Legacy quantity-model lots only — container lots never set this. */}
                   {lot.quantityReceived && <Field label="Received qty">{lot.quantityReceived}</Field>}
-                  {/* Container model: cups made + open/close timeline */}
+                  {/* Container model (milk & beans): real size bought + cost paid — no
+                      predicted yield, actual cups made is the only yield number. */}
+                  {lot.containerSize && (
+                    <Field label="Size">{lot.containerSize} {lot.containerSizeUnit}</Field>
+                  )}
+                  {lot.containerCostZar != null && (
+                    <Field label="Paid">{formatZar(lot.containerCostZar)}</Field>
+                  )}
                   {item.unit === "cup" && (
                     <Field label="Cups made">{lot.cupsMade ?? 0}</Field>
                   )}

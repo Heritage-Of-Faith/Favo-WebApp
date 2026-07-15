@@ -7,12 +7,13 @@
 // listPurchases: admin + finance + manager read.
 // Docs: docs/API.md · docs/BUSINESS_RULES.md L08 L10
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   purchases,
   inventoryLots,
   stockMovements,
+  inventoryItems,
 } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
@@ -30,6 +31,57 @@ const RECORDER_ROLES = ["barista", "admin"] as const;
 
 // Input types (PurchaseLotItem, RecordPurchaseInput) now live in @/lib/types so
 // both this action and the admin PurchaseForm share one definition.
+
+// ─── getHistoricalCostPerCup ──────────────────────────────────────────────────
+
+/**
+ * Auto-learned cost/cup for a container item (milk & beans), used as the live
+ * COGS estimate for a lot while it's still open — never a value the admin
+ * types in. Weighted average of (containerCostZar / cupsMade) across every
+ * CLOSED lot of this item that actually made at least one cup. Returns null
+ * if no closed lot with real yield data exists yet (e.g. the very first
+ * container ever bought for this item) — COGS simply won't count it until
+ * one does, rather than guessing.
+ */
+async function getHistoricalCostPerCup(
+  inventoryItemId: string,
+  tx: DB
+): Promise<string | null> {
+  const closedLots = await tx
+    .select({ id: inventoryLots.id, containerCostZar: inventoryLots.containerCostZar })
+    .from(inventoryLots)
+    .where(
+      and(
+        eq(inventoryLots.inventoryItemId, inventoryItemId),
+        eq(inventoryLots.state, "closed"),
+        isNotNull(inventoryLots.containerCostZar)
+      )
+    );
+  if (closedLots.length === 0) return null;
+
+  const lotIds = closedLots.map((l) => l.id);
+  const cupsRows = await tx
+    .select({
+      lotId: stockMovements.inventoryLotId,
+      cups: sql<number>`coalesce(sum(-${stockMovements.delta}), 0)::int`,
+    })
+    .from(stockMovements)
+    .where(and(inArray(stockMovements.inventoryLotId, lotIds), eq(stockMovements.kind, "deduction")))
+    .groupBy(stockMovements.inventoryLotId);
+  const cupsByLot = new Map(cupsRows.map((r) => [r.lotId, r.cups]));
+
+  let totalCostZar = 0;
+  let totalCups = 0;
+  for (const lot of closedLots) {
+    const cups = cupsByLot.get(lot.id) ?? 0;
+    if (cups > 0 && lot.containerCostZar) {
+      totalCostZar += lot.containerCostZar;
+      totalCups += cups;
+    }
+  }
+  if (totalCups === 0) return null;
+  return (totalCostZar / totalCups).toFixed(4);
+}
 
 // ─── listPurchases ────────────────────────────────────────────────────────────
 
@@ -107,11 +159,48 @@ export async function recordPurchase(
         message: `totalZar for item ${item.inventoryItemId} must be a positive integer.`,
       };
     }
-    if (item.quantity <= 0) {
+    // Container items (unit='cup') send containerSize instead of quantity —
+    // which shape applies is decided below, per-item, from the item's own
+    // unit (not trusting the client's shape). Both must be positive if present.
+    if (item.quantity !== undefined && item.quantity <= 0) {
       return {
         ok: false,
         code: "VALIDATION_ERROR",
         message: `quantity for item ${item.inventoryItemId} must be positive.`,
+      };
+    }
+    if (item.containerSize !== undefined && item.containerSize <= 0) {
+      return {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: `containerSize for item ${item.inventoryItemId} must be positive.`,
+      };
+    }
+  }
+
+  // Look up each item's real unit server-side — the container-purchase model
+  // (no predicted yield) only applies to unit='cup' items (milk & beans);
+  // everything else keeps the existing quantity-received model unchanged.
+  const itemUnits = await db
+    .select({ id: inventoryItems.id, unit: inventoryItems.unit })
+    .from(inventoryItems)
+    .where(inArray(inventoryItems.id, input.items.map((i) => i.inventoryItemId)));
+  const unitById = new Map(itemUnits.map((i) => [i.id, i.unit]));
+
+  for (const item of input.items) {
+    const isContainerItem = unitById.get(item.inventoryItemId) === "cup";
+    if (isContainerItem && (item.containerSize === undefined || item.containerSizeUnit === undefined)) {
+      return {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: `${item.inventoryItemId} is a container item — provide containerSize and containerSizeUnit, not quantity.`,
+      };
+    }
+    if (!isContainerItem && (item.quantity === undefined || item.unitCostZar === undefined)) {
+      return {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: `${item.inventoryItemId} — provide quantity and unitCostZar.`,
       };
     }
   }
@@ -128,24 +217,43 @@ export async function recordPurchase(
     const txDb = tx as unknown as DB;
 
     for (const item of input.items) {
-      // 1. Create lot
+      const isContainerItem = unitById.get(item.inventoryItemId) === "cup";
+
+      // 1. Create lot — container items (milk & beans) record the real size
+      //    bought and cost paid, no predicted cup yield; unitCostZar is a
+      //    historical average (or null until one exists) rather than a
+      //    number derived from a guessed quantity.
       const [lot] = await tx
         .insert(inventoryLots)
-        .values({
-          inventoryItemId: item.inventoryItemId,
-          sourceName: input.sourceName,
-          unitCostZar: item.unitCostZar,
-          quantityReceived: String(item.quantity),
-          state: lotState,
-        })
+        .values(
+          isContainerItem
+            ? {
+                inventoryItemId: item.inventoryItemId,
+                sourceName: input.sourceName,
+                containerSize: String(item.containerSize),
+                containerSizeUnit: item.containerSizeUnit,
+                containerCostZar: item.totalZar,
+                unitCostZar: await getHistoricalCostPerCup(item.inventoryItemId, txDb),
+                state: lotState,
+              }
+            : {
+                inventoryItemId: item.inventoryItemId,
+                sourceName: input.sourceName,
+                unitCostZar: item.unitCostZar,
+                quantityReceived: String(item.quantity),
+                state: lotState,
+              }
+        )
         .returning({ id: inventoryLots.id });
 
-      // 2. Restock movement (only for active lots; quarantined lots
-      //    don't add to running stock until approved)
-      if (!pendingApproval) {
+      // 2. Restock movement — only for the legacy quantity model. Container
+      //    items start with zero movements (nothing consumed yet); they have
+      //    no predicted total to restock against, so there's nothing to write.
+      if (!pendingApproval && !isContainerItem) {
+        // Validated above: non-container items always carry `quantity`.
         await tx.insert(stockMovements).values({
           inventoryLotId: lot.id,
-          delta: item.quantity,
+          delta: item.quantity!,
           kind: "restock",
           byStaffId: session.id,
         });
@@ -175,12 +283,20 @@ export async function recordPurchase(
           actorId: session.id,
           actorRole: session.role,
           before: null,
-          after: {
-            inventoryItemId: item.inventoryItemId,
-            quantity: item.quantity,
-            state: lotState,
-            purchaseId: purchase.id,
-          },
+          after: isContainerItem
+            ? {
+                inventoryItemId: item.inventoryItemId,
+                containerSize: item.containerSize,
+                containerSizeUnit: item.containerSizeUnit,
+                state: lotState,
+                purchaseId: purchase.id,
+              }
+            : {
+                inventoryItemId: item.inventoryItemId,
+                quantity: item.quantity,
+                state: lotState,
+                purchaseId: purchase.id,
+              },
           reason: pendingApproval
             ? "emergency_purchase · phase2_seed · cost_estimated · pending_approval"
             : `${input.kind}_purchase · phase2_seed · cost_estimated`,

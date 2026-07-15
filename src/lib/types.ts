@@ -208,10 +208,37 @@ export type InventoryLot = {
   closedAt?: string | null;
   /** Cups actually made from this container = -SUM(delta) of deduction movements. */
   cupsMade?: number;
+  /** Real container size bought (e.g. 1, 2), in containerSizeUnit. Null for legacy/quantity-model lots. */
+  containerSize?: string | null;
+  containerSizeUnit?: InventoryUnit | null;
+  /** Real Rand cost paid for this specific container (integer cents). Null for legacy/quantity-model lots. */
+  containerCostZar?: number | null;
 };
 
 /** Lightweight status used by POS to show low-stock badges (M9). */
 export type InventoryStatusMap = Record<string, InventoryItemStatus>;
+
+/** One container's real yield — closed lots have the final numbers; the
+ *  currently-open one (if any) shows progress so far. */
+export type ContainerYield = {
+  lotId: string;
+  inventoryItemId: string;
+  inventoryItemName: string;
+  itemKind: InventoryKind;
+  sourceName: string | null;
+  containerSize: string | null;
+  containerSizeUnit: InventoryUnit | null;
+  containerCostZar: number | null;
+  cupsMade: number;
+  /** Real cost per cup in cents (containerCostZar / cupsMade), or null if not yet knowable. */
+  costPerCupZar: number | null;
+  state: "open" | "closed";
+  openedAt: string | null; // ISO 8601
+  closedAt: string | null; // ISO 8601
+  /** Cups made from this lot, split by drink type — exact (see stock_movements.menuItemId).
+   *  Empty for deductions made before that column existed. */
+  drinkBreakdown: { menuItemName: string; cups: number }[];
+};
 
 // ─── Phase 2: COGS ────────────────────────────────────────────────────────────
 
@@ -257,16 +284,38 @@ export type Purchase = {
   adminApprovedBy: string | null; // staff id
 };
 
-/** One lot received in a purchase (input to recordPurchase). */
+/**
+ * One lot received in a purchase (input to recordPurchase).
+ *
+ * Two shapes, chosen server-side by the inventory item's own unit — the
+ * client just sends whichever fields apply:
+ *   - Container items (unit='cup': milk & beans) — real-world size bought
+ *     (e.g. 1, 2 litres/kg) + what was paid. No yield is predicted; actual
+ *     cups made are only ever counted as they're deducted (see cupsMade on
+ *     InventoryLot), never estimated up front.
+ *   - Everything else (cups, lids, syrup, powder) — unchanged quantity model.
+ */
 export type PurchaseLotItem = {
   inventoryItemId: string;
-  /** Quantity received in the item's own unit (positive number). */
-  quantity: number;
-  /** Cost per base unit as a numeric string (matches numeric(10,4) column). */
-  unitCostZar: string;
   /** Total cost for this lot item in integer cents. */
   totalZar: number;
-};
+} & (
+  | {
+      /** Quantity received in the item's own unit (positive number). */
+      quantity: number;
+      /** Cost per base unit as a numeric string (matches numeric(10,4) column). */
+      unitCostZar: string;
+      containerSize?: undefined;
+      containerSizeUnit?: undefined;
+    }
+  | {
+      /** Real size bought (e.g. 1, 2), in containerSizeUnit. */
+      containerSize: number;
+      containerSizeUnit: InventoryUnit;
+      quantity?: undefined;
+      unitCostZar?: undefined;
+    }
+);
 
 export type RecordPurchaseInput = {
   sourceName: string;

@@ -133,6 +133,13 @@ export async function openContainer(inventoryItemId: string): Promise<ActionResu
  * Closes an open container. Any cups still remaining are written off with a
  * COGS-neutral `adjustment` movement so running stock reflects the empty/retired
  * bottle. Idempotent-ish: closing an already-closed lot returns CONFLICT.
+ *
+ * Container lots (no predicted quantity): also finalises `unitCostZar` to this
+ * lot's own real cost/cup (containerCostZar ÷ actual cups made) — the real
+ * number the container yielded, replacing whatever historical-average estimate
+ * was used while it was open. Past COGS entries already used that estimate at
+ * the time of deduction and are not restated; this only affects reporting and
+ * the estimate used by future containers of the same item.
  */
 export async function closeContainer(
   lotId: string,
@@ -147,7 +154,11 @@ export async function closeContainer(
       const txDb = tx as unknown as DB;
 
       const [lot] = await txDb
-        .select({ id: inventoryLots.id, state: inventoryLots.state })
+        .select({
+          id: inventoryLots.id,
+          state: inventoryLots.state,
+          containerCostZar: inventoryLots.containerCostZar,
+        })
         .from(inventoryLots)
         .where(eq(inventoryLots.id, lotId))
         .for("update");
@@ -163,6 +174,11 @@ export async function closeContainer(
       }
 
       const remaining = await lotCups(lotId, txDb);
+      // Real cups actually made from this container (legacy lots: remaining
+      // is what's left of a predicted total, so this is meaningless for them
+      // and simply unused). Only positive for container lots, since their
+      // running stock never starts above zero.
+      const cupsMade = Math.max(0, -remaining);
 
       // Write off any leftover cups so running stock matches the empty bottle.
       // adjustment ≠ deduction → does not affect COGS (v_daily_cogs).
@@ -177,7 +193,13 @@ export async function closeContainer(
 
       await txDb
         .update(inventoryLots)
-        .set({ state: "closed", closedAt: sql`now()` })
+        .set({
+          state: "closed",
+          closedAt: sql`now()`,
+          ...(lot.containerCostZar && cupsMade > 0
+            ? { unitCostZar: (lot.containerCostZar / cupsMade).toFixed(4) }
+            : {}),
+        })
         .where(eq(inventoryLots.id, lotId));
 
       await writeAudit(
@@ -188,7 +210,7 @@ export async function closeContainer(
           actorId: session.id,
           actorRole: session.role,
           before: { state: "open", cups: remaining },
-          after: { state: "closed", cups: 0, writtenOff: remaining },
+          after: { state: "closed", cups: 0, writtenOff: remaining, cupsMade },
           reason: reason ?? "container_closed",
         },
         txDb
