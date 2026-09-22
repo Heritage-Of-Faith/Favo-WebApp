@@ -63,7 +63,7 @@ All Server Actions return `{ ok: true, data } | { ok: false, code, message }` �
 | `API.md` | Implementing or calling a Server Action / route handler |
 | `BUSINESS_RULES.md` | Order, payment, discount, refund, or audit logic |
 | `PLANNING.md` | Confirming task scope, owner, phase, acceptance criteria |
-| `FAVO_PRD_v3.md` | Anything ambiguous — PRD is the source of truth |
+| `docs/FAVO_PRD_v7.md` | Anything ambiguous — PRD is the source of truth |
 
 ## How to start a task
 0. **Read `TASK_PROTOCOL.md`** — mandatory before executing any Jira task (gate checklist, status flow, handover comments, Definition of Done).
