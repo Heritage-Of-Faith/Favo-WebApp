@@ -160,16 +160,6 @@ test.describe("4. Phase 3 admin extensions", () => {
     await expect(page.getByRole("searchbox").or(page.getByPlaceholder(/search/i)).first()).toBeVisible({ timeout: 10_000 });
   });
 
-  test("sync conflicts page renders (A18)", async ({ page }) => {
-    await loginAsAdmin(page);
-    await page.goto("/admin/sync-conflicts", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/admin\/sync-conflicts/);
-    await expect(
-      page.getByRole("heading", { name: /sync conflict/i }).first()
-    ).toBeVisible({ timeout: 15_000 });
-    // Should show "Open (N)" heading
-    await expect(page.getByText(/open \(/i)).toBeVisible({ timeout: 10_000 });
-  });
 });
 
 // ─── 5. Monthly P&L (admin/finance only) ────────────────────────────────────

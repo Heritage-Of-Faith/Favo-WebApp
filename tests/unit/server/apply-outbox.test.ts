@@ -1,5 +1,5 @@
 // Offline sync apply-outbox unit tests — G20 (AT-61)
-// Tests idempotency, payment validation, conflict detection.
+// Tests idempotency, payment validation, and rejection of bad items.
 // DB and pricing are mocked — no network required.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -90,7 +90,7 @@ describe("applyOutboxItem", () => {
     vi.mocked(db.select).mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([
-          { id: "log-1", clientUuid: "11111111-1111-1111-1111-111111111111", appliedAt: new Date(), conflictId: null },
+          { id: "log-1", clientUuid: "11111111-1111-1111-1111-111111111111", appliedAt: new Date() },
         ]),
       }),
     } as unknown as ReturnType<typeof db.select>);
@@ -101,7 +101,7 @@ describe("applyOutboxItem", () => {
     expect(res.outcome).toBe("duplicate");
   });
 
-  it("creates conflict on payment_mismatch (server total differs from client)", async () => {
+  it("rejects on amount mismatch (server total differs from client)", async () => {
     const { db } = await import("@db/index");
     const { computeOrderTotalZar } = await import("@/server/orders/pricing");
     vi.mocked(computeOrderTotalZar).mockReturnValueOnce(5000); // server says R50, client said R45
@@ -119,18 +119,15 @@ describe("applyOutboxItem", () => {
     } as unknown as ReturnType<typeof db.select>);
 
     const logInsert = stubInsertReturning([{ id: "log-1" }]);
-    const conflictInsert = stubInsertReturning([{ id: "conflict-1" }]);
-    vi.mocked(db.insert)
-      .mockReturnValueOnce({ values: logInsert.values } as unknown as ReturnType<typeof db.insert>)
-      .mockReturnValueOnce({ values: conflictInsert.values } as unknown as ReturnType<typeof db.insert>);
+    vi.mocked(db.insert).mockReturnValueOnce({ values: logInsert.values } as unknown as ReturnType<typeof db.insert>);
 
     vi.mocked(db.update).mockReturnValue({ set: stubUpdateSet().set } as unknown as ReturnType<typeof db.update>);
 
     const { applyOutboxItem } = await import("@/server/sync/apply-outbox");
     const res = await applyOutboxItem(makeOutboxItem({ clientTotalZar: 4500 }));
 
-    expect(res.outcome).toBe("conflict");
-    if (res.outcome === "conflict") expect(res.kind).toBe("payment_mismatch");
+    expect(res.outcome).toBe("rejected");
+    if (res.outcome === "rejected") expect(res.reason).toBe("amount_mismatch");
   });
 
   it("applies order when totals match and menu items exist", async () => {
@@ -171,7 +168,7 @@ describe("applyOutboxItem", () => {
     }
   });
 
-  it("creates conflict when menu item not found", async () => {
+  it("rejects when menu item not found", async () => {
     const { db } = await import("@db/index");
 
     // select 1: no existing outbox entry
@@ -185,16 +182,14 @@ describe("applyOutboxItem", () => {
     } as unknown as ReturnType<typeof db.select>);
 
     const logInsert = stubInsertReturning([{ id: "log-1" }]);
-    const conflictInsert = stubInsertReturning([{ id: "conflict-2" }]);
-    vi.mocked(db.insert)
-      .mockReturnValueOnce({ values: logInsert.values } as unknown as ReturnType<typeof db.insert>)
-      .mockReturnValueOnce({ values: conflictInsert.values } as unknown as ReturnType<typeof db.insert>);
+    vi.mocked(db.insert).mockReturnValueOnce({ values: logInsert.values } as unknown as ReturnType<typeof db.insert>);
 
     vi.mocked(db.update).mockReturnValue({ set: stubUpdateSet().set } as unknown as ReturnType<typeof db.update>);
 
     const { applyOutboxItem } = await import("@/server/sync/apply-outbox");
     const res = await applyOutboxItem(makeOutboxItem());
 
-    expect(res.outcome).toBe("conflict");
+    expect(res.outcome).toBe("rejected");
+    if (res.outcome === "rejected") expect(res.reason).toBe("unknown_menu_item");
   });
 });
