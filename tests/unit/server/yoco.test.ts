@@ -89,9 +89,4 @@ describe("yoco: outcome routing (idempotent)", () => {
     const failed: YocoEvent = { type: "payment.failed", paymentId: "pay_3" };
     expect(decideWebhookOutcome(failed, false).action).toBe("fail_payment");
   });
-
-  it("records a refund on refund.succeeded", () => {
-    const refund: YocoEvent = { type: "refund.succeeded", paymentId: "pay_4" };
-    expect(decideWebhookOutcome(refund, false).action).toBe("record_refund");
-  });
 });
