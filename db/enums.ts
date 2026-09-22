@@ -96,25 +96,3 @@ export const expenseCategory = pgEnum("expense_category", [
   "other",
 ]);
 
-export const loyaltyKind = pgEnum("loyalty_kind", [
-  "earn",
-  "redeem",
-  "adjustment",
-  "expiry",
-]);
-
-export const chargeKind = pgEnum("charge_kind", [
-  "coffee_pack",
-]);
-
-export const syncConflictKind = pgEnum("sync_conflict_kind", [
-  "payment_mismatch",
-  "state_collision",
-  "duplicate_order",
-]);
-
-export const syncConflictStatus = pgEnum("sync_conflict_status", [
-  "open",
-  "resolved",
-  "dismissed",
-]);
