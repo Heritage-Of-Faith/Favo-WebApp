@@ -10,7 +10,6 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
-  typescript: { ignoreBuildErrors: true },
   async headers() {
     return [
       {

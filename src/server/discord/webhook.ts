@@ -31,7 +31,7 @@ export async function pingFavoOps(opts: PingOptions): Promise<void> {
         description: opts.description,
         color: opts.color ?? 0x6f4e37, // FAVO coffee-brown default
         fields: opts.fields ?? [],
-        footer: { text: "FAVO Café · favo.hofmi.org" },
+        footer: { text: "FAVO Café · favo.hofmi.net" },
       },
     ],
   });
