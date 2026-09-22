@@ -11,8 +11,6 @@ DROP TABLE "pack_redemptions" CASCADE;--> statement-breakpoint
 DROP TABLE "pending_charges" CASCADE;--> statement-breakpoint
 DROP TABLE "sync_conflicts" CASCADE;--> statement-breakpoint
 ALTER TABLE "customers" DROP CONSTRAINT "customers_loyalty_points_non_negative";--> statement-breakpoint
-ALTER TABLE "outbox_log" DROP CONSTRAINT "outbox_log_conflict_id_sync_conflicts_id_fk";
---> statement-breakpoint
 ALTER TABLE "customers" DROP COLUMN "loyalty_points";--> statement-breakpoint
 ALTER TABLE "outbox_log" DROP COLUMN "conflict_id";--> statement-breakpoint
 DROP TYPE "public"."charge_kind";--> statement-breakpoint
