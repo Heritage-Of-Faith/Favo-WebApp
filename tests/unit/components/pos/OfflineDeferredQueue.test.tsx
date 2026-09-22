@@ -20,8 +20,6 @@ vi.mock("@/server/actions/inventory", () => ({
 vi.mock("@/server/actions/recipes", () => ({ listRecipes: vi.fn().mockResolvedValue({ ok: true, data: { recipes: [] } }) }));
 vi.mock("@/server/actions/waste", () => ({ logWaste: vi.fn() }));
 vi.mock("@/lib/push/staff-subscribe", () => ({ enableStaffPush: vi.fn() }));
-// POSWorkspace now pulls in the loyalty dialogs (M16/M17/M18) → loyalty actions.
-vi.mock("@/server/actions/loyalty", () => ({ purchasePack: vi.fn(), redeemLoyalty: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), message: vi.fn() } }));
 vi.mock("@/hooks/useOrderStream", () => ({ useOrderStream: () => ({ activeOrders: [], status: "connected" }) }));
 
@@ -37,7 +35,7 @@ const mockReset = vi.fn();
 vi.mock("@/store/draftOrder", () => ({
   lineKey: (x: { menuItemId: string }) => x.menuItemId,
   useDraftOrder: () => ({
-    customer: { id: "c1", name: "Sipho", phone: null, email: null, loyaltyPoints: 0 },
+    customer: { id: "c1", name: "Sipho", phone: null, email: null },
     items: [{ menuItemId: "ame", menuItemName: "Americano", quantity: 2, unitPriceZar: 3000, modifications: [] }],
     totalZar: 6000,
     setCustomer: vi.fn(), addItem: vi.fn(), removeItem: vi.fn(), updateQuantity: vi.fn(), reset: mockReset,

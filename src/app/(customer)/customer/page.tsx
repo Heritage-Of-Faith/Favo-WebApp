@@ -10,13 +10,11 @@ import { getCustomerSummary, listCustomerOrders } from "@/server/actions/custome
 import { getOperatingHours } from "@/server/actions/hours";
 import { getMenu } from "@/server/actions/menu";
 import { getFavo } from "@/server/actions/favo";
-import LoyaltyCard from "@/components/customer/LoyaltyCard";
-import PackList from "@/components/customer/PackList";
 import FavoSection from "@/components/customer/FavoSection";
 import OrderHistoryList from "@/components/customer/OrderHistoryList";
 import WelcomeModal from "@/components/customer/WelcomeModal";
 
-// Always render fresh data (hours/loyalty change at the counter): no static cache.
+// Always render fresh data (hours change at the counter): no static cache.
 export const dynamic = "force-dynamic";
 
 const S: Record<string, CSSProperties> = {
@@ -126,8 +124,8 @@ export default async function CustomerDashboard() {
   ]);
   const orders = ordersRes.ok ? ordersRes.data : [];
 
-  // AT-143 — same pattern as /loyalty: fetch the saved Favo once we know who
-  // the customer is, so it can be edited above "Recent orders" too.
+  // AT-143 — fetch the saved Favo once we know who the customer is, so it
+  // can be edited above "Recent orders" too.
   const favoCustomerId = summary?.customerId ?? null;
   const favoMenu = menuRes.ok ? menuRes.data : [];
   const favoRes = favoCustomerId
@@ -167,12 +165,7 @@ export default async function CustomerDashboard() {
           </section>
         )}
 
-        {/* Loyalty is the hero card (largest number on the page), money-first. */}
-        <LoyaltyCard points={summary?.loyaltyPoints ?? 0} />
-
-        <PackList activePackCount={summary?.activePackCount ?? 0} />
-
-        {/* AT-143 — Your Favo (saved usual order), same picker as POS/loyalty page */}
+        {/* AT-143 — Your Favo (saved usual order), same picker as POS/customer dashboard */}
         {favoCustomerId && favoMenu.length > 0 && (
           <FavoSection customerId={favoCustomerId} menu={favoMenu} initialFavo={initialFavo} />
         )}

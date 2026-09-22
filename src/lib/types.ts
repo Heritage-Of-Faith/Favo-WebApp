@@ -20,8 +20,6 @@ export type MenuCategory =
   | "merchandise"
   | "other";
 
-export type LoyaltyKind = "earn" | "redeem" | "adjustment" | "expiry";
-
 export type PaymentStatus = "pending" | "successful" | "failed" | "refunded" | "deferred";
 
 // ─── Domain Types ─────────────────────────────────────────────────────────────
@@ -38,8 +36,6 @@ export type Customer = {
   name: string;
   phone: string | null;
   email: string | null;
-  loyaltyPoints: number;
-  activePackCount: number;
 };
 
 export type MenuCustomisation = {

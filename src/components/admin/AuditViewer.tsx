@@ -15,8 +15,6 @@ const ENTITY_KINDS = [
   "staff",
   "customer",
   "menu_item",
-  "loyalty",
-  "refund",
   "inventory",
 ] as const;
 

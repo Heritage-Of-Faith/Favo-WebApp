@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, gte, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   orders,
@@ -11,8 +11,6 @@ import {
   customers,
   staffEntitlementLog,
   payments,
-  packRedemptions,
-  coffeePacks,
 } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { authorize } from "@/server/auth/guard";
@@ -28,9 +26,8 @@ import {
 import { checkStaffDiscountEligibility } from "@/server/orders/discount";
 import { createPaymentIntent } from "@/server/yoco/client";
 import { notifyOrderChange } from "@/server/queue/notify";
-import { sendOrderReadyPush, sendPointsEarnedPush } from "@/server/push/send";
+import { sendOrderReadyPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
-import { accrueOrderLoyalty, reverseOrderLoyalty, type EarnResult } from "@/server/loyalty/accrue";
 import type { ActionResult, Order, OrderState } from "@/lib/types";
 
 // Docs: docs/API.md · Business rules L01–L06, L14–L15.
@@ -283,10 +280,6 @@ class ManualPaymentError extends Error {
  *   (rule L01 / R5). Returns OUT_OF_STOCK if any ingredient lot is empty.
  * On `in_progress → ready`:  sends the order-ready push to known customers.
  *
- * Loyalty is NOT earned here — earn triggers on payment confirmation per rule
- * L06: the Yoco webhook, the deferred-payment cron, or confirmManualPayment
- * (the manual cash/card-machine/EFT path the café uses for most orders).
- *
  * All DB mutations (state change + deduction + audit) are wrapped in a single
  * transaction so every failure rolls back the full operation.
  * Side effects (push, pg_notify) fire after the transaction commits.
@@ -338,7 +331,7 @@ export async function transitionOrder(
 
       // ── Cash-remove guard (AT-122): ordered → in_progress requires a
       // confirmed Yoco payment for non-free orders. Free orders (totalZar === 0
-      // after loyalty/staff-discount) need no payment row.
+      // after a staff discount) need no payment row.
       // Bypass when YOCO_SECRET_KEY is absent (dev/simulation mode — no real Yoco). ──
       if (toState === "in_progress" && current.totalZar > 0 && process.env.YOCO_SECRET_KEY) {
         const [pmt] = await tx
@@ -367,12 +360,7 @@ export async function transitionOrder(
         await deductForOrder(orderId, txDb, session.id);
       }
 
-      // ── 3. Loyalty accrual happens on payment confirmation (L06) ─────────
-      // Points are earned when the payment is confirmed — the Yoco webhook, the
-      // deferred-payment cron, or confirmManualPayment — NOT on the order state
-      // change. See src/server/loyalty/accrue.ts for the shared earn logic.
-
-      // ── 4. Fetch subscription for order-ready push (in_progress → ready) ──
+      // ── 3. Fetch subscription for order-ready push (in_progress → ready) ──
       if (toState === "ready" && current.customerId) {
         const [cust] = await tx
           .select({ name: customers.name, pushSubscription: customers.pushSubscription })
@@ -383,7 +371,7 @@ export async function transitionOrder(
         pushCustomerId = current.customerId ?? null;
       }
 
-      // ── 5. Audit ───────────────────────────────────────────────────────────
+      // ── 4. Audit ───────────────────────────────────────────────────────────
       await writeAudit(
         {
           entityKind: "order",
@@ -500,35 +488,6 @@ export async function cancelOrder(
         );
       }
 
-      // Reverse any pack redemptions on this order (AT-111).
-      // Increment qty_remaining on the pack and stamp reversed_at — never delete.
-      const redemptions = await tx
-        .select({ id: packRedemptions.id, packId: packRedemptions.packId })
-        .from(packRedemptions)
-        .where(and(eq(packRedemptions.orderId, orderId), isNull(packRedemptions.reversedAt)));
-
-      for (const r of redemptions) {
-        await tx
-          .update(coffeePacks)
-          .set({ qtyRemaining: sql`${coffeePacks.qtyRemaining} + 1` })
-          .where(eq(coffeePacks.id, r.packId));
-
-        await tx
-          .update(packRedemptions)
-          .set({ reversedAt: sql`now()` })
-          .where(eq(packRedemptions.id, r.id));
-      }
-
-      // Reverse any loyalty earned on this order. Since earn now fires on
-      // payment confirmation (L06), a manually-confirmed order can be paid —
-      // and have earned points — while still in 'ordered' state; cancelling it
-      // must claw those points back (idempotent, clamped to the balance).
-      const reversal = await reverseOrderLoyalty(orderId, txDb, {
-        id: session.id,
-        role: session.role,
-        reason: "order_cancelled",
-      });
-
       await tx.update(orders).set({ state: "cancelled" }).where(eq(orders.id, orderId));
       await writeAudit(
         {
@@ -538,11 +497,7 @@ export async function cancelOrder(
           actorId: session.id,
           actorRole: session.role,
           before: { state: current.state },
-          after: {
-            state: "cancelled",
-            packRedemptionsReversed: redemptions.length,
-            loyaltyPointsReversed: reversal?.reversedPoints ?? 0,
-          },
+          after: { state: "cancelled" },
           reason,
         },
         txDb
@@ -653,18 +608,14 @@ export async function applyStaffDiscount(
  * Confirm a manually-tendered payment (cash / card machine / EFT) — the path
  * the café actually uses for the large majority of orders (the Yoco online
  * checkout + webhook is the exception). The barista taps "paid in person" and
- * this:
- *   • marks the order's payment `successful` (so the AT-122 start-gate opens), and
- *   • accrues loyalty via the same idempotent `accrueOrderLoyalty` path as the
- *     Yoco webhook and the deferred-payment cron (L06). A later webhook or cron
- *     for the same order therefore cannot double-earn.
+ * this marks the order's payment `successful` (so the AT-122 start-gate opens).
  *
  * Idempotent: confirming an already-successful payment is a no-op success.
  * A failed/refunded payment cannot be confirmed (CONFLICT).
  */
 export async function confirmManualPayment(
   orderId: string
-): Promise<ActionResult<{ earnedPoints: number; newLoyaltyBalance: number; alreadyConfirmed: boolean }>> {
+): Promise<ActionResult<{ alreadyConfirmed: boolean }>> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
   const session = auth.session;
@@ -673,7 +624,6 @@ export async function confirmManualPayment(
     return { ok: false, code: "VALIDATION_ERROR", message: "orderId is required." };
   }
 
-  let earn: EarnResult = null;
   let alreadyConfirmed = false;
 
   try {
@@ -681,7 +631,7 @@ export async function confirmManualPayment(
       const txDb = tx as unknown as DB;
 
       // Lock the payment row so two concurrent confirmations (or a confirmation
-      // racing the Yoco webhook) cannot both accrue — matches the webhook's
+      // racing the Yoco webhook) cannot both apply — matches the webhook's
       // SELECT FOR UPDATE discipline.
       const [pmt] = await tx
         .select({ id: payments.id, status: payments.status })
@@ -694,7 +644,7 @@ export async function confirmManualPayment(
         throw new ManualPaymentError("NOT_FOUND", "No payment record for this order.");
       }
       if (pmt.status === "successful") {
-        alreadyConfirmed = true; // idempotent no-op — earn already happened
+        alreadyConfirmed = true; // idempotent no-op
         return;
       }
       if (pmt.status === "failed" || pmt.status === "refunded") {
@@ -711,8 +661,6 @@ export async function confirmManualPayment(
         .set({ status: "successful", webhookReceivedAt: new Date() })
         .where(eq(payments.id, pmt.id));
 
-      earn = await accrueOrderLoyalty(orderId, txDb, { id: session.id, role: session.role });
-
       await writeAudit(
         {
           entityKind: "payment",
@@ -721,7 +669,7 @@ export async function confirmManualPayment(
           actorId: session.id,
           actorRole: session.role,
           before: { status: pmt.status },
-          after: { orderId, status: "successful", earnedPoints: earn?.earnedPoints ?? 0 },
+          after: { orderId, status: "successful" },
         },
         txDb
       );
@@ -733,23 +681,7 @@ export async function confirmManualPayment(
     throw err;
   }
 
-  // Points-earned push, fire-and-forget after commit (L06 / AT-128) — mirrors
-  // the Yoco webhook. Only fires when this call actually accrued points.
-  const push = earn as EarnResult;
-  if (push && push.subscription && isValidPushSubscription(push.subscription)) {
-    sendPointsEarnedPush(push.subscription, push.earnedPoints, push.newLoyaltyBalance).catch(
-      (e: unknown) => console.error("[confirmManualPayment] points-earned push failed", orderId, e)
-    );
-  }
-
-  return {
-    ok: true,
-    data: {
-      earnedPoints: push?.earnedPoints ?? 0,
-      newLoyaltyBalance: push?.newLoyaltyBalance ?? 0,
-      alreadyConfirmed,
-    },
-  };
+  return { ok: true, data: { alreadyConfirmed } };
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -841,35 +773,4 @@ export async function listActiveOrders(): Promise<ActionResult<{ orderId: string
       customerName: r.customerName ?? null,
     })),
   };
-}
-
-// ─── getOrderItems (AT-116) ───────────────────────────────────────────────────
-
-/**
- * Returns the line items for a given order with their DB IDs. Used by the POS
- * payment panel to look up orderLineRef values for pack redemption (AT-116).
- * One row per order_items row — quantities > 1 produce multiple rows.
- */
-export async function getOrderItems(
-  orderId: string
-): Promise<ActionResult<{ id: string; menuItemId: string; menuItemName: string; unitPriceZar: number }[]>> {
-  const auth = await authorize("barista", "admin");
-  if (!auth.ok) return auth;
-
-  if (!orderId) {
-    return { ok: false, code: "VALIDATION_ERROR", message: "orderId is required." };
-  }
-
-  const rows = await db
-    .select({
-      id: orderItems.id,
-      menuItemId: orderItems.menuItemId,
-      menuItemName: menuItems.name,
-      unitPriceZar: orderItems.unitPriceZar,
-    })
-    .from(orderItems)
-    .innerJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
-    .where(eq(orderItems.orderId, orderId));
-
-  return { ok: true, data: rows };
 }

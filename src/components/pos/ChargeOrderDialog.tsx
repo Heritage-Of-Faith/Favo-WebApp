@@ -8,9 +8,9 @@
  * reopens payment for a specific queued order:
  *   • online  → the Yoco card form (YocoOrderForm), OR a manual confirmation
  *               for payments tendered another way (cash / card machine / EFT) —
- *               confirmManualPayment persists the payment and accrues loyalty.
- *   • offline → the deferred notice (take payment on the card machine in person;
- *               the deferred-payment cron reconciles + earns when connectivity
+ *               confirmManualPayment persists the payment as successful.
+ *   • offline → the deferred notice (take payment on the card machine in
+ *               person; reconciled manually by an admin once connectivity
  *               returns).
  *
  * On settle it calls onPaid(orderId). Card data is never stored — L01/AT-122:
@@ -51,8 +51,8 @@ export default function ChargeOrderDialog({ order, onPaid, onClose }: Props) {
   const settle = () => { onPaid(order.id); onClose(); };
 
   // Manual confirmation (cash / card machine / EFT) — persists the payment as
-  // successful server-side and accrues loyalty (L06). Online only: it needs the
-  // network. Offline tender goes through DeferredPaymentNotice instead.
+  // successful server-side. Online only: it needs the network. Offline tender
+  // goes through DeferredPaymentNotice instead.
   async function confirmManual() {
     setManualBusy(true);
     setManualErr(null);
@@ -90,7 +90,7 @@ export default function ChargeOrderDialog({ order, onPaid, onClose }: Props) {
             <>
               <YocoOrderForm orderId={order.id} amountZar={order.totalZar} onPaid={settle} />
 
-              {/* Manual tender — cash / card machine / EFT. Persists + earns. */}
+              {/* Manual tender — cash / card machine / EFT. */}
               <div className="flex items-center gap-3">
                 <span className="h-px flex-1 bg-cool-steel/20" />
                 <span className="favo-caption text-cool-steel">or paid another way</span>

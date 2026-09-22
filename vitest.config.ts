@@ -16,9 +16,9 @@ export default defineConfig({
     // gate (AT-122) stays in its "Yoco not configured" bypass branch during
     // tests, regardless of whatever placeholder value a developer's local
     // .env.local defines — Vite auto-loads .env.local into process.env, and
-    // without this override that placeholder makes the gate active and tests
-    // that don't mock a `payments` row (earn-scenarios, loyalty-history) fail
-    // with PAYMENT_REQUIRED on any machine that has a real .env.local.
+    // without this override that placeholder makes the gate active and any
+    // test that doesn't mock a `payments` row fails with PAYMENT_REQUIRED on
+    // any machine that has a real .env.local.
     env: {
       DATABASE_URL: "postgresql://test:test@localhost:5432/favo_test",
       YOCO_SECRET_KEY: "",

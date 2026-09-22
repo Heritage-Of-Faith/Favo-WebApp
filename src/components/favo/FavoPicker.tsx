@@ -3,7 +3,7 @@
 /**
  * FavoPicker — THE shared Favo editor (AT-143 + AT-144, wireframe screens 5/6).
  *
- * One component, one record: the customer PWA loyalty page and the barista POS
+ * One component, one record: the customer PWA dashboard and the barista POS
  * modal both render exactly this picker against the same `setFavo` action —
  * per the AT-142 architecture mandate, neither surface may implement its own
  * save logic. Only the entry point differs.

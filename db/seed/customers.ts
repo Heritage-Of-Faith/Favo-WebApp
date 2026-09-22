@@ -10,7 +10,6 @@ export type SeedCustomer = {
   name: string;
   phone: string;
   email: string;
-  loyaltyPoints: number;
 };
 
 export const CUSTOMERS_SEED: SeedCustomer[] = [
@@ -19,14 +18,12 @@ export const CUSTOMERS_SEED: SeedCustomer[] = [
     name: "Louis",
     phone: "0821234567",
     email: "louis@example.com",
-    loyaltyPoints: 50,
   },
   {
     id: "cust_naledi",
     name: "Naledi Khumalo",
     phone: "0739876543",
     email: "naledi@example.com",
-    loyaltyPoints: 120,
   },
 ];
 

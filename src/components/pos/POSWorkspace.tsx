@@ -19,14 +19,12 @@ import FavoPicker from "@/components/favo/FavoPicker";
 import { useOrderStream } from "@/hooks/useOrderStream";
 import { useDraftOrder, lineKey } from "@/store/draftOrder";
 import { formatZar, formatDate } from "@/lib/format";
-import { formatLoyaltyBalance } from "@/server/loyalty/calc";
 import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, X, Plus, Minus, Trash2, ChevronDown, ChevronUp,
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
-  CheckCircle, AlertCircle, Tag, ShieldCheck, Package, CreditCard,
+  CheckCircle, AlertCircle, Tag, ShieldCheck, CreditCard,
 } from "lucide-react";
-import PackPurchaseDialog from "@/components/pos/PackPurchaseDialog";
 import { toast } from "sonner";
 import ActiveBeanCard from "@/components/pos/ActiveBeanCard";
 import OpenContainersCard from "@/components/pos/OpenContainersCard";
@@ -36,8 +34,6 @@ import StockBanner from "@/components/pos/StockBanner";
 import WasteDialog from "@/components/pos/WasteDialog";
 import ConnectivityPill from "@/components/pos/ConnectivityPill";
 import SyncDrawer from "@/components/pos/SyncDrawer";
-import LoyaltyRedeemInline from "@/components/pos/LoyaltyRedeemInline";
-import PackRedeemSection from "@/components/pos/PackRedeemSection";
 import OfflineBanner from "@/components/pos/OfflineBanner";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import YocoOrderForm from "@/components/pos/YocoOrderForm";
@@ -123,11 +119,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   // payments row). Presence of an id means the card form can be shown.
   const [yocoCheckoutId, setYocoCheckoutId] = useState("");
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
-  // M18 — loyalty redemption on the payment step (order already in `ordered`).
+  // The order already in `ordered` state that the payment step is settling.
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
-  const [redeemedData, setRedeemedData] = useState<{ pointsUsed: number; discountZar: number; newTotalZar: number } | null>(null);
-  // AT-116 — pack redemption savings (cumulative, sum of line prices redeemed).
-  const [packSavings, setPackSavings] = useState(0);
   // Connectivity — drives the offline banner gate and the payment-screen swap
   // between the Yoco card form (online) and the deferred-payment notice (offline).
   const [online, setOnline] = useState(true);
@@ -200,7 +193,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
   const [wasteOpen, setWasteOpen] = useState(false);
   const [wasteCategory, setWasteCategory] = useState<LogWasteInput["category"]>("spilled");
-  const [packOpen, setPackOpen] = useState(false);
   // Charge-after-order: which queued order is being charged, and a session-local
   // set of orders confirmed paid in person (cash / card machine) — card payments
   // are confirmed by the backend via paymentStatus instead.
@@ -310,8 +302,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       setSubmitting(false);
       setPaymentOrderId(null);
       setYocoCheckoutId("");
-      setRedeemedData(null);
-      setPackSavings(0);
       setShowPayment(true);
       return;
     }
@@ -325,8 +315,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       setExpandedId(r.data.orderId);
       setYocoCheckoutId(r.data.yocoClientSecret);
       setPaymentOrderId(r.data.orderId);
-      setRedeemedData(null);
-      setPackSavings(0);
       if (r.data.yocoClientSecret) {
         setShowPayment(true);
       } else {
@@ -368,8 +356,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       setShowPayment(false);
       setPaymentOrderId(null);
       setYocoCheckoutId("");
-      setRedeemedData(null);
-      setPackSavings(0);
       toast.success("Paid in person — order confirmed");
     } catch {
       setOrderError("Failed to save order offline. Please retry.");
@@ -467,7 +453,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                     <button type="button" onMouseDown={() => { setCustomer(c); setQuery(""); setSearchOpen(false); }}
                       className="flex w-full items-center justify-between px-3 py-2 min-h-[44px] hover:bg-coffee-bean/8 text-left">
                       <span className="favo-small text-coffee-bean font-semibold">{c.name}</span>
-                      {c.loyaltyPoints > 0 && <span className="favo-caption text-crimson-carrot">{formatLoyaltyBalance(c.loyaltyPoints)}</span>}
                     </button>
                   </li>
                 ))}
@@ -477,7 +462,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
         ) : (
           <>
             <p className="favo-small text-coffee-bean font-semibold">{customer.name}</p>
-            <p className="favo-caption text-cool-steel">Loyalty balance: {formatLoyaltyBalance(customer.loyaltyPoints)}</p>
             {/* AT-144 (wireframe screen 6): primary reorder CTA when a Favo
                 exists; Manage Favo stays a deliberately low-emphasis link. */}
             {customerFavo && (
@@ -488,11 +472,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 <RefreshCw size={13} strokeWidth={2.5} /> Reorder their Favo
               </button>
             )}
-            <button type="button" onClick={() => setPackOpen(true)}
-              className="self-start flex items-center gap-1 rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 py-1 favo-caption text-cool-steel hover:bg-coffee-bean/8 min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
-              aria-label="Buy coffee pack">
-              <Package size={12} strokeWidth={2.25} /> Pack
-            </button>
             <button type="button" onClick={() => setManageFavoOpen(true)}
               className="favo-caption text-cool-steel/70 hover:text-coffee-bean underline underline-offset-2 self-start min-h-[44px]">
               Manage Favo
@@ -781,9 +760,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
         <div className="flex flex-col flex-1 border-r border-cool-steel/20 min-h-0">
           {/* Payment view */}
           {(() => {
-            // Amount due: loyalty (AT-110) → pack savings (AT-116), capped at zero.
-            const loyaltyReducedTotal = redeemedData ? redeemedData.newTotalZar : totalZar;
-            const amountDueZar = Math.max(0, loyaltyReducedTotal - packSavings);
+            const amountDueZar = totalZar;
             // Free only when nothing is owed — skip the Yoco form and confirm directly.
             const isFree = amountDueZar === 0;
 
@@ -793,8 +770,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               setShowPayment(false);
               setYocoCheckoutId("");
               setPaymentOrderId(null);
-              setRedeemedData(null);
-              setPackSavings(0);
               setOrderSuccess("Order paid — sent to the queue.");
               setTimeout(() => setOrderSuccess(null), 4000);
             };
@@ -819,43 +794,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                   <p className="favo-label text-cool-steel mb-1">Amount due</p>
                   <p className="favo-h2 text-coffee-bean">{formatZar(amountDueZar)}</p>
                   <p className="favo-small text-cool-steel mt-1">
-                    {redeemedData
-                      ? (isFree
-                          ? `R${(redeemedData.discountZar / 100).toFixed(0)} covered by ${redeemedData.pointsUsed} loyalty points`
-                          : `R${(redeemedData.discountZar / 100).toFixed(0)} off with ${redeemedData.pointsUsed} pts — pay the rest`)
-                      : "Tap or insert the customer's card"}
+                    Tap or insert the customer's card
                   </p>
                 </div>
 
                 <div className="flex flex-col gap-3 w-full max-w-[320px]">
-                  {/* AT-140 — loyalty redemption (L06): 100 pts → R20 off, capped at the
-                      order total. Offered only at ≥100 pts and when the order is worth
-                      ≥ R20. Rebuilt inline in this cart region — no side dialog. */}
-                  {customer && customer.loyaltyPoints >= 100 && amountDueZar >= 2000 && redeemedData === null && paymentOrderId && (
-                    <LoyaltyRedeemInline
-                      customerId={customer.id}
-                      customerName={customer.name}
-                      orderId={paymentOrderId}
-                      loyaltyPoints={customer.loyaltyPoints}
-                      orderTotalZar={totalZar}
-                      onRedeemed={(result) => {
-                        setRedeemedData(result);
-                        setCustomer({ ...customer, loyaltyPoints: customer.loyaltyPoints - result.pointsUsed });
-                      }}
-                    />
-                  )}
-
-                  {/* AT-116 — pack redemption (L16): per-line "Use pack" buttons for coffee items. */}
-                  {customer && paymentOrderId && (
-                    <PackRedeemSection
-                      customerId={customer.id}
-                      orderId={paymentOrderId}
-                      onRedeemed={(_lineId, unitPriceZar) => {
-                        setPackSavings((prev) => prev + unitPriceZar);
-                      }}
-                    />
-                  )}
-
                   {isFree ? (
                     /* Free order — one tap to confirm and send to the queue. */
                     <button type="button" onClick={finishPayment}
@@ -1187,16 +1130,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             />
           </div>
         </div>
-      )}
-
-      {/* ════════ COFFEE PACK PURCHASE (M17) ════════ */}
-      {packOpen && customer && (
-        <PackPurchaseDialog
-          customerId={customer.id}
-          customerName={customer.name}
-          coffeeItems={menu.filter((m) => m.category === "coffee")}
-          onClose={() => setPackOpen(false)}
-        />
       )}
 
       {/* ════════ OFFLINE SYNC DRAWER (M15) ════════ */}

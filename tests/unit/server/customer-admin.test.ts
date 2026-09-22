@@ -15,11 +15,8 @@ vi.mock("@/server/auth/guard", () => ({
 }));
 
 vi.mock("@db/schema", () => ({
-  customers: { id: "id", name: "name", email: "email", phone: "phone", loyaltyPoints: "loyalty_points", createdAt: "created_at" },
+  customers: { id: "id", name: "name", email: "email", phone: "phone", createdAt: "created_at" },
   orders: { id: "id", customerId: "customer_id", state: "state", totalZar: "total_zar", placedAt: "placed_at" },
-  loyaltyTransactions: { id: "id", customerId: "customer_id", delta: "delta", kind: "kind", orderId: "order_id", at: "at" },
-  coffeePacks: { id: "id", customerId: "customer_id", menuItemId: "menu_item_id", qtyOriginal: "qty_original", qtyRemaining: "qty_remaining", expiresAt: "expires_at" },
-  menuItems: { id: "id", name: "name" },
 }));
 
 // Shared builder for Drizzle chain mocks
@@ -41,7 +38,6 @@ const CUSTOMER_ROW = {
   name: "Louis Dreyfus",
   email: "louis@test.com",
   phone: "0821234567",
-  loyaltyPoints: 45,
   createdAt: new Date("2026-01-15T08:00:00Z"),
 };
 
@@ -94,22 +90,19 @@ describe("getCustomerDetail", () => {
     if (!res.ok) expect(res.code).toBe("NOT_FOUND");
   });
 
-  it("includes loyalty txns in detail", async () => {
-    const loyaltyRow = {
-      id: "lt-1",
-      customerId: "cust-1",
-      delta: 10,
-      kind: "earn",
-      orderId: "ord-1",
-      at: new Date("2026-06-01T10:00:00Z"),
+  it("includes recent orders in detail", async () => {
+    const orderRow = {
+      id: "ord-1",
+      state: "collected",
+      totalZar: 4500,
+      placedAt: new Date("2026-06-01T10:00:00Z"),
     };
 
     let callCount = 0;
     vi.mocked(db.select).mockImplementation(() => {
       callCount++;
       if (callCount === 1) return buildDbMock([CUSTOMER_ROW]) as unknown as ReturnType<typeof db.select>;
-      if (callCount === 2) return buildDbMock([loyaltyRow]) as unknown as ReturnType<typeof db.select>;
-      if (callCount === 3) return buildDbMock([]) as unknown as ReturnType<typeof db.select>;
+      if (callCount === 2) return buildDbMock([orderRow]) as unknown as ReturnType<typeof db.select>;
       return buildDbMock([]) as unknown as ReturnType<typeof db.select>;
     });
 
@@ -118,7 +111,8 @@ describe("getCustomerDetail", () => {
 
     expect(res.ok).toBe(true);
     if (res.ok) {
-      expect(res.data.loyaltyTxns).toHaveLength(1);
+      expect(res.data.recentOrders).toHaveLength(1);
+      expect(res.data.recentOrders[0]!.id).toBe("ord-1");
     }
   });
 });

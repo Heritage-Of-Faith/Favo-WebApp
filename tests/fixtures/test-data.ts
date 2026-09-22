@@ -5,8 +5,6 @@ export const testCustomer: Customer = {
   name: "Louis",
   phone: "0821234567",
   email: "louis@example.com",
-  loyaltyPoints: 50,
-  activePackCount: 0,
 };
 
 export const testStaff: Staff = {

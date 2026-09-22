@@ -157,11 +157,9 @@ export default function PrivacyPage() {
           <tbody>
             {[
               ["Email address", "Account creation and sign-in", "Contractual necessity"],
-              ["Full name", "Personalising your loyalty account; barista lookup at the counter", "Contractual necessity"],
+              ["Full name", "Personalising your account; barista lookup at the counter", "Contractual necessity"],
               ["Phone number", "Counter lookup; order support", "Legitimate interest"],
-              ["Purchase history", "Calculating loyalty points", "Contractual necessity"],
-              ["Loyalty points balance", "Awarding and redeeming points", "Contractual necessity"],
-              ["Coffee pack purchases", "Tracking active packs and 90-day expiry", "Contractual necessity"],
+              ["Purchase history", "Order history and support", "Contractual necessity"],
               ["Push notification subscription", "Order-ready alerts when you opt in", "Consent (withdrawable)"],
               ["Audit log entries", "Tamper-proof record of every account change", "Legal obligation"],
             ].map(([data, why, basis]) => (
@@ -190,7 +188,6 @@ export default function PrivacyPage() {
             {[
               ["Account details (name, email, phone)", "Until you request anonymisation"],
               ["Order and payment records", "Indefinitely (minimum 5 years — tax law)"],
-              ["Loyalty and pack records", "Indefinitely (financial ledger)"],
               ["Audit log", "Indefinitely (append-only, legal obligation)"],
               ["Push subscriptions", "Until revoked by you or your browser"],
             ].map(([data, period]) => (
@@ -217,7 +214,7 @@ export default function PrivacyPage() {
           <tbody>
             {[
               ["Barista", "Your name and phone number only (to find your account at the counter)"],
-              ["Manager / Admin", "Full profile, order history, and loyalty records (for support)"],
+              ["Manager / Admin", "Full profile and order history (for support)"],
               ["Owner", "Full access for oversight and compliance"],
             ].map(([role, access]) => (
               <tr key={role}>
