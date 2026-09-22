@@ -96,7 +96,9 @@ export async function GET() {
     checkLoki(),
   ]);
 
-  const allOk = postgres.ok && yoco.ok && loki.ok;
+  // Yoco is advisory: a card-payments API blip must never restart-loop a
+  // working café, so it's reported but does not gate the health verdict.
+  const allOk = postgres.ok && loki.ok;
   const body: HealthBody = {
     ok: allOk,
     service: "favo-webapp",

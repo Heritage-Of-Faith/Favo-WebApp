@@ -11,6 +11,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   typedRoutes: true,
   typescript: { ignoreBuildErrors: true },
+  // Produces .next/standalone — the self-contained server the Dockerfile copies in.
+  output: "standalone",
   async headers() {
     return [
       {
