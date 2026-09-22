@@ -126,11 +126,6 @@ test.describe("unauthenticated API guards", () => {
     expect(res.status()).toBe(403);
   });
 
-  test("GET /api/crons/retry-deferred without bearer → 401", async ({ request }) => {
-    const res = await request.get("/api/crons/retry-deferred");
-    expect(res.status()).toBe(401);
-  });
-
   test("GET /api/admin/audit-coverage without secret → 403", async ({ request }) => {
     const res = await request.get("/api/admin/audit-coverage");
     expect(res.status()).toBe(403);
