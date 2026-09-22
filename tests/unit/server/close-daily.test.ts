@@ -73,9 +73,17 @@ vi.mock("@/server/audit", () => ({
   writeAudit: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@/server/discord/webhook", () => ({
-  pingFavoOps: vi.fn().mockResolvedValue(undefined),
-  formatZarField: vi.fn((n: number) => `R ${n}`),
+const sendNotification = vi.fn().mockResolvedValue(undefined);
+vi.mock("web-push", () => ({
+  default: { setVapidDetails: vi.fn(), sendNotification: (...a: unknown[]) => sendNotification(...a) },
+}));
+
+vi.mock("@/server/push/vapid", () => ({
+  initVapid: vi.fn(),
+}));
+
+vi.mock("@/server/push/payload", () => ({
+  isValidPushSubscription: (x: unknown) => x != null,
 }));
 
 describe("closeDaily — reconciliation", () => {
@@ -97,13 +105,22 @@ describe("closeDaily — reconciliation", () => {
     expect(result.variancePct).toBe(0);
   });
 
-  it("returns critical band on >10% mismatch and pings Discord", async () => {
+  it("returns critical band on >10% mismatch and pushes an alert to admin staff", async () => {
     const { db } = await import("@db/index");
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ total: 100000 }]),
-      }),
-    } as unknown as ReturnType<typeof db.select>);
+    vi.mocked(db.select)
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ total: 100000 }]),
+        }),
+      } as unknown as ReturnType<typeof db.select>)
+      // Admin-staff lookup for the push alert
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            { id: "staff-admin-1", pushSubscription: { endpoint: "https://push.example/1", keys: { p256dh: "x", auth: "y" } } },
+          ]),
+        }),
+      } as unknown as ReturnType<typeof db.select>);
     // Payments only 80% of revenue → 20% variance
     vi.mocked(db.execute).mockResolvedValueOnce([{ total: "80000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
 
@@ -111,11 +128,10 @@ describe("closeDaily — reconciliation", () => {
     const result = await closeDaily(new Date("2026-06-08T10:00:00Z"));
 
     expect(result.band).toBe("critical");
-    const { pingFavoOps } = await import("@/server/discord/webhook");
-    expect(vi.mocked(pingFavoOps)).toHaveBeenCalledOnce();
+    expect(sendNotification).toHaveBeenCalledOnce();
   });
 
-  it("does NOT ping Discord when band is ok", async () => {
+  it("does NOT push an alert when band is ok", async () => {
     const { db } = await import("@db/index");
     vi.mocked(db.select).mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
@@ -127,17 +143,21 @@ describe("closeDaily — reconciliation", () => {
     const { closeDaily } = await import("@/server/crons/close-daily");
     await closeDaily(new Date("2026-06-08T10:00:00Z"));
 
-    const { pingFavoOps } = await import("@/server/discord/webhook");
-    expect(vi.mocked(pingFavoOps)).not.toHaveBeenCalled();
+    expect(sendNotification).not.toHaveBeenCalled();
   });
 
   it("returns investigate band on 7% mismatch", async () => {
     const { db } = await import("@db/index");
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ total: 100000 }]),
-      }),
-    } as unknown as ReturnType<typeof db.select>);
+    vi.mocked(db.select)
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ total: 100000 }]),
+        }),
+      } as unknown as ReturnType<typeof db.select>)
+      // No admin recipients — the alert path just no-ops.
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+      } as unknown as ReturnType<typeof db.select>);
     vi.mocked(db.execute).mockResolvedValueOnce([{ total: "93000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
 
     const { closeDaily } = await import("@/server/crons/close-daily");
