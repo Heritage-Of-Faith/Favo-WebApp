@@ -40,7 +40,7 @@ Next.js 16 (App Router) · React 19 · TS 5.6 strict · Tailwind v4 + shadcn/ui 
 | `API.md` | Implementing or calling a Server Action / route handler |
 | `BUSINESS_RULES.md` | Order, payment, discount, refund, or audit logic |
 | `PLANNING.md` | Confirming task scope, owner, phase, acceptance criteria |
-| `FAVO_PRD_v3.md` | Anything ambiguous — PRD is the source of truth |
+| `docs/FAVO_PRD_v7.md` | Anything ambiguous — PRD is the source of truth |
 
 ## How to start a task
 1. **Read `PLANNING.md`** — find the task card (Task ID, owner, branch, files, acceptance).
