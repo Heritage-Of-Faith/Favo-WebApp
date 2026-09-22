@@ -20,7 +20,3 @@ export function canAccessAdmin(role: StaffRole): boolean {
 export function canProcessOrders(role: StaffRole): boolean {
   return true; // both barista and admin can process orders
 }
-
-export function canApproveRefund(role: StaffRole): boolean {
-  return role === "admin";
-}

@@ -1,23 +1,12 @@
 // Customer detail page — owner: Mia (AT-78 A16 + AT-79 A17)
 // Read-only — no mutation entry points (POPIA-friendly).
-// Tabs (Orders · Loyalty · Packs) handled client-side in CustomerBalanceTabs.
 import { notFound } from "next/navigation";
 import { getCustomerDetail } from "@/server/actions/customers";
 import { formatDate } from "@/lib/format";
-import { formatLoyaltyBalance } from "@/server/loyalty/calc";
-import CustomerBalanceTabs from "@/components/admin/CustomerBalanceTabs";
+import CustomerOrdersTable from "@/components/admin/CustomerOrdersTable";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Customer" };
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-border-subtle bg-elevated px-4 py-3">
-      <p className="text-xs text-text-muted mb-0.5">{label}</p>
-      <p className="text-lg font-semibold text-text-strong tabular-nums">{value}</p>
-    </div>
-  );
-}
 
 export default async function CustomerDetailPage({
   params,
@@ -55,19 +44,7 @@ export default async function CustomerDetailPage({
         </p>
       </header>
 
-      {/* KPI strip — always visible regardless of active tab */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Stat label="Loyalty balance" value={formatLoyaltyBalance(c.loyaltyPoints)} />
-        <Stat label="Active packs" value={String(c.activePacks.length)} />
-      </div>
-
-      {/* Tabbed history — all data passed down; no additional fetching on tab switch */}
-      <CustomerBalanceTabs
-        loyaltyTxns={c.loyaltyTxns}
-        activePacks={c.activePacks}
-        expiredPacks={c.expiredPacks}
-        recentOrders={c.recentOrders}
-      />
+      <CustomerOrdersTable recentOrders={c.recentOrders} />
     </div>
   );
 }

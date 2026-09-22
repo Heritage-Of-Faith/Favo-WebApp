@@ -8,14 +8,11 @@
 export {
   getCustomerSummary,
   listCustomerOrders,
-  getPacks,
   updateCustomerProfile,
 } from "@/server/actions/customer";
 
 export type {
   CustomerSummary,
   CustomerOrder,
-  PacksView,
-  CoffeePack,
   CustomerProfileInput,
 } from "./contract";

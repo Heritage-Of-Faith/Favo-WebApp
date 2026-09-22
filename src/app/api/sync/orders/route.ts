@@ -1,6 +1,7 @@
 // Offline sync endpoint — task G20 (AT-61)
 // Accepts outbox items from the POS when it comes back online after an offline period.
-// Idempotent on clientUuid. Conflicts are written to sync_conflicts for manager review.
+// Idempotent on clientUuid. A menu-item/amount mismatch is rejected outright
+// (see src/server/sync/apply-outbox.ts).
 // Auth: barista+ (staff session)
 // Docs: docs/API.md · BUSINESS_RULES.md L01
 
@@ -52,9 +53,9 @@ export async function POST(request: Request) {
     case "duplicate":
       return NextResponse.json({ ok: true, outcome: "duplicate", orderId: result.orderId, appliedAt: result.appliedAt });
 
-    case "conflict":
+    case "rejected":
       return NextResponse.json(
-        { ok: false, outcome: "conflict", conflictId: result.conflictId, kind: result.kind },
+        { ok: false, outcome: "rejected", reason: result.reason },
         { status: 409 }
       );
   }

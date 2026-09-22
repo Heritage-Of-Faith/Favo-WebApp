@@ -21,7 +21,6 @@ vi.mock("@/server/actions/inventory", () => ({
 }));
 vi.mock("@/server/actions/recipes", () => ({ listRecipes: vi.fn().mockResolvedValue({ ok: true, data: { recipes: [] } }) }));
 vi.mock("@/server/actions/waste", () => ({ logWaste: vi.fn() }));
-vi.mock("@/server/actions/loyalty", () => ({ redeemLoyalty: vi.fn(), purchasePack: vi.fn() }));
 vi.mock("@/lib/push/staff-subscribe", () => ({ enableStaffPush: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), message: vi.fn() } }));
 vi.mock("@/hooks/useOrderStream", () => ({ useOrderStream: () => ({ activeOrders: [], status: "connected" }) }));
@@ -56,7 +55,7 @@ const mockAddItem = vi.fn();
 vi.mock("@/store/draftOrder", () => ({
   lineKey: (x: { menuItemId: string }) => x.menuItemId,
   useDraftOrder: () => ({
-    customer: { id: "c1", name: "Louis", phone: null, email: null, loyaltyPoints: 240 },
+    customer: { id: "c1", name: "Louis", phone: null, email: null },
     items: [],
     totalZar: 0,
     setCustomer: vi.fn(), addItem: mockAddItem, removeItem: vi.fn(), updateQuantity: vi.fn(), reset: vi.fn(),

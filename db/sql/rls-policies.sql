@@ -26,14 +26,11 @@ $$;
 DO $$ BEGIN EXECUTE format('GRANT favo_customer TO %I', current_user); END $$;
 
 GRANT USAGE ON SCHEMA public TO favo_customer;
-GRANT SELECT ON customers, orders, order_items, loyalty_transactions,
-  coffee_packs, menu_items TO favo_customer;
+GRANT SELECT ON customers, orders, order_items, menu_items TO favo_customer;
 
 ALTER TABLE customers            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE loyalty_transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE coffee_packs         ENABLE ROW LEVEL SECURITY;
 -- menu_items: public reference data — RLS intentionally NOT enabled (SELECT
 -- grant is enough; menu is public). See 0023 migration for rationale.
 
@@ -52,14 +49,6 @@ CREATE POLICY customer_own_order_items ON order_items
     WHERE o.id = order_items.order_id
       AND o.customer_id::text = current_setting('app.current_customer_id', true)
   ));
-
-CREATE POLICY customer_own_loyalty ON loyalty_transactions
-  FOR SELECT TO favo_customer
-  USING (customer_id::text = current_setting('app.current_customer_id', true));
-
-CREATE POLICY customer_own_packs ON coffee_packs
-  FOR SELECT TO favo_customer
-  USING (customer_id::text = current_setting('app.current_customer_id', true));
 
 -- ─── Staff/admin/finance/owner (DESIGN reference only — not applied) ──────────
 -- The live app runs these on the owner connection which bypasses non-forced
@@ -137,7 +126,6 @@ CREATE POLICY finance_payments_ro ON payments FOR SELECT TO finance USING (true)
 CREATE POLICY finance_refunds_ro ON refunds FOR SELECT TO finance USING (true);
 CREATE POLICY finance_expenses_ro ON expenses FOR SELECT TO finance USING (true);
 CREATE POLICY finance_audit_ro ON audit_log FOR SELECT TO finance USING (true);
-CREATE POLICY finance_loyalty_ro ON loyalty_transactions FOR SELECT TO finance USING (true);
 
 -- ─── Owner role ───────────────────────────────────────────────────────────────
 -- Owner: all admin permissions + finance permissions

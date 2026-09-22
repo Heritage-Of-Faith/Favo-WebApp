@@ -22,7 +22,7 @@ import {
 export type { OfflineOrder };
 
 /** Replay a single queued order. Returns the server outcome for the caller. */
-type SyncOutcome = "applied" | "duplicate" | "conflict" | "retry";
+type SyncOutcome = "applied" | "duplicate" | "rejected" | "retry";
 
 export function useOfflineOutbox(currentStaffId: string) {
   // Newest-last list of this staff member's queued orders.
@@ -69,10 +69,11 @@ export function useOfflineOutbox(currentStaffId: string) {
         return "retry";
       }
       if (res.status === 409) {
-        // Conflict — remove from outbox so it doesn't retry forever; the server
-        // has written a sync_conflicts row for admin review (A18).
+        // Rejected (unknown menu item / amount mismatch) — remove from outbox
+        // so it doesn't retry forever. The receipt stays in outbox_log for
+        // manual admin follow-up; there is no automated resolution flow.
         await deleteOrder(order.clientUuid);
-        return "conflict";
+        return "rejected";
       }
       // 401/403/5xx — leave in outbox; try again on next online event.
       return "retry";
@@ -92,20 +93,20 @@ export function useOfflineOutbox(currentStaffId: string) {
       if (pending.length === 0) return;
 
       let applied = 0;
-      let conflicts = 0;
+      let rejected = 0;
       for (const order of pending) {
         const outcome = await postOne(order);
         if (outcome === "applied" || outcome === "duplicate") applied++;
-        else if (outcome === "conflict") conflicts++;
+        else if (outcome === "rejected") rejected++;
       }
 
       await refresh();
       if (applied > 0) {
         toast.success(`${applied} offline order${applied > 1 ? "s" : ""} synced`);
       }
-      if (conflicts > 0) {
+      if (rejected > 0) {
         toast.warning(
-          `${conflicts} order${conflicts > 1 ? "s" : ""} flagged for admin review`
+          `${rejected} order${rejected > 1 ? "s" : ""} flagged for admin review`
         );
       }
     } catch {
@@ -124,7 +125,7 @@ export function useOfflineOutbox(currentStaffId: string) {
       const outcome = await postOne(order);
       await refresh();
       if (outcome === "applied" || outcome === "duplicate") toast.success("Order synced");
-      else if (outcome === "conflict") toast.warning("Order flagged for admin review");
+      else if (outcome === "rejected") toast.warning("Order flagged for admin review");
       else toast.error("Still can't reach the server — will retry automatically.");
     },
     [myOrders, postOne, refresh]

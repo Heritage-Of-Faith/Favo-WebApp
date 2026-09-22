@@ -96,12 +96,6 @@ describe("seed: customers", () => {
     expect(louis).toBeDefined();
     expect(louis?.name.toLowerCase().startsWith("lou")).toBe(true);
   });
-
-  it("loyalty points are non-negative integers", () => {
-    for (const c of CUSTOMERS_SEED) {
-      expect(isNonNegativeInt(c.loyaltyPoints)).toBe(true);
-    }
-  });
 });
 
 describe("seed: operating hours", () => {

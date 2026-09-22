@@ -73,23 +73,15 @@ describe("getCustomerSummary", () => {
     if (!res.ok) expect(res.code).toBe("UNAUTHORIZED");
   });
 
-  it("returns summary with loyalty points and pack count", async () => {
+  it("returns the customer's summary (name + push subscription flag)", async () => {
     const { getCustomerSession } = await import("@/server/auth/customer-session");
     vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
 
     const { db } = await import("@db/index");
 
-    // first select → customer row
-    vi.mocked(db.select)
-      .mockReturnValueOnce(makeSelectChain([
-        { id: CUSTOMER_ID, name: "Louis", loyaltyPoints: 45 },
-      ]) as unknown as ReturnType<typeof db.select>)
-      // second select → active pack count
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 2 }]),
-        }),
-      } as unknown as ReturnType<typeof db.select>);
+    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([
+      { id: CUSTOMER_ID, name: "Louis", hasPushSubscription: false },
+    ]) as unknown as ReturnType<typeof db.select>);
 
     const { getCustomerSummary } = await import("@/server/actions/customer");
     const res = await getCustomerSummary();
@@ -97,8 +89,6 @@ describe("getCustomerSummary", () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.name).toBe("Louis");
-    expect(res.data.loyaltyPoints).toBe(45);
-    expect(res.data.activePackCount).toBe(2);
   });
 
   it("returns NOT_FOUND when customer row is missing", async () => {
@@ -176,55 +166,6 @@ describe("listCustomerOrders", () => {
     expect(order.completedAt).toBe(completed.toISOString());
     expect(order.items).toHaveLength(1);
     expect(order.items[0]!.menuItemName).toBe("Cappuccino");
-  });
-});
-
-// ─── getPacks ─────────────────────────────────────────────────────────────────
-
-describe("getPacks", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("returns UNAUTHORIZED when no session", async () => {
-    const { getCustomerSession } = await import("@/server/auth/customer-session");
-    vi.mocked(getCustomerSession).mockResolvedValue(null);
-    const { getPacks } = await import("@/server/actions/customer");
-    const res = await getPacks();
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.code).toBe("UNAUTHORIZED");
-  });
-
-  it("splits packs into active and expired correctly", async () => {
-    const { getCustomerSession } = await import("@/server/auth/customer-session");
-    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
-
-    const { db } = await import("@db/index");
-    const futureExpiry = new Date(Date.now() + 30 * 86400_000);
-    const pastExpiry = new Date(Date.now() - 30 * 86400_000);
-    const created = new Date("2026-05-01T00:00:00Z");
-
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        leftJoin: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockResolvedValue([
-              { id: "pack-1", menuItemId: "mi-1", itemName: "Cappuccino", qtyOriginal: 10, qtyRemaining: 5, expiresAt: futureExpiry, createdAt: created },
-              { id: "pack-2", menuItemId: "mi-2", itemName: "Americano", qtyOriginal: 10, qtyRemaining: 0, expiresAt: pastExpiry, createdAt: created },
-            ]),
-          }),
-        }),
-      }),
-    } as unknown as ReturnType<typeof db.select>);
-
-    const { getPacks } = await import("@/server/actions/customer");
-    const res = await getPacks();
-
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.data.active).toHaveLength(1);
-    expect(res.data.active[0]!.id).toBe("pack-1");
-    expect(res.data.active[0]!.itemName).toBe("Cappuccino");
-    expect(res.data.expired).toHaveLength(1);
-    expect(res.data.expired[0]!.id).toBe("pack-2");
   });
 });
 

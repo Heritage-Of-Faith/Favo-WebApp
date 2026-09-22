@@ -4,20 +4,19 @@
  * Covers the Phase 3 API surface:
  *   G20 — POST /api/sync/orders  (offline sync)
  *   G21 — GET  /api/reports/export  (kind + format params + PDF)
- *   G22 — GET  /api/crons/retry-deferred  (deferred payment cron)
+ *
+ * (G22's deferred-payment retry cron — GET /api/crons/retry-deferred — was
+ * deleted by v7; see CLAUDE.md §"Deleted by v7".)
  *
  * Seeded data (G3 + phase2 seed):
  *   Barista: Sam Barista  PIN 1234  id: staff_barista_sam
  *   Admin:   Mia Manager  PIN 4321  id: staff_manager_mia
  *   Menu:    Cappuccino  id: menu_cappuccino
  *
- * CRON_SECRET env must be set to "e2e-cron-secret" for cron tests to assert 200.
  * TEST_AUDIT_SECRET is not required by this spec.
  */
 
 import { test, expect, type Page } from "@playwright/test";
-
-const TEST_CRON_SECRET = "e2e-cron-secret";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -239,41 +238,5 @@ test.describe("G21: reports export", () => {
     await page.goto("/admin/audit", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("table")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("row").nth(1)).toBeVisible({ timeout: 5_000 });
-  });
-});
-
-// ─── G22: deferred payment cron ───────────────────────────────────────────────
-
-test.describe("G22: deferred payment cron", () => {
-  const CRON = "/api/crons/retry-deferred";
-
-  test("no bearer token → 401", async ({ request }) => {
-    const res = await request.get(CRON);
-    expect(res.status()).toBe(401);
-  });
-
-  test("wrong bearer secret → 401", async ({ request }) => {
-    const res = await request.get(CRON, {
-      headers: { Authorization: "Bearer wrong-secret-xyz" },
-    });
-    expect(res.status()).toBe(401);
-  });
-
-  test("correct CRON_SECRET → 200 { ok: true } (or 401 if secret not configured)", async ({
-    request,
-  }) => {
-    const res = await request.get(CRON, {
-      headers: { Authorization: `Bearer ${TEST_CRON_SECRET}` },
-    });
-    if (res.status() === 200) {
-      const body = await res.json();
-      expect(body.ok).toBe(true);
-      // cron returns { ok, checked, resolved, conflicted, skipped } (spread directly)
-      expect(typeof body.checked).toBe("number");
-      expect(typeof body.resolved).toBe("number");
-    } else {
-      // 401 = secret mismatch (dev env without CRON_SECRET=e2e-cron-secret)
-      expect(res.status()).toBe(401);
-    }
   });
 });

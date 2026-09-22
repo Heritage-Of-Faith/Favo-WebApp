@@ -2,7 +2,7 @@
 
 /**
  * FavoSection — AT-143 (wireframe screen 5): "Your Favo" on the customer
- * loyalty page. Unset → prompt + Set button; set → summary line + Edit link.
+ * dashboard. Unset → prompt + Set button; set → summary line + Edit link.
  * Both open the shared FavoPicker (the same component the barista uses on the
  * POS, AT-144) against the same record.
  */
