@@ -112,3 +112,25 @@ export function startOfDaySast(dateStr: string): Date {
 export function endOfDaySast(dateStr: string): Date {
   return new Date(`${dateStr}T23:59:59.999+02:00`);
 }
+
+/**
+ * Formats integer ZAR cents as a plain "R 1 234,56" string — used by
+ * notification/report bodies that don't want the Intl.NumberFormat currency
+ * glyph placement formatZar() produces. Rehomed from the former Discord
+ * webhook helper (task G14) — still used by the daily-close and weekly-P&L
+ * crons for their alert/report bodies.
+ * @example formatZarField(100000) → "R 1 000,00"
+ */
+export function formatZarField(cents: number): string {
+  const rands = cents / 100;
+  return `R ${rands.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/**
+ * Returns a semantic colour int for a net P&L figure (green if >= 0, red if
+ * negative). Rehomed from the former Discord webhook helper (task G14) —
+ * kept for reuse by report/dashboard surfaces that colour-code net P&L.
+ */
+export function pnlColor(netZar: number): number {
+  return netZar >= 0 ? 0x2ecc71 : 0xe74c3c; // green / red
+}

@@ -33,10 +33,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/menu", label: "Menu" },
   { href: "/admin/staff", label: "Staff" },
   { href: "/admin/customers" as Route, label: "Customers" },
-  { href: "/admin/sync-conflicts" as Route, label: "Sync conflicts" },
-  { href: "/admin/loyalty" as Route, label: "Loyalty" },
-  { href: "/admin/loyalty/reconcile" as Route, label: "↳ Reconcile" },
-  { href: "/admin/loyalty/liability" as Route, label: "↳ Liability" },
   { href: "/admin/audit", label: "Audit log" },
   { href: "/pos" as Route, label: "↗ POS" },
 ];

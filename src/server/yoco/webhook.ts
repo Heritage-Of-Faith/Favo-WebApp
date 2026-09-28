@@ -5,13 +5,12 @@
 
 export type YocoEventType =
   | "payment.succeeded"
-  | "payment.failed"
-  | "refund.succeeded";
+  | "payment.failed";
 
 export type YocoEvent = {
   type: YocoEventType;
   paymentId: string;
-  /** Checkout ID from Yoco — matches payments.yoco_checkout_id / pending_charges.yoco_checkout_id. */
+  /** Checkout ID from Yoco — matches payments.yoco_checkout_id. */
   checkoutId?: string;
   orderId?: string;
   amountZar?: number;
@@ -26,7 +25,7 @@ export function parseYocoEvent(raw: unknown): YocoEvent | null {
   const paymentId = obj.paymentId ?? obj.id;
   if (
     typeof type !== "string" ||
-    !["payment.succeeded", "payment.failed", "refund.succeeded"].includes(type) ||
+    !["payment.succeeded", "payment.failed"].includes(type) ||
     typeof paymentId !== "string" ||
     paymentId.length === 0
   ) {
@@ -45,8 +44,7 @@ export function parseYocoEvent(raw: unknown): YocoEvent | null {
 export type WebhookOutcome =
   | { action: "noop"; reason: string }
   | { action: "mark_paid"; paymentId: string; orderId?: string }
-  | { action: "fail_payment"; paymentId: string; orderId?: string }
-  | { action: "record_refund"; paymentId: string; orderId?: string };
+  | { action: "fail_payment"; paymentId: string; orderId?: string };
 
 /**
  * Decide what a webhook event should do, given whether its payment id was
@@ -64,7 +62,5 @@ export function decideWebhookOutcome(
       return { action: "mark_paid", paymentId: event.paymentId, orderId: event.orderId };
     case "payment.failed":
       return { action: "fail_payment", paymentId: event.paymentId, orderId: event.orderId };
-    case "refund.succeeded":
-      return { action: "record_refund", paymentId: event.paymentId, orderId: event.orderId };
   }
 }

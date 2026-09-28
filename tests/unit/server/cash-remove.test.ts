@@ -32,7 +32,6 @@ vi.mock("@/server/orders/deduction", () => ({
 vi.mock("@/server/queue/notify", () => ({ notifyOrderChange: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/server/push/send", () => ({ sendOrderReadyPush: vi.fn().mockResolvedValue(true) }));
 vi.mock("@/server/push/payload", () => ({ isValidPushSubscription: vi.fn(() => false) }));
-vi.mock("@/server/loyalty/calc", () => ({ earnPoints: vi.fn(() => 0) }));
 
 vi.mock("@/lib/db", () => {
   function makeTx() {

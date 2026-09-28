@@ -225,6 +225,13 @@
       "when": 1784015143156,
       "tag": "0031_at_movement_drink_type",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790111396054,
+      "tag": "0032_deletion_pass_drop_loyalty_packs_syncconflicts_magiclink",
+      "breakpoints": true
     }
   ]
 }

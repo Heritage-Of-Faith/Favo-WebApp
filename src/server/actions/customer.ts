@@ -1,12 +1,12 @@
 "use server";
 
-// Customer-data server actions — G18 (packs) + G19 (orders, summary, profile)
+// Customer-data server actions — G19 (orders, summary, profile)
 // The customer is always resolved from the signed cookie via getCustomerSession().
 // No customerId argument — session is the source of truth (L05: customer PWA is read-only).
 // Implements the CustomerDataApi contract from src/lib/customer/contract.ts.
-// Docs: docs/API.md · BUSINESS_RULES.md L05, L06, L16
+// Docs: docs/API.md · BUSINESS_RULES.md L05
 
-import { eq, desc, inArray, and, gt, sql, count } from "drizzle-orm";
+import { eq, desc, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
@@ -14,8 +14,6 @@ import {
   orders,
   orderItems,
   menuItems,
-  coffeePacks,
-  loyaltyTransactions,
 } from "@db/schema";
 import { getCustomerSession } from "@/server/auth/customer-session";
 import { withCustomerScope } from "@/lib/db-rls";
@@ -24,7 +22,6 @@ import type { ActionResult } from "@/lib/types";
 import type {
   CustomerSummary,
   CustomerOrder,
-  PacksView,
 } from "@/lib/customer/contract";
 
 // Row shape returned by the order_items + menu_items join in listCustomerOrders.
@@ -56,32 +53,16 @@ export async function getCustomerSummary(): Promise<ActionResult<CustomerSummary
   const session = await requireCustomer();
   if (!session.ok) return session;
 
-  const { customer, packCount } = await withCustomerScope(session.customerId, async (tx) => {
+  const customer = await withCustomerScope(session.customerId, async (tx) => {
     const [customer] = await tx
       .select({
         id: customers.id,
         name: customers.name,
-        loyaltyPoints: customers.loyaltyPoints,
         hasPushSubscription: sql<boolean>`(push_subscription IS NOT NULL)`,
       })
       .from(customers)
       .where(eq(customers.id, session.customerId));
-
-    // Short-circuit: no customer row → no need to run the pack-count query.
-    if (!customer) return { customer: undefined, packCount: undefined };
-
-    const now = new Date();
-    const [packCount] = await tx
-      .select({ count: sql<number>`count(*)::int` })
-      .from(coffeePacks)
-      .where(
-        and(
-          eq(coffeePacks.customerId, session.customerId),
-          gt(coffeePacks.expiresAt, now),
-          gt(coffeePacks.qtyRemaining, 0)
-        )
-      );
-    return { customer, packCount };
+    return customer;
   });
 
   if (!customer) {
@@ -93,8 +74,6 @@ export async function getCustomerSummary(): Promise<ActionResult<CustomerSummary
     data: {
       customerId: customer.id,
       name: customer.name,
-      loyaltyPoints: customer.loyaltyPoints,
-      activePackCount: packCount?.count ?? 0,
       hasPushSubscription: customer.hasPushSubscription,
     },
   };
@@ -172,56 +151,6 @@ export async function listCustomerOrders(limit = 10): Promise<ActionResult<Custo
   return { ok: true, data };
 }
 
-// ─── getPacks ─────────────────────────────────────────────────────────────────
-
-export async function getPacks(): Promise<ActionResult<PacksView>> {
-  const session = await requireCustomer();
-  if (!session.ok) return session;
-
-  const now = new Date();
-
-  const packs = await withCustomerScope(session.customerId, (tx) =>
-    tx
-      .select({
-        id: coffeePacks.id,
-        menuItemId: coffeePacks.menuItemId,
-        itemName: menuItems.name,
-        qtyOriginal: coffeePacks.qtyOriginal,
-        qtyRemaining: coffeePacks.qtyRemaining,
-        expiresAt: coffeePacks.expiresAt,
-        createdAt: coffeePacks.createdAt,
-      })
-      .from(coffeePacks)
-      .leftJoin(menuItems, eq(coffeePacks.menuItemId, menuItems.id))
-      .where(eq(coffeePacks.customerId, session.customerId))
-      .orderBy(desc(coffeePacks.createdAt))
-  );
-
-  const active = packs
-    .filter((p) => p.expiresAt > now && p.qtyRemaining > 0)
-    .map((p) => ({
-      id: p.id,
-      itemName: p.itemName ?? p.menuItemId,
-      qtyTotal: p.qtyOriginal,
-      qtyRemaining: p.qtyRemaining,
-      purchasedAt: p.createdAt.toISOString(),
-      expiresAt: p.expiresAt.toISOString(),
-    }));
-
-  const expired = packs
-    .filter((p) => p.expiresAt <= now || p.qtyRemaining === 0)
-    .map((p) => ({
-      id: p.id,
-      itemName: p.itemName ?? p.menuItemId,
-      qtyTotal: p.qtyOriginal,
-      qtyRemaining: p.qtyRemaining,
-      purchasedAt: p.createdAt.toISOString(),
-      expiresAt: p.expiresAt.toISOString(),
-    }));
-
-  return { ok: true, data: { active, expired } };
-}
-
 // ─── getCustomerProfile ───────────────────────────────────────────────────────
 
 export async function getCustomerProfile(): Promise<
@@ -291,85 +220,4 @@ export async function updateCustomerProfile(
   });
 
   return { ok: true, data: { id: updated.id } };
-}
-
-// ─── listCustomerLoyaltyHistory ───────────────────────────────────────────────
-
-const HISTORY_PAGE_SIZE = 20;
-
-export type LoyaltyHistoryRow = {
-  id: string;
-  delta: number;
-  kind: "earn" | "redeem" | "adjustment" | "expiry";
-  reason: string | null;
-  at: Date;
-  runningBalance: number;
-};
-
-export async function listCustomerLoyaltyHistory(
-  page = 0
-): Promise<ActionResult<{ rows: LoyaltyHistoryRow[]; total: number; currentBalance: number }>> {
-  const session = await requireCustomer();
-  if (!session.ok) return { ok: false, code: "UNAUTHORIZED", message: "Not signed in." };
-
-  let queryResult: [
-    [{ loyaltyPoints: number } | undefined],
-    { id: string; delta: number; kind: string; reason: string | null; at: Date }[],
-    [{ total: number } | undefined],
-  ];
-  try {
-    queryResult = (await withCustomerScope(session.customerId, (tx) =>
-      Promise.all([
-        tx
-          .select({ loyaltyPoints: customers.loyaltyPoints })
-          .from(customers)
-          .where(eq(customers.id, session.customerId)),
-        tx
-          .select({
-            id: loyaltyTransactions.id,
-            delta: loyaltyTransactions.delta,
-            kind: loyaltyTransactions.kind,
-            reason: loyaltyTransactions.reason,
-            at: loyaltyTransactions.at,
-          })
-          .from(loyaltyTransactions)
-          .where(eq(loyaltyTransactions.customerId, session.customerId))
-          .orderBy(desc(loyaltyTransactions.at))
-          .limit(HISTORY_PAGE_SIZE)
-          .offset(page * HISTORY_PAGE_SIZE),
-        tx
-          .select({ total: count() })
-          .from(loyaltyTransactions)
-          .where(eq(loyaltyTransactions.customerId, session.customerId)),
-      ])
-    )) as typeof queryResult;
-  } catch {
-    return { ok: false, code: "DB_ERROR", message: "Could not load loyalty history." };
-  }
-  const [[customer], txRows, [totalRow]] = queryResult;
-
-  if (!customer) {
-    return { ok: false, code: "NOT_FOUND", message: "Customer account not found." };
-  }
-
-  const currentBalance = customer.loyaltyPoints;
-  const totalTransactions = totalRow?.total ?? 0;
-
-  // Compute running balances by working backwards from currentBalance.
-  // rows[0] is the newest transaction; its post-balance = currentBalance.
-  // Each subsequent row's balance = previous row's balance − previous row's delta.
-  const rows: LoyaltyHistoryRow[] = txRows.map((row, i) => {
-    // Sum of all deltas for rows 0..i-1 (newer transactions already settled)
-    const deltasSoFar = txRows.slice(0, i).reduce((acc, r) => acc + r.delta, 0);
-    return {
-      id: row.id,
-      delta: row.delta,
-      kind: row.kind as LoyaltyHistoryRow["kind"],
-      reason: row.reason,
-      at: row.at,
-      runningBalance: currentBalance - deltasSoFar,
-    };
-  });
-
-  return { ok: true, data: { rows, total: totalTransactions, currentBalance } };
 }

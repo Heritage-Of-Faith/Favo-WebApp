@@ -1,6 +1,6 @@
 // The Favo — shared contract (AT-142).
 //
-// ONE schema, used by BOTH entry points: the customer PWA loyalty page (AT-143)
+// ONE schema, used by BOTH entry points: the customer PWA dashboard (AT-143)
 // and the barista POS panel (AT-144) call the same server actions in
 // src/server/actions/favo.ts validated against this file. Do not fork this
 // shape per surface — that's the drift the AT-142 architecture mandate exists

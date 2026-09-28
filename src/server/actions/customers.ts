@@ -1,13 +1,13 @@
 "use server";
 
-import { or, ilike, eq, desc, asc, sql } from "drizzle-orm";
+import { or, ilike, eq, desc, asc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { customers, orders, loyaltyTransactions, coffeePacks, menuItems } from "@db/schema";
+import { customers, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import type { ActionResult, Customer } from "@/lib/types";
 
 // Docs: docs/API.md → searchCustomer · ILIKE on name + exact phone match.
-// Returns id, name, phone, loyalty_points (read-only customer lookup for the POS).
+// Returns id, name, phone, email (read-only customer lookup for the POS).
 
 const MAX_RESULTS = 10;
 
@@ -28,14 +28,6 @@ export async function searchCustomer(
       name: customers.name,
       phone: customers.phone,
       email: customers.email,
-      loyaltyPoints: customers.loyaltyPoints,
-      activePackCount: sql<number>`(
-        SELECT COUNT(*)::int
-        FROM coffee_packs
-        WHERE coffee_packs.customer_id = ${customers.id}
-          AND coffee_packs.qty_remaining > 0
-          AND coffee_packs.expires_at > NOW()
-      )`.mapWith(Number),
     })
     .from(customers)
     .where(or(ilike(customers.name, `%${q}%`), eq(customers.phone, q)))
@@ -46,8 +38,6 @@ export async function searchCustomer(
     name: c.name,
     phone: c.phone,
     email: c.email,
-    loyaltyPoints: c.loyaltyPoints,
-    activePackCount: c.activePackCount,
   }));
 
   return { ok: true, data: results };
@@ -60,7 +50,6 @@ export type CustomerListItem = {
   name: string;
   email: string | null;
   phone: string | null;
-  loyaltyPoints: number;
   createdAt: string; // ISO
 };
 
@@ -93,29 +82,12 @@ export async function listCustomers(opts?: {
       name: c.name,
       email: c.email,
       phone: c.phone,
-      loyaltyPoints: c.loyaltyPoints,
       createdAt: c.createdAt.toISOString(),
     })),
   };
 }
 
 // ─── Admin customer detail (GZ / AT-78) ───────────────────────────────────────
-
-export type LoyaltyTxnRow = {
-  id: string;
-  delta: number;
-  kind: string;
-  orderId: string | null;
-  at: string;
-};
-
-export type AdminPackRow = {
-  id: string;
-  menuItemName: string;
-  qtyOriginal: number;
-  qtyRemaining: number;
-  expiresAt: string;
-};
 
 export type AdminOrderRow = {
   id: string;
@@ -129,11 +101,7 @@ export type CustomerDetail = {
   name: string;
   email: string | null;
   phone: string | null;
-  loyaltyPoints: number;
   createdAt: string;
-  loyaltyTxns: LoyaltyTxnRow[];
-  activePacks: AdminPackRow[];
-  expiredPacks: AdminPackRow[];
   recentOrders: AdminOrderRow[];
 };
 
@@ -153,60 +121,17 @@ export async function getCustomerDetail(
     return { ok: false, code: "NOT_FOUND", message: "Customer not found." };
   }
 
-  const now = new Date();
-
-  const [loyaltyTxns, packs, recentOrders] = await Promise.all([
-    db
-      .select()
-      .from(loyaltyTransactions)
-      .where(eq(loyaltyTransactions.customerId, customerId))
-      .orderBy(desc(loyaltyTransactions.at))
-      .limit(50),
-
-    db
-      .select({
-        id: coffeePacks.id,
-        menuItemName: menuItems.name,
-        qtyOriginal: coffeePacks.qtyOriginal,
-        qtyRemaining: coffeePacks.qtyRemaining,
-        expiresAt: coffeePacks.expiresAt,
-      })
-      .from(coffeePacks)
-      .innerJoin(menuItems, eq(coffeePacks.menuItemId, menuItems.id))
-      .where(eq(coffeePacks.customerId, customerId))
-      .orderBy(desc(coffeePacks.expiresAt))
-      .limit(100),
-
-    db
-      .select({
-        id: orders.id,
-        state: orders.state,
-        totalZar: orders.totalZar,
-        placedAt: orders.placedAt,
-      })
-      .from(orders)
-      .where(eq(orders.customerId, customerId))
-      .orderBy(desc(orders.placedAt))
-      .limit(20),
-  ]);
-
-  const activePacks: AdminPackRow[] = [];
-  const expiredPacks: AdminPackRow[] = [];
-
-  for (const p of packs) {
-    const row: AdminPackRow = {
-      id: p.id,
-      menuItemName: p.menuItemName,
-      qtyOriginal: p.qtyOriginal,
-      qtyRemaining: p.qtyRemaining,
-      expiresAt: p.expiresAt.toISOString(),
-    };
-    if (p.expiresAt < now || p.qtyRemaining === 0) {
-      expiredPacks.push(row);
-    } else {
-      activePacks.push(row);
-    }
-  }
+  const recentOrders = await db
+    .select({
+      id: orders.id,
+      state: orders.state,
+      totalZar: orders.totalZar,
+      placedAt: orders.placedAt,
+    })
+    .from(orders)
+    .where(eq(orders.customerId, customerId))
+    .orderBy(desc(orders.placedAt))
+    .limit(20);
 
   return {
     ok: true,
@@ -215,17 +140,7 @@ export async function getCustomerDetail(
       name: customer.name,
       email: customer.email,
       phone: customer.phone,
-      loyaltyPoints: customer.loyaltyPoints,
       createdAt: customer.createdAt.toISOString(),
-      loyaltyTxns: loyaltyTxns.map((t) => ({
-        id: t.id,
-        delta: t.delta,
-        kind: t.kind,
-        orderId: t.orderId,
-        at: t.at.toISOString(),
-      })),
-      activePacks,
-      expiredPacks,
       recentOrders: recentOrders.map((o) => ({
         id: o.id,
         state: o.state,

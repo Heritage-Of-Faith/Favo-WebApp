@@ -1,8 +1,12 @@
 // Offline sync — apply a single outbox entry — task G20 (AT-61)
 // Called by POST /api/sync/orders. Pure DB logic; no HTTP concerns here.
 // Idempotency: keyed on outbox_log.client_uuid — duplicates return the stored result.
-// Conflict resolution: LWW per order creation. Payment amount mismatches are flagged
-// in sync_conflicts for manager review rather than silently accepted.
+// LWW per order creation: an unknown/inactive menu item or a payment-amount
+// mismatch (server total vs. client total) is rejected outright rather than
+// silently accepted. (Deletion pass: this used to open a row in a dedicated
+// conflict-tracking table for manager review; that tracking/resolution layer
+// is gone — the outbox entry itself still records the receipt, just never
+// gets applied.)
 // Docs: docs/API.md · BUSINESS_RULES.md L01
 
 import { eq, inArray } from "drizzle-orm";
@@ -10,7 +14,6 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import {
   outboxLog,
-  syncConflicts,
   orders,
   orderItems,
   menuItems,
@@ -45,7 +48,7 @@ export type OutboxItem = z.infer<typeof outboxItemSchema>;
 export type ApplyOutboxResult =
   | { outcome: "applied"; orderId: string; serverTotalZar: number }
   | { outcome: "duplicate"; orderId: string | null; appliedAt: Date | null }
-  | { outcome: "conflict"; conflictId: string; kind: "payment_mismatch" | "duplicate_order" };
+  | { outcome: "rejected"; reason: "unknown_menu_item" | "amount_mismatch" };
 
 // ─── applyOutboxItem ──────────────────────────────────────────────────────────
 
@@ -74,7 +77,7 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     .returning({ id: outboxLog.id });
 
   if (!logEntry) {
-    return { outcome: "conflict", conflictId: "", kind: "duplicate_order" };
+    return { outcome: "rejected", reason: "unknown_menu_item" };
   }
 
   // ── Resolve menu items and compute server-side total ───────────────────────
@@ -85,25 +88,12 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
 
   const menuById = new Map(menuRows.map((m) => [m.id, m]));
 
-  // Verify all items exist and are active
+  // Verify all items exist and are active. Rejected outright — the outbox_log
+  // row already recorded the receipt (appliedAt stays null).
   for (const reqItem of item.items) {
     const mi = menuById.get(reqItem.menuItemId);
     if (!mi || !mi.active) {
-      const [conflictRow] = await db
-        .insert(syncConflicts)
-        .values({
-          kind: "payment_mismatch",
-          clientPayload: item as unknown as Record<string, unknown>,
-          serverState: { reason: "unknown_menu_item", menuItemId: reqItem.menuItemId },
-        })
-        .returning({ id: syncConflicts.id });
-
-      await db
-        .update(outboxLog)
-        .set({ conflictId: conflictRow?.id })
-        .where(eq(outboxLog.id, logEntry.id));
-
-      return { outcome: "conflict", conflictId: conflictRow?.id ?? "", kind: "payment_mismatch" };
+      return { outcome: "rejected", reason: "unknown_menu_item" };
     }
   }
 
@@ -116,21 +106,7 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
 
   // ── Payment amount validation (LWW — server total is authoritative) ────────
   if (serverTotalZar !== item.clientTotalZar) {
-    const [conflictRow] = await db
-      .insert(syncConflicts)
-      .values({
-        kind: "payment_mismatch",
-        clientPayload: item as unknown as Record<string, unknown>,
-        serverState: { serverTotalZar, clientTotalZar: item.clientTotalZar },
-      })
-      .returning({ id: syncConflicts.id });
-
-    await db
-      .update(outboxLog)
-      .set({ conflictId: conflictRow?.id })
-      .where(eq(outboxLog.id, logEntry.id));
-
-    return { outcome: "conflict", conflictId: conflictRow?.id ?? "", kind: "payment_mismatch" };
+    return { outcome: "rejected", reason: "amount_mismatch" };
   }
 
   // ── Create the order ───────────────────────────────────────────────────────

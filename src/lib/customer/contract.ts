@@ -15,16 +15,12 @@
 
 import type { ActionResult, Order } from "@/lib/types";
 
-// ─── Loyalty + summary ──────────────────────────────────────────────────────
+// ─── Summary ──────────────────────────────────────────────────────────────────
 
 /** Glanceable header data for the customer dashboard (N13). */
 export type CustomerSummary = {
   customerId: string;
   name: string;
-  /** Loyalty points balance (integer points, not money). */
-  loyaltyPoints: number;
-  /** Number of coffee packs that are still active (not expired, qty remaining > 0). */
-  activePackCount: number;
   /** Whether a push subscription is currently saved for this customer in the DB. */
   hasPushSubscription: boolean;
 };
@@ -36,25 +32,6 @@ export type CustomerOrder = Pick<
   Order,
   "id" | "state" | "placedAt" | "completedAt" | "totalZar" | "items"
 >;
-
-// ─── Coffee packs ─────────────────────────────────────────────────────────────
-
-export type CoffeePack = {
-  id: string;
-  /** Menu item the pack is for (e.g. "Cappuccino"). */
-  itemName: string;
-  qtyTotal: number;
-  qtyRemaining: number;
-  /** ISO timestamp of purchase. */
-  purchasedAt: string;
-  /** ISO timestamp — packs expire 90 days after purchase (L16). */
-  expiresAt: string;
-};
-
-export type PacksView = {
-  active: CoffeePack[];
-  expired: CoffeePack[];
-};
 
 // ─── Profile ──────────────────────────────────────────────────────────────────
 
@@ -74,6 +51,5 @@ export type CustomerProfileInput = {
 export interface CustomerDataApi {
   getCustomerSummary(): Promise<ActionResult<CustomerSummary>>;
   listCustomerOrders(limit?: number): Promise<ActionResult<CustomerOrder[]>>;
-  getPacks(): Promise<ActionResult<PacksView>>;
   updateCustomerProfile(input: CustomerProfileInput): Promise<ActionResult<{ id: string }>>;
 }

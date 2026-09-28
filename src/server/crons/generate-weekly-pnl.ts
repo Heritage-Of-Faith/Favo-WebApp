@@ -1,13 +1,11 @@
 // Weekly P&L cron — task G14
 // Fires Sunday 23:59 SAST. Aggregates revenue, COGS, expenses for
-// Mon 00:00 – Sun 23:59 SAST, inserts into weekly_reports,
-// and pings Discord #favo-ops with an embed.
+// Mon 00:00 – Sun 23:59 SAST and inserts into weekly_reports.
 // Docs: API.md · BUSINESS_RULES.md T05 L09 · FAVO_PRD_v3.md §07 §09
 
 import { and, gte, lt, sql, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, weeklyReports, expenses } from "@db/schema";
-import { pingFavoOps, formatZarField, pnlColor } from "@/server/discord/webhook";
 
 // Africa/Johannesburg = UTC+2 (no DST)
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
@@ -99,24 +97,6 @@ export async function generateWeeklyPnL(
     .insert(weeklyReports)
     .values({ weekStarting, revenueZar, cogsZar, expensesZar, grossMarginZar, netZar })
     .returning({ id: weeklyReports.id });
-
-  // ── Discord ping ───────────────────────────────────────────────────────────
-  await pingFavoOps({
-    title: `📊 Weekly P&L — w/c ${weekStarting}`,
-    color: pnlColor(netZar),
-    fields: [
-      { name: "Revenue", value: formatZarField(revenueZar), inline: true },
-      { name: "COGS", value: formatZarField(cogsZar), inline: true },
-      { name: "Expenses", value: formatZarField(expensesZar), inline: true },
-      { name: "Gross Margin", value: formatZarField(grossMarginZar), inline: true },
-      { name: "Net P&L", value: formatZarField(netZar), inline: true },
-      {
-        name: "Status",
-        value: netZar >= 0 ? "✅ Profitable" : "🔴 Loss",
-        inline: true,
-      },
-    ],
-  });
 
   return { weekStarting, reportId: report.id, alreadyExists: false };
 }
