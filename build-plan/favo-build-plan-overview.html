@@ -1,0 +1,263 @@
+<title>FAVO Build Plan</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --paper:#f4f1e9;
+    --paper-raised:#ffffff;
+    --ink:#241a10;
+    --ink-soft:#5b4f40;
+    --ink-faint:#8b8072;
+    --rule:#ddd4c2;
+    --rule-soft:#e8e1d2;
+
+    --mia:#a8386b;
+    --nikao:#2a7768;
+    --both:#5c4a96;
+
+    --accent:#a8386b;
+    --accent-soft:#f2dde7;
+    --hold-bg:#ece8dc;
+    --hold-border:#cfc4a9;
+
+    --shadow: 0 1px 2px rgba(36,26,16,.06), 0 6px 20px -8px rgba(36,26,16,.12);
+  }
+
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#1b140d;
+      --paper-raised:#241b12;
+      --ink:#f2ead9;
+      --ink-soft:#c9bda8;
+      --ink-faint:#8f8270;
+      --rule:#3a2f22;
+      --rule-soft:#2c241a;
+
+      --mia:#e58cb2;
+      --nikao:#6bc2ac;
+      --both:#a89ae0;
+
+      --accent:#e58cb2;
+      --accent-soft:#3a2230;
+      --hold-bg:#241f16;
+      --hold-border:#463a29;
+
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px -8px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#1b140d;
+    --paper-raised:#241b12;
+    --ink:#f2ead9;
+    --ink-soft:#c9bda8;
+    --ink-faint:#8f8270;
+    --rule:#3a2f22;
+    --rule-soft:#2c241a;
+
+    --mia:#e58cb2;
+    --nikao:#6bc2ac;
+    --both:#a89ae0;
+
+    --accent:#e58cb2;
+    --accent-soft:#3a2230;
+    --hold-bg:#241f16;
+    --hold-border:#463a29;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px -8px rgba(0,0,0,.5);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:'IBM Plex Sans', system-ui, sans-serif;
+    margin:0; padding-inline:0;
+  }
+  .wrap{max-width:720px; margin:0 auto; padding-inline:20px;}
+
+  h1,h2,h3{font-family:'Fraunces', Georgia, serif; text-wrap:balance; margin:0;}
+  .mono{font-family:'IBM Plex Mono', ui-monospace, monospace;}
+  p{line-height:1.6;}
+
+  header.top{padding-block:32px 22px; border-bottom:1px solid var(--rule);}
+  .eyebrow{
+    font-size:11.5px; font-weight:600; letter-spacing:.11em; text-transform:uppercase;
+    color:var(--ink-faint); margin-bottom:10px;
+  }
+  header.top h1{font-size:clamp(30px,6vw,42px); font-weight:600; line-height:1.05;}
+  .lede{color:var(--ink-soft); margin-top:12px; font-size:15.5px; max-width:62ch; line-height:1.65;}
+  .top-links{margin-top:16px; display:flex; gap:14px; flex-wrap:wrap;}
+  .top-links a{
+    font-size:12.5px; font-weight:600; color:var(--accent); text-decoration:none;
+    border-bottom:1px solid transparent;
+  }
+  .top-links a:hover{border-bottom-color:var(--accent);}
+
+  section.intro{padding-block:26px; border-bottom:1px solid var(--rule);}
+  section.intro h2{font-size:17px; font-weight:600; margin-bottom:10px;}
+  section.intro p{font-size:14.5px; color:var(--ink-soft); max-width:64ch;}
+  .conformance{
+    display:flex; gap:0; margin-top:16px; border:1px solid var(--rule-soft); border-radius:10px;
+    overflow:hidden; background:var(--paper-raised); box-shadow:var(--shadow);
+  }
+  .conformance .seg{flex:1; padding:12px 8px; text-align:center; border-right:1px solid var(--rule-soft);}
+  .conformance .seg:last-child{border-right:none;}
+  .conformance .n{font-family:'Fraunces',serif; font-size:22px; font-weight:600; font-variant-numeric:tabular-nums;}
+  .conformance .l{font-size:10.5px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.05em; margin-top:2px;}
+
+  section.shape{padding-block:22px; border-bottom:1px solid var(--rule);}
+  .weeks{display:flex; gap:14px; flex-wrap:wrap; margin-top:12px;}
+  .week-card{
+    flex:1 1 240px; background:var(--paper-raised); border:1px solid var(--rule-soft); border-radius:10px;
+    padding:14px 16px; box-shadow:var(--shadow);
+  }
+  .week-card .wk{font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent);}
+  .week-card p{font-size:13.5px; color:var(--ink-soft); margin-top:6px;}
+
+  /* ---------- timeline ---------- */
+  main.timeline{padding-block:30px 10px; position:relative;}
+  .phase{
+    position:relative; padding-left:70px; padding-bottom:32px;
+  }
+  .phase:not(:last-child)::before{
+    content:""; position:absolute; left:27px; top:30px; bottom:-4px; width:1.5px; background:var(--rule);
+  }
+  .phase-badge{
+    position:absolute; left:0; top:0; width:56px; height:56px; border-radius:50%;
+    background:var(--paper-raised); border:1.5px solid var(--rule); display:flex; flex-direction:column;
+    align-items:center; justify-content:center; box-shadow:var(--shadow);
+  }
+  .phase-badge .d{font-family:'Fraunces',serif; font-size:13px; font-weight:700; line-height:1; white-space:nowrap;}
+  .phase-badge .u{font-size:8px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.04em; margin-top:1px;}
+  .phase-body{
+    background:var(--paper-raised); border:1px solid var(--rule-soft); border-radius:12px;
+    padding:16px 18px; box-shadow:var(--shadow);
+  }
+  .phase-top{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  .week-tag{
+    font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--ink-faint); background:var(--rule-soft); padding:2px 8px; border-radius:999px;
+  }
+  .phase-body h2{font-size:18px; font-weight:600; margin-top:8px;}
+  .changing{font-size:14px; margin-top:10px; line-height:1.55;}
+  .changing b{color:var(--accent); font-weight:600;}
+  .because{font-size:12.5px; color:var(--ink-faint); margin-top:6px; line-height:1.5; font-style:italic;}
+  .tasklist{margin-top:12px; padding-top:12px; border-top:1px dashed var(--rule);}
+  .tasklist .lbl{font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint); font-weight:600;}
+  .tasklist ul{margin:8px 0 0; padding-left:18px;}
+  .tasklist li{font-size:13px; color:var(--ink-soft); margin-bottom:5px; line-height:1.45;}
+
+  /* ---------- hold section ---------- */
+  section.hold{
+    margin-top:6px; margin-bottom:34px; background:var(--hold-bg); border:1px dashed var(--hold-border);
+    border-radius:14px; padding:20px 22px;
+  }
+  section.hold h2{font-size:17px; font-weight:600;}
+  section.hold > p.note{font-size:13.5px; color:var(--ink-soft); margin-top:8px; max-width:62ch;}
+  .hold-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; margin-top:14px;}
+  .hold-item{font-size:13px; color:var(--ink-soft); padding:7px 0; border-bottom:1px solid var(--rule);}
+
+  footer{padding-block:22px 44px; font-size:12px; color:var(--ink-faint); border-top:1px solid var(--rule);}
+  footer a{color:inherit;}
+  footer p{margin:6px 0 0;}
+
+  @media (max-width:560px){
+    .phase{padding-left:56px;}
+    .phase-badge{width:44px; height:44px; left:0;}
+    .phase-badge .d{font-size:11px;}
+    .phase:not(:last-child)::before{left:21px;}
+    .hold-grid{grid-template-columns:1fr;}
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">FAVO Café · Build-Plan · Jira project AT</div>
+    <h1>The Two-Week Plan</h1>
+    <p class="lede">FAVO's app was built to an older spec (PRD v3). This plan is the first push toward the current one (v7.0) — not the whole gap, just the parts that are live and wrong today, plus the one feature the café actually runs on: the free weekday coffee.</p>
+    <div class="top-links">
+      <a href="https://claude.ai/artifact/8ZnGWSvtb9yiv4Sy8cDeJT" target="_blank" rel="noopener">See live task status →</a>
+      <a href="https://hofmi.atlassian.net/browse/AT-147" target="_blank" rel="noopener">Open in Jira ↗</a>
+    </div>
+  </header>
+
+  <section class="intro">
+    <h2>Where the app actually stands</h2>
+    <p>Of PRD v7.0's 148 normative rules, this is what's true in the repo as of the last audit — a working café app built to the wrong spec, not a broken one:</p>
+    <div class="conformance">
+      <div class="seg"><div class="n">12</div><div class="l">Done</div></div>
+      <div class="seg"><div class="n">25</div><div class="l">Partial</div></div>
+      <div class="seg"><div class="n">110</div><div class="l">Absent</div></div>
+      <div class="seg"><div class="n">1</div><div class="l">Delete</div></div>
+    </div>
+  </section>
+
+  <section class="shape">
+    <h2 style="font-size:17px; font-weight:600;">The shape of it</h2>
+    <div class="weeks">
+      <div class="week-card">
+        <div class="wk">Week 1 — Stop, then clear</div>
+        <p>Close the security gaps that are live right now, ship a real deploy path, delete everything v7 forbids outright, and lay the one database migration everything in Week 2 depends on.</p>
+      </div>
+      <div class="week-card">
+        <div class="wk">Week 2 — Rebuild, then trade</div>
+        <p>Rebuild the free weekday cup so it actually reaches office staff, make the money and cost numbers honest, wire a real scheduler, then run two real weekdays of live service before a signed go/no-go.</p>
+      </div>
+    </div>
+  </section>
+
+  <main class="timeline" id="phases"></main>
+
+  <footer>
+    Sourced from <code>05-the-two-week-plan.md</code> and <code>CLAUDE.md</code> · generated from the same 63-row import as the Jira board (AT-147–AT-209).
+    <p>Task status changes daily — the list above is the plan as written, not a live feed. For current state: <a href="https://claude.ai/artifact/8ZnGWSvtb9yiv4Sy8cDeJT" target="_blank" rel="noopener">the Build Tracker</a>.</p>
+  </footer>
+</div>
+
+<script id="phase-data" type="application/json">
+[{"day":"1","badge":"1","badgeSub":"DAY","title":"Security & build-gate hardening","what":"Remove the typecheck bypass, merge the two route gates, harden the PIN login, fix the wrong domain.","why":"CLAUDE.md §4 calls ignoreBuildErrors the most dangerous line in the repo, and the auth gaps are a live security defect on a café-counter tablet.","week":"Week 1","tasks":["Remove ignoreBuildErrors and fix whatever it hid","Merge proxy.ts and src/middleware.ts into one role-checked gate","Add session maxAge to the staff PIN login","Rate-limit loginWithPin","Fix favo.hofmi.org to favo.hofmi.net in layout.tsx and the Discord webhook","Sweep remaining favo.hofmi.org occurrences","Chase Matt on the Transformate terms (OPEN-08)"]},{"day":"2","badge":"2","badgeSub":"DAY","title":"Deploy path — Docker, healthcheck, scheduler wiring","what":"Produce an actual deployable artefact and an honest healthcheck.","why":"no Dockerfile, no standalone output, no scheduler, no migration step exist anywhere in the tree today.","week":"Week 1","tasks":["Write the Dockerfile and enable output standalone","CI workflow to build and push the image to GHCR","Fix the healthcheck so a Yoco blip can't restart-loop a working café","Remove db/index.ts's prepare:false and collapse the two database URLs","Wire a real scheduler for the four cron routes","Add a production migration step and a DATABASE_URL_SESSION startup check"]},{"day":"3–4","badge":"3–4","badgeSub":"DAY","title":"Delete v7-forbidden features","what":"Delete every v7-forbidden feature still live in a codebase built to PRD v3 — loyalty, packs, refunds app-code, Discord, sync_conflicts, retry-deferred, pending_charges, magic_link_tokens.","why":"CLAUDE.md §7 names all of these as standing prohibitions; each is real, shipped code today, not a stub.","week":"Week 1","tasks":["Delete loyalty — points earn and redemption","Delete coffee packs and pending_charges","Delete refunds — application code only","Refunds migration — drop refunds table and remove 'refunded' from payment_status","Delete Discord and rehome formatZarField/pnlColor","Replace the close-daily Discord variance alert with Web Push before deleting Discord","Delete sync_conflicts and its resolution surface","Delete retry-deferred (both files)","Delete the dead magic_link_tokens table"]},{"day":"5","badge":"5","badgeSub":"DAY","title":"The substrate migration","what":"One Tier A migration carrying everything the weekday entitlement rows need — customers.status, the re-keyed entitlement table, order_items columns, opening_sessions columns, orders.revenue_day, a config store, and the payments partial unique index.","why":"nothing in Days 6-14 can be built without this schema existing first.","week":"Week 1","tasks":["Decide the customers.name / surname question","Write the Day 5 substrate migration","Write FIXTURE-A and FIXTURE-B by hand"]},{"day":"6–7","badge":"6–7","badgeSub":"DAY","title":"The free weekday cup, rebuilt","what":"Office staff become customers with status='office_staff'; the free weekday cup is re-keyed to customer_id, zeroes exactly one unit not a whole order, and searchCustomer stops leaking email and full phone.","why":"CLAUDE.md §4.2/§4.3 — the FK today points at the 3-row staff table so the ~63 office staff can never receive it, and the current entitlement zeroes the whole order.","week":"Week 2","tasks":["Re-key the entitlement to customer_id with automatic matching","Zero exactly one unit of one eligible line — not the whole order","Stop searchCustomer leaking email and full phone"]},{"day":"8","badge":"8","badgeSub":"DAY","title":"R0 orders & weekday deduction","what":"a net-R0 weekday order writes no payment row and sends nothing to a terminal; weekday deduction stops touching cups and lids.","why":"CLAUDE.md §4.4/§4.15 — createOrder mints a Yoco checkout and a payments row unconditionally today, and deductForOrder deducts cups/lids even though people bring their own mugs on weekdays.","week":"Week 2","tasks":["Stop minting a payment for net-R0 weekday orders","Stop deducting cups and lids on weekdays"]},{"day":"9–10","badge":"9–10","badgeSub":"DAY","title":"Honest cost accounting","what":"rounding happens exactly once, half-up, per order at order_cogs; a missing cost input names the offending ingredient instead of vanishing; net never renders green on an estimate.","why":"CLAUDE.md §4.12-14 — three reports currently disagree by cents on identical data, a missing input makes profit look better, and the seed data is entirely estimates so a green flag on guessed numbers is the shipping default.","week":"Week 2","tasks":["Persist order_cogs as an integer in the same transaction as deduction","Rewrite the four period queries to sum order_cogs integers","Replace the silent-drop cost filter with a named refusal","Add cost_source and make provisional suppress green everywhere","Implement UNAVAILABLE as a real, distinct render state"]},{"day":"11","badge":"11","badgeSub":"DAY","title":"Scheduler jobs & the barista drill","what":"put checkLowStock, closeDaily (at the correct 00:05, not the route comment's claimed 23:59) and the collected sweep on the real scheduler with catch-up and audit rules, then run a real drill with three baristas on the actual tablet.","why":"there is no scheduler of any kind today; nothing has been tested with real people yet.","week":"Week 2","tasks":["Put checkLowStock and closeDaily on the real scheduler","Build the collected-order sweep job","Run the real barista drill"]},{"day":"12–14","badge":"12–14","badgeSub":"DAY","title":"Live trading & the go/no-go","what":"two real weekdays of live service on the changes above; fix what the drill and the trading surface, in that order; go/no-go on the Friday.","why":"this is the only way to know the weekday push actually works.","week":"Week 2","tasks":["Trade two real weekdays and fix what surfaces","Friday go/no-go against §6"]},{"day":"—","badge":"—","badgeSub":"ONGOING","title":"Vendor & owner decisions","what":"the conversations and decisions that aren't code but block code from proceeding — Matt/Transformate, the surname question, agreeing what's deferred, calendar review blocks.","why":"05-the-two-week-plan.md §7 — the binding constraint on this whole plan is human review throughput and vendor answers, not build speed.","week":"Week 1","tasks":["Agree the deferred list explicitly","Book two review blocks on the calendar","Confirm gh auth login is set up for Claude Code to push and open PRs"]},{"day":"__HOLD__","title":"Deferred backlog","what":"everything §5 of the two-week plan names as deferred, kept visible so nothing is silently dropped.","why":"'named, not euphemised' — Sunday keeps working the way it works today throughout all of this.","week":"Backlog (deferred)","tasks":["The Web POS tender chain replacement","Sunday card sales and the extra-shot surcharge","The blessing fund","Vouchers and the Untracked Church event mode","The ministry rollup","The weekly ops summary rewrite","The Yoco transaction import and reconciliation close","Margin by shot count (REQ-139)","Comps cancels-past-ordered abandoned drinks and walk-ins"]}]
+</script>
+
+<script>
+(function(){
+  "use strict";
+  var PHASES = JSON.parse(document.getElementById('phase-data').textContent);
+
+  function esc(s){
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];
+    });
+  }
+
+  var HOLD_KEY = "__HOLD__";
+  var timeline = PHASES.filter(function(p){ return p.day !== HOLD_KEY; });
+  var hold = PHASES.filter(function(p){ return p.day === HOLD_KEY; })[0];
+
+  var main = document.getElementById('phases');
+  main.innerHTML = timeline.map(function(p){
+    var tasks = p.tasks.map(function(t){ return '<li>'+esc(t)+'</li>'; }).join('');
+    return (
+      '<div class="phase">' +
+        '<div class="phase-badge"><div class="d">'+esc(p.badge)+'</div><div class="u">'+esc(p.badgeSub||"")+'</div></div>' +
+        '<div class="phase-body">' +
+          '<div class="phase-top"><span class="week-tag">'+esc(p.week)+'</span></div>' +
+          '<h2>'+esc(p.title)+'</h2>' +
+          '<p class="changing"><b>Changing:</b> '+esc(p.what)+'</p>' +
+          '<p class="because">'+esc(p.why)+'</p>' +
+          '<div class="tasklist"><span class="lbl">Tasks ('+p.tasks.length+')</span><ul>'+tasks+'</ul></div>' +
+        '</div>' +
+      '</div>'
+    );
+  }).join('');
+
+  if (hold){
+    var tasks = hold.tasks.map(function(t){ return '<div class="hold-item">'+esc(t)+'</div>'; }).join('');
+    var section = document.createElement('section');
+    section.className = 'hold';
+    section.innerHTML =
+      '<h2>What isn\'t changing yet</h2>' +
+      '<p class="note">'+esc(hold.what)+' '+esc(hold.why)+'</p>' +
+      '<div class="hold-grid">'+tasks+'</div>';
+    main.parentNode.insertBefore(section, document.querySelector('footer'));
+  }
+})();
+</script>
