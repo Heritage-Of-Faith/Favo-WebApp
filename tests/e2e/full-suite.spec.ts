@@ -212,18 +212,6 @@ test.describe("Phase 3 — Offline Sync + Reports + Cron", () => {
     expect(body).toContain("Monthly P&amp;L Report");
   });
 
-  test("GET /api/crons/retry-deferred without bearer → 401", async ({ request }) => {
-    const res = await request.get("/api/crons/retry-deferred");
-    expect(res.status()).toBe(401);
-  });
-
-  test("GET /api/crons/retry-deferred with wrong secret → 401", async ({ request }) => {
-    const res = await request.get("/api/crons/retry-deferred", {
-      headers: { Authorization: "Bearer wrong-secret" },
-    });
-    expect(res.status()).toBe(401);
-  });
-
   test("GET /api/reports/export with invalid format → 400", async ({ page }) => {
     await loginAsAdmin(page);
     const res = await page.context().request.get(

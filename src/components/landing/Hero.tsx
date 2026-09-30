@@ -107,7 +107,7 @@ export default function Hero() {
             real skills one order at a time. Grab a seat and enjoy the fellowship.
           </p>
           <a href="/signup" style={S.cta}>
-            Join our loyalty programme →
+            Create your FAVO account →
           </a>
         </div>
 

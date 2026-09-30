@@ -28,10 +28,6 @@ import {
   wasteCategory,
   purchaseKind,
   expenseCategory,
-  loyaltyKind,
-  chargeKind,
-  syncConflictKind,
-  syncConflictStatus,
 } from "./enums";
 
 const TENANT = "hofmi";
@@ -55,24 +51,16 @@ export const staff = pgTable("staff", {
 
 // ─── Customers ────────────────────────────────────────────────────────────────
 
-export const customers = pgTable(
-  "customers",
-  {
-    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-    tenantId: tenantId(),
-    authId: uuid("auth_id").unique(),
-    email: text("email").unique(),
-    name: text("name").notNull(),
-    phone: text("phone"),
-    pushSubscription: jsonb("push_subscription"),
-    loyaltyPoints: integer("loyalty_points").default(0).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  () => [
-    // L06: loyalty points balance can never go negative.
-    check("customers_loyalty_points_non_negative", sql`loyalty_points >= 0`),
-  ]
-);
+export const customers = pgTable("customers", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  authId: uuid("auth_id").unique(),
+  email: text("email").unique(),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  pushSubscription: jsonb("push_subscription"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
 
 // ─── Menu ─────────────────────────────────────────────────────────────────────
 
@@ -293,35 +281,6 @@ export const refunds = pgTable("refunds", {
   status: refundStatus("status").default("pending").notNull(),
 });
 
-// ─── Loyalty ──────────────────────────────────────────────────────────────────
-
-export const loyaltyTransactions = pgTable(
-  "loyalty_transactions",
-  {
-    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-    tenantId: tenantId(),
-    customerId: text("customer_id").notNull().references(() => customers.id),
-    orderId: text("order_id").references(() => orders.id),
-    delta: integer("delta").notNull(),
-    kind: loyaltyKind("kind").notNull(),
-    reason: text("reason"),
-    at: now(),
-  },
-  (t) => [
-    // Idempotency guard (AT-60): prevent double-accrual if transitionOrder is
-    // retried on the same in_progress -> ready transition. Only one earn row is
-    // allowed per order_id -- redeem rows are unrestricted.
-    uniqueIndex("loyalty_txn_earn_order_unique")
-      .on(t.orderId)
-      .where(sql`kind = 'earn'`),
-    // Idempotency guard (AT-109): prevent double-redemption if redeemLoyalty is
-    // retried on the same order. Only one redeem row is allowed per order_id.
-    uniqueIndex("loyalty_txn_redeem_order_unique")
-      .on(t.orderId)
-      .where(sql`kind = 'redeem'`),
-  ]
-);
-
 // ─── Staff Entitlement ────────────────────────────────────────────────────────
 
 export const staffEntitlementLog = pgTable(
@@ -509,34 +468,6 @@ export const weeklyReports = pgTable("weekly_reports", {
   generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// ─── Pending charges (G9 — coffee packs via Yoco) ─────────────────────────────
-
-export const pendingCharges = pgTable("pending_charges", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: tenantId(),
-  yocoCheckoutId: text("yoco_checkout_id").notNull().unique(),
-  kind: chargeKind("kind").notNull(),
-  customerId: text("customer_id").notNull().references(() => customers.id),
-  amountZar: integer("amount_zar").notNull(),
-  status: paymentStatus("status").default("pending").notNull(),
-  metadata: jsonb("metadata"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
-
-// ─── Coffee packs (G9 — L16: barista-sold, 90-day expiry) ─────────────────────
-
-export const coffeePacks = pgTable("coffee_packs", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: tenantId(),
-  customerId: text("customer_id").notNull().references(() => customers.id),
-  menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
-  qtyOriginal: integer("qty_original").notNull(),
-  qtyRemaining: integer("qty_remaining").notNull(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  pendingChargeId: text("pending_charge_id").notNull().references(() => pendingCharges.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
-
 // ─── The Favo (AT-142 — one saved order template per customer) ────────────────
 // `items` holds FavoItem[] — the exact shape of CreateOrderInput["items"]
 // ({ menuItemId, quantity, modifications: customisation-id[] }), validated by
@@ -552,37 +483,6 @@ export const favos = pgTable("favos", {
   updatedByStaffId: text("updated_by_staff_id").references(() => staff.id),
 });
 
-// ─── Pack redemptions (AT-111 — append-only; reversals via reversed_at) ──────
-
-export const packRedemptions = pgTable("pack_redemptions", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: tenantId(),
-  packId: text("pack_id").notNull().references(() => coffeePacks.id),
-  customerId: text("customer_id").notNull().references(() => customers.id),
-  orderId: text("order_id").notNull().references(() => orders.id),
-  /** References order_items.id — the line that was covered by this pack drink. */
-  orderLineRef: text("order_line_ref").notNull(),
-  redeemedAt: timestamp("redeemed_at", { withTimezone: true }).defaultNow().notNull(),
-  /** Null unless the order was cancelled. Set by cancelOrder — never deleted. */
-  reversedAt: timestamp("reversed_at", { withTimezone: true }),
-});
-
-// ─── Sync conflicts (G17 — offline sync conflict log) ────────────────────────
-
-export const syncConflicts = pgTable("sync_conflicts", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: tenantId(),
-  kind: syncConflictKind("kind").notNull(),
-  orderId: text("order_id").references(() => orders.id),
-  clientPayload: jsonb("client_payload").notNull(),
-  serverState: jsonb("server_state"),
-  status: syncConflictStatus("status").default("open").notNull(),
-  openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow().notNull(),
-  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-  resolvedBy: text("resolved_by").references(() => staff.id),
-  resolutionNote: text("resolution_note"),
-});
-
 // ─── Outbox log (G17 — offline POS order queue) ───────────────────────────────
 
 export const outboxLog = pgTable("outbox_log", {
@@ -595,16 +495,4 @@ export const outboxLog = pgTable("outbox_log", {
   payload: jsonb("payload").notNull(),
   receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
   appliedAt: timestamp("applied_at", { withTimezone: true }),
-  conflictId: text("conflict_id").references(() => syncConflicts.id),
-});
-
-// ─── Magic link tokens (G16 — customer email auth) ───────────────────────────
-
-export const magicLinkTokens = pgTable("magic_link_tokens", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: tenantId(),
-  email: text("email").notNull(),
-  tokenHash: text("token_hash").notNull().unique(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  usedAt: timestamp("used_at", { withTimezone: true }),
 });

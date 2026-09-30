@@ -1,13 +1,34 @@
 // Daily close reconciliation — task G10
 // Fires daily at 23:59 SAST. Compares order revenue vs confirmed payments
-// for the day. Pages Discord on T01 variance band breach (L09).
+// for the day. Pushes an alert to admin staff devices on T01 variance band
+// breach (L09) — this used to page Discord; deletion pass replaced it with
+// Web Push (see docs on the deletion PR) so the alert doesn't vanish.
 // Docs: API.md · BUSINESS_RULES.md L09 T01
 
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders } from "@db/schema";
+import { orders, staff } from "@db/schema";
 import { writeAudit } from "@/server/audit";
-import { pingFavoOps, formatZarField } from "@/server/discord/webhook";
+import { formatZarField } from "@/lib/format";
+import webpush from "web-push";
+import { initVapid } from "@/server/push/vapid";
+import { isValidPushSubscription } from "@/server/push/payload";
+import type { PushSubscriptionShape } from "@/server/push/payload";
+
+/** Send a Web Push alert to a single admin staff subscription. */
+async function sendAdminAlertPush(
+  subscription: PushSubscriptionShape,
+  payload: string
+): Promise<boolean> {
+  initVapid();
+  try {
+    await webpush.sendNotification(subscription, payload);
+    return true;
+  } catch (err) {
+    const statusCode = (err as { statusCode?: number }).statusCode;
+    return statusCode !== 404 && statusCode !== 410;
+  }
+}
 
 // Africa/Johannesburg = UTC+2 (no DST)
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
@@ -95,19 +116,26 @@ export async function closeDaily(referenceDate?: Date): Promise<CloseDailyResult
     after: { revenueZar, paymentsZar, variancePct: Math.round(variancePct * 100) / 100, band },
   });
 
-  // Only ping Discord on mismatch (L09: "blocks + pages Discord on mismatch")
+  // Only alert on mismatch (L09: "blocks + pages ops on mismatch"). Recipients
+  // are admin-tier staff with a saved push subscription — this is an
+  // operational money-reconciliation alert, not a barista-facing one.
   if (band !== "ok") {
-    const color = band === "critical" ? 0xe74c3c : 0xf39c12;
-    await pingFavoOps({
-      title: `⚠️ Daily Close — ${band.toUpperCase()} mismatch (${date})`,
-      color,
-      fields: [
-        { name: "Revenue", value: formatZarField(revenueZar), inline: true },
-        { name: "Payments", value: formatZarField(paymentsZar), inline: true },
-        { name: "Variance", value: `${variancePct.toFixed(1)}%`, inline: true },
-        { name: "Band", value: band === "critical" ? "🔴 Critical (>10%)" : "🟠 Investigate (5–10%)", inline: false },
-      ],
+    const admins = await db
+      .select({ id: staff.id, pushSubscription: staff.pushSubscription })
+      .from(staff)
+      .where(and(eq(staff.role, "admin"), isNotNull(staff.pushSubscription)));
+
+    const payload = JSON.stringify({
+      title: `Daily close — ${band.toUpperCase()} mismatch (${date})`,
+      body: `Revenue ${formatZarField(revenueZar)} vs payments ${formatZarField(paymentsZar)} — ${variancePct.toFixed(1)}% variance (${band}).`,
+      data: { date, revenueZar, paymentsZar, variancePct, band },
     });
+
+    for (const admin of admins) {
+      if (admin.pushSubscription && isValidPushSubscription(admin.pushSubscription)) {
+        await sendAdminAlertPush(admin.pushSubscription as PushSubscriptionShape, payload);
+      }
+    }
   }
 
   return { date, revenueZar, paymentsZar, variancePct, band };

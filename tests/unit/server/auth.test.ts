@@ -5,7 +5,6 @@ import {
   hasRole,
   canAccessAdmin,
   canProcessOrders,
-  canApproveRefund,
 } from "@/server/auth/rbac";
 
 describe("pin: format", () => {
@@ -66,11 +65,6 @@ describe("rbac: capabilities", () => {
   it("POS is operable by both barista and admin", () => {
     expect(canProcessOrders("barista")).toBe(true);
     expect(canProcessOrders("admin")).toBe(true);
-  });
-
-  it("only admin can approve refunds (rule L02)", () => {
-    expect(canApproveRefund("admin")).toBe(true);
-    expect(canApproveRefund("barista")).toBe(false);
   });
 
   it("hasRole matches an explicit allow-list", () => {

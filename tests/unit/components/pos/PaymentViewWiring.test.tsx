@@ -1,6 +1,6 @@
 // M4/AT-13 — payment view wiring through POSWorkspace:
 //  - a paid order (total > 0, checkout id present) renders the Yoco card form
-//  - a free order (loyalty/staff-discount zeroes total) skips the form
+//  - a free order (staff-discount zeroes total) skips the form
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
@@ -26,7 +26,6 @@ vi.mock("@/server/actions/inventory", () => ({
 }));
 vi.mock("@/server/actions/recipes", () => ({ listRecipes: vi.fn().mockResolvedValue({ ok: true, data: { recipes: [] } }) }));
 vi.mock("@/server/actions/waste", () => ({ logWaste: vi.fn() }));
-vi.mock("@/server/actions/loyalty", () => ({ redeemLoyalty: vi.fn(), purchasePack: vi.fn() }));
 vi.mock("@/lib/push/staff-subscribe", () => ({ enableStaffPush: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), message: vi.fn() } }));
 vi.mock("@/hooks/useOrderStream", () => ({ useOrderStream: () => ({ activeOrders: [], status: "connected" }) }));

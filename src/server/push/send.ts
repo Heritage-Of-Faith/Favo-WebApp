@@ -1,6 +1,5 @@
 // Send a Web Push notification — task G7
 // Called when an order transitions to `ready` (see transitionOrder, G5).
-// Also used for loyalty earn notifications (AT-128).
 
 import webpush from "web-push";
 import { initVapid } from "./vapid";
@@ -53,7 +52,7 @@ export async function sendHoursPostedPush(
   const payload = JSON.stringify({
     title: "FAVO hours posted ☕",
     body,
-    url: "/loyalty",
+    url: "/customer",
   });
   try {
     await webpush.sendNotification(subscription, payload);
@@ -85,38 +84,8 @@ export async function sendOpeningPush(
     body: isReopening
       ? `We're opening again at ${opensAt} — see you there.`
       : `We're opening at ${opensAt} today.`,
-    data: { url: "/loyalty" },
+    data: { url: "/customer" },
     tag: "favo-opening",
-  });
-  try {
-    await webpush.sendNotification(subscription, payload);
-    return true;
-  } catch (err) {
-    const statusCode = (err as { statusCode?: number }).statusCode;
-    if (statusCode === 404 || statusCode === 410) {
-      return false;
-    }
-    console.error("[push] webpush.sendNotification error", { statusCode, endpoint: subscription.endpoint }, err);
-    throw err;
-  }
-}
-
-/**
- * Push a "points earned" notification to a single subscription (AT-128).
- * Returns false if the subscription is gone (410/404) so the caller can handle it.
- * Fire-and-forget — never blocks the order flow.
- */
-export async function sendPointsEarnedPush(
-  subscription: PushSubscriptionShape,
-  pointsEarned: number,
-  newBalance: number
-): Promise<boolean> {
-  initVapid();
-  const payload = JSON.stringify({
-    title: "Points earned! ☕",
-    body: `You earned ${pointsEarned} pts. Balance: ${newBalance} pts.`,
-    data: { url: "/loyalty" },
-    tag: "favo-points-earned",
   });
   try {
     await webpush.sendNotification(subscription, payload);

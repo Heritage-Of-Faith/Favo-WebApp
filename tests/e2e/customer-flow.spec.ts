@@ -3,9 +3,12 @@
  *
  * Covers the Phase 3 customer acceptance:
  *   - Account creation (sign-up)
- *   - Dashboard renders (loyalty, packs, order history)
+ *   - Dashboard renders (order history)
  *   - Push opt-in granted via Playwright context permissions
- *   - Packs page renders
+ *
+ * (Loyalty and coffee packs were deleted by v7 — see CLAUDE.md §"Deleted by
+ * v7" — so the dashboard no longer has a loyalty section and /packs no
+ * longer exists.)
  *
  * Seeded data (G3 + phase2/phase3 seed):
  *   Barista: Sam Barista  PIN 1234
@@ -74,11 +77,6 @@ test.describe("1. Landing page", () => {
     await page.goto("/customer", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
   });
-
-  test("unauthenticated /packs redirects to /login", async ({ page }) => {
-    await page.goto("/packs", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
-  });
 });
 
 // ─── 2. Account creation ──────────────────────────────────────────────────────
@@ -128,12 +126,11 @@ test.describe("3. Customer dashboard", () => {
     await context.close();
   });
 
-  test("dashboard renders loyalty section", async ({ context }) => {
+  test("dashboard renders the customer's name", async ({ context }) => {
     await signIn(context, sharedEmail);
     const page = await context.newPage();
     await page.goto("/customer", { waitUntil: "domcontentloaded" });
-    // Dashboard should show points or loyalty section
-    await expect(page.getByText(/points/i).or(page.getByText(/loyalty/i)).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(new RegExp(TEST_NAME.split(" ")[0]!, "i")).first()).toBeVisible({ timeout: 15_000 });
     await page.close();
   });
 
@@ -144,17 +141,6 @@ test.describe("3. Customer dashboard", () => {
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto("/customer", { waitUntil: "networkidle" });
     expect(errors.filter((e) => !e.includes("ResizeObserver"))).toHaveLength(0);
-    await page.close();
-  });
-
-  test("packs page renders for authenticated customer", async ({ context }) => {
-    await signIn(context, sharedEmail);
-    const page = await context.newPage();
-    await page.goto("/packs", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/packs/);
-    await expect(
-      page.getByText(/pack/i).or(page.getByText(/no active packs/i)).first()
-    ).toBeVisible({ timeout: 15_000 });
     await page.close();
   });
 });

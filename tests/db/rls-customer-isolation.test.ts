@@ -1,9 +1,12 @@
 // F2 / L13: database-layer customer isolation via RLS.
 //
 // Proves that under `SET LOCAL ROLE favo_customer` +
-// app.current_customer_id = A, a SELECT over orders / loyalty_transactions
+// app.current_customer_id = A, a SELECT over orders / customers
 // returns ONLY customer A's rows and never customer B's — even with no
 // app-code WHERE clause. Requires a real Postgres — skips when none reachable.
+//
+// (loyalty_transactions coverage was dropped along with the loyalty_transactions
+// table itself in the v7 deletion pass — see CLAUDE.md §"Deleted by v7".)
 //
 // The RLS migration grants favo_customer TO current_user; in CI current_user
 // is `favo` (table owner). Owner bypasses non-forced RLS, so the raw fixtures
@@ -28,9 +31,9 @@ maybe("RLS customer isolation (F2)", () => {
     // The RLS migration (0023) is already applied by the CI "Migrate test DB"
     // step (bun db:migrate) that runs before this suite — no need to replay it
     // here. (It used to be re-applied inline for idempotency insurance, but
-    // that raw-SQL replay broke once AT-141 dropped wallet_transactions, a
-    // table 0023 also referenced — migrations are immutable, so the fix is to
-    // rely on the real migrate step instead of re-running historical SQL.)
+    // that raw-SQL replay broke once a later migration dropped a table 0023
+    // also referenced — migrations are immutable, so the fix is to rely on
+    // the real migrate step instead of re-running historical SQL.)
 
     // Fixtures created as owner (bypasses RLS).
     const staff = await sql`
@@ -51,17 +54,11 @@ maybe("RLS customer isolation (F2)", () => {
       RETURNING id`;
     orderA = oa[0].id as string;
     orderB = ob[0].id as string;
-
-    await sql`INSERT INTO loyalty_transactions (customer_id, order_id, delta, kind)
-              VALUES (${custA}, ${orderA}, 5, 'earn')`;
-    await sql`INSERT INTO loyalty_transactions (customer_id, order_id, delta, kind)
-              VALUES (${custB}, ${orderB}, 9, 'earn')`;
   });
 
   afterAll(async () => {
     // Cleanup as owner.
     if (sql) {
-      await sql`DELETE FROM loyalty_transactions WHERE customer_id IN (${custA}, ${custB})`;
       await sql`DELETE FROM orders WHERE id IN (${orderA}, ${orderB})`;
       await sql`DELETE FROM customers WHERE id IN (${custA}, ${custB})`;
       await sql`DELETE FROM staff WHERE id = ${staffId}`;
@@ -78,16 +75,6 @@ maybe("RLS customer isolation (F2)", () => {
     const ids = rows.map((r) => r.id);
     expect(ids).toContain(orderA);
     expect(ids).not.toContain(orderB);
-    expect(rows.every((r) => r.customer_id === custA)).toBe(true);
-  });
-
-  it("scoped to A: loyalty_transactions returns only A's rows", async () => {
-    const rows = await sql.begin(async (tx) => {
-      await tx`SET LOCAL ROLE favo_customer`;
-      await tx`SELECT set_config('app.current_customer_id', ${custA}, true)`;
-      return tx`SELECT customer_id FROM loyalty_transactions`;
-    });
-    expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((r) => r.customer_id === custA)).toBe(true);
   });
 

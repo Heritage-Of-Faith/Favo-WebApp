@@ -38,14 +38,3 @@ export function formatNetMargin(revenue_zar: number, net_zar: number): string {
   const margin = (net_zar / revenue_zar) * 100;
   return `${margin.toFixed(1)}%`;
 }
-
-/**
- * Formats a refund amount for receipt display.
- * The refund is always shown with a single minus-sign prefix, regardless of
- * whether the caller passes the amount as positive or negative cents.
- * @param refund_zar - refund amount in cents (sign-insensitive)
- * @returns e.g. "−R12,50"
- */
-export function formatRefundLine(refund_zar: number): string {
-  return `−${formatZar(Math.abs(refund_zar))}`;
-}
