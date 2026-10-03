@@ -41,7 +41,7 @@ import ChargeOrderDialog from "@/components/pos/ChargeOrderDialog";
 import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
-import type { Customer, MenuItem, MenuCustomisation, Order, OrderState, InventoryLot } from "@/lib/types";
+import type { CustomerSearchResult, MenuItem, MenuCustomisation, Order, OrderState, InventoryLot } from "@/lib/types";
 import WasteLogModal from "@/components/pos/WasteLogModal";
 
 /**
@@ -130,7 +130,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
 
   // Customer search
   const [query, setQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Customer[]>([]);
+  const [searchResults, setSearchResults] = useState<CustomerSearchResult[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { customer, items, totalZar, setCustomer, addItem, removeItem, updateQuantity, reset } = useDraftOrder();
@@ -448,14 +448,21 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             />
             {searchOpen && searchResults.length > 0 && (
               <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface shadow-[var(--shadow-2)] overflow-hidden">
-                {searchResults.map(c => (
+                {searchResults.map(c => {
+                  // REQ-142: where two results read alike, show the last four phone digits.
+                  const readsAlike = searchResults.some(o => o.id !== c.id && o.name.trim().toLowerCase() === c.name.trim().toLowerCase());
+                  return (
                   <li key={c.id}>
-                    <button type="button" onMouseDown={() => { setCustomer(c); setQuery(""); setSearchOpen(false); }}
+                    <button type="button" onMouseDown={() => { setCustomer({ id: c.id, name: c.name }); setQuery(""); setSearchOpen(false); }}
                       className="flex w-full items-center justify-between px-3 py-2 min-h-[44px] hover:bg-coffee-bean/8 text-left">
                       <span className="favo-small text-coffee-bean font-semibold">{c.name}</span>
+                      {readsAlike && c.phoneLast4 && (
+                        <span className="favo-caption text-cool-steel tabular-nums">…{c.phoneLast4}</span>
+                      )}
                     </button>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </div>
