@@ -16,7 +16,7 @@ function resolveBaseUrl(): URL {
     process.env.PUBLIC_BASE_URL,
     process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`,
     process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`,
-    "https://favo.hofmi.org",
+    "https://favo.hofmi.net",
   ];
   for (const candidate of candidates) {
     const value = candidate?.trim();
@@ -28,7 +28,7 @@ function resolveBaseUrl(): URL {
       }
     }
   }
-  return new URL("https://favo.hofmi.org");
+  return new URL("https://favo.hofmi.net");
 }
 
 export const viewport: Viewport = {

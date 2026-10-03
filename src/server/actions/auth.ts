@@ -2,10 +2,12 @@
 
 import { z } from "zod";
 import { eq } from "drizzle-orm";
+import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { staff } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
+import { checkRateLimit } from "@/server/rate-limit";
 import { signIn, signOut as nextSignOut } from "../../../auth";
 import { mintLoginAttestation } from "../../../auth";
 import type { ActionResult, StaffRole } from "@/lib/types";
@@ -15,6 +17,19 @@ import type { ActionResult, StaffRole } from "@/lib/types";
 
 const pinSchema = z.string().regex(/^\d{4,6}$/, "PIN must be 4–6 digits");
 
+// SEC-4 rate limit — mirrors the customer-auth.ts login path.
+const PIN_LOGIN_LIMIT = 5;           // attempts per window
+const PIN_LOGIN_WINDOW_MS = 60_000;  // 1 minute
+
+async function clientIp(): Promise<string> {
+  try {
+    const h = await headers();
+    return h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "anonymous";
+  } catch {
+    return "anonymous";
+  }
+}
+
 /**
  * Authenticate a staff member by PIN. Returns the matched staff id on success.
  * Looks up active staff and bcrypt-compares — no PIN is ever logged or echoed.
@@ -22,6 +37,12 @@ const pinSchema = z.string().regex(/^\d{4,6}$/, "PIN must be 4–6 digits");
 export async function loginWithPin(
   pin: string
 ): Promise<ActionResult<{ staffId: string; name: string; role: StaffRole }>> {
+  const ip = await clientIp();
+  const rl = checkRateLimit(`pin-login:${ip}`, PIN_LOGIN_LIMIT, PIN_LOGIN_WINDOW_MS);
+  if (!rl.allowed) {
+    return { ok: false, code: "RATE_LIMITED", message: `Too many attempts. Try again in ${rl.retryAfterSecs}s.` };
+  }
+
   const parsed = pinSchema.safeParse(pin);
   if (!parsed.success || !isValidPinFormat(pin)) {
     return { ok: false, code: "INVALID_PIN_FORMAT", message: "PIN must be 4–6 digits." };

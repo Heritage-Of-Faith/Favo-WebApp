@@ -155,3 +155,13 @@ The adversarial pass gets the diff and the REQ text, and **not** the conversatio
 - `CRON_SECRET` unset means every cron route 401s forever, silently.
 - RLS (`0023`) is **not** `FORCE`, and protects only five customer reads in `src/server/actions/customer.ts` that opt in via `withCustomerScope`. Everything else runs as owner. Do not cite "RLS" as a system-wide POPIA control.
 - v7.0 has two known internal defects; neither is yours to fix: §9.6.1 and §16.1 say "six" scheduled jobs where §9.6.2 (the register of record) lists **seven**; and Appendix D says the fund's counter top-up inherits R18 while R18's own row doesn't mention it.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

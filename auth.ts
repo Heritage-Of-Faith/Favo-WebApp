@@ -97,7 +97,9 @@ export const authConfig: NextAuthConfig = {
       },
     }),
   ],
-  session: { strategy: "jwt" },
+  // 8h — one shift on a shared café tablet. NextAuth's 30-day default is
+  // wrong for a staff PIN session on a public counter device.
+  session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   pages: {
     signIn: "/pos",
   },
