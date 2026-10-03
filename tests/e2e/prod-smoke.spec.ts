@@ -6,10 +6,10 @@
  * creation. No form submissions.
  *
  * Run against production:
- *   PUBLIC_BASE_URL=https://favo.hofmi.org bun test:e2e:ci tests/e2e/prod-smoke.spec.ts
+ *   PUBLIC_BASE_URL=https://favo.hofmi.net bun test:e2e:ci tests/e2e/prod-smoke.spec.ts
  *
  * Run against staging:
- *   PUBLIC_BASE_URL=https://staging.favo.hofmi.org bun test:e2e:ci tests/e2e/prod-smoke.spec.ts
+ *   PUBLIC_BASE_URL=https://staging.favo.hofmi.net bun test:e2e:ci tests/e2e/prod-smoke.spec.ts
  */
 
 import { test, expect } from "@playwright/test";

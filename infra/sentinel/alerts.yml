@@ -16,7 +16,7 @@ contactPoints:
           url: "${DISCORD_WEBHOOK_URL}"
           message: |
             **[FAVO Alert]** {{ template "default.message" . }}
-          avatar_url: "https://favo.hofmi.org/icon.png"
+          avatar_url: "https://favo.hofmi.net/icon.png"
 
   - orgId: 1
     name: oncall-pager
@@ -96,7 +96,7 @@ groups:
           description: "FAVO push notifications are slow. Check VAPID credentials, Loki for push.sent errors, and the push notification service."
           dashboard_uid: favo-ops-v1
           panel_id: "4"
-          runbook_url: "https://favo.hofmi.org/admin/runbook/push-latency"
+          runbook_url: "https://favo.hofmi.net/admin/runbook/push-latency"
         labels:
           severity: critical
           team: favo

@@ -22,7 +22,7 @@
   "graphTooltip": 1,
   "id": null,
   "links": [
-    { "title": "Admin app COGS", "url": "https://favo.hofmi.org/admin/cogs", "type": "link" }
+    { "title": "Admin app COGS", "url": "https://favo.hofmi.net/admin/cogs", "type": "link" }
   ],
   "panels": [
     {

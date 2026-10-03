@@ -30,7 +30,7 @@ function buildSwGlobal() {
       listeners[type]!.push(handler);
     },
     skipWaiting: vi.fn().mockResolvedValue(undefined),
-    location: { origin: "https://favo.hofmi.org" },
+    location: { origin: "https://favo.hofmi.net" },
     caches,
     registration,
     clients,
@@ -122,7 +122,7 @@ describe("customer sw.js — notificationclick handler", () => {
   it("focuses an already-open window instead of opening a new one", async () => {
     const focus = vi.fn().mockResolvedValue(null);
     env.clients.matchAll.mockResolvedValue([
-      { url: "https://favo.hofmi.org/customer", focus },
+      { url: "https://favo.hofmi.net/customer", focus },
     ]);
     const close = vi.fn();
     const clickEvent = {
