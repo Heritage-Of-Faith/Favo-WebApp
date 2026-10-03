@@ -77,5 +77,8 @@
     "@storybook/addon-essentials": "^8.5.0",
     "storybook": "^8.5.0",
     "shadcn": "^4.8.3"
+  },
+  "overrides": {
+    "esbuild": "^0.28.2"
   }
 }

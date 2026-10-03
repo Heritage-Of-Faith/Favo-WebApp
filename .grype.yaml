@@ -1,0 +1,22 @@
+# Grype config — see https://github.com/anchore/grype#specifying-matches-to-ignore
+#
+# One accepted, documented residual finding lives here. Everything else is
+# still enforced at face value; nothing is ignored by severity, only by the
+# specific, justified match below.
+ignore:
+  # @esbuild-kit/core-utils (pulled in transitively by drizzle-kit's
+  # @esbuild-kit/esm-loader, which drizzle-kit uses to load drizzle.config.ts
+  # and db/schema.ts) vendors esbuild 0.18.20, built with an old, unpatched
+  # Go toolchain (go1.20.7). That surfaces as a stream of Go-stdlib CVEs
+  # against a dev-time TypeScript loader for a CLI tool — never shipped in
+  # the app, never reachable over the network.
+  #
+  # @esbuild-kit is an archived, no-longer-maintained project, and
+  # drizzle-kit still depends on it as of its latest release (0.31.11), so
+  # this can't be resolved by bumping a version number on our side — see
+  # PR #244. Revisit if/when drizzle-kit drops @esbuild-kit/esm-loader
+  # upstream, or if this package starts showing up anywhere else.
+  - package:
+      name: stdlib
+      version: go1.20.7
+    package-location: "**/@esbuild-kit/**"
