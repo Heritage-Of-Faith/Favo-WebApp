@@ -1,7 +1,7 @@
 // PDF renderer — task G21 (AT-62)
 // Returns a print-ready HTML page (A4, FAVO branding) with @media print CSS.
-// Approach: serverless-compatible (no Playwright at runtime — returns HTML that the
-// browser prints to PDF natively, which matches Next.js on Vercel).
+// Approach: no Playwright at runtime — returns HTML that the browser prints to
+// PDF natively, so the server needs no headless browser.
 
 import { formatZar } from "@/lib/format";
 

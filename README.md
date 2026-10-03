@@ -57,7 +57,7 @@ App runs at `http://localhost:3000`
 | Auth | Auth.js v5 (PIN + HOFMI SSO) |
 | Payments | Yoco Online API |
 | Runtime | Bun |
-| Secrets | `.env.local` / Vercel env vars |
+| Secrets | `.env.local` / Infisical in production (target, PRD v7 §9.7) |
 
 ---
 

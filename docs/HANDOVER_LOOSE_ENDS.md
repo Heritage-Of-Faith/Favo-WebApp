@@ -27,7 +27,7 @@ What's left splits into four buckets, none blocking, all needing a human or a fo
 | Converge log + dashboard | `refine-loop/prd-perfection/LOOP.md` · `refine-loop/prd-perfection/index.html` (open in a browser) |
 | Prior handover (graduation) | `docs/HANDOVER_CONVERGE_PRD_GRADUATION.md` |
 | Load-test runbook | `docs/load-testing-sunday-peak.md` (SC02, k6) |
-| Deployed app | `favo-web-app.vercel.app` (serves `main`) |
+| Deployed app | Old hosting deployment being retired (AT-210). Target: always-on Transformate VM at `favo.hofmi.net` (PRD v7 §9) |
 | Live DB | Supabase project **Flavo-Real** (eu-west-1, PG 17) |
 | Toolchain | `bun` → `/Users/nikaodutoit/.bun/bin/bun` · `gh` → `/Users/nikaodutoit/.local/bin/gh` (has `workflow` scope) |
 | PINs (seed/test) | barista `1234` · admin `4321` |
@@ -91,7 +91,7 @@ The above is a strong first-pass (one read-only agent + a grep spot-check). To m
 
 ## Bucket C — Security housekeeping
 
-- **Rotate the live Supabase DB password.** During graduation the real `DATABASE_URL` (plus `AUTH_SECRET` and the VAPID private key) were pasted into a chat transcript. Rotate the DB password in Supabase → Project Settings → Database → Reset password, then update `DATABASE_URL` in Vercel env vars (and locally). Consider rotating `AUTH_SECRET` too.
+- **Rotate the live Supabase DB password.** During graduation the real `DATABASE_URL` (plus `AUTH_SECRET` and the VAPID private key) were pasted into a chat transcript. Rotate the DB password in Supabase → Project Settings → Database → Reset password, then update `DATABASE_URL` wherever production secrets live (Infisical once set up, PRD v7 §9.7) and locally. Consider rotating `AUTH_SECRET` too.
 
 ---
 

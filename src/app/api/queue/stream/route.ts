@@ -18,7 +18,7 @@ import type { QueueEvent } from "@/lib/types";
 export const dynamic = "force-dynamic";
 // Cost note (2026-07-15): this used to be 300s, with each connection also
 // opening its own dedicated DB connection — weeks of always-on POS/admin tabs
-// blew well past the Vercel plan's included compute. 60s + the shared broker
+// blew well past the old hosting plan's included compute. 60s + the shared broker
 // above cuts worst-case per-invocation duration 5x; the client (useOrderStream)
 // already reconnects with backoff + a full resync on every disconnect, so a
 // more frequent reconnect cycle is a minor cost, not a correctness issue.

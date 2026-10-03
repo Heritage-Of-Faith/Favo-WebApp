@@ -37,7 +37,7 @@ export function useOrderStream(initialOrders?: LiveOrder[]) {
   // Full poll of the authoritative active-order set. Runs on every (re)connect
   // so that any state_change events emitted while the stream was down are caught
   // — PRD §10 R9: "Missed events caught by full poll on reconnect." SSE frames
-  // alone are lossy across a disconnect window (Vercel function recycle, network
+  // alone are lossy across a disconnect window (server restart, network
   // blip, Sunday-peak LISTEN/NOTIFY lag); this snapshot re-syncs the board and
   // removes any order that left the active set (e.g. collected) while offline.
   const resync = useCallback(async () => {

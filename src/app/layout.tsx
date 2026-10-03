@@ -14,8 +14,6 @@ const DESCRIPTION =
 function resolveBaseUrl(): URL {
   const candidates = [
     process.env.PUBLIC_BASE_URL,
-    process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`,
-    process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`,
     "https://favo.hofmi.net",
   ];
   for (const candidate of candidates) {

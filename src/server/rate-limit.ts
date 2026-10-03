@@ -1,7 +1,7 @@
 // In-process sliding-window rate limiter.
 // Keyed by an arbitrary string (e.g. "login:<ip>", "reset:<email>").
 // Resets automatically when the window expires — no cleanup job needed.
-// NOTE: state is per-process. Across Vercel function instances, limits are
+// NOTE: state is per-process. Across multiple server instances, limits are
 // enforced per-instance, which is acceptable for this single-tenant app.
 
 type Entry = { count: number; resetAt: number };

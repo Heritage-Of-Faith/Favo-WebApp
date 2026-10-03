@@ -16,7 +16,7 @@ const REAL_DB_URL = process.env.DATABASE_URL ?? "";
  * PRODUCTION SAFETY RAIL. These tests apply migrations and insert fixture rows —
  * including an `audit_log` row that the append-only trigger under test makes
  * PERMANENTLY UNDELETABLE. Vitest auto-loads `.env.local`, which on a dev
- * machine (and in Vercel) points at the LIVE Supabase database. Without this
+ * machine (and in production) points at the LIVE Supabase database. Without this
  * guard, `bun test:db` locally would run the suite against production.
  *
  * We therefore refuse any Supabase/managed host outright unless the operator
