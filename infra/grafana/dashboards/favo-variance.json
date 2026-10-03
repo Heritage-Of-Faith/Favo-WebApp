@@ -21,7 +21,7 @@
   "graphTooltip": 0,
   "id": null,
   "links": [
-    { "title": "Admin Inventory", "url": "https://favo.hofmi.org/admin/inventory", "type": "link" }
+    { "title": "Admin Inventory", "url": "https://favo.hofmi.net/admin/inventory", "type": "link" }
   ],
   "panels": [
     {

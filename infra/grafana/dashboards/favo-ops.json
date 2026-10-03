@@ -29,7 +29,7 @@
   "graphTooltip": 1,
   "id": null,
   "links": [
-    { "title": "Admin POS queue", "url": "https://favo.hofmi.org/admin/queue", "type": "link" }
+    { "title": "Admin POS queue", "url": "https://favo.hofmi.net/admin/queue", "type": "link" }
   ],
   "panels": [
     {
