@@ -87,8 +87,8 @@ export async function GET(req: NextRequest) {
 
   // ── PDF export — HTML print-ready page ────────────────────────────────────
   // Returns a branded A4 HTML page. The browser's native print-to-PDF handles
-  // the final step (Ctrl+P → Save as PDF). This is serverless-compatible;
-  // Playwright headless PDF requires a runtime binary not available on Vercel.
+  // the final step (Ctrl+P → Save as PDF). No headless browser is needed
+  // on the server, so the runtime image stays small.
   let rows: Record<string, string | number | null>[];
   switch (kind) {
     case "sales": {

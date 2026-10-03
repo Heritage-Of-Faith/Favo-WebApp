@@ -10,7 +10,7 @@ This artifact is intentionally NOT wired into CI (it needs a deployed target +
 a barista session). Run it by hand against staging as part of graduation.
 
 ## Prerequisites
-- Staging URL (e.g. a Vercel preview or `favo-web-app.vercel.app` staging), with
+- Staging URL (the Transformate staging deployment, PRD v7 §9 — not built yet), with
   Yoco in **test** mode so no real cards are charged.
 - A barista session cookie (log in once via the POS PIN screen, copy the
   Auth.js session cookie) OR a seeded barista PIN for the login step.

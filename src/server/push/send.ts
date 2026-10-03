@@ -29,7 +29,7 @@ export async function sendOrderReadyPush(
       return false;
     }
     // Log unexpected errors (e.g. VAPID misconfiguration, network failure) before
-    // re-throwing so the caller's .catch() can surface them in Vercel logs.
+    // re-throwing so the caller's .catch() can surface them in the server logs.
     console.error("[push] webpush.sendNotification error", { statusCode, endpoint: subscription.endpoint }, err);
     throw err;
   }

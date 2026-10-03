@@ -311,7 +311,7 @@ All features should be mobile-optimized:
 | **Database** | PostgreSQL or MongoDB | Store customer, transactions, inventory |
 | **Authentication** | Phone-based (SMS OTP or simple phone verification) | No username/password friction |
 | **YOCO API** | Webhook + REST API integration | Real-time transaction sync |
-| **Hosting** | Vercel (frontend) + Heroku/Railway (backend) | Easy deployment, scalable |
+| **Hosting** | Always-on VM on Transformate, Postgres co-located (PRD v7 §9 — supersedes this brief) | One always-on server, no serverless limits |
 | **Charts/Analytics** | Chart.js or Recharts | Dashboard visualizations |
 | **QR Code Generation** | `qrcode.react` or `qr-code-styling` | On-the-fly QR generation |
 

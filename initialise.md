@@ -249,7 +249,7 @@ These apply to every line of code I write, no exceptions:
 | Every database change must call `writeAudit()` from `src/server/audit.ts` | Every change must be permanently logged — this is a legal requirement |
 | Never store, log, or display card numbers or card details | Yoco handles all card data — we never see or touch it |
 | RBAC (who can access what) is enforced on the server — UI checks are just decoration | A customer must never be able to see staff or admin data |
-| Never commit `.env` files — secrets live in `.env.local` locally and Vercel env vars in production | One leaked key compromises the whole production system |
+| Never commit `.env` files — secrets live in `.env.local` locally and, in production, in Infisical (PRD v7 §9.7) | One leaked key compromises the whole production system |
 | Timezone is always Africa/Johannesburg — use `formatDate()` from `src/lib/format.ts` | Wrong timezone means wrong timestamps on every transaction |
 
 ---

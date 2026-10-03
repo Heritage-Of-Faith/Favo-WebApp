@@ -141,6 +141,14 @@ record(
 );
 // favo.hofmi.org never existed. §9.3: the public URL is favo.hofmi.net.
 mustBeAbsent("no favo.hofmi.org (that domain never existed)", "favo\\.hofmi\\.org", "src/ db/", "WARN");
+// Vercel is not part of FAVO (PRD v7 §9: always-on Transformate VM). No code,
+// config, workflow or env template may mention it, and no vercel.json may exist.
+mustBeAbsent(
+  "no Vercel references (hosting is Transformate, §9)",
+  "[Vv][Ee][Rr][Cc][Ee][Ll]",
+  "src/ db/ tests/ infra/ .github/ .env.example .dockerignore next.config.ts package.json Dockerfile"
+);
+record("no vercel.json / .vercel/", !existsSync("vercel.json") && !existsSync(".vercel"), "checked repo root", "FAIL");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. DELETION GATES — v7.0 §10.1, as literal greps

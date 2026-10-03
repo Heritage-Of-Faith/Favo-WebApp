@@ -16,7 +16,7 @@
 | Storage | Cloudflare R2 (`hofmi-favo`) |
 | Hosting | Coolify on `hofmi-eu-open` |
 | CDN | Cloudflare (`favo.hofmi.org`); Cloudflare Access gates `/admin/*` |
-| Secrets | `.env.local` (local) · Vercel env vars (production) |
+| Secrets | `.env.local` (local) · production: Infisical (target, PRD v7 §9.7 — not set up yet) |
 | Logs | Pino → Loki |
 | Tracing | Raindrop |
 | Tests | Vitest + Playwright + Storybook |
@@ -67,7 +67,7 @@ middleware.ts            # route gating by role
 ```
 
 ## Environment (canonical names — never commit)
-Set in Vercel env vars (production) or `.env.local` (local):
+Set in `.env.local` (local). Production target: Infisical (PRD v7 §9.7, not set up yet):
 ```
 DATABASE_URL              # Supabase Transaction pooler (port 6543)
 DATABASE_URL_SESSION      # Supabase Session pooler (port 5432) — SSE/LISTEN only
@@ -80,7 +80,7 @@ CRON_SECRET               # secures cron route handlers
 ```
 
 ## Deploy pipeline
-GitHub Actions → CI on every PR (`bun typecheck`, `bun lint`, `bun test:unit`) → squash-merge to `main` → Vercel auto-deploy → `favo.hofmi.org`.
+GitHub Actions → CI on every PR (`bun typecheck`, `bun lint`, `bun test:unit`; a `next build` job is planned) → squash-merge to `main` → `docker-publish.yml` builds the image and pushes it to GHCR (not working yet, AT-165). Deploying that image is not built yet; the target is the always-on Transformate VM at `favo.hofmi.net` (PRD v7 §9).
 
 ## Local dev
 ```

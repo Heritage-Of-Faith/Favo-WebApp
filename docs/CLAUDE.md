@@ -24,7 +24,7 @@ Next.js 16 (App Router) · React 19 · TS 5.6 strict · Tailwind v4 + shadcn/ui 
 `bun typecheck` · `bun lint` · `bun test:unit`
 
 ## Non-negotiables
-- **Secrets:** never committed. Use `.env.local` locally; Vercel env vars in production. No `.env` in git.
+- **Secrets:** never committed. Use `.env.local` locally; production secrets go in Infisical (PRD v7 §9.7) once it is set up. No `.env` in git.
 - **Audit log:** append-only, trigger-enforced. Every mutation calls `writeAudit()` from `src/server/audit.ts`.
 - **Money:** integer cents in columns suffixed `_zar`. Never `numeric`. Format with `formatZar()` from `src/lib/format.ts`.
 - **Timezone:** `Africa/Johannesburg`. Wall-clock logic uses `formatDate()`.
