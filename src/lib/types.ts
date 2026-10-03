@@ -38,6 +38,17 @@ export type Customer = {
   email: string | null;
 };
 
+/**
+ * POS customer search result (REQ-142 / AT-185). Carries no email and no full
+ * phone number — only the last four phone digits, to tell apart two people
+ * whose names read alike.
+ */
+export type CustomerSearchResult = {
+  id: string;
+  name: string;
+  phoneLast4: string | null;
+};
+
 export type MenuCustomisation = {
   id: string;
   name: string;

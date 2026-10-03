@@ -122,7 +122,7 @@ describe("draftOrder store", () => {
 
   it("reset returns to initial state", () => {
     store().addItem(item1);
-    store().setCustomer({ id: "c1", name: "Louis", phone: null, email: null });
+    store().setCustomer({ id: "c1", name: "Louis" });
     store().setOrderCreated("ord-1", "secret");
     store().reset();
     const s = store();
