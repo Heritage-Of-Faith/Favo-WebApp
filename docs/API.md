@@ -5,7 +5,7 @@ Server Actions for mutations (`src/server/actions/*`). Route handlers for querie
 | Endpoint / Action | Kind | Auth | Behaviour |
 |---|---|---|---|
 | `loginWithPin(pin)` | Server action | public | Bcrypt-compare against `staff.pin_hash`. Emit session on success. Audit row in both branches. |
-| `searchCustomer(query)` | Server action | barista | ILIKE name + exact phone. Returns id, name, phone, loyalty_points. |
+| `searchCustomer(query)` | Server action | barista | ILIKE name + exact phone. Returns id, name, phoneLast4 only — never email or the full phone (REQ-142). |
 | `createOrder(input)` | Server action | barista | Insert order in `ordered`. Returns id + Yoco payment intent. **No stock deduction.** |
 | `transitionOrder(id, toState)` | Server action | barista | State machine: ordered→in_progress→ready→collected. `in_progress` deducts stock: milk/beans = 1 cup per drink from the open container (auto-opens next sealed); other items = recipe quantity. `ready` fires Web Push + accrues loyalty + pg_notify. |
 | `cancelOrder(id, reason)` | Server action | barista/admin | Valid only when state == ordered; 409 otherwise. |

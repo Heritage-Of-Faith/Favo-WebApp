@@ -6,6 +6,8 @@
 import { create } from "zustand";
 import type { Customer, MenuCustomisation } from "@/lib/types";
 
+export type DraftCustomer = Pick<Customer, "id" | "name">;
+
 export type DraftItem = {
   menuItemId: string;
   menuItemName: string;
@@ -30,8 +32,9 @@ export type DraftOrderState = {
   // Current step in the new-order flow
   step: "customer" | "build" | "pay" | "done";
 
-  // Optional — guest orders have no customer
-  customer: Customer | null;
+  // Optional — guest orders have no customer. Only id + name: the POS search
+  // never receives email or the full phone (REQ-142 / AT-185).
+  customer: DraftCustomer | null;
 
   // Line items
   items: DraftItem[];
@@ -46,7 +49,7 @@ export type DraftOrderState = {
 
 export type DraftOrderActions = {
   setStep: (step: DraftOrderState["step"]) => void;
-  setCustomer: (customer: Customer | null) => void;
+  setCustomer: (customer: DraftCustomer | null) => void;
   addItem: (item: Omit<DraftItem, "quantity"> & { quantity?: number }) => void;
   /** Remove the exact line identified by its lineKey (menuItemId + mods). */
   removeItem: (key: string) => void;

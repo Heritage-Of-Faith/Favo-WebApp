@@ -4,16 +4,23 @@ import { or, ilike, eq, desc, asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customers, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
-import type { ActionResult, Customer } from "@/lib/types";
+import type { ActionResult, CustomerSearchResult } from "@/lib/types";
 
 // Docs: docs/API.md → searchCustomer · ILIKE on name + exact phone match.
-// Returns id, name, phone, email (read-only customer lookup for the POS).
+// Returns id, name and the last four phone digits only (read-only POS lookup).
+// REQ-142 / AT-185: no email and no full phone number ever leave the server.
 
 const MAX_RESULTS = 10;
 
+/** Last four digits of a phone number, or null if absent / fewer than four digits. */
+function phoneLast4(phone: string | null): string | null {
+  const digits = (phone ?? "").replace(/\D/g, "");
+  return digits.length >= 4 ? digits.slice(-4) : null;
+}
+
 export async function searchCustomer(
   query: string
-): Promise<ActionResult<Customer[]>> {
+): Promise<ActionResult<CustomerSearchResult[]>> {
   const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
 
@@ -27,17 +34,17 @@ export async function searchCustomer(
       id: customers.id,
       name: customers.name,
       phone: customers.phone,
-      email: customers.email,
     })
     .from(customers)
     .where(or(ilike(customers.name, `%${q}%`), eq(customers.phone, q)))
     .limit(MAX_RESULTS);
 
-  const results: Customer[] = rows.map((c) => ({
+  // Build each result field by field — never spread the row, so the full
+  // phone cannot ride along into the response.
+  const results: CustomerSearchResult[] = rows.map((c) => ({
     id: c.id,
     name: c.name,
-    phone: c.phone,
-    email: c.email,
+    phoneLast4: phoneLast4(c.phone),
   }));
 
   return { ok: true, data: results };
