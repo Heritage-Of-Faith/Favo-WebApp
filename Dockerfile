@@ -2,9 +2,6 @@
 # Multi-stage build producing the Next.js `output: "standalone"` server.
 # Base image oven/bun:1 is Debian, so users are created with groupadd/useradd
 # (not the Alpine addgroup/adduser syntax).
-# Not yet proven by a real `docker build`: the PR run of docker-publish.yml is
-# the first one. Remove this line once it has gone green.
-
 FROM oven/bun:1 AS base
 WORKDIR /app
 
