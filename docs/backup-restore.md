@@ -50,7 +50,7 @@ provisioned + app redeployed + smoke passing).
 
 6. **Verify:**
    ```bash
-   curl -s https://favo.hofmi.org/api/healthz | python3 -c "import json,sys; d=json.load(sys.stdin); print('Postgres:', 'OK' if d['checks']['postgres']['ok'] else 'FAIL')"
+   curl -s https://favo.hofmi.net/api/healthz | python3 -c "import json,sys; d=json.load(sys.stdin); print('Postgres:', 'OK' if d['checks']['postgres']['ok'] else 'FAIL')"
    ```
 
 7. **Run smoke + audit coverage check** (see deploy-runbook.md steps 4–5)

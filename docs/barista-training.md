@@ -4,7 +4,7 @@ Everything you need to take your first order. Read it once; it takes about five 
 
 ## Logging in
 
-- Open the POS on the iPad at `favo.hofmi.org/pos`.
+- Open the POS on the iPad at `favo.hofmi.net/pos`.
 - You'll see **Enter your PIN**. Tap in your 4-digit PIN, then tap **GO**.
 - Wrong PIN? It clears so you can try again.
 - Forgot your PIN? Ask the shift manager — they sign in separately.

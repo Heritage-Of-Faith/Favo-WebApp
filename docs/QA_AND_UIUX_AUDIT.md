@@ -1,7 +1,7 @@
 # FAVO Café — QA & UI/UX Audit Guide
 
 > **Purpose:** Complete feature verification + design polish pass before stakeholder feedback.
-> **Base URL:** https://favo.hofmi.org (production) or `bun dev` → http://localhost:3000
+> **Base URL:** https://favo.hofmi.net (production) or `bun dev` → http://localhost:3000
 > **Prerequisite:** All Wave 3 PRs (#177–#181) merged to main and deployed.
 
 ---

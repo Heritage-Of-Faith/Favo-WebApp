@@ -2,7 +2,7 @@
 
 Single-tenant café POS + loyalty platform for FAVO Café.
 
-**Deploy:** `favo.hofmi.org` · **Repo:** `github.com/Heritage-Of-Faith/Favo-WebApp`
+**Deploy:** `favo.hofmi.net` · **Repo:** `github.com/Heritage-Of-Faith/Favo-WebApp`
 
 ---
 

@@ -14,8 +14,8 @@ Last updated: 2026-06-13 | Branch: `feat/g-g25-prod-env`
 | CI green | All GitHub Actions checks on `main` | All green | |
 | Security scan | `.github/workflows/security.yml` | 0 critical findings | |
 | Pre-flight | `bash scripts/preflight.sh` | `overall: pass` in preflight.json | |
-| Healthz | `curl https://favo.hofmi.org/api/healthz` | `{"ok":true,...}` | |
-| Cloudflare Access | `curl -I https://favo.hofmi.org/admin` | `302` to Cloudflare Access | |
+| Healthz | `curl https://favo.hofmi.net/api/healthz` | `{"ok":true,...}` | |
+| Cloudflare Access | `curl -I https://favo.hofmi.net/admin` | `302` to Cloudflare Access | |
 
 ---
 
@@ -29,7 +29,7 @@ Coolify resolves them at container start. Do not store values in this file.
 | `DATABASE_URL` | Supabase dashboard → Project settings → Database → Connection string (Transaction pooler port 6543) | Gian | ✅ | On team member departure | `postgres://...@aws-0-eu-west-1.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true` |
 | `DATABASE_URL_SESSION` | Supabase dashboard → Session pooler port 5432 | Gian | ✅ | On team member departure | Used by SSE queue (LISTEN/NOTIFY requires non-pooled connection) |
 | `AUTH_SECRET` | `openssl rand -hex 32` | Gian | ✅ | Annually | Auth.js signing secret — rotate requires re-login for all staff |
-| `AUTH_URL` | Manual | Gian | ✅ | On domain change | Must be `https://favo.hofmi.org` (no trailing slash) |
+| `AUTH_URL` | Manual | Gian | ✅ | On domain change | Must be `https://favo.hofmi.net` (no trailing slash) |
 | `YOCO_SECRET_KEY` | Yoco dashboard → Developers → API Keys | Gian | ✅ | On Yoco key compromise | Server-side only. NEVER commit or log. |
 | `YOCO_WEBHOOK_SECRET` | Yoco dashboard → Developers → Webhooks | Gian | ✅ | On compromise | Used to verify HMAC signatures on incoming webhooks. |
 | `NEXT_PUBLIC_YOCO_PUBLIC_KEY` | Yoco dashboard → Developers → API Keys | Gian | ✅ | On Yoco key compromise | Embedded in browser bundle — safe to expose. |
@@ -39,7 +39,7 @@ Coolify resolves them at container start. Do not store values in this file.
 | `CRON_SECRET` | `openssl rand -hex 32` | Gian | ✅ | Annually | Bearer token for `GET /api/crons/retry-deferred` and similar. |
 | `LOKI_URL` | Coolify internal network | Gian | ⚠️ optional | On Loki migration | `http://loki.hofmi-internal:3100` — healthz skips Loki check if absent. |
 | `TZ` | Hardcoded | — | ✅ | Never | Must be `Africa/Johannesburg` for all wall-clock logic. |
-| `PUBLIC_BASE_URL` | Manual | Gian | ✅ | On domain change | `https://favo.hofmi.org` — used by preflight.sh and E2E. |
+| `PUBLIC_BASE_URL` | Manual | Gian | ✅ | On domain change | `https://favo.hofmi.net` — used by preflight.sh and E2E. |
 | `TEST_AUDIT_SECRET` | `openssl rand -hex 16` | Gian | ⚠️ staging only | Per staging cycle | Only set on staging. Must NOT be set in production. |
 
 ---
@@ -58,20 +58,20 @@ Coolify resolves them at container start. Do not store values in this file.
 
 ```bash
 # 1. Confirm /admin redirects to Cloudflare Access (302)
-curl -sI https://favo.hofmi.org/admin | grep -E "HTTP|location"
+curl -sI https://favo.hofmi.net/admin | grep -E "HTTP|location"
 # Expected: HTTP/2 302 + location: https://hofmi.cloudflareaccess.com/cdn-cgi/access/login/...
 
 # 2. Confirm landing page is public (200)
-curl -sI https://favo.hofmi.org/ | grep "HTTP"
+curl -sI https://favo.hofmi.net/ | grep "HTTP"
 # Expected: HTTP/2 200
 
 # 3. Confirm POS is public (200)
-curl -sI https://favo.hofmi.org/pos | grep "HTTP"
+curl -sI https://favo.hofmi.net/pos | grep "HTTP"
 # Expected: HTTP/2 200 or 307 (redirect to /pos)
 
 # 4. Confirm WAF rate limit on auth endpoint (manual burst test — 15 req in 30s)
 for i in $(seq 1 15); do
-  STATUS=$(curl -so /dev/null -w "%{http_code}" -X POST https://favo.hofmi.org/api/auth/callback/credentials)
+  STATUS=$(curl -so /dev/null -w "%{http_code}" -X POST https://favo.hofmi.net/api/auth/callback/credentials)
   echo "Request $i: $STATUS"
 done
 # Expected: requests 11-15 should return 429
@@ -97,7 +97,7 @@ psql $DATABASE_URL -c "SELECT COUNT(*) FROM staff WHERE active = true;"
 1. **09:00 SAST** — Gian runs `bash scripts/preflight.sh` against staging. All gates green.
 2. **09:15** — Merge last stacked PRs to `main` in order (#90 → #91 → #92 → #93 → #94 → #95 → #96 + AT-82 + AT-83).
 3. **09:20** — Coolify auto-deploys from `main`. Monitor deploy log in Coolify dashboard.
-4. **09:25** — Verify `https://favo.hofmi.org/api/healthz` → `{"ok":true}`.
+4. **09:25** — Verify `https://favo.hofmi.net/api/healthz` → `{"ok":true}`.
 5. **09:30** — Run this checklist's pre-deploy gate manually against production.
 6. **09:35** — Discord `#favo-ops`: "FAVO is live 🟢"
 7. Stay on-call for 4 hours post-launch.

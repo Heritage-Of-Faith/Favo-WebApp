@@ -3,7 +3,7 @@
 **Owner:** Mia Ligthelm  
 **Phase:** HOFMI-FAVO-P4  
 **When:** Launch day · 11:00–13:00 SAST · after G26 (Coolify deploy) confirms green  
-**Target:** `https://favo.hofmi.org/admin`
+**Target:** `https://favo.hofmi.net/admin`
 
 > **Admin auth:** PIN only. Use the staff PIN from the production seed or Gian's launch prep.
 
@@ -12,7 +12,7 @@
 ## Pre-conditions
 
 - [ ] G26 deploy reported green to `#favo-ops`
-- [ ] DNS resolving correctly (`favo.hofmi.org` → production)
+- [ ] DNS resolving correctly (`favo.hofmi.net` → production)
 - [ ] Admin PIN from Gian's production seed ready
 - [ ] Browser console open (F12 → Console) before navigating
 
@@ -20,7 +20,7 @@
 
 ## Step 1 — Admin login
 
-Navigate to `https://favo.hofmi.org/admin`.
+Navigate to `https://favo.hofmi.net/admin`.
 
 **Expected:** Redirects to `/admin/login`. PIN keypad visible.
 
