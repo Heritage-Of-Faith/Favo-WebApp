@@ -15,7 +15,7 @@
 | Offline | IndexedDB (`idb`) + Service Worker (Phase 3) |
 | Storage | Cloudflare R2 (`hofmi-favo`) |
 | Hosting | TBD — app hosting not yet set up; DB on Supabase |
-| CDN | Cloudflare (`favo.hofmi.org`); Cloudflare Access gates `/admin/*` |
+| CDN | Cloudflare (`favo.hofmi.net`); Cloudflare Access gates `/admin/*` |
 | Secrets | `.env.local` (local) · production: Infisical (target, PRD v7 §9.7 — not set up yet) |
 | Logs | Pino → Loki |
 | Tracing | Raindrop |
@@ -72,7 +72,7 @@ Set in `.env.local` (local). Production target: Infisical (PRD v7 §9.7, not set
 DATABASE_URL              # Supabase Transaction pooler (port 6543)
 DATABASE_URL_SESSION      # Supabase Session pooler (port 5432) — SSE/LISTEN only
 AUTH_SECRET               # Auth.js signing secret
-AUTH_URL                  # https://favo.hofmi.org (production)
+AUTH_URL                  # https://favo.hofmi.net (production)
 YOCO_SECRET_KEY · YOCO_WEBHOOK_SECRET · NEXT_PUBLIC_YOCO_PUBLIC_KEY
 VAPID_PUBLIC_KEY · VAPID_PRIVATE_KEY · NEXT_PUBLIC_VAPID_PUBLIC_KEY
 PUBLIC_BASE_URL · TZ=Africa/Johannesburg

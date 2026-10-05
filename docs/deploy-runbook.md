@@ -16,7 +16,7 @@ Gian owns the 09:00–17:00 launch window. Do not deviate from this order.
 | 2 | Security scan clean | `.github/workflows/security.yml` | 0 critical findings |
 | 3 | Pre-flight gate | `bash scripts/preflight.sh` | `"overall":"pass"` in preflight.json |
 | 4 | Prod env checklist | `docs/production-env-checklist.md` | All rows signed |
-| 5 | Staging healthz | `curl https://staging.favo.hofmi.org/api/healthz` | `{"ok":true}` |
+| 5 | Staging healthz | `curl https://staging.favo.hofmi.net/api/healthz` | `{"ok":true}` |
 | 6 | Staging smoke | `bun test:e2e:ci tests/e2e/prod-smoke.spec.ts` | All pass |
 
 If any pre-condition is ❌, **stop**. Do not proceed until it is resolved.
@@ -76,7 +76,7 @@ Watch for:
 
 ```bash
 # Against production — read-only paths only (PRD §11)
-PUBLIC_BASE_URL=https://favo.hofmi.org bun test:e2e:ci tests/e2e/prod-smoke.spec.ts
+PUBLIC_BASE_URL=https://favo.hofmi.net bun test:e2e:ci tests/e2e/prod-smoke.spec.ts
 ```
 
 All tests must pass. If any fail, investigate before proceeding.
@@ -89,7 +89,7 @@ All tests must pass. If any fail, investigate before proceeding.
 
 ```bash
 # Verify no orders lack an audit row (should always be 0 on a fresh deploy)
-curl -s "https://favo.hofmi.org/api/admin/audit-coverage?secret=${TEST_AUDIT_SECRET}" \
+curl -s "https://favo.hofmi.net/api/admin/audit-coverage?secret=${TEST_AUDIT_SECRET}" \
   | python3 -c "import json,sys; d=json.load(sys.stdin); print('GAP:', d['gapCount']); sys.exit(0 if d['gapCount']==0 else 1)"
 ```
 

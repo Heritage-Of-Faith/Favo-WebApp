@@ -4,14 +4,14 @@
 **Phase:** HOFMI-FAVO-P4  
 **When:** Launch day · 11:00–13:00 SAST · after G26 (Coolify deploy) confirms green  
 **Device:** Real Android Chrome (not desktop, not emulated)  
-**Target:** `https://favo.hofmi.org`
+**Target:** `https://favo.hofmi.net`
 
 ---
 
 ## Pre-conditions
 
 - [ ] G26 deploy has reported green to `#favo-ops`
-- [ ] DNS resolving correctly (`favo.hofmi.org` → production)
+- [ ] DNS resolving correctly (`favo.hofmi.net` → production)
 - [ ] Android Chrome, latest version, fresh incognito tab
 - [ ] Test email address ready: use `nikao+smoke@hofmi.net` (or a personal address you can receive email on)
 - [ ] Coordinate with Mine: agree the exact time for Mine's M21 test order so you can confirm push delivery
@@ -20,7 +20,7 @@
 
 ## Step 1 — Landing page
 
-Navigate to `https://favo.hofmi.org` in incognito Chrome.
+Navigate to `https://favo.hofmi.net` in incognito Chrome.
 
 **Expected:** FAVO landing page loads. FAVO wordmark, hero section, footer visible.
 
@@ -73,7 +73,7 @@ On the customer dashboard:
 
 Tap **Enable notifications** (or the push opt-in prompt).
 
-**Expected:** Android Chrome shows a permission prompt "favo.hofmi.org wants to send you notifications". Tap **Allow**.
+**Expected:** Android Chrome shows a permission prompt "favo.hofmi.net wants to send you notifications". Tap **Allow**.
 
 - [ ] Permission prompt appears
 - [ ] After tapping Allow: button changes state (e.g. "Notifications enabled") or disappears

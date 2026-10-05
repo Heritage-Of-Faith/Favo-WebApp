@@ -3,7 +3,7 @@
 **Owner:** Nikao du Toit  
 **Phase:** HOFMI-FAVO-P4  
 **Due:** 07:30 on launch day (before deploy gate closes)  
-**Run against:** staging (`https://staging.favo.hofmi.org`)
+**Run against:** staging (`https://staging.favo.hofmi.net`)
 
 ---
 

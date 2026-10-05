@@ -44,7 +44,7 @@ Something is wrong
 │   └─ → SEE § 9  COGS costs not seeded
 │
 └─ Something else / not sure
-    └─ → Check https://favo.hofmi.org/api/healthz first
+    └─ → Check https://favo.hofmi.net/api/healthz first
         ├─ Returns {"ok":true}  →  App is running. Read through §§ 1–9 for the closest match.
         └─ Does not return     →  SEE § 1  App down
 ```
@@ -54,13 +54,13 @@ Something is wrong
 ## § 1 — App down (R1)
 
 ### How would I notice this?
-- `https://favo.hofmi.org` returns an error page, blank page, or timeout
+- `https://favo.hofmi.net` returns an error page, blank page, or timeout
 - `/api/healthz` does not return `{"ok":true}`
 - Coolify sends a deployment failure alert to `#favo-ops`
 - Staff cannot reach the POS or admin panel
 
 ### First 5 minutes
-1. Visit `https://favo.hofmi.org/api/healthz` in a browser
+1. Visit `https://favo.hofmi.net/api/healthz` in a browser
 2. If it returns `{"ok":true}`: the app is alive — the symptom may be a browser cache issue. Try a hard refresh (Ctrl+Shift+R) or incognito window
 3. If it does not respond: open Coolify → Projects → **hofmi-favo** → **favo-webapp** → check the **Deployments** tab for a failed build
 4. Post in `#favo-ops`: "App appears down — investigating. Health check: [paste response]"
@@ -117,7 +117,7 @@ Any payment disruption lasting > 10 minutes, or any suspected replay attack, tri
 
 ### First 5 minutes
 1. Ask a customer nearby: "Did you get a notification when your order was ready?" — confirm the symptom is real
-2. Check if the customer has notifications enabled: they can see this in Android Chrome settings → Site settings → Notifications → `favo.hofmi.org`
+2. Check if the customer has notifications enabled: they can see this in Android Chrome settings → Site settings → Notifications → `favo.hofmi.net`
 3. Check the VAPID config: Gian can verify `NEXT_PUBLIC_VAPID_PUBLIC_KEY` is correctly set in the Coolify environment variables
 4. Check `/api/push/subscribe` is returning `200` for a fresh opt-in (use browser DevTools Network tab)
 5. Post in `#favo-ops`: "Push not delivering. VAPID check needed"
@@ -299,12 +299,12 @@ If costs are still not seeded 48 hours after launch, Gian escalates to Matt (own
 
 | Check | URL / command | Expected |
 |---|---|---|
-| App health | `https://favo.hofmi.org/api/healthz` | `{"ok":true}` |
+| App health | `https://favo.hofmi.net/api/healthz` | `{"ok":true}` |
 | Yoco status | `https://status.yoco.com` | No active incidents |
 | Coolify deploy log | Coolify → hofmi-favo → favo-webapp → Deployments | Build: success |
 | Loki (webhook errors) | Grafana Explore → `{service="favo-webapp"} |= "webhook"` | No errors |
-| Sync conflicts | `https://favo.hofmi.org/admin/sync-conflicts` | 0 open conflicts |
-| Audit log | `https://favo.hofmi.org/admin/audit` | No anomalous entries |
+| Sync conflicts | `https://favo.hofmi.net/admin/sync-conflicts` | 0 open conflicts |
+| Audit log | `https://favo.hofmi.net/admin/audit` | No anomalous entries |
 
 ---
 
