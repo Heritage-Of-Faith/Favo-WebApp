@@ -315,7 +315,14 @@ record(
 // ─────────────────────────────────────────────────────────────────────────────
 // 8. STANDING PROHIBITIONS — §7 of CLAUDE.md, as code
 // ─────────────────────────────────────────────────────────────────────────────
-mustBeAbsent("no cron writes payments.status", "resolvedBy:\\s*[\"']retry_cron");
+// CLAUDE.md §5: no scheduled job writes payments. Reads (closeDaily's SUM) are fine.
+// The old pattern matched retry-deferred's `resolvedBy: "retry_cron"`; that file is
+// gone (#241), and the pattern's quote broke the shell (exit 2 = GATE IS BROKEN).
+const CRON_PATHS = "src/server/crons/ src/app/api/crons/";
+// Known gaps (code review must cover them): calls split across lines, lowercase or
+// quoted SQL table names, and a cron calling a helper outside these folders.
+mustBeAbsent("no cron writes payments (Drizzle)", "\\(update\\|insert\\|delete\\)( *\\(schema\\.\\)\\?payments *)", CRON_PATHS);
+mustBeAbsent("no cron writes payments (SQL)", "\\(UPDATE\\|INSERT INTO\\|DELETE FROM\\) payments", CRON_PATHS);
 mustBeAbsent("no voided payment status", "voided", "db/enums.ts src/lib/types.ts");
 
 // ─────────────────────────────────────────────────────────────────────────────
