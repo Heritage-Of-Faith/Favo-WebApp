@@ -131,6 +131,8 @@ Deletions are Tier C **because** the gates exist. That is the entire return on s
 
 Working days. The two Sundays stay on the Yoco app, untouched.
 
+> **Ownership change, 8 October 2026.** Days 5–8 move from Nikao to Mia so the build can keep moving: **AT-181** (Day 5 substrate migration), **AT-183** and **AT-184** (Day 6–7 entitlement), **AT-186** and **AT-187** (Day 8 R0 orders and weekday deduction). Jira is the record of who owns what. **Nikao is now the required reviewer on each** — full Tier A for AT-181, 183, 184 and 186 (both named on the PR, adversarial agent pass, one in review at a time, merge only after his approval), Tier B for AT-187. The ownership rule still holds: whoever does not build, reviews. The Day 6–7 surname question below is decided (AT-180, 8 Oct): `customers` gets its own surname field, with no backfill because FAVO starts on a clean database (PRD §13.0).
+
 ### Week 1 — make it safe, make it deployable, make it smaller
 
 **Day 1 — Stop the bleeding, then decide where it lives.**
@@ -164,7 +166,7 @@ One migration, Tier A, carrying everything the weekday rows need: `customers.sta
 
 **Day 6–7 — The entitlement, properly.**
 Office staff become `customers` with `status='office_staff'`. Entitlement re-keyed to `customer_id`, `UNIQUE(customer_id, day)`. Automatic on a matched customer — no tap, no free-text box. It zeroes **exactly one unit of one eligible line**, never a line and never an order: today `orders.ts:619` sets `totalZar: 0` on the whole order, so a staff member's second paid drink is free too. `ENTITLEMENT_USED` / `NOT_ELIGIBLE` as real codes. `searchCustomer` to the DEF-F contract: prefix match, last-4 phone, and **stop returning `email` and full `phone`** (`customers.ts:29-31` returns both today).
-- **Open question for a human:** `customers` has one `name` column and REQ-142 wants a surname beside the given name. Column, split, or trailing token — somebody decides, before day 5's migration is written.
+- **Open question for a human** *(decided 8 Oct: own surname column, AT-180)*: `customers` has one `name` column and REQ-142 wants a surname beside the given name. Column, split, or trailing token — somebody decides, before day 5's migration is written.
 - Gate: a barista gives a named office-staff member their cup in ≤3 taps; a second cup the same day is refused; a second *paid* drink on that order is still charged.
 
 **Day 8 — R0 orders and the weekday deduction.**
