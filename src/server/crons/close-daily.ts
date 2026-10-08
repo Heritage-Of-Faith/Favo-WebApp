@@ -71,7 +71,7 @@ export type CloseDailyResult = {
 
 /**
  * Reconcile collected order totals against confirmed payment amounts for the
- * given SAST day. Returns the reconciliation result and pings Discord when
+ * given SAST day. Returns the reconciliation result and sends a Web Push to admin staff when
  * variance exceeds the T01 "ok" threshold (>= 5%).
  */
 export async function closeDaily(referenceDate?: Date): Promise<CloseDailyResult> {
@@ -80,7 +80,7 @@ export async function closeDaily(referenceDate?: Date): Promise<CloseDailyResult
   // Revenue = sum of totalZar for orders fully collected today.
   // in_progress and ready orders have been paid but not yet served — counting
   // them here inflates revenue vs. the payments query and creates a nightly
-  // Discord alert for variance that resolves itself only after collection.
+  // admin alert for variance that resolves itself only after collection.
   const [revRow] = await db
     .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
     .from(orders)

@@ -30,7 +30,7 @@ provisioned + app redeployed + smoke passing).
 
 ### Steps
 
-1. **Notify the team** — post in `#favo-ops`: "DB restore in progress — service is degraded"
+1. **Notify the team** — post in the café WhatsApp group: "DB restore in progress — service is degraded"
 
 2. **Determine the recovery timestamp** (SAST = UTC+2):
    ```bash
@@ -55,7 +55,7 @@ provisioned + app redeployed + smoke passing).
 
 7. **Run smoke + audit coverage check** (see deploy-runbook.md steps 4–5)
 
-8. **Post resolution notice** in `#favo-ops` with root cause and actions taken
+8. **Post resolution notice** in the café WhatsApp group with root cause and actions taken
 
 ---
 

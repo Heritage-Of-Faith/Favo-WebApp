@@ -25,8 +25,8 @@ Server Actions for mutations (`src/server/actions/*`). Route handlers for querie
 | `redeemLoyalty(customerId, orderId)` | Server action | barista | Require ≥ 100 pts. Full redemption only — `total_zar = 0`. |
 | `topUpWallet(customerId, amountZar)` | Server action | barista | Yoco intent; webhook credits wallet. |
 | `purchasePack(customerId, menuItemId, qty)` | Server action | barista | Yoco intent; on success insert `coffee_packs` (90 d expiry). |
-| `closeDaily()` | Cron 23:59 SAST | system | Reconcile payments vs stock. Block + Discord ping on mismatch. |
-| `generateWeeklyPnL()` | Cron Sun 23:59 | system | Archival report + Discord ping. |
+| `closeDaily()` | Cron 23:59 SAST | system | Reconcile payments vs stock. Web Push to admin staff on T01 breach (in-app admin alert not built yet). |
+| `generateWeeklyPnL()` | Cron Sun 23:59 | system | Archival report (stored in `weekly_reports`; nothing is sent). |
 | `approveMonthlyPnL(id)` | Server action | admin | Set admin_sig. Report closed immediately. |
 | `GET /api/reports/export?format=csv\|pdf` | Route handler | admin | Sales, COGS, inventory variance. |
 | `POST /api/push/subscribe` | Route handler | barista (P1) → customer (P3) | Store `PushSubscription` on customer. |

@@ -99,7 +99,7 @@ psql $DATABASE_URL -c "SELECT COUNT(*) FROM staff WHERE active = true;"
 3. **09:20** — Coolify auto-deploys from `main`. Monitor deploy log in Coolify dashboard.
 4. **09:25** — Verify `https://favo.hofmi.net/api/healthz` → `{"ok":true}`.
 5. **09:30** — Run this checklist's pre-deploy gate manually against production.
-6. **09:35** — Discord `#favo-ops`: "FAVO is live 🟢"
+6. **09:35** — Record "FAVO is live" on the work-item record
 7. Stay on-call for 4 hours post-launch.
 
 ---

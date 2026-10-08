@@ -97,27 +97,9 @@ Expected: `GAP: 0`. If non-zero, **stop and investigate** — this is a P0.
 
 ---
 
-### Step 6 — Fire the ship ping
+### Step 6 — Standby
 
-```bash
-DISCORD_WEBHOOK_URL=<webhook> bun run scripts/ship-ping.ts \
-  --sha "$(git rev-parse --short HEAD)" \
-  --smoke pass \
-  --audit 0 \
-  --dashboard "https://grafana.hofmi.org/d/favo-ops-v1"
-```
-
-Confirm the embed appears in `#favo-ops` with:
-- Deploy SHA ✅
-- Smoke: pass ✅
-- Audit coverage: 0 ✅
-- Grafana link ✅
-
----
-
-### Step 7 — Standby
-
-Remain on `#favo-ops` for 60 minutes post-launch. Watch:
+Stay on call for 60 minutes post-launch. The work-item record is the ship notification (PRD §13.5). Watch:
 - Grafana ops dashboard (order throughput, push latency)
 - Sentinel alerts (any critical firing = rollback immediately)
 - Customer and barista reports via the café WhatsApp group
@@ -136,7 +118,7 @@ git push origin main
 # Coolify auto-deploys; verify healthz within 2 minutes
 ```
 
-Announce rollback immediately in `#favo-ops`:
+Announce rollback immediately in the café WhatsApp group:
 ```
 ⚠️ FAVO deploy rolled back — <reason>. Investigating. ETA for re-deploy: <time>.
 ```
@@ -147,7 +129,7 @@ Announce rollback immediately in `#favo-ops`:
 
 | Role | Person | Channel |
 |---|---|---|
-| Deploy lead | Gian | `#favo-ops` direct |
+| Deploy lead | Gian | gian@hofmi.org |
 | Supabase support | — | https://supabase.com/dashboard/support |
 | Yoco support | — | https://www.yoco.com/za/support/ |
 | Cloudflare | — | https://dash.cloudflare.com/support |

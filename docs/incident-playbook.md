@@ -56,14 +56,14 @@ Something is wrong
 ### How would I notice this?
 - `https://favo.hofmi.net` returns an error page, blank page, or timeout
 - `/api/healthz` does not return `{"ok":true}`
-- Coolify sends a deployment failure alert to `#favo-ops`
+- The deploy failure shows in the deploy logs
 - Staff cannot reach the POS or admin panel
 
 ### First 5 minutes
 1. Visit `https://favo.hofmi.net/api/healthz` in a browser
 2. If it returns `{"ok":true}`: the app is alive — the symptom may be a browser cache issue. Try a hard refresh (Ctrl+Shift+R) or incognito window
 3. If it does not respond: open Coolify → Projects → **hofmi-favo** → **favo-webapp** → check the **Deployments** tab for a failed build
-4. Post in `#favo-ops`: "App appears down — investigating. Health check: [paste response]"
+4. Post in the café WhatsApp group: "App appears down — investigating. Health check: [paste response]"
 
 ### When to escalate
 Page Gian immediately if:
@@ -73,10 +73,10 @@ Page Gian immediately if:
 
 ### Restoration
 - **Self-serve (if latest deploy failed):** In Coolify → Deployments → select the last known-good deployment SHA → click **Redeploy**. See `docs/deploy-runbook.md` §2 for exact steps.
-- **Otherwise:** Page Gian. On-call contact: gian@hofmi.org / `#favo-ops` Discord (ping @gian)
+- **Otherwise:** Page Gian. On-call contact: gian@hofmi.org
 
 ### Post-mortem trigger
-Any outage > 5 minutes: Gian writes a post-mortem in `#favo-ops` within 24 hours. Template: what broke, when, customer impact, root cause, fix, prevention.
+Any outage > 5 minutes: Gian writes a post-mortem on the work-item record within 24 hours. Template: what broke, when, customer impact, root cause, fix, prevention.
 
 ---
 
@@ -92,7 +92,7 @@ Any outage > 5 minutes: Gian writes a post-mortem in `#favo-ops` within 24 hours
 1. Check `https://status.yoco.com` — if Yoco is reporting an incident, this is their problem, not ours
 2. If Yoco is healthy: open Grafana Loki and search `{service="favo-webapp"} |= "webhook"` for errors in the last 15 minutes
 3. Try a test payment on the POS with a known-good card
-4. Post in `#favo-ops`: "Payments failing — Yoco status: [link]. Loki errors: [paste]"
+4. Post in the café WhatsApp group: "Payments failing — Yoco status: [link]. Loki errors: [paste]"
 
 ### When to escalate
 - Yoco is healthy but payments still fail → Page Gian
@@ -120,7 +120,7 @@ Any payment disruption lasting > 10 minutes, or any suspected replay attack, tri
 2. Check if the customer has notifications enabled: they can see this in Android Chrome settings → Site settings → Notifications → `favo.hofmi.net`
 3. Check the VAPID config: Gian can verify `NEXT_PUBLIC_VAPID_PUBLIC_KEY` is correctly set in the Coolify environment variables
 4. Check `/api/push/subscribe` is returning `200` for a fresh opt-in (use browser DevTools Network tab)
-5. Post in `#favo-ops`: "Push not delivering. VAPID check needed"
+5. Post in the café WhatsApp group: "Push not delivering. VAPID check needed"
 
 ### When to escalate
 - VAPID keys look correct but push still fails → page Gian
@@ -148,7 +148,7 @@ Push failure during a Sunday rush (high-traffic window) triggers a post-mortem. 
 2. Find the `/api/queue/stream` request — it should be an ongoing EventStream
 3. If the connection shows as "Pending" but no events are arriving, the SSE heartbeat (30s) may have been missed
 4. **Immediate fix for staff:** Refresh the page — the client reconnects and receives a full poll of current state on reconnect. No orders are lost
-5. Post in `#favo-ops`: "Queue SSE appears stuck. Staff refreshing to recover"
+5. Post in the café WhatsApp group: "Queue SSE appears stuck. Staff refreshing to recover"
 
 ### When to escalate
 - Refreshing does not restore the queue (missing orders after refresh) → page Gian immediately
@@ -175,7 +175,7 @@ SSE disruption > 10 minutes during service (Sunday peak) triggers investigation.
 2. Review the open conflicts list: each row shows what conflicted and when
 3. For each conflict: read the "Local" vs "Server" description and pick the correct version (last-write-wins is the default, but manager review is required when flagged)
 4. Resolve each conflict with an explanation and click **Resolve**
-5. Post in `#favo-ops`: "N sync conflicts found. Resolving now. Details: [brief description]"
+5. Post in the café WhatsApp group: "N sync conflicts found. Resolving now. Details: [brief description]"
 
 ### When to escalate
 - You cannot determine which version of a conflict is correct → ask Mia or page Gian
@@ -195,7 +195,7 @@ SSE disruption > 10 minutes during service (Sunday peak) triggers investigation.
 
 ### How would I notice this?
 - Admin dashboard shows a red or yellow variance flag
-- Discord `#favo-ops` receives a `[closeDaily] MISMATCH` ping
+- Admin devices with push enabled receive a closeDaily mismatch Web Push
 - T01 bands: 0–5% fine, 5–10% investigate, 10%+ critical
 
 ### First 5 minutes
@@ -236,7 +236,7 @@ Always escalate to Mia immediately. If Mia is unavailable, page Gian.
 
 ### Restoration
 1. Mia or Gian goes to `/admin/staff` → find the staff member → **Reset PIN**
-2. Have the staff member choose a new PIN privately — do not transmit it over WhatsApp, email, or Discord
+2. Have the staff member choose a new PIN privately — do not transmit it over WhatsApp or email
 3. Gian reviews the full audit trail for the affected period for any suspicious actions
 4. If discount abuse is suspected: Gian compares `orders.discount_zar` and `audit_log` entries for that staff ID
 
@@ -254,7 +254,7 @@ Every PIN compromise triggers a review. Gian runs: `SELECT * FROM audit_log WHER
 
 ### First 5 minutes
 1. Do NOT try to fix this yourself — page Gian immediately
-2. Post in `#favo-ops`: "@gian Suspected webhook replay. Loki: [paste error]. Time: [now]"
+2. Post on the work-item record: "@gian Suspected webhook replay. Loki: [paste error]. Time: [now]"
 3. Do not process any card payments until Gian confirms the webhook secret is intact
 
 ### When to escalate
@@ -312,13 +312,13 @@ If costs are still not seeded 48 hours after launch, Gian escalates to Matt (own
 
 | Person | Role | Contact |
 |---|---|---|
-| Gian | Lead developer — all technical escalations | gian@hofmi.org / @gian in `#favo-ops` |
+| Gian | Lead developer — all technical escalations | gian@hofmi.org |
 | Mia | System admin — staff management, incident triage | mia@hofmi.org |
 | Matt | Owner — sign-off on financial / security incidents | matt@hofmi.org |
 | Nikao | Customer experience | nikao@hofmi.org |
 | Yoco support | Payment issues | support.yoco.com |
 
-**On-call rotation:** Gian is primary on-call for launch week (16–23 June 2026). After that, rotation posted in `#favo-ops`.
+**On-call rotation:** Gian is primary on-call for launch week (16–23 June 2026). After that, rotation posted on the work-item record.
 
 ---
 

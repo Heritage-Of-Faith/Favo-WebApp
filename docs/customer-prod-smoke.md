@@ -10,7 +10,7 @@
 
 ## Pre-conditions
 
-- [ ] G26 deploy has reported green to `#favo-ops`
+- [ ] G26 deploy has reported green on the work-item record
 - [ ] DNS resolving correctly (`favo.hofmi.net` → production)
 - [ ] Android Chrome, latest version, fresh incognito tab
 - [ ] Test email address ready: use `nikao+smoke@hofmi.net` (or a personal address you can receive email on)
@@ -163,4 +163,4 @@ LIMIT 1;
 (none / describe here)
 ```
 
-**Reported to #favo-ops at:** ___________
+**Reported on the work-item record at:** ___________
