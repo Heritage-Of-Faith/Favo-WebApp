@@ -103,4 +103,4 @@ DB is on Supabase (PG 17) — no local Postgres needed. See `.env.example` for a
 ## Observability
 - Logs → Pino → Loki (Sentinel watches)
 - Tracing → Raindrop
-- Ship + alert pings → Discord `#favo-ops`
+- Ship notification → the work-item record (PRD §13.5); close-mismatch alerts → Web Push to admin staff

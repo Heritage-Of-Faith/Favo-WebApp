@@ -12,7 +12,7 @@
 | L06 | Loyalty: 5 pts per R10. Min 100 to redeem. 100 pts = R20. Full redemption only. | Server action + audit |
 | L07 | Midnight SAST is revenue day boundary. | Reporting queries |
 | L08 | Every inventory adjustment writes an audit row. | Trigger |
-| L09 | Stock reconciles before daily close. `closeDaily()` blocks + pages Discord on mismatch. | Cron |
+| L09 | Stock reconciles before daily close. `closeDaily()` raises a Web Push to admin staff on mismatch (in-app admin alert and close-record block not built yet). | Cron |
 | L10 | Emergency purchase requires admin approval (`admin_approved_by` not null). | DB CHECK |
 | L11 | Monthly P&L requires admin sign-off to close. | DB CHECK |
 | L12 | `audit_log` is append-only. UPDATE/DELETE trigger-denied forever. | Trigger |

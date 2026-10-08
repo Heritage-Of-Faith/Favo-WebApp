@@ -38,7 +38,7 @@ Each morning, open the COGS dashboard and check:
 
 1. The **Net** KPI tile — is today profitable so far? (It will be zero at opening; check after the first few orders)
 2. The **variance flag** — if a red or yellow warning banner appears, investigate it (see "Investigating variance" below)
-3. No Discord ping overnight saying `[closeDaily] MISMATCH` — if you see one, log the variance immediately
+3. No overnight closeDaily mismatch push notification on your phone — if you see one, log the variance immediately
 
 **Business rule:** T01 says 0–5% variance is fine, 5–10% needs investigation, 10%+ is critical. The system flags these for you.
 
@@ -50,7 +50,7 @@ Each morning, open the COGS dashboard and check:
 
 **Screen:** `/admin/inventory`
 
-If the dashboard shows a warning or Discord sent a mismatch ping:
+If the dashboard shows a warning or you received a closeDaily mismatch push notification:
 
 1. Open Inventory and look for ingredients with a red "Low" or "Mismatch" badge
 2. Cross-check with what's physically on the shelf
@@ -77,22 +77,22 @@ If your phone receives a FAVO low-stock notification:
 
 ### Verify closeDaily ran (every night, check next morning)
 
-The system automatically runs `closeDaily` at 23:59 SAST every night. If it finds a stock mismatch, it sends a Discord message to `#favo-ops`.
+The system automatically runs `closeDaily` at 23:59 SAST every night. If it finds a stock mismatch, it sends a push notification to admin devices that have push enabled. (There is no scheduler wired up yet, so confirm the job actually ran. An in-app admin alert is not built yet.)
 
-**Check:** Open Discord → `#favo-ops` and look for any red ping. No message = all good.
+**Check:** Look for a mismatch push notification on your phone. No notification = all good.
 
 ---
 
 ## Weekly duties (every Sunday)
 
-### Review weekly P&L Discord ping
+### Review weekly P&L report
 
-Every Sunday evening, the system sends a `generateWeeklyPnL` summary to Discord.
+Every Sunday evening, `generateWeeklyPnL` stores a weekly summary. It sends no notification, and no admin screen shows it yet.
 
-1. Open Discord → `#favo-ops`
+1. Ask Gian for the stored weekly report
 2. Read the summary — it shows revenue, COGS, and variance for the week
 3. If variance is above 5%: open `/admin/inventory` and `/admin/expenses` to investigate
-4. Record any action taken (even just "variance investigated, no issue found") in a message to `#favo-ops`
+4. Record any action taken (even just "variance investigated, no issue found")
 
 **Business rule:** T01 — you are personally responsible for investigating > 5% variance before Monday.
 
@@ -171,7 +171,7 @@ All staff PINs should be rotated at the start of each year (or when a staff memb
 3. Click **Reset PIN**
 4. Have the staff member set a new PIN privately
 
-**Important:** Never share PINs over WhatsApp, email, or Discord. Hand the new PIN to the person in person.
+**Important:** Never share PINs over WhatsApp or email. Hand the new PIN to the person in person.
 
 ---
 
@@ -200,7 +200,7 @@ See **`docs/incident-playbook.md`** for step-by-step guidance on what to do if:
 - Orders are not syncing from the POS
 - Any other urgent issue
 
-**Gian's contact:** gian@hofmi.org (also in `#favo-ops` on Discord)
+**Gian's contact:** gian@hofmi.org
 
 ---
 
@@ -208,7 +208,7 @@ See **`docs/incident-playbook.md`** for step-by-step guidance on what to do if:
 
 | Person | Role | Contact |
 |---|---|---|
-| Gian | Lead developer, deploy, infra | gian@hofmi.org / #favo-ops |
+| Gian | Lead developer, deploy, infra | gian@hofmi.org |
 | Matt | Owner, sign-off authority | matt@hofmi.org |
 | Mia | System admin, FAVO ops | mia@hofmi.org |
 | Nikao | Customer experience | nikao@hofmi.org |

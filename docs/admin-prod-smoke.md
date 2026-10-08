@@ -11,7 +11,7 @@
 
 ## Pre-conditions
 
-- [ ] G26 deploy reported green to `#favo-ops`
+- [ ] G26 deploy reported green on the work-item record
 - [ ] DNS resolving correctly (`favo.hofmi.net` → production)
 - [ ] Admin PIN from Gian's production seed ready
 - [ ] Browser console open (F12 → Console) before navigating
@@ -147,4 +147,4 @@ Navigate to `/admin/audit`.
 (none / describe here)
 ```
 
-**Reported to #favo-ops at:** ___________
+**Reported on the work-item record at:** ___________
