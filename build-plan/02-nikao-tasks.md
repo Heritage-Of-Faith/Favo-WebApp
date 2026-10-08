@@ -8,6 +8,8 @@
 >
 > **What you cannot delegate, however short the week is:** reading the payment code, the four vendor conversations (Yoco, Matt, the bookkeeper), and the physical acts — linking the Khumo, sending the R1.00, restoring the backup. Everything else can move to Mia or be handled by CI. `00-overview-and-roadmap.md` §5c has the tiering.
 
+> **Ownership change, 8 October 2026.** Two-week-plan Days 5–8 (AT-181, AT-183, AT-184, AT-186, AT-187) moved to Mia, as the line above allows. You are the required reviewer on each instead of the builder. The ownership rule still holds: whoever does not build, reviews. Your other stories are unchanged. See `05-the-two-week-plan.md` §4.
+
 > ⚠ **Claude writes the code.** Every row below is something you **own, specify, review and verify** — not something you type. "Build X" means: check the requirement rows are right, have Claude build it, then confirm the acceptance assertion still asserts the spec's own numbers. The review tiers, the in-flight caps and the four questions to review against are in **`04-how-claude-builds-this.md`**. The traps Claude must not fall into are in **`CLAUDE.md`**, which goes in the repo root.
 
 **How to read a row.** Every story cites the Appendix C requirement IDs it satisfies. Those IDs are what the test asserts.

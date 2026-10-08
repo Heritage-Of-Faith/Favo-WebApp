@@ -4,6 +4,8 @@
 
 > ⚠ **This split is a proposal.** Nikao has not seen it and has not confirmed his own capacity or preferences. Adjust it together at the first board review. The **ownership rule** (a named reviewer on every money/auth/entitlement/Yoco item) is not adjustable; **who owns which epic** is.
 
+> **Ownership change, 8 October 2026.** You now also own two-week-plan Days 5–8: AT-181, AT-183, AT-184, AT-186, AT-187 (moved from Nikao). Nikao is the required reviewer on each (whoever does not build, reviews). See `05-the-two-week-plan.md` §4.
+
 **Capacity assumed: ~15–20 hrs/week** around Bible Institute study. Flagged as an assumption in the overview (A1).
 
 > ⚠ **Claude writes the code.** Every row below is something you **own, specify, review and verify** — not something you type. "Build X" means: check the requirement rows are right, have Claude build it, then confirm the acceptance assertion still asserts the spec's own numbers. The review tiers, the in-flight caps and the four questions to review against are in **`04-how-claude-builds-this.md`**. The traps Claude must not fall into are in **`CLAUDE.md`**, which goes in the repo root.
