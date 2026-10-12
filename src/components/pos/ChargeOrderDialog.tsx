@@ -29,9 +29,11 @@ export type Props = {
   order: Order;
   onPaid: (orderId: string) => void;
   onClose: () => void;
+  /** P4: the card step began — the order's total is now frozen. */
+  onCardStepStart?: (orderId: string) => void;
 };
 
-export default function ChargeOrderDialog({ order, onPaid, onClose }: Props) {
+export default function ChargeOrderDialog({ order, onPaid, onClose, onCardStepStart }: Props) {
   const [online, setOnline] = useState(true);
   const [manualBusy, setManualBusy] = useState(false);
   const [manualErr, setManualErr] = useState<string | null>(null);
@@ -88,7 +90,8 @@ export default function ChargeOrderDialog({ order, onPaid, onClose }: Props) {
         <div className="flex flex-col gap-4 px-5 py-5">
           {online ? (
             <>
-              <YocoOrderForm orderId={order.id} amountZar={order.totalZar} onPaid={settle} />
+              <YocoOrderForm orderId={order.id} amountZar={order.totalZar} onPaid={settle}
+                onCardStepStart={() => onCardStepStart?.(order.id)} />
 
               {/* Manual tender — cash / card machine / EFT. */}
               <div className="flex items-center gap-3">

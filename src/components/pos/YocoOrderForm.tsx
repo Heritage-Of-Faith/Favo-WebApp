@@ -62,9 +62,11 @@ export type Props = {
   amountZar: number;
   /** Called once payment is confirmed successful by the backend. */
   onPaid: () => void;
+  /** Called when the card popup opens — from here the order's total is frozen (P4). */
+  onCardStepStart?: () => void;
 };
 
-export default function YocoOrderForm({ orderId, amountZar, onPaid }: Props) {
+export default function YocoOrderForm({ orderId, amountZar, onPaid, onCardStepStart }: Props) {
   const [state, setState] = useState<FormState>("loading-sdk");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const yocoRef = useRef<YocoInstance | null>(null);
@@ -122,6 +124,7 @@ export default function YocoOrderForm({ orderId, amountZar, onPaid }: Props) {
     if (!yocoRef.current || (state !== "ready" && state !== "failed" && state !== "timeout")) return;
     setErrorMsg(null);
     setState("awaiting-card");
+    onCardStepStart?.();
     yocoRef.current.showPopup({
       amountInCents: amountZar,
       currency: "ZAR",
@@ -140,7 +143,7 @@ export default function YocoOrderForm({ orderId, amountZar, onPaid }: Props) {
         void pollUntilResolved();
       },
     });
-  }, [state, amountZar, orderId, pollUntilResolved]);
+  }, [state, amountZar, orderId, pollUntilResolved, onCardStepStart]);
 
   const handleRetry = useCallback(() => {
     setErrorMsg(null);
