@@ -66,6 +66,8 @@ async function main() {
 
     // Extra Shot: correct price (was R12, should be R10) + wire the deduction
     // effect (1 shot = 1 bean cup, repeatable — the POS stepper selects it N times).
+    // Historical one-off (AT-136/145), left as written: 0033 (AT-181) deletes
+    // every `Extra Shot` row, so on a migrated database this UPDATE matches 0 rows.
     await tx.execute(sql`
       UPDATE menu_customisations
       SET price_delta_zar = 1000, adds_inventory_item_id = 'inv_item_beans_cups', adds_quantity = 1

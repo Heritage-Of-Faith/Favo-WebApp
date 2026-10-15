@@ -3,13 +3,15 @@
 // Active order detail + Done button — owner: Mine (M6)
 // Rule L15: Done (→ collected) must be the most visually dominant action on screen.
 // Transitions: ordered → in_progress → ready → collected.
-// Staff discount: Cappuccino + weekday only, once per day per staff member.
-// Docs: docs/API.md → transitionOrder, applyStaffDiscount, cancelOrder
+// L03 free weekday cup: applied automatically at ring-up (createOrder); the
+// barista only taps to decline it (REQ-024).
+// Docs: docs/API.md → transitionOrder, declineFreeCoffee, cancelOrder
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle, X, Tag, Loader2, AlertCircle, ChevronRight } from "lucide-react";
-import { transitionOrder, cancelOrder, applyStaffDiscount } from "@/server/actions/orders";
+import { CheckCircle, Loader2, AlertCircle, ChevronRight } from "lucide-react";
+import { transitionOrder, cancelOrder, declineFreeCoffee } from "@/server/actions/orders";
+import FreeCupRow from "@/components/pos/FreeCupRow";
 import { formatZar, formatDate } from "@/lib/format";
 import type { Order, OrderState } from "@/lib/types";
 
@@ -34,9 +36,8 @@ export default function ActiveOrder({ order }: Props) {
   const [currentOrder, setCurrentOrder] = useState<Order>(order);
   const [actionState, setActionState] = useState<ActionState>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [showDiscount, setShowDiscount] = useState(false);
-  const [discountStaffId, setDiscountStaffId] = useState("");
-  const [discountMsg, setDiscountMsg] = useState<string | null>(null);
+  const [declining, setDeclining] = useState(false);
+  const [freeCupMsg, setFreeCupMsg] = useState<string | null>(null);
   const [cancelConfirm, setCancelConfirm] = useState(false);
 
   const nextState = STATE_NEXT[currentOrder.state];
@@ -86,25 +87,28 @@ export default function ActiveOrder({ order }: Props) {
     setActionState("idle");
   }, [actionState, currentOrder.id, router]);
 
-  const handleStaffDiscount = useCallback(async () => {
-    if (!discountStaffId.trim()) {
-      setDiscountMsg("Enter the staff member's ID.");
-      return;
-    }
-    setDiscountMsg(null);
+  const handleDeclineFreeCup = useCallback(async () => {
+    if (declining) return;
+    setDeclining(true);
+    setFreeCupMsg(null);
     try {
-      const result = await applyStaffDiscount(currentOrder.id, discountStaffId.trim());
+      const result = await declineFreeCoffee(currentOrder.id);
       if (result.ok) {
-        setDiscountMsg("✓ Staff discount applied — order is now free.");
-        setCurrentOrder((o) => ({ ...o, totalZar: 0, isStaffDiscount: true }));
-        setShowDiscount(false);
+        setCurrentOrder((o) => ({
+          ...o,
+          totalZar: result.data.totalZar,
+          isStaffDiscount: false,
+          items: o.items.map((i) => ({ ...i, discountZar: 0 })),
+        }));
+        setFreeCupMsg("Free cup declined — the order is charged in full.");
       } else {
-        setDiscountMsg(result.message);
+        setFreeCupMsg(result.message);
       }
     } catch {
-      setDiscountMsg("Could not apply discount. Please try again.");
+      setFreeCupMsg("Could not decline the free cup. Please try again.");
     }
-  }, [discountStaffId, currentOrder.id]);
+    setDeclining(false);
+  }, [declining, currentOrder.id]);
 
   return (
     <div className="flex h-full flex-col gap-[var(--spacing-m)]">
@@ -145,6 +149,9 @@ export default function ActiveOrder({ order }: Props) {
                     {item.modifications.map((m) => m.name).join(", ")}
                   </p>
                 )}
+                {(item.discountZar ?? 0) > 0 && (
+                  <p className="favo-small text-cool-steel">Free cup −{formatZar(item.discountZar ?? 0)}</p>
+                )}
               </div>
               <span className="favo-small text-coffee-bean shrink-0 ml-[var(--spacing-m)]">
                 {formatZar(
@@ -159,8 +166,8 @@ export default function ActiveOrder({ order }: Props) {
         {/* Total */}
         <div className="flex justify-between px-[var(--spacing-m)] py-[var(--spacing-s)] border-t border-cool-steel/20">
           <span className="favo-label text-cool-steel">Total</span>
-          <span className={["favo-subhead", currentOrder.isStaffDiscount ? "text-[var(--color-success)] line-through" : "text-coffee-bean"].join(" ")}>
-            {currentOrder.isStaffDiscount ? "FREE (staff)" : formatZar(currentOrder.totalZar)}
+          <span className="favo-subhead text-coffee-bean">
+            {formatZar(currentOrder.totalZar)}
           </span>
         </div>
       </div>
@@ -173,51 +180,13 @@ export default function ActiveOrder({ order }: Props) {
         </div>
       )}
 
-      {/* ── Staff discount panel ────────────────────────────────────────────── */}
-      {!isDone && !currentOrder.isStaffDiscount && (
-        <div>
-          {!showDiscount ? (
-            <button
-              type="button"
-              onClick={() => setShowDiscount(true)}
-              className="flex items-center gap-[var(--spacing-s)] text-cool-steel hover:text-coffee-bean min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
-            >
-              <Tag size={14} strokeWidth={2.25} />
-              <span className="favo-small">Apply staff discount</span>
-            </button>
-          ) : (
-            <div className="flex flex-col gap-[var(--spacing-s)] rounded-[var(--radius-card)] border border-cool-steel/20 bg-porcelain/5 p-[var(--spacing-m)]">
-              <label htmlFor="staff-id" className="favo-label text-cool-steel">
-                Staff member ID
-              </label>
-              <input
-                id="staff-id"
-                type="text"
-                value={discountStaffId}
-                onChange={(e) => setDiscountStaffId(e.target.value)}
-                placeholder="e.g. staff_barista_sam"
-                className="rounded-[var(--radius-btn)] border border-cool-steel/30 bg-porcelain/10 px-[var(--spacing-m)] py-[var(--spacing-s)] text-coffee-bean placeholder:text-cool-steel favo-small min-h-[44px] focus:border-crimson-carrot focus:outline-none"
-              />
-              {discountMsg && (
-                <p className={["favo-small", discountMsg.startsWith("✓") ? "text-[var(--color-success)]" : "text-[var(--color-error)]"].join(" ")} role="status">
-                  {discountMsg}
-                </p>
-              )}
-              <div className="flex gap-[var(--spacing-s)]">
-                <button type="button" onClick={handleStaffDiscount}
-                  className="favo-cta flex-1 rounded-[var(--radius-btn)] bg-crimson-carrot px-[var(--spacing-m)] py-[var(--spacing-s)] min-h-[44px] text-porcelain hover:bg-coffee-bean-deep focus-visible:outline focus-visible:outline-2 focus-visible:outline-porcelain">
-                  Apply
-                </button>
-                <button type="button" onClick={() => { setShowDiscount(false); setDiscountMsg(null); }}
-                  className="rounded-[var(--radius-btn)] border border-cool-steel/30 px-[var(--spacing-m)] py-[var(--spacing-s)] min-h-[44px] text-cool-steel hover:bg-porcelain/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
-                  <X size={14} strokeWidth={2.25} />
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+      {/* ── L03 free cup — applied automatically at ring-up; one tap to decline,
+          only while no card checkout exists (the server refuses otherwise) ── */}
+      {currentOrder.state === "ordered" && currentOrder.isStaffDiscount && currentOrder.paymentStatus !== "successful"
+        && !currentOrder.cardCheckout && (
+        <FreeCupRow busy={declining} onDecline={handleDeclineFreeCup} />
       )}
-
+      {freeCupMsg && <p className="favo-small text-cool-steel" role="status">{freeCupMsg}</p>}
       {/* ── Cancel (only while ordered) ─────────────────────────────────────── */}
       {currentOrder.state === "ordered" && !cancelConfirm && (
         <button type="button" onClick={() => setCancelConfirm(true)}

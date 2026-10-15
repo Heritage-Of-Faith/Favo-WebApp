@@ -12,6 +12,7 @@ import {
   check,
   numeric,
   uuid,
+  date,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -28,6 +29,9 @@ import {
   wasteCategory,
   purchaseKind,
   expenseCategory,
+  customerStatus,
+  sessionMode,
+  compReason,
 } from "./enums";
 
 const TENANT = "hofmi";
@@ -60,6 +64,10 @@ export const customers = pgTable("customers", {
   phone: text("phone"),
   pushSubscription: jsonb("push_subscription"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // AT-181 (owner decision AT-180): surname is its own field, beside `name`.
+  surname: text("surname"),
+  // AT-181 / PRD §10.3: free-coffee eligibility (L03) and audience targeting.
+  status: customerStatus("status").default("church_member").notNull(),
 });
 
 // ─── Menu ─────────────────────────────────────────────────────────────────────
@@ -243,6 +251,9 @@ export const orders = pgTable("orders", {
   paymentMode: text("payment_mode", {
     enum: ["yoco", "yoco_deferred", "free"],
   }),
+  // AT-181 / L07 · REQ-039: the SAST revenue day, from the server's clock at
+  // receipt (never the client's). Midnight SAST is the boundary.
+  revenueDay: date("revenue_day").notNull(),
 });
 
 export const orderItems = pgTable("order_items", {
@@ -252,7 +263,19 @@ export const orderItems = pgTable("order_items", {
   quantity: integer("quantity").default(1).notNull(),
   unitPriceZar: integer("unit_price_zar").notNull(),
   modifications: jsonb("modifications").default([]).notNull(),
-});
+  // AT-181 / PRD §10.3: the shot count is a column, never part of a name.
+  // The DB CHECK enforces the outer ceiling (T15 max_shots_per_line = 4).
+  shots: integer("shots").default(1).notNull(),
+  // AT-181 / PRD §10.3: the one place a line's discount lives (L03 free cup,
+  // L33 comp, §6.9 voucher). Integer cents.
+  discountZar: integer("discount_zar").default(0).notNull(),
+  compReason: compReason("comp_reason"),
+}, () => [
+  check("order_items_shots_range", sql`shots BETWEEN 1 AND 4`),
+  // DEF-A's floor: a line can never be discounted past its own value.
+  check("order_items_discount_within_line", sql`discount_zar <= quantity * unit_price_zar`),
+  check("order_items_quantity_positive", sql`quantity >= 1`),
+]);
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
@@ -268,7 +291,13 @@ export const payments = pgTable("payments", {
   amountZar: integer("amount_zar").notNull(),
   status: paymentStatus("status").default("pending").notNull(),
   webhookReceivedAt: timestamp("webhook_received_at", { withTimezone: true }),
-});
+}, (t) => [
+  // AT-181 / REQ-011: an order has at most one successful payment, and the
+  // database enforces it.
+  uniqueIndex("payments_one_successful_per_order")
+    .on(t.orderId)
+    .where(sql`status = 'successful'`),
+]);
 
 export const refunds = pgTable("refunds", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -288,12 +317,14 @@ export const staffEntitlementLog = pgTable(
   {
     id: text("id").primaryKey().default(sql`gen_random_uuid()`),
     tenantId: tenantId(),
-    staffId: text("staff_id").notNull().references(() => staff.id),
+    // AT-181 / PRD §10.3: the beneficiary — an office staff member — so a FK
+    // to `customers`, not `staff`. The table name is now a misnomer; it stays.
+    customerId: text("customer_id").notNull().references(() => customers.id),
     appliedByStaffId: text("applied_by_staff_id").notNull().references(() => staff.id),
     orderId: text("order_id").notNull().references(() => orders.id),
     day: text("day").notNull(), // YYYY-MM-DD in Africa/Johannesburg
   },
-  (t) => [unique().on(t.staffId, t.day)]
+  (t) => [unique().on(t.customerId, t.day)]
 );
 
 // ─── Waste + Purchases ────────────────────────────────────────────────────────
@@ -351,6 +382,8 @@ export const openingSessions = pgTable(
     id: text("id").primaryKey().default(sql`gen_random_uuid()`),
     tenantId: tenantId(),
     sessionDate: text("session_date").notNull(), // YYYY-MM-DD (SAST revenue day)
+    // AT-181 / PRD §10.3: the day's mode, defaulted from the session date.
+    mode: sessionMode("mode").notNull(),
     opensAt: text("opens_at").notNull(),         // "07:30"
     closesAt: text("closes_at"),                 // null = open-ended
     viaPos: boolean("via_pos").default(false).notNull(),

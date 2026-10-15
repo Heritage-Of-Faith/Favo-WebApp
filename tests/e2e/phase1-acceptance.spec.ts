@@ -7,7 +7,7 @@
 //   - Barista: Sam Barista, PIN 1234   (id: staff_barista_sam)
 //   - Admin:   Mia Manager,  PIN 4321   (id: staff_manager_mia)
 //   - Customer: Louis, phone 0821234567 (id: cust_louis)
-//   - Menu: Cappuccino (R45,00) + Extra Shot (+R12,00)
+//   - Menu: Cappuccino (R45,00)  (Extra Shot removed by AT-181)
 //
 // Env: PUBLIC_BASE_URL=http://localhost:3000 (playwright.config.ts)
 // Quality bar: ≥ 8 passing tests before Phase 1 merge gate closes.
@@ -108,7 +108,9 @@ test.describe("3. Order builder", () => {
     await expect(page.getByText("Cappuccino").first()).toBeVisible();
   });
 
-  test("Extra Shot customisation adds R12 to the price", async ({ page }) => {
+  // AT-181: `Extra Shot` is deleted from menu_customisations (PRD §10.3 — the
+  // shot count is order_items.shots); the shots picker is not built yet.
+  test.skip("Extra Shot customisation adds R12 to the price", async ({ page }) => {
     await page.getByText("Cappuccino").first().click();
     await expect(page.getByText(/extra shot/i).first()).toBeVisible({ timeout: 5000 });
     await page.getByText(/extra shot/i).first().click();

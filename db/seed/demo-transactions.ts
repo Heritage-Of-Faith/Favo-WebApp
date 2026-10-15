@@ -26,6 +26,7 @@ import {
   stockMovements,
   expenses,
 } from "../schema";
+import { revenueDay } from "../../src/lib/format";
 
 // Single-tenant app — matches the `tenant_id` default in db/schema.ts.
 const TENANT = "hofmi";
@@ -154,6 +155,7 @@ async function main() {
             placedAt,
             completedAt: new Date(placedAt.getTime() + 5 * 60 * 1000),
             totalZar: drink.priceZar,
+            revenueDay: revenueDay(placedAt),
           })
           .onConflictDoNothing();
 
