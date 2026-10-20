@@ -29,7 +29,15 @@ export type JobDefinition = {
   missedRun: MissedRunPolicy;
   /** The period a firing at `firedAt` covers, e.g. the revenue day or ISO week. */
   periodFor(firedAt: Date): string;
-  run(firedAt: Date): Promise<unknown>;
+  /** `late` is true for a startup catch-up, so a job can record that it ran late. */
+  run(firedAt: Date, late: boolean): Promise<unknown>;
+  /**
+   * For `catchUp` jobs: whether `period` is already done, judged by the job's
+   * own durable record rather than by a scheduler run row. A run that failed
+   * leaves no record, so the period is caught up at the next startup.
+   * Defaults to "a run of this job for this period was audited".
+   */
+  isDone?(period: string): Promise<boolean>;
 };
 
 export type RunAction = "job_run" | "job_catch_up" | "job_failed";
@@ -105,7 +113,7 @@ export class Scheduler {
     const startedAt = this.now();
     let record: RunRecord;
     try {
-      const result = await job.run(firedAt);
+      const result = await job.run(firedAt, late);
       record = {
         job: job.name, period, action: late ? "job_catch_up" : "job_run",
         scheduledFor: firedAt, startedAt, finishedAt: this.now(), late, result,
@@ -132,8 +140,8 @@ export class Scheduler {
   /**
    * Startup catch-up (§9.6.2): for each `catchUp` job, every period whose
    * firing fell between the scheduler's first-ever start (bounded by
-   * CATCH_UP_WINDOW_MS) and now, with no recorded run, is run once, oldest
-   * first, marked late. `skip` jobs are never caught up. On the very first
+   * CATCH_UP_WINDOW_MS) and now, that is not done (`isDone`, else no recorded
+   * run), is run once, oldest first, marked late. `skip` jobs are never caught up. On the very first
    * start there is nothing to catch up — the scheduler was not live before.
    */
   async catchUp(): Promise<RunRecord[]> {
@@ -151,7 +159,8 @@ export class Scheduler {
         const period = job.periodFor(firedAt);
         if (seen.has(period)) continue;
         seen.add(period);
-        if (await this.deps.store.hasRun(job.name, period)) continue;
+        const isDone = job.isDone ? await job.isDone(period) : await this.deps.store.hasRun(job.name, period);
+        if (isDone) continue;
         this.log.info(`[scheduler] catching up ${job.name}:${period}`);
         const record = await this.runJob(job, firedAt, true);
         if (record) done.push(record);

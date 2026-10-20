@@ -151,6 +151,37 @@ describe("Scheduler.catchUp — startup catch-up per §9.6.2", () => {
     expect(await s.catchUp()).toEqual([]);
   });
 
+  it("isDone overrides the run rows: an unclosed period is caught up even after a failed run (AT-193)", async () => {
+    // closeDaily's rule: done means the day has a close record, so a failed
+    // close leaves the day open and the next startup closes it, audited late.
+    const { store, runs } = memoryStore(T("2026-10-10T08:00:00Z"));
+    runs.push({ job: "weekly", period: "2026-10-12", action: "job_failed", scheduledFor: T("2026-10-12T04:00:00Z"), startedAt: T("2026-10-12T04:00:00Z"), finishedAt: T("2026-10-12T04:00:01Z"), late: false, error: "x" });
+    const isDone = vi.fn(async () => false);
+    const j = weekly({ isDone });
+    const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet, now: () => T("2026-10-13T08:00:00Z") });
+    const done = await s.catchUp();
+    expect(isDone).toHaveBeenCalledWith("2026-10-12");
+    expect(done.map((r) => [r.period, r.action])).toEqual([["2026-10-12", "job_catch_up"]]);
+  });
+
+  it("isDone true skips a period with no run row at all", async () => {
+    const { store } = memoryStore(T("2026-10-10T08:00:00Z"));
+    const j = weekly({ isDone: async () => true });
+    const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet, now: () => T("2026-10-13T08:00:00Z") });
+    expect(await s.catchUp()).toEqual([]);
+    expect(j.run).not.toHaveBeenCalled();
+  });
+
+  it("tells the job it is running late, so it can record a catch-up", async () => {
+    const { store } = memoryStore(T("2026-10-10T08:00:00Z"));
+    const j = weekly();
+    const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet, now: () => T("2026-10-13T08:00:00Z") });
+    await s.catchUp();
+    expect(j.run).toHaveBeenCalledWith(T("2026-10-12T04:00:00Z"), true);
+    await s.tick(T("2026-10-19T04:00:00Z"));
+    expect(j.run).toHaveBeenLastCalledWith(T("2026-10-19T04:00:00Z"), false);
+  });
+
   it("looks back no further than the catch-up window", async () => {
     const now = T("2026-10-20T08:00:00Z");
     const { store } = memoryStore(T("2025-01-01T00:00:00Z"));
