@@ -25,13 +25,14 @@ function createChannelBroker(channels: readonly string[]) {
 
   function ensureConnected() {
     if (client) return;
-    const sessionUrl = process.env.DATABASE_URL_SESSION;
-    if (!sessionUrl) return; // no session-pooler URL configured — subscribers get heartbeats only
-    const c = postgres(sessionUrl, {
+    // AT-168: one direct connection URL (PRD §9.2) — LISTEN works on it, so
+    // there is no separate session-pooler URL any more.
+    const url = process.env.DATABASE_URL;
+    if (!url) return; // unconfigured (tests) — subscribers get heartbeats only
+    const c = postgres(url, {
       max: 1,
       idle_timeout: 0, // keep alive for as long as there's at least one subscriber
       connect_timeout: 10,
-      prepare: false,
     });
     client = c;
     for (const channel of channels) {

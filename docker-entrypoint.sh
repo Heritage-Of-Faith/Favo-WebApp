@@ -2,7 +2,7 @@
 # Container entrypoint — AT-170.
 #
 # No arguments (the normal start):
-#   1. migrate.js checks DATABASE_URL / DATABASE_URL_SESSION and applies pending
+#   1. migrate.js checks DATABASE_URL (and that no retired URL lingers) and applies pending
 #      migrations under an advisory lock (scripts/migrate.ts);
 #   2. only if that exits 0 does the server start. A non-zero exit stops the
 #      container here, before it can serve traffic on a wrong schema or with
