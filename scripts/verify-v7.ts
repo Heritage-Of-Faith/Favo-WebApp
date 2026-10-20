@@ -318,7 +318,8 @@ record(
 // CLAUDE.md §5: no scheduled job writes payments. Reads (closeDaily's SUM) are fine.
 // The old pattern matched retry-deferred's `resolvedBy: "retry_cron"`; that file is
 // gone (#241), and the pattern's quote broke the shell (exit 2 = GATE IS BROKEN).
-const CRON_PATHS = "src/server/crons/ src/app/api/crons/";
+// src/server/jobs/ is the scheduler (AT-169); it runs these jobs, so it is held to the same rule.
+const CRON_PATHS = "src/server/crons/ src/server/jobs/ src/app/api/crons/";
 // Known gaps (code review must cover them): calls split across lines, lowercase or
 // quoted SQL table names, and a cron calling a helper outside these folders.
 mustBeAbsent("no cron writes payments (Drizzle)", "\\(update\\|insert\\|delete\\)( *\\(schema\\.\\)\\?payments *)", CRON_PATHS);

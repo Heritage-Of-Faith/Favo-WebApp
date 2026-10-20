@@ -36,7 +36,8 @@ Coolify resolves them at container start. Do not store values in this file.
 | `VAPID_PUBLIC_KEY` | `web-push generate-vapid-keys` | Gian | ✅ | On compromise (requires re-subscription from all devices) | |
 | `VAPID_PRIVATE_KEY` | Same keygen | Gian | ✅ | Same as public | Server-side only. |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Same as `VAPID_PUBLIC_KEY` | Gian | ✅ | Same | Embedded in browser SW — must match server-side key. |
-| `CRON_SECRET` | `openssl rand -hex 32` | Gian | ✅ | Annually | Bearer token for `GET /api/crons/retry-deferred` and similar. |
+| `CRON_SECRET` | `openssl rand -hex 32` | Gian | ✅ | Annually | Bearer token (`Authorization: Bearer …`) for the manual `POST /api/crons/*` triggers. Unset → those routes answer 503. The in-app scheduler does not use it (AT-169). |
+| `SCHEDULER_ENABLED` | `true` / `false` | — | optional | — | Overrides the in-app job scheduler (AT-169). Unset → on when `NODE_ENV=production`, off otherwise. Set `false` on any instance that must not run jobs. |
 | `LOKI_URL` | Coolify internal network | Gian | ⚠️ optional | On Loki migration | `http://loki.hofmi-internal:3100` — healthz skips Loki check if absent. |
 | `TZ` | Hardcoded | — | ✅ | Never | Must be `Africa/Johannesburg` for all wall-clock logic. |
 | `PUBLIC_BASE_URL` | Manual | Gian | ✅ | On domain change | `https://favo.hofmi.net` — used by preflight.sh and E2E. |

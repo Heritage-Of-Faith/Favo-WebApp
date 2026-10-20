@@ -1,16 +1,15 @@
-// POST /api/crons/check-low-stock — task G14
-// Called by Coolify's 15-minute cron (or manually by admin).
-// Protected by CRON_SECRET header to prevent unauthenticated invocation.
+// POST /api/crons/check-low-stock — manual trigger for checkLowStock.
+// Scheduled every 15 min by the in-app scheduler (src/server/jobs/registry.ts).
+// Auth: Authorization: Bearer $CRON_SECRET (see src/server/jobs/cron-auth.ts).
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { checkLowStock } from "@/server/crons/check-low-stock";
+import { requireCronSecret } from "@/server/jobs/cron-auth";
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get("x-cron-secret");
-  if (!secret || secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = requireCronSecret(req);
+  if (denied) return denied;
 
   const result = await checkLowStock();
   return NextResponse.json({ ok: true, ...result });

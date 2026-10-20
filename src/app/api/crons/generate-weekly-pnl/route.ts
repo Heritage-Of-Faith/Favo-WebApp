@@ -1,16 +1,15 @@
-// POST /api/crons/generate-weekly-pnl — task G14
-// Called by Coolify's Sunday 23:59 SAST cron (or manually by admin).
-// Protected by CRON_SECRET header.
+// POST /api/crons/generate-weekly-pnl — manual trigger for generateWeeklyPnL.
+// Scheduled Monday 06:00 SAST for the completed week by the in-app scheduler (src/server/jobs/registry.ts); a manual call reports the current week.
+// Auth: Authorization: Bearer $CRON_SECRET (see src/server/jobs/cron-auth.ts).
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { generateWeeklyPnL } from "@/server/crons/generate-weekly-pnl";
+import { requireCronSecret } from "@/server/jobs/cron-auth";
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get("x-cron-secret");
-  if (!secret || secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = requireCronSecret(req);
+  if (denied) return denied;
 
   const result = await generateWeeklyPnL();
   return NextResponse.json({ ok: true, ...result });

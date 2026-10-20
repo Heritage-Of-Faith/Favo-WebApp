@@ -1,5 +1,5 @@
 // Weekly P&L cron — task G14
-// Fires Sunday 23:59 SAST. Aggregates revenue, COGS, expenses for
+// Scheduled Monday 06:00 SAST for the completed week (src/server/jobs/registry.ts). Aggregates revenue, COGS, expenses for
 // Mon 00:00 – Sun 23:59 SAST and inserts into weekly_reports.
 // Docs: API.md · BUSINESS_RULES.md T05 L09 · FAVO_PRD_v3.md §07 §09
 

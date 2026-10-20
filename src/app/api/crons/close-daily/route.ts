@@ -1,16 +1,15 @@
-// POST /api/crons/close-daily — task G10
-// Called by Coolify's daily 23:59 SAST cron (or manually by admin).
-// Protected by CRON_SECRET header. Docs: docs/API.md · BUSINESS_RULES.md L09 T01
+// POST /api/crons/close-daily — manual trigger for closeDaily.
+// Scheduled at 00:05 SAST for the completed day by the in-app scheduler (src/server/jobs/registry.ts); a manual call closes the current SAST day.
+// Auth: Authorization: Bearer $CRON_SECRET (see src/server/jobs/cron-auth.ts).
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { closeDaily } from "@/server/crons/close-daily";
+import { requireCronSecret } from "@/server/jobs/cron-auth";
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get("x-cron-secret");
-  if (!secret || secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = requireCronSecret(req);
+  if (denied) return denied;
 
   const result = await closeDaily();
   return NextResponse.json({ ok: true, ...result });
