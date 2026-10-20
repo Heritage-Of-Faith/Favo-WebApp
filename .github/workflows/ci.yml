@@ -65,8 +65,20 @@ jobs:
             CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY);
           "
 
-      - name: Migrate test DB
-        run: bun db:migrate
+      # The release migration step (AT-170, scripts/migrate.ts) — the same code
+      # the production image runs from its entrypoint. Two runs start at once
+      # against the fresh DB to exercise the advisory lock (both must exit 0,
+      # one waits), then a third proves a re-run is a no-op.
+      - name: Migrate test DB (release migrator, concurrent + re-run)
+        env:
+          DATABASE_URL_SESSION: postgresql://favo:favo@localhost:5432/favo_test
+        run: |
+          bun scripts/migrate.ts & a=$!
+          bun scripts/migrate.ts & b=$!
+          wait $a
+          wait $b
+          bun scripts/migrate.ts | tee /tmp/rerun.log
+          grep -q ", 0 pending" /tmp/rerun.log
 
       - name: Seed test DB
         run: bun db:seed

@@ -27,6 +27,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN bun run build
+# The release migration step (AT-170), bundled with drizzle-orm and postgres so
+# the runner needs neither drizzle-kit nor node_modules to run it.
+RUN bun build scripts/migrate.ts --target=bun --outfile=migrate.js
 
 FROM base AS runner
 ENV NODE_ENV=production
@@ -40,8 +43,13 @@ RUN groupadd --system --gid 1001 nodejs \
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/migrate.js ./migrate.js
+COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
+COPY --chown=nextjs:nodejs --chmod=755 docker-entrypoint.sh ./docker-entrypoint.sh
 
 USER nextjs
 EXPOSE 3000
 
-CMD ["bun", "run", "server.js"]
+# Migrate, then serve (docker-entrypoint.sh). To migrate one-shot ahead of a
+# container swap: docker run --rm <image> bun migrate.js
+ENTRYPOINT ["./docker-entrypoint.sh"]

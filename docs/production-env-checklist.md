@@ -27,7 +27,8 @@ Coolify resolves them at container start. Do not store values in this file.
 | Variable | Source | Owner | Required | Rotation cadence | Notes |
 |---|---|---|---|---|---|
 | `DATABASE_URL` | Supabase dashboard → Project settings → Database → Connection string (Transaction pooler port 6543) | Gian | ✅ | On team member departure | `postgres://...@aws-0-eu-west-1.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true` |
-| `DATABASE_URL_SESSION` | Supabase dashboard → Session pooler port 5432 | Gian | ✅ | On team member departure | Used by SSE queue (LISTEN/NOTIFY requires non-pooled connection) |
+| `DATABASE_URL_SESSION` | Supabase dashboard → Session pooler port 5432 | Gian | ✅ | On team member departure | Used by SSE queue (LISTEN/NOTIFY requires non-pooled connection) and by the release migration step (its advisory lock needs a session). Unset → the container exits before starting and `/api/healthz` reports `sse` failing (AT-170). |
+| `SKIP_MIGRATIONS` | `1` | — | ❌ emergency only | — | Skips the release migration step for one boot against a hand-repaired DB. Leave unset (AT-170). |
 | `AUTH_SECRET` | `openssl rand -hex 32` | Gian | ✅ | Annually | Auth.js signing secret — rotate requires re-login for all staff |
 | `AUTH_URL` | Manual | Gian | ✅ | On domain change | Must be `https://favo.hofmi.net` (no trailing slash) |
 | `YOCO_SECRET_KEY` | Yoco dashboard → Developers → API Keys | Gian | ✅ | On Yoco key compromise | Server-side only. NEVER commit or log. |
@@ -82,8 +83,9 @@ done
 ## Database
 
 ```bash
-# Verify migration is up to date (run from local with DATABASE_URL set)
-bun db:migrate  # should print "No migrations to run"
+# Migrations run automatically on every container start (docker-entrypoint.sh → migrate.js, AT-170).
+# Check the container log for "[migrate] ... 0 pending" / "[migrate] done". To run it by hand:
+#   docker run --rm --env-file <env> <image> bun migrate.js
 
 # Verify seed data
 psql $DATABASE_URL -c "SELECT COUNT(*) FROM staff WHERE active = true;"
