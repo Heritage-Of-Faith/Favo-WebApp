@@ -1,6 +1,6 @@
 // AT-193 / AT-194 against real Postgres: closeDaily writes one close record per
-// revenue day however often it runs, and the collected sweep moves exactly the
-// orders S7 says it should. Skips when no real DB is reachable (see ./helpers.ts).
+// revenue day however often it runs and counts revenue by revenue_day, and the
+// collected sweep moves exactly the orders S7 says it should. Skips when no real DB is reachable (see ./helpers.ts).
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql } from "postgres";
@@ -97,5 +97,42 @@ maybe("the collected sweep (AT-194, §9.6.2 job 5)", () => {
     await sweepCollected(now);
     const again = await sql`SELECT count(*)::int AS n FROM audit_log WHERE entity_kind = 'order' AND entity_id = ${ids.due}`;
     expect(again[0].n).toBe(1);
+  });
+});
+
+maybe("closeDaily counts revenue by revenue_day (owner decision, Nikao 21 Oct, #260)", () => {
+  let sql: Sql;
+  // A fresh, long-past revenue day, so no other suite's orders share it.
+  const dayStart = Date.UTC(2011, 0, 1 + Math.floor(Math.random() * 3000)) - 2 * 3_600_000; // 00:00 SAST
+  const at = (h: number, m: number) => new Date(dayStart + (h * 60 + m) * 60_000);
+
+  beforeAll(() => {
+    sql = connect();
+  });
+  afterAll(async () => {
+    await sql?.end({ timeout: 5 });
+  });
+
+  it("an order Done at 23:50 and swept at 00:10 is in that day's close; a cancelled one is not", async () => {
+    const { closeDaily, dayBounds } = await import("@/server/crons/close-daily");
+    const { sweepCollected } = await import("@/server/crons/collected-sweep");
+    const { date } = dayBounds(at(12, 0));
+
+    const [{ id: staffId }] = await sql`INSERT INTO staff (name, role, pin_hash) VALUES ('Revenue Barista', 'barista', 'x') RETURNING id`;
+    const order = (state: string, total: number, completedAt: Date | null) => sql`
+      INSERT INTO orders (staff_id, total_zar, state, placed_at, completed_at, revenue_day)
+      VALUES (${staffId}, ${total}, ${state}, ${at(23, 40)}, ${completedAt}, ${date})
+      RETURNING id`;
+    const [{ id: lateDone }] = await order("ready", 1000, at(23, 50));
+    await order("in_progress", 300, null);
+    await order("cancelled", 5000, null);
+
+    // Midnight passes: the late order is swept into `collected` at 00:10.
+    await sweepCollected(at(24, 10));
+    const [{ state }] = await sql`SELECT state FROM orders WHERE id = ${lateDone}`;
+    expect(state).toBe("collected");
+
+    const result = await closeDaily(at(12, 0), { now: at(24, 15) });
+    expect(result).toMatchObject({ date, alreadyClosed: false, revenueZar: 1300 });
   });
 });

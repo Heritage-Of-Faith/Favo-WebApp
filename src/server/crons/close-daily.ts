@@ -8,7 +8,7 @@
 // Web Push (see docs on the deletion PR) so the alert doesn't vanish.
 // Docs: API.md · BUSINESS_RULES.md L09 T01
 
-import { and, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { DB } from "@/lib/db";
 import { auditLog, orders, staff } from "@db/schema";
@@ -115,7 +115,7 @@ export async function closeDaily(
   referenceDate?: Date,
   opts: { wasCatchUp?: boolean; now?: Date } = {}
 ): Promise<CloseDailyResult> {
-  const { start, end, date } = dayBounds(referenceDate);
+  const { end, date } = dayBounds(referenceDate);
   const wasCatchUp = opts.wasCatchUp ?? false;
   if (end.getTime() >= (opts.now ?? new Date()).getTime()) {
     throw new Error(`Revenue day ${date} is not over yet; closeDaily only closes a completed day.`);
@@ -129,30 +129,25 @@ export async function closeDaily(
     await txDb.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`daily_close:${date}`}))`);
     if ((await closedDays([date], txDb)).has(date)) return null;
 
-    // Revenue = sum of totalZar for orders fully collected today.
-    // in_progress and ready orders have been paid but not yet served — counting
-    // them here inflates revenue vs. the payments query and creates a nightly
-    // admin alert for variance that resolves itself only after collection.
+    // Revenue = sum of totalZar for every non-cancelled order of this
+    // revenue day, keyed on orders.revenue_day (minted at createOrder, L07 /
+    // REQ-039), whatever its state. Owner decision, Nikao 21 Oct (#260): the
+    // close no longer depends on an order having reached `collected`, so an
+    // order Done at 23:50 and swept at 00:10 is in its own day's close.
     const [revRow] = await txDb
       .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
       .from(orders)
-      .where(
-        and(
-          eq(orders.state, "collected"),
-          gte(orders.placedAt, start),
-          lt(orders.placedAt, end)
-        )
-      );
+      .where(and(ne(orders.state, "cancelled"), eq(orders.revenueDay, date)));
     const revenueZar = revRow?.total ?? 0;
 
-    // Payments = sum of amountZar for successful payments on those same orders
+    // Payments = sum of amountZar for successful payments on orders of the
+    // same revenue day, keyed the same way so the two figures line up.
     const [payRow] = await txDb.execute<{ total: string | null }>(sql`
       SELECT COALESCE(SUM(p.amount_zar), 0)::bigint AS total
       FROM payments p
       JOIN orders o ON p.order_id = o.id
       WHERE p.status = 'successful'
-        AND o.placed_at >= ${start.toISOString()}::timestamptz
-        AND o.placed_at < ${end.toISOString()}::timestamptz
+        AND o.revenue_day = ${date}::date
     `);
     const paymentsZar = parseInt(payRow?.total ?? "0", 10) || 0;
 
