@@ -141,8 +141,9 @@ export class Scheduler {
    * Startup catch-up (§9.6.2): for each `catchUp` job, every period whose
    * firing fell between the scheduler's first-ever start (bounded by
    * CATCH_UP_WINDOW_MS) and now, that is not done (`isDone`, else no recorded
-   * run), is run once, oldest first, marked late. `skip` jobs are never caught up. On the very first
-   * start there is nothing to catch up — the scheduler was not live before.
+   * run), is run once, oldest first, marked late. `skip` jobs are never
+   * caught up. On the very first start there is nothing to catch up — the
+   * scheduler was not live before.
    */
   async catchUp(): Promise<RunRecord[]> {
     const now = this.now();
@@ -154,17 +155,36 @@ export class Scheduler {
     const done: RunRecord[] = [];
     for (const { job, matches } of this.jobs) {
       if (job.missedRun !== "catchUp") continue;
-      const seen = new Set<string>();
-      for (const firedAt of fireTimesBetween(matches, from, now)) {
-        const period = job.periodFor(firedAt);
-        if (seen.has(period)) continue;
-        seen.add(period);
-        const isDone = job.isDone ? await job.isDone(period) : await this.deps.store.hasRun(job.name, period);
-        if (isDone) continue;
-        this.log.info(`[scheduler] catching up ${job.name}:${period}`);
-        const record = await this.runJob(job, firedAt, true);
-        if (record) done.push(record);
-      }
+      done.push(...(await this.runMissed(job, fireTimesBetween(matches, from, now))));
+    }
+    return done;
+  }
+
+  /**
+   * Whether `period` is already done, so a catch-up must not repeat it: the
+   * job's own `isDone` when it has one (e.g. the day's close record exists),
+   * else whether a run for `period` was audited.
+   */
+  private isPeriodDone(job: JobDefinition, period: string): Promise<boolean> {
+    return job.isDone ? job.isDone(period) : this.deps.store.hasRun(job.name, period);
+  }
+
+  /**
+   * Run missed firings of a `catchUp` job one at a time, oldest first, once per
+   * period, skipping periods already done. Sequential on purpose: the overlap
+   * guard would otherwise skip every firing after the first, leaving no row.
+   */
+  private async runMissed(job: JobDefinition, firings: Date[]): Promise<RunRecord[]> {
+    const done: RunRecord[] = [];
+    const seen = new Set<string>();
+    for (const firedAt of firings) {
+      const period = job.periodFor(firedAt);
+      if (seen.has(period)) continue;
+      seen.add(period);
+      if (await this.isPeriodDone(job, period)) continue;
+      this.log.info(`[scheduler] catching up ${job.name}:${period}`);
+      const record = await this.runJob(job, firedAt, true);
+      if (record) done.push(record);
     }
     return done;
   }
@@ -189,13 +209,20 @@ export class Scheduler {
       this.log.warn(`[scheduler] ticks stalled from ${previous.toISOString()} to ${current.toISOString()}; skip-jobs replay only the last ${MAX_TICK_REPLAY_MINUTES} minutes`);
     }
 
+    // Jobs run in parallel with each other; one job's firings run in order.
     const runs: Promise<unknown>[] = [];
     for (const { job, matches } of this.jobs) {
       const floor = job.missedRun === "catchUp" ? catchUpFrom : replayFrom;
       const after = previous > floor ? previous : floor;
-      for (const firedAt of fireTimesBetween(matches, after, current)) {
-        runs.push(this.runJob(job, firedAt, firedAt < current));
-      }
+      const firings = fireTimesBetween(matches, after, current);
+      if (firings.length === 0) continue;
+      const missed = firings.filter((t) => t < current);
+      const onTime = firings.filter((t) => t.getTime() === current.getTime());
+      runs.push((async () => {
+        if (job.missedRun === "catchUp") await this.runMissed(job, missed);
+        else for (const t of missed) await this.runJob(job, t, true);
+        for (const t of onTime) await this.runJob(job, t);
+      })());
     }
     return Promise.all(runs);
   }

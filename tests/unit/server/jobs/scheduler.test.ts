@@ -79,6 +79,17 @@ describe("Scheduler.tick — fires on the SAST schedule", () => {
     expect(vi.mocked(skipJob.run).mock.calls.map((c) => (c[0] as Date).toISOString())).toEqual(["2026-10-19T03:00:00.000Z", "2026-10-19T05:00:00.000Z"]);
   });
 
+  it("after a multi-week stall, replays every missed catchUp period in order, each audited, and skips ones already done", async () => {
+    const { store, runs } = memoryStore();
+    runs.push({ job: "weekly", period: "2026-10-12", action: "job_run", scheduledFor: T("2026-10-12T04:00:00Z"), startedAt: T("2026-10-12T04:00:00Z"), finishedAt: T("2026-10-12T04:00:01Z"), late: false });
+    const weekly = job({ name: "weekly", cron: "0 6 * * 1", missedRun: "catchUp", periodFor: (t) => t.toISOString().slice(0, 10) });
+    const s = new Scheduler([weekly], { store, alert: vi.fn(), log: quiet });
+    await s.tick(T("2026-10-02T08:00:00Z"));
+    await s.tick(T("2026-10-20T08:00:00Z")); // missed Mondays 5, 12 (already run) and 19 Oct
+    expect(vi.mocked(weekly.run).mock.calls.map((c) => (c[0] as Date).toISOString().slice(0, 10))).toEqual(["2026-10-05", "2026-10-19"]);
+    expect(runs.filter((r) => r.action === "job_catch_up").map((r) => r.period)).toEqual(["2026-10-05", "2026-10-19"]);
+  });
+
   it("evaluates the expression in SAST, not UTC (00:05 SAST is 22:05 UTC)", async () => {
     const { store } = memoryStore();
     const j = job({ cron: "5 0 * * *" });
@@ -175,6 +186,17 @@ describe("Scheduler.catchUp — startup catch-up per §9.6.2", () => {
     const done = await s.catchUp();
     expect(isDone).toHaveBeenCalledWith("2026-10-12");
     expect(done.map((r) => [r.period, r.action])).toEqual([["2026-10-12", "job_catch_up"]]);
+  });
+
+  it("tick replay after a stall also honours isDone (AT-193)", async () => {
+    // Stalled from Sun 11 Oct to Tue 20 Oct: Mondays 12 and 19 Oct were missed;
+    // the 12th is already done by the job's own record, so only the 19th runs.
+    const { store } = memoryStore();
+    const j = weekly({ isDone: async (p) => p === "2026-10-12" });
+    const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet });
+    await s.tick(T("2026-10-11T08:00:00Z"));
+    await s.tick(T("2026-10-20T08:00:00Z"));
+    expect(vi.mocked(j.run).mock.calls.map(([t]) => t.toISOString())).toEqual(["2026-10-19T04:00:00.000Z"]);
   });
 
   it("isDone true skips a period with no run row at all", async () => {
