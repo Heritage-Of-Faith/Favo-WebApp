@@ -150,6 +150,8 @@ export async function createOrder(
     });
   }
   const grossZar = computeOrderTotalZar(lines);
+  // AT-181 B1: per-unit priced mods, from the same deltas that priced the line.
+  const modsZarByLine = lines.map((l) => l.modifications.reduce((sum, m) => sum + m.priceDeltaZar, 0));
 
   // One server timestamp for placed_at, revenue_day and the free-cup day, so
   // they can never straddle midnight SAST (L07, REQ-039).
@@ -157,9 +159,10 @@ export async function createOrder(
   const day = revenueDay(receivedAt);
 
   // ── L03 free weekday cup — applied automatically, no tap (REQ-024) ─────────
-  const freeCupLines = data.items.map((item) => ({
+  const freeCupLines = data.items.map((item, i) => ({
     category: menuById.get(item.menuItemId)!.category,
     unitPriceZar: menuById.get(item.menuItemId)!.currentPriceZar,
+    modsZar: modsZarByLine[i],
     quantity: item.quantity,
   }));
 
@@ -167,7 +170,7 @@ export async function createOrder(
   // same as gen_random_uuid()) so the order and its items share it.
   const orderId = crypto.randomUUID();
 
-  const baseItemRows = data.items.map((item) => {
+  const baseItemRows = data.items.map((item, i) => {
     const mi = menuById.get(item.menuItemId)!;
     const mods = item.modifications
       .map((id) => modById.get(id))
@@ -178,6 +181,7 @@ export async function createOrder(
       menuItemId: item.menuItemId,
       quantity: item.quantity,
       unitPriceZar: mi.currentPriceZar,
+      modsZar: modsZarByLine[i],
       modifications: mods,
     };
   });
@@ -782,6 +786,7 @@ export async function applyFreeCoffee(
         id: orderItems.id,
         quantity: orderItems.quantity,
         unitPriceZar: orderItems.unitPriceZar,
+        modsZar: orderItems.modsZar,
         discountZar: orderItems.discountZar,
         category: menuItems.category,
       })

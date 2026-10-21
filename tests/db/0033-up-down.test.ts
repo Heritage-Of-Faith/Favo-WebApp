@@ -11,7 +11,7 @@
 //   - after `up` again they match the 0033 snapshot;
 //   - 0033 refuses (and deletes nothing) over legacy staff-id entitlement rows;
 //   - the database refuses: shots = 0 and shots = 5 (CHECK BETWEEN 1 AND 4);
-//     discount_zar > quantity × unit_price_zar; quantity = 0; an unknown
+//     discount_zar > quantity × (unit_price_zar + mods_zar); quantity = 0; an unknown
 //     comp_reason;
 //     a second 'successful' payment for one order (REQ-011); a second
 //     entitlement row for the same (customer_id, day); an entitlement row whose
@@ -250,6 +250,22 @@ maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () 
         tx.savepoint((sp) => sp`
           INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_zar, discount_zar)
           VALUES (${order.id}, ${menu.id}, 2, 3000, 6001)`)
+      ).rejects.toThrow(/order_items_discount_within_line/);
+      // B1 (Nikao, PR #257, option A): mods_zar defaults to 0 and the CHECK is
+      // discount_zar <= quantity × (unit_price_zar + mods_zar). Oat Cappuccino:
+      // 3800 + 800 = 4600 is allowed for one unit; 4601 is refused.
+      const [withMods] = await tx`
+        INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_zar, mods_zar, discount_zar)
+        VALUES (${order.id}, ${menu.id}, 1, 3800, 800, 4600) RETURNING mods_zar`;
+      expect(withMods.mods_zar).toBe(800);
+      const [noMods] = await tx`
+        INSERT INTO order_items (order_id, menu_item_id, unit_price_zar)
+        VALUES (${order.id}, ${menu.id}, 3000) RETURNING mods_zar`;
+      expect(noMods.mods_zar).toBe(0);
+      await expect(
+        tx.savepoint((sp) => sp`
+          INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_zar, mods_zar, discount_zar)
+          VALUES (${order.id}, ${menu.id}, 1, 3800, 800, 4601)`)
       ).rejects.toThrow(/order_items_discount_within_line/);
       await expect(
         tx.savepoint((sp) => sp`

@@ -17,6 +17,7 @@
 
 ALTER TABLE "order_items" DROP CONSTRAINT "order_items_quantity_positive";--> statement-breakpoint
 ALTER TABLE "order_items" DROP CONSTRAINT "order_items_discount_within_line";--> statement-breakpoint
+ALTER TABLE "order_items" DROP COLUMN "mods_zar";--> statement-breakpoint
 ALTER TABLE "order_items" DROP COLUMN "comp_reason";--> statement-breakpoint
 ALTER TABLE "order_items" DROP COLUMN "discount_zar";--> statement-breakpoint
 DROP TYPE "public"."comp_reason";--> statement-breakpoint

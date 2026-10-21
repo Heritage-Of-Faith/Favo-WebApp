@@ -1136,6 +1136,13 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "mods_zar": {
+          "name": "mods_zar",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "shots": {
           "name": "shots",
           "type": "integer",
@@ -1197,7 +1204,7 @@
         },
         "order_items_discount_within_line": {
           "name": "order_items_discount_within_line",
-          "value": "discount_zar <= quantity * unit_price_zar"
+          "value": "discount_zar <= quantity * (unit_price_zar + mods_zar)"
         },
         "order_items_quantity_positive": {
           "name": "order_items_quantity_positive",

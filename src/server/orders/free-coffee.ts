@@ -26,6 +26,8 @@ export const FREE_CUP_COPY = {
 export type FreeCupLine = {
   category: string | null | undefined;
   unitPriceZar: number;
+  /** Per-unit priced mods (order_items.mods_zar), snapshotted at ring-up. Absent = 0. */
+  modsZar?: number;
   quantity: number;
 };
 
@@ -136,7 +138,10 @@ export function decideFreeCup(input: FreeCupInput): FreeCupDecision {
       message: FREE_CUP_COPY.ENTITLEMENT_USED, audit: true,
     };
   }
-  // One unit of one line: that line's snapshotted unit_price_zar, never more.
-  // PRD L2837 (line_unit_price incl. priced extras) conflicts with the L2488 CHECK; unit_price_zar only = owner ruling 10 Oct 2026, pending Nikao.
-  return { status: "apply", lineIndex, discountZar: input.lines[lineIndex].unitPriceZar };
+  // One unit of one line: that line's snapshotted unit_price_zar + mods_zar,
+  // never more. Nikao's ruling on PR #257 (B1, option A, 19 Oct 2026): the
+  // free cup covers priced mods (oat/almond +R8), and the DB CHECK is
+  // discount_zar <= quantity * (unit_price_zar + mods_zar).
+  const line = input.lines[lineIndex];
+  return { status: "apply", lineIndex, discountZar: line.unitPriceZar + (line.modsZar ?? 0) };
 }

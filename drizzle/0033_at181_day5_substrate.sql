@@ -10,7 +10,10 @@
 --   4. order_items.shots, CHECK BETWEEN 1 AND 4 (T15 outer ceiling)
 --   5. order_items.discount_zar, comp_reason (comp_reason enum), and
 --      CHECK (discount_zar <= quantity * unit_price_zar), CHECK (quantity >= 1)
---      — added 10 Oct 2026 (owner approval, Jira AT-181 comment 50720)
+--      — added 10 Oct 2026 (owner approval, Jira AT-181 comment 50720).
+--      Widened 19 Oct 2026 (Nikao, PR #257 review B1, option A): adds
+--      order_items.mods_zar (per-unit priced mods, snapshotted at ring-up) and
+--      the CHECK becomes discount_zar <= quantity * (unit_price_zar + mods_zar)
 --   6. opening_sessions.mode (session_mode: weekday | sunday | event)
 --   8. orders.revenue_day (date, SAST, from the server clock — L07, REQ-039)
 --  10. payments: one successful payment per order (REQ-011)
@@ -63,5 +66,6 @@ DELETE FROM "menu_customisations" WHERE "name" = 'Extra Shot';--> statement-brea
 CREATE TYPE "public"."comp_reason" AS ENUM('wrong_drink', 'wrong_charge', 'spillage', 'staff_error', 'goodwill', 'donation');--> statement-breakpoint
 ALTER TABLE "order_items" ADD COLUMN "discount_zar" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE "order_items" ADD COLUMN "comp_reason" "comp_reason";--> statement-breakpoint
-ALTER TABLE "order_items" ADD CONSTRAINT "order_items_discount_within_line" CHECK (discount_zar <= quantity * unit_price_zar);--> statement-breakpoint
+ALTER TABLE "order_items" ADD COLUMN "mods_zar" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "order_items" ADD CONSTRAINT "order_items_discount_within_line" CHECK (discount_zar <= quantity * (unit_price_zar + mods_zar));--> statement-breakpoint
 ALTER TABLE "order_items" ADD CONSTRAINT "order_items_quantity_positive" CHECK (quantity >= 1);

@@ -305,6 +305,72 @@ describe("REQ-153: a net-R0 order writes no payments row and sends nothing (roun
   });
 });
 
+// ─── B1 (Nikao, PR #257, option A): the free cup covers priced mods ──────────
+// Oat milk is seeded at +R8,00 (800 cents) on every espresso drink
+// (db/seed/customisations.ts). A Cappuccino is R38,00 (3800). One unit of an
+// oat Cappuccino is therefore 3800 + 800 = 4600, and the free cup discounts
+// exactly that — unit_price_zar + mods_zar, one unit, never more.
+describe("B1: the free cup discounts unit_price_zar + mods_zar (oat milk)", () => {
+  const OAT = { id: "mod_cappuccino_oat_milk", name: "Oat Milk", priceDeltaZar: 800 };
+  const oatCappuccino = (quantity = 1) => ({ menuItemId: CAPPUCCINO.id, quantity, modifications: [OAT.id] });
+  function givenOat() {
+    given({ customer: OFFICE, menu: [CAPPUCCINO] });
+    rows.set(menuCustomisations, [OAT]);
+  }
+
+  it("oat-milk Cappuccino, weekday, office_staff → total 0, no payments row, Yoco not called, payment_mode='free'", async () => {
+    givenOat();
+    const res = await createOrder({ customerId: OFFICE.id, items: [oatCappuccino()] });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.totalZar).toBe(0);
+    expect(res.data.freeCup).toEqual({ applied: true, code: null, message: "Free cup applied", discountZar: 4600 });
+    expect(insertsInto(payments)).toEqual([]);
+    expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
+    expect(res.data.yocoClientSecret).toBe("");
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 0, paymentMode: "free", isStaffDiscount: true });
+    const [line] = insertsInto(orderItems)[0] as Row[];
+    expect(line).toMatchObject({ unitPriceZar: 3800, modsZar: 800, discountZar: 4600 });
+  });
+
+  it("two oat Cappuccinos → one unit free (4600), the second still charged 4600", async () => {
+    givenOat();
+    const res = await createOrder({ customerId: OFFICE.id, items: [oatCappuccino(2)] });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const [line] = insertsInto(orderItems)[0] as Row[];
+    // Never more than one unit's (unit_price + mods) price.
+    expect(line).toMatchObject({ quantity: 2, unitPriceZar: 3800, modsZar: 800, discountZar: 4600 });
+    expect(res.data.totalZar).toBe(4600); // 2 × 4600 − 4600
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 4600, paymentMode: null });
+    expect(insertsInto(payments)[0]).toMatchObject({ amountZar: 4600 });
+    expect(mockCreatePaymentIntent).toHaveBeenCalledWith(expect.objectContaining({ amountZar: 4600 }));
+  });
+
+  it("a plain line snapshots mods_zar = 0", async () => {
+    given({ customer: null, menu: [CAPPUCCINO] });
+    const res = await createOrder({ items: [one(CAPPUCCINO.id)] });
+    expect(res.ok).toBe(true);
+    const [line] = insertsInto(orderItems)[0] as Row[];
+    expect(line).toMatchObject({ unitPriceZar: 3800, modsZar: 0, discountZar: 0 });
+  });
+
+  it("applyFreeCoffee on a 2× oat Cappuccino line discounts one unit incl. mods (4600)", async () => {
+    rows = new Map<unknown, Row[]>([
+      [orders, [{ id: "ord_b1", state: "ordered", totalZar: 9200, customerId: OFFICE.id, isStaffDiscount: false, paymentMode: null }]],
+      [orderItems, [{ id: "oi_b1", quantity: 2, unitPriceZar: 3800, modsZar: 800, discountZar: 0, category: "coffee" }]],
+      [customers, [OFFICE]],
+      [openingSessions, [{ mode: "weekday" }]],
+      [staffEntitlementLog, []],
+      [payments, [{ id: "pay_b1", status: "pending", yocoCheckoutId: null, yocoPaymentId: null }]],
+    ]);
+    const res = await applyFreeCoffee("ord_b1", OFFICE.id);
+    expect(res).toEqual({ ok: true, data: { totalZar: 4600 } });
+    expect(updatesOf(orderItems)).toContainEqual({ discountZar: 4600 });
+    expect(updatesOf(payments)).toEqual([{ amountZar: 4600 }]);
+  });
+});
+
 // ─── declineFreeCoffee: one tap ──────────────────────────────────────────────
 const CANCEL_AND_RERING = {
   ok: false, code: "TENDER_IN_PROGRESS", message: "Cancel and re-ring the order to change the free cup.",

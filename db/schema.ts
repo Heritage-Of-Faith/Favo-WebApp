@@ -263,6 +263,9 @@ export const orderItems = pgTable("order_items", {
   quantity: integer("quantity").default(1).notNull(),
   unitPriceZar: integer("unit_price_zar").notNull(),
   modifications: jsonb("modifications").default([]).notNull(),
+  // AT-181 B1 (Nikao, PR #257, option A): the per-unit sum of the priced
+  // modifications' price_delta_zar, snapshotted at ring-up. Integer cents.
+  modsZar: integer("mods_zar").default(0).notNull(),
   // AT-181 / PRD §10.3: the shot count is a column, never part of a name.
   // The DB CHECK enforces the outer ceiling (T15 max_shots_per_line = 4).
   shots: integer("shots").default(1).notNull(),
@@ -273,7 +276,7 @@ export const orderItems = pgTable("order_items", {
 }, () => [
   check("order_items_shots_range", sql`shots BETWEEN 1 AND 4`),
   // DEF-A's floor: a line can never be discounted past its own value.
-  check("order_items_discount_within_line", sql`discount_zar <= quantity * unit_price_zar`),
+  check("order_items_discount_within_line", sql`discount_zar <= quantity * (unit_price_zar + mods_zar)`),
   check("order_items_quantity_positive", sql`quantity >= 1`),
 ]);
 
