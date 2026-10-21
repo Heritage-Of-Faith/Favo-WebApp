@@ -66,6 +66,19 @@ describe("Scheduler.tick — fires on the SAST schedule", () => {
     expect(vi.mocked(j.run).mock.calls[0][0].toISOString()).toBe("2026-10-20T08:15:00.000Z");
   });
 
+  it("after a long stall, a skip job replays only the last few minutes but a catchUp job replays its missed firing, marked late", async () => {
+    const { store, runs } = memoryStore();
+    const skipJob = job({ name: "skipJob" });
+    const weekly = job({ name: "weekly", cron: "0 6 * * 1", missedRun: "catchUp", periodFor: (t) => t.toISOString().slice(0, 10) });
+    const s = new Scheduler([skipJob, weekly], { store, alert: vi.fn(), log: quiet });
+    await s.tick(T("2026-10-19T03:00:00Z")); // Mon 05:00 SAST
+    await s.tick(T("2026-10-19T05:02:00Z")); // Mon 07:02 SAST — stalled past 06:00
+    expect(weekly.run).toHaveBeenCalledTimes(1);
+    expect(runs.find((r) => r.job === "weekly")).toMatchObject({ period: "2026-10-19", action: "job_catch_up", late: true });
+    // 03:00 fired on the first tick; 03:15 … 04:45 fell outside the 5-minute replay window, 05:00 did not.
+    expect(vi.mocked(skipJob.run).mock.calls.map((c) => (c[0] as Date).toISOString())).toEqual(["2026-10-19T03:00:00.000Z", "2026-10-19T05:00:00.000Z"]);
+  });
+
   it("evaluates the expression in SAST, not UTC (00:05 SAST is 22:05 UTC)", async () => {
     const { store } = memoryStore();
     const j = job({ cron: "5 0 * * *" });

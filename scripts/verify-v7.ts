@@ -319,11 +319,14 @@ record(
 // The old pattern matched retry-deferred's `resolvedBy: "retry_cron"`; that file is
 // gone (#241), and the pattern's quote broke the shell (exit 2 = GATE IS BROKEN).
 // src/server/jobs/ is the scheduler (AT-169); it runs these jobs, so it is held to the same rule.
-const CRON_PATHS = "src/server/crons/ src/server/jobs/ src/app/api/crons/";
+const CRON_PATHS = "src/server/crons/ src/server/jobs/";
 // Known gaps (code review must cover them): calls split across lines, lowercase or
 // quoted SQL table names, and a cron calling a helper outside these folders.
 mustBeAbsent("no cron writes payments (Drizzle)", "\\(update\\|insert\\|delete\\)( *\\(schema\\.\\)\\?payments *)", CRON_PATHS);
 mustBeAbsent("no cron writes payments (SQL)", "\\(UPDATE\\|INSERT INTO\\|DELETE FROM\\) payments", CRON_PATHS);
+// PRD §10.7 / §13.4: no Admin may run a timer, so no HTTP route reaches a job.
+// The in-app scheduler (src/server/jobs) is the only caller (AT-169).
+mustBeAbsent("no live /api/crons/* endpoint (§10.7)", "api/crons", "src/");
 mustBeAbsent("no voided payment status", "voided", "db/enums.ts src/lib/types.ts");
 
 // ─────────────────────────────────────────────────────────────────────────────
