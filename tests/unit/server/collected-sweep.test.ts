@@ -1,5 +1,5 @@
 // AT-194 — the `collected` sweep (PRD §9.6.2 job 5, S7), with the DB mocked.
-// The real-Postgres behaviour is in tests/db/collected-sweep.test.ts.
+// The real-Postgres behaviour is in tests/db/scheduled-jobs.test.ts.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 

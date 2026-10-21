@@ -20,6 +20,15 @@ maybe("closeDaily — one close record per revenue day (AT-193)", () => {
     await sql?.end({ timeout: 5 });
   });
 
+  it("an old-format daily_close row (pre-AT-193, possibly part-day) does not count as closed", async () => {
+    const { closedDays, dayBounds } = await import("@/server/crons/close-daily");
+    const legacy = dayBounds(new Date(day.getTime() - 4000 * 86_400_000)).date;
+    await sql`
+      INSERT INTO audit_log (entity_kind, entity_id, action, actor_role, after)
+      VALUES ('system', ${legacy}, 'daily_close', 'system', ${sql.json({ revenueZar: 0, paymentsZar: 0, variancePct: 0, band: "ok" })})`;
+    expect((await closedDays([legacy])).has(legacy)).toBe(false);
+  });
+
   it("concurrent and repeated closes of one day leave exactly one close record", async () => {
     const { closeDaily, dayBounds } = await import("@/server/crons/close-daily");
     const { date } = dayBounds(day);

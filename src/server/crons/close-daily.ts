@@ -80,7 +80,12 @@ export type CloseDailyResult =
 /** The audit action that is a revenue day's close record (entity_kind 'system', entity_id = the day). */
 export const DAILY_CLOSE_ACTION = "daily_close";
 
-/** Which of `dates` (YYYY-MM-DD, SAST) already have a close record. */
+/**
+ * Which of `dates` (YYYY-MM-DD, SAST) already have a close record. Only rows
+ * written since AT-193 count: they carry `revenueDay` and always cover a whole
+ * completed day. An older `daily_close` row may be a manual mid-day close of
+ * "today", a part-day figure, so it never marks a day as closed.
+ */
 export async function closedDays(dates: string[], client: DB = db): Promise<Set<string>> {
   if (dates.length === 0) return new Set();
   const rows = await client
@@ -90,7 +95,8 @@ export async function closedDays(dates: string[], client: DB = db): Promise<Set<
       and(
         eq(auditLog.entityKind, "system"),
         eq(auditLog.action, DAILY_CLOSE_ACTION),
-        inArray(auditLog.entityId, dates)
+        inArray(auditLog.entityId, dates),
+        sql`(${auditLog.after} ->> 'revenueDay') IS NOT NULL`
       )
     );
   return new Set(rows.map((r) => r.day));
