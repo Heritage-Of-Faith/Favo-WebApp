@@ -77,6 +77,8 @@ export type OrderItem = {
   quantity: number;
   unitPriceZar: number;
   modifications: MenuCustomisation[];
+  /** Integer cents taken off this line (L03 free cup = one unit). 0 when none. */
+  discountZar?: number;
 };
 
 export type Order = {
@@ -90,6 +92,8 @@ export type Order = {
   totalZar: number;
   isStaffDiscount: boolean;
   paymentStatus: PaymentStatus | null;
+  /** A Yoco card checkout exists for this order — its total is frozen (owner rule, PRD P4). */
+  cardCheckout?: boolean;
   items: OrderItem[];
 };
 

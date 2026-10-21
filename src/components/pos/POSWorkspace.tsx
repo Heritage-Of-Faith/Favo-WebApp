@@ -12,7 +12,7 @@ import { signOut } from "@/server/actions/auth";
 import { searchCustomer } from "@/server/actions/customers";
 import { getMenu } from "@/server/actions/menu";
 import { getActiveBeanLot } from "@/server/actions/inventory";
-import { createOrder, transitionOrder, cancelOrder, applyStaffDiscount } from "@/server/actions/orders";
+import { createOrder, transitionOrder, cancelOrder, declineFreeCoffee } from "@/server/actions/orders";
 import { getFavo } from "@/server/actions/favo";
 import type { FavoView } from "@/server/favo/schema";
 import FavoPicker from "@/components/favo/FavoPicker";
@@ -21,9 +21,9 @@ import { useDraftOrder, lineKey } from "@/store/draftOrder";
 import { formatZar, formatDate } from "@/lib/format";
 import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
-  Search, X, Plus, Minus, Trash2, ChevronDown, ChevronUp,
+  Search, Plus, Minus, Trash2, ChevronDown, ChevronUp,
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
-  CheckCircle, AlertCircle, Tag, ShieldCheck, CreditCard,
+  CheckCircle, AlertCircle, ShieldCheck, CreditCard,
 } from "lucide-react";
 import { toast } from "sonner";
 import ActiveBeanCard from "@/components/pos/ActiveBeanCard";
@@ -38,6 +38,7 @@ import OfflineBanner from "@/components/pos/OfflineBanner";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import YocoOrderForm from "@/components/pos/YocoOrderForm";
 import ChargeOrderDialog from "@/components/pos/ChargeOrderDialog";
+import FreeCupRow from "@/components/pos/FreeCupRow";
 import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
@@ -187,9 +188,23 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [fullOrders, setFullOrders] = useState<Record<string, Order>>({});
   const [advancing, setAdvancing] = useState<Record<string, boolean>>({});
   const [actionError, setActionError] = useState<Record<string, string | null>>({});
-  const [showDiscount, setShowDiscount] = useState<string | null>(null);
-  const [discountId, setDiscountId] = useState("");
-  const [discountMsg, setDiscountMsg] = useState<string | null>(null);
+  // L03 free cup: the server's net total for the order just placed (the draft
+  // total is gross), and whether the cup was applied — so the payment view can
+  // offer the one-tap Decline.
+  const [placedTotalZar, setPlacedTotalZar] = useState<number | null>(null);
+  const [placedFreeCup, setPlacedFreeCup] = useState(false);
+  // Whether a Yoco card checkout was set up for the order just placed.
+  const [placedCardCheckout, setPlacedCardCheckout] = useState(false);
+  const [declining, setDeclining] = useState<string | null>(null);
+  // The server guarantee (owner rule, 12 Oct 2026): declineFreeCoffee and
+  // applyFreeCoffee refuse with TENDER_IN_PROGRESS — under the payments-row
+  // lock — once a card checkout exists for the order. So Decline is shown only
+  // for orders with no checkout (server state: Order.cardCheckout / the
+  // createOrder result). cardStepStarted is extra, device-local hiding once the
+  // card popup or the Take-payment dialog opens; it is not the guarantee.
+  const [cardStepStarted, setCardStepStarted] = useState<Set<string>>(() => new Set());
+  const markCardStep = (orderId: string) =>
+    setCardStepStarted(prev => { const n = new Set(prev); n.add(orderId); return n; });
   const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
   const [wasteOpen, setWasteOpen] = useState(false);
   const [wasteCategory, setWasteCategory] = useState<LogWasteInput["category"]>("spilled");
@@ -273,8 +288,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       setExpandedId(null);
     } else {
       setExpandedId(orderId);
-      setShowDiscount(null);
-      setDiscountMsg(null);
       setCancelConfirm(null);
       setActionError(prev => ({ ...prev, [orderId]: null }));
     }
@@ -315,7 +328,17 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       setExpandedId(r.data.orderId);
       setYocoCheckoutId(r.data.yocoClientSecret);
       setPaymentOrderId(r.data.orderId);
-      if (r.data.yocoClientSecret) {
+      // L03 free cup: the server decided it — show the net total, and tell the
+      // barista once (applied, already claimed, not eligible, pick a customer).
+      const net = typeof r.data.totalZar === "number" ? r.data.totalZar : null;
+      setPlacedTotalZar(net);
+      setPlacedFreeCup(r.data.freeCup?.applied === true);
+      setPlacedCardCheckout(r.data.cardCheckout === true);
+      if (r.data.freeCup?.message) {
+        if (r.data.freeCup.applied) toast.success(r.data.freeCup.message);
+        else toast.message(r.data.freeCup.message);
+      }
+      if (r.data.yocoClientSecret || net === 0) {
         setShowPayment(true);
       } else {
         // Yoco unavailable — order is in the queue; barista must collect payment via card reader when online.
@@ -412,17 +435,27 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     }
   }
 
-  async function handleApplyDiscount(orderId: string, order: Order) {
-    if (!discountId.trim()) { setDiscountMsg("Enter staff ID."); return; }
-    setDiscountMsg(null);
-    const r = await applyStaffDiscount(orderId, discountId.trim()).catch(() => ({ ok: false as const, code: "ERR", message: "Could not apply." }));
-    if (r.ok) {
-      setDiscountMsg("✓ Free coffee applied.");
-      setFullOrders(prev => ({ ...prev, [orderId]: { ...order, totalZar: 0, isStaffDiscount: true } }));
-      setShowDiscount(null);
-    } else {
-      setDiscountMsg(r.message);
+  /** L03: the barista's one tap to decline the automatically applied free cup. */
+  async function handleDeclineFreeCup(orderId: string) {
+    if (declining) return;
+    setDeclining(orderId);
+    const r = await declineFreeCoffee(orderId).catch(() => ({ ok: false as const, code: "ERR", message: "Could not decline the free cup." }));
+    setDeclining(null);
+    if (!r.ok) { toast.error(r.message); return; }
+    if (orderId === paymentOrderId) {
+      setPlacedTotalZar(r.data.totalZar);
+      setPlacedFreeCup(false);
+      // A free order became chargeable: the server wrote its payments row and
+      // then created the checkout at the new total ("" if Yoco is unavailable).
+      setYocoCheckoutId(r.data.yocoClientSecret ?? "");
+      setPlacedCardCheckout(Boolean(r.data.yocoClientSecret));
     }
+    setFullOrders(prev => {
+      const o = prev[orderId];
+      if (!o) return prev;
+      return { ...prev, [orderId]: { ...o, totalZar: r.data.totalZar, isStaffDiscount: false, items: o.items.map(i => ({ ...i, discountZar: 0 })) } };
+    });
+    toast.message("Free cup declined — the order is charged in full.");
   }
 
   async function handleSignOut() {
@@ -767,7 +800,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
         <div className="flex flex-col flex-1 border-r border-cool-steel/20 min-h-0">
           {/* Payment view */}
           {(() => {
-            const amountDueZar = totalZar;
+            // The server's net total once the order exists (L03 free cup taken
+            // off); the draft total only while offline with no order yet.
+            const amountDueZar = paymentOrderId && placedTotalZar !== null ? placedTotalZar : totalZar;
             // Free only when nothing is owed — skip the Yoco form and confirm directly.
             const isFree = amountDueZar === 0;
 
@@ -777,6 +812,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               setShowPayment(false);
               setYocoCheckoutId("");
               setPaymentOrderId(null);
+              setPlacedTotalZar(null);
+              setPlacedFreeCup(false);
               setOrderSuccess("Order paid — sent to the queue.");
               setTimeout(() => setOrderSuccess(null), 4000);
             };
@@ -803,6 +840,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                   <p className="favo-small text-cool-steel mt-1">
                     Tap or insert the customer's card
                   </p>
+                  {placedFreeCup && paymentOrderId && !placedCardCheckout && !cardStepStarted.has(paymentOrderId) && (
+                    <FreeCupRow
+                      busy={declining === paymentOrderId}
+                      onDecline={() => handleDeclineFreeCup(paymentOrderId)}
+                    />
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-3 w-full max-w-[320px]">
@@ -820,7 +863,29 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                       orderId={paymentOrderId}
                       amountZar={amountDueZar}
                       onPaid={finishPayment}
+                      onCardStepStart={() => markCardStep(paymentOrderId)}
                     />
+                  ) : paymentOrderId ? (
+                    /* The order exists but has no online card checkout (Yoco
+                       unreachable or not configured, or the checkout could not
+                       be re-priced after a decline). It is in the queue. */
+                    <div className="flex flex-col gap-2">
+                      <p className="favo-small text-center text-cool-steel py-2">
+                        No online card checkout for this order. It&apos;s in the queue — take payment there with Take payment.
+                      </p>
+                      <button type="button"
+                        onClick={() => {
+                          reset();
+                          setShowPayment(false);
+                          setYocoCheckoutId("");
+                          setPaymentOrderId(null);
+                          setPlacedTotalZar(null);
+                          setPlacedFreeCup(false);
+                        }}
+                        className="favo-small rounded-[4px] border border-cool-steel/30 px-3 py-2 min-h-[44px] text-coffee-bean hover:bg-coffee-bean/8">
+                        Done — back to the till
+                      </button>
+                    </div>
                   ) : (
                     /* Yoco unavailable — no cash fallback. */
                     <p className="favo-small text-center text-cool-steel py-4">
@@ -878,8 +943,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             const needsPayment = yocoConfigured
               && !!full
               && o.state === "ordered"
+              // L03: a free cup discounts one unit only — whatever is left is still owed.
               && full.totalZar > 0
-              && !full.isStaffDiscount
               && full.paymentStatus !== "successful"
               && !paidLocally.has(o.orderId);
 
@@ -941,6 +1006,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                                 {item.modifications.length > 0 && (
                                   <p className="favo-caption text-cool-steel">{formatModifications(item.modifications)}</p>
                                 )}
+                                {(item.discountZar ?? 0) > 0 && (
+                                  <p className="favo-caption text-cool-steel">Free cup −{formatZar(item.discountZar ?? 0)}</p>
+                                )}
                               </div>
                               <span className="favo-small text-coffee-bean shrink-0 ml-3">
                                 {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
@@ -950,8 +1018,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                         </div>
                         <div className="flex justify-between border-t border-cool-steel/10 pt-1.5">
                           <span className="favo-caption text-cool-steel">TOTAL</span>
-                          <span className={["favo-small font-semibold", full.isStaffDiscount ? "text-[var(--color-success)]" : "text-coffee-bean"].join(" ")}>
-                            {full.isStaffDiscount ? "FREE (staff)" : formatZar(full.totalZar)}
+                          <span className="favo-small font-semibold text-coffee-bean">
+                            {formatZar(full.totalZar)}
                           </span>
                         </div>
                         {/* Payment status — only meaningful before collection */}
@@ -980,47 +1048,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                       </div>
                     )}
 
-                    {/* Staff discount */}
-                    {full && !isDone && !full.isStaffDiscount && (
-                      <div>
-                        {showDiscount !== o.orderId ? (
-                          <button type="button"
-                            onClick={() => {
-                              setShowDiscount(o.orderId);
-                              setDiscountMsg(null);
-                              // Pre-fill with the logged-in barista's own ID (L03: most discounts are self-applied)
-                              setDiscountId(staffId);
-                            }}
-                            className="flex items-center gap-1 favo-caption text-cool-steel hover:text-coffee-bean min-h-[44px] transition-colors">
-                            <Tag size={11} strokeWidth={2} /> Apply staff discount
-                          </button>
-                        ) : (
-                          <div className="space-y-1.5 rounded-[2px] border border-cool-steel/20 bg-coffee-bean/5 p-2">
-                            <p className="favo-caption text-cool-steel">
-                              Staff member: <span className="text-coffee-bean">{staffName}</span>
-                            </p>
-                            <input type="text" value={discountId} onChange={e => setDiscountId(e.target.value)}
-                              placeholder="Override with different staff ID"
-                              className="w-full rounded-[2px] border border-cool-steel/30 bg-coffee-bean/8 px-2 py-1 text-coffee-bean favo-caption min-h-[44px] focus:border-crimson-carrot focus:outline-none" />
-                            {discountMsg && (
-                              <p className={["favo-caption", discountMsg.startsWith("✓") ? "text-[var(--color-success)]" : "text-[var(--color-error)]"].join(" ")}>
-                                {discountMsg}
-                              </p>
-                            )}
-                            <div className="flex gap-1.5">
-                              <button type="button" onClick={() => full && handleApplyDiscount(o.orderId, full)}
-                                className="flex-1 rounded-[2px] py-1 favo-caption min-h-[44px]"
-                                style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontWeight: 700 }}>
-                                Apply
-                              </button>
-                              <button type="button" onClick={() => setShowDiscount(null)}
-                                className="rounded-[2px] border border-cool-steel/30 px-2 text-cool-steel hover:bg-coffee-bean/8 min-h-[44px]">
-                                <X size={11} strokeWidth={2} />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                    {/* L03 free cup — applied automatically at ring-up; one tap to decline */}
+                    {full && o.state === "ordered" && full.isStaffDiscount && full.paymentStatus !== "successful" && !full.cardCheckout
+                      && !cardStepStarted.has(o.orderId) && chargeOrder?.id !== o.orderId && (
+                      <FreeCupRow busy={declining === o.orderId} onDecline={() => handleDeclineFreeCup(o.orderId)} />
                     )}
 
                     {/* Cancel */}
@@ -1155,6 +1186,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           order={chargeOrder}
           onPaid={handleOrderPaid}
           onClose={() => setChargeOrder(null)}
+          onCardStepStart={markCardStep}
         />
       )}
     </main>
