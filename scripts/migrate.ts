@@ -16,6 +16,11 @@
 //   that runs the migrations. That is why it uses DATABASE_URL_SESSION — an
 //   advisory lock is not reliable through the 6543 transaction pooler.
 // - Journal drift (the 0027 incident) aborts before any SQL runs.
+// - Risky migrations need an opt-in (owner decision, Nikao, 21 Oct 2026): a
+//   pending file marked `-- favo:requires-approval` (or, from GATED_FROM_IDX on,
+//   matching a risky pattern) is refused unless FAVO_APPROVE_MIGRATION names
+//   its exact tag. Refusal happens before any SQL — nothing is partly applied.
+//   See src/server/deploy/migration-approval.ts.
 // - drizzle applies all pending files in one transaction: a failure rolls back
 //   and leaves the database as it was.
 // - A database ahead of this image (applied migrations newer than every file
@@ -38,6 +43,11 @@ import {
   type AppliedMigration,
   type JournalEntry,
 } from "../src/server/deploy/startup-checks";
+import {
+  APPROVAL_ENV,
+  checkPendingApprovals,
+  refusalMessage,
+} from "../src/server/deploy/migration-approval";
 
 // Arbitrary, fixed: every FAVO migration runner contends for this one key.
 const MIGRATION_LOCK_KEY = 170_170_170;
@@ -62,7 +72,7 @@ const skip = skipMigrationsDecision(process.env);
 if (skip.warning) console.warn(`[migrate] WARNING: ${skip.warning}`);
 if (skip.skip) process.exit(0);
 
-const journal: JournalEntry[] = JSON.parse(
+const journal: (JournalEntry & { idx: number })[] = JSON.parse(
   readFileSync(join(MIGRATIONS_FOLDER, "meta", "_journal.json"), "utf8"),
 ).entries;
 
@@ -110,7 +120,26 @@ try {
   }
 
   const appliedWhens = new Set(applied.map((r) => Number(r.created_at)));
-  const pending = journal.filter((e) => !appliedWhens.has(e.when)).length;
+  const pendingEntries = journal.filter((e) => !appliedWhens.has(e.when));
+  const pending = pendingEntries.length;
+
+  const approval = checkPendingApprovals(
+    pendingEntries.map((e) => ({
+      idx: e.idx,
+      tag: e.tag,
+      sql: readFileSync(join(MIGRATIONS_FOLDER, `${e.tag}.sql`), "utf8"),
+    })),
+    process.env,
+  );
+  if (approval.refused.length > 0) fatal(refusalMessage(approval.refused));
+  for (const tag of approval.approved) {
+    console.warn(`[migrate] WARNING: applying risky migration ${tag}, approved via ${APPROVAL_ENV}`);
+  }
+  if (approval.unused.length > 0) {
+    console.warn(
+      `[migrate] WARNING: ${APPROVAL_ENV} names ${approval.unused.join(", ")}, which is not pending. Remove it so it cannot be mistaken for a standing approval.`,
+    );
+  }
   console.log(`[migrate] ${applied.length} applied, ${pending} pending (image ${process.env.IMAGE_SHA || "unknown"})`);
   await migrate(drizzle(sql), { migrationsFolder: MIGRATIONS_FOLDER });
   console.log(`[migrate] done — schema at ${journal.at(-1)?.tag ?? "(empty journal)"}`);

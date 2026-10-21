@@ -41,6 +41,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # Owner decision (Nikao, 21 Oct 2026, AT-170): a risky migration (DROP,
+      # type change, data delete/rewrite, or payments/orders/order_items) must
+      # carry `-- favo:requires-approval`, or it would auto-apply on start.
+      - name: Migration approval markers (blocking)
+        run: bun scripts/check-migration-approval.ts
+
       - name: Typecheck
         run: bun typecheck
 
