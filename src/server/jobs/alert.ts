@@ -1,4 +1,6 @@
-// Failure alert for scheduled jobs (AT-169, PRD §9.6.2 rule 3).
+// Admin pushes for scheduled jobs: the failure alert (AT-169, PRD §9.6.2 rule 3)
+// and the missing-close alert (AT-193).
+//
 // A job that fails raises exactly one Admin push naming the job and the period
 // it covered. It is never retried silently — the next scheduled run is the retry.
 
@@ -20,18 +22,21 @@ export function buildJobFailurePayload(job: string, period: string, _error: stri
   });
 }
 
-export const pushAdminsOnFailure: FailureAlerter = async (job, period, error) => {
+/** Send one Web Push payload to every admin with a saved subscription. Never throws per device. */
+export async function pushAdmins(payload: string, label: string): Promise<void> {
   const admins = await db
     .select({ pushSubscription: staff.pushSubscription })
     .from(staff)
     .where(and(eq(staff.role, "admin"), isNotNull(staff.pushSubscription)));
 
-  const payload = buildJobFailurePayload(job, period, error);
   initVapid();
   for (const { pushSubscription } of admins) {
     if (!isValidPushSubscription(pushSubscription)) continue;
     await webpush.sendNotification(pushSubscription, payload).catch((e) =>
-      console.error(`[scheduler] admin push for ${job}:${period} failed:`, e),
+      console.error(`[scheduler] admin push for ${label} failed:`, e),
     );
   }
-};
+}
+
+export const pushAdminsOnFailure: FailureAlerter = (job, period, error) =>
+  pushAdmins(buildJobFailurePayload(job, period, error), `${job}:${period}`);

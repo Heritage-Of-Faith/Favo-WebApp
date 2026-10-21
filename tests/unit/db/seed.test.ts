@@ -35,13 +35,10 @@ describe("seed: menu", () => {
 });
 
 describe("seed: customisations", () => {
-  it("every espresso drink offers an Extra Shot", () => {
-    for (const drinkId of ESPRESSO_DRINK_IDS) {
-      const hasExtraShot = CUSTOMISATIONS.some(
-        (c) => c.menuItemId === drinkId && c.name === "Extra Shot"
-      );
-      expect(hasExtraShot).toBe(true);
-    }
+  // AT-181 / PRD §10.3: "`Extra Shot` is deleted from `menu_customisations`" —
+  // order_items.shots is the column of record for the shot count.
+  it("no drink offers an Extra Shot customisation", () => {
+    expect(CUSTOMISATIONS.some((c) => c.name === "Extra Shot")).toBe(false);
   });
 
   it("every customisation references a real menu item", () => {

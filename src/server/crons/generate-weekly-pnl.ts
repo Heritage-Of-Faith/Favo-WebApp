@@ -39,6 +39,16 @@ export function weekBounds(referenceDate?: Date): { start: Date; end: Date; week
   return { start: mondayUtc, end: sundayUtcEnd, weekStarting };
 }
 
+/** Whether the report for the week starting `weekStarting` exists: the scheduler's "done" for this job. */
+export async function hasWeeklyReport(weekStarting: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: weeklyReports.id })
+    .from(weeklyReports)
+    .where(eq(weeklyReports.weekStarting, weekStarting))
+    .limit(1);
+  return Boolean(row);
+}
+
 export async function generateWeeklyPnL(
   referenceDate?: Date
 ): Promise<{ weekStarting: string; reportId: string; alreadyExists: boolean }> {
