@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql } from "postgres";
 import { connect, hasRealDb } from "./helpers";
+import { revenueDay } from "@/lib/format";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -59,8 +60,8 @@ maybe("the collected sweep (AT-194, §9.6.2 job 5)", () => {
     [{ id: staffId }] = await sql`INSERT INTO staff (name, role, pin_hash) VALUES ('Sweep Barista', 'barista', 'x') RETURNING id`;
     const order = async (state: string, completedAt: Date | null) => {
       const [{ id }] = await sql`
-        INSERT INTO orders (staff_id, total_zar, state, completed_at)
-        VALUES (${staffId}, 0, ${state}, ${completedAt})
+        INSERT INTO orders (staff_id, total_zar, state, completed_at, revenue_day)
+        VALUES (${staffId}, 0, ${state}, ${completedAt}, ${revenueDay(now)})
         RETURNING id`;
       return id as string;
     };
