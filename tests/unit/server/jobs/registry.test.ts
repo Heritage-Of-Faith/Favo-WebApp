@@ -13,6 +13,7 @@ vi.mock("@/server/jobs/close-watch", () => ({ checkMissingCloses: vi.fn(async ()
 vi.mock("@/server/crons/generate-weekly-pnl", async (orig) => ({
   ...(await orig<typeof import("@/server/crons/generate-weekly-pnl")>()),
   generateWeeklyPnL: vi.fn(async () => ({})),
+  hasWeeklyReport: vi.fn(async (weekStarting: string) => weekStarting === "2026-10-12"),
 }));
 
 import { JOBS } from "@/server/jobs/registry";
@@ -102,5 +103,11 @@ describe("job register", () => {
     expect(j.missedRun).toBe("catchUp");
     await j.run(firedAt, false);
     expect(weekBounds(vi.mocked(generateWeeklyPnL).mock.calls[0][0]).weekStarting).toBe("2026-10-12");
+  });
+
+  it("generateWeeklyPnL: done = the week's weekly_reports row exists, so a failed week is caught up", async () => {
+    const j = byName("generateWeeklyPnL");
+    expect(await j.isDone!("2026-10-12")).toBe(true);
+    expect(await j.isDone!("2026-10-05")).toBe(false);
   });
 });

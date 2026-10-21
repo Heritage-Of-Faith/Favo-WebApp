@@ -10,7 +10,7 @@
 import { checkLowStock } from "@/server/crons/check-low-stock";
 import { closeDaily, closedDays } from "@/server/crons/close-daily";
 import { sweepCollected } from "@/server/crons/collected-sweep";
-import { generateWeeklyPnL, weekBounds } from "@/server/crons/generate-weekly-pnl";
+import { generateWeeklyPnL, hasWeeklyReport, weekBounds } from "@/server/crons/generate-weekly-pnl";
 import { checkMissingCloses } from "./close-watch";
 import { sastDate, sastMiddayDaysBack, sastMinute } from "./schedule";
 import type { JobDefinition } from "./scheduler";
@@ -57,10 +57,13 @@ export const JOBS: JobDefinition[] = [
   {
     // §9.6.2 #3 — Monday 06:00, for the completed Mon–Sun week. Catch-up on
     // startup; idempotent per week through weekly_reports.week_starting UNIQUE.
+    // Done means the week's report exists, so a failed week is caught up at
+    // the next startup rather than counting as attempted.
     name: "generateWeeklyPnL",
     cron: "0 6 * * 1",
     missedRun: "catchUp",
     periodFor: (firedAt) => weekBounds(completedWeek(firedAt)).weekStarting,
+    isDone: (weekStarting) => hasWeeklyReport(weekStarting),
     run: (firedAt) => generateWeeklyPnL(completedWeek(firedAt)),
   },
   {

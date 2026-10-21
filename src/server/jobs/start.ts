@@ -18,9 +18,6 @@ export function schedulerEnabled(env: NodeJS.ProcessEnv = process.env): boolean 
 const globalForScheduler = globalThis as unknown as { __favoScheduler?: Scheduler };
 
 export function startScheduler(): Scheduler | null {
-  if (!process.env.CRON_SECRET) {
-    console.warn("[scheduler] CRON_SECRET is not set — the manual /api/crons/* triggers will answer 503");
-  }
   if (!schedulerEnabled()) {
     console.info("[scheduler] disabled (SCHEDULER_ENABLED / NODE_ENV)");
     return null;

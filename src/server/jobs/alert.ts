@@ -12,10 +12,12 @@ import { initVapid } from "@/server/push/vapid";
 import { isValidPushSubscription } from "@/server/push/payload";
 import type { FailureAlerter } from "./scheduler";
 
-export function buildJobFailurePayload(job: string, period: string, error: string): string {
+// The error text is deliberately not sent: a DB error can carry row values, and
+// this goes to a phone lock screen. It is in the job_failed audit row instead.
+export function buildJobFailurePayload(job: string, period: string, _error: string): string {
   return JSON.stringify({
     title: `Scheduled job failed — ${job}`,
-    body: `${job} did not complete for ${period}: ${error.slice(0, 160)}. It will not retry until its next scheduled run.`,
+    body: `${job} did not complete for ${period}. The error is in the audit log (scheduled_job ${job}:${period}). It will not retry until its next scheduled run.`,
     data: { job, period, url: "/admin" },
   });
 }

@@ -123,8 +123,9 @@ export async function closeDaily(
 
   const closed = await db.transaction(async (tx) => {
     const txDb = tx as unknown as DB;
-    // One close per revenue day: a manual trigger racing the scheduled run
-    // waits here, then finds the first one's close record.
+    // One close per revenue day: a second close of the same day (a catch-up
+    // overlapping the scheduled run, or a second instance) waits here, then
+    // finds the first one's close record.
     await txDb.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`daily_close:${date}`}))`);
     if ((await closedDays([date], txDb)).has(date)) return null;
 

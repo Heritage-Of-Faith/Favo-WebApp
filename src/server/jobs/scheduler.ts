@@ -177,14 +177,24 @@ export class Scheduler {
   tick(at: Date = this.now()): Promise<unknown> {
     const current = floorToMinute(at);
     if (this.lastTick && current <= this.lastTick) return Promise.resolve();
-    const replayFrom = new Date(current.getTime() - MAX_TICK_REPLAY_MINUTES * 60_000);
-    const after = this.lastTick && this.lastTick > replayFrom ? this.lastTick : new Date(current.getTime() - 60_000);
+    const previous = this.lastTick ?? new Date(current.getTime() - 60_000);
     this.lastTick = current;
+
+    // After a long stall, `skip` jobs replay at most a few minutes (their own
+    // rule says a missed run is skipped) and the gap is logged; `catchUp` jobs
+    // replay every missed firing in the window, since each is idempotent per period.
+    const replayFrom = new Date(current.getTime() - MAX_TICK_REPLAY_MINUTES * 60_000);
+    const catchUpFrom = new Date(current.getTime() - CATCH_UP_WINDOW_MS);
+    if (previous < replayFrom) {
+      this.log.warn(`[scheduler] ticks stalled from ${previous.toISOString()} to ${current.toISOString()}; skip-jobs replay only the last ${MAX_TICK_REPLAY_MINUTES} minutes`);
+    }
 
     const runs: Promise<unknown>[] = [];
     for (const { job, matches } of this.jobs) {
+      const floor = job.missedRun === "catchUp" ? catchUpFrom : replayFrom;
+      const after = previous > floor ? previous : floor;
       for (const firedAt of fireTimesBetween(matches, after, current)) {
-        runs.push(this.runJob(job, firedAt));
+        runs.push(this.runJob(job, firedAt, firedAt < current));
       }
     }
     return Promise.all(runs);
