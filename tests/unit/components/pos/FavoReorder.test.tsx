@@ -9,7 +9,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("next/image", () => ({ default: (p: Record<string, unknown>) => <span data-src={String(p.src ?? "")} /> }));
 
 vi.mock("@/server/actions/orders", () => ({
-  createOrder: vi.fn(), transitionOrder: vi.fn(), cancelOrder: vi.fn(), applyStaffDiscount: vi.fn(),
+  createOrder: vi.fn(), transitionOrder: vi.fn(), cancelOrder: vi.fn(),
 }));
 vi.mock("@/server/actions/auth", () => ({ signOut: vi.fn() }));
 vi.mock("@/server/actions/customers", () => ({ searchCustomer: vi.fn() }));

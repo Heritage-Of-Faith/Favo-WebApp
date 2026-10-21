@@ -30,13 +30,14 @@ export default async function ActiveOrderPage({ params }: Props) {
         menuItemName: menuItems.name,
         quantity: orderItems.quantity,
         unitPriceZar: orderItems.unitPriceZar,
+        discountZar: orderItems.discountZar,
         modifications: orderItems.modifications,
       })
       .from(orderItems)
       .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
       .where(eq(orderItems.orderId, id)),
     db
-      .select({ status: payments.status })
+      .select({ status: payments.status, yocoCheckoutId: payments.yocoCheckoutId, yocoPaymentId: payments.yocoPaymentId })
       .from(payments)
       .where(eq(payments.orderId, id))
       .limit(1),
@@ -53,12 +54,14 @@ export default async function ActiveOrderPage({ params }: Props) {
     totalZar: row.totalZar,
     isStaffDiscount: row.isStaffDiscount,
     paymentStatus: paymentRow[0]?.status ?? null,
+    cardCheckout: !!(paymentRow[0]?.yocoCheckoutId || paymentRow[0]?.yocoPaymentId),
     items: itemRows.map((i) => ({
       id: i.id,
       menuItemId: i.menuItemId,
       menuItemName: i.menuItemName ?? i.menuItemId,
       quantity: i.quantity,
       unitPriceZar: i.unitPriceZar,
+      discountZar: i.discountZar,
       modifications:
         (i.modifications as { id: string; name: string; priceDeltaZar: number }[]) ?? [],
     })),

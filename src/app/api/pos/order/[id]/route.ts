@@ -30,6 +30,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         menuItemName: menuItems.name,
         quantity: orderItems.quantity,
         unitPriceZar: orderItems.unitPriceZar,
+        discountZar: orderItems.discountZar,
         modifications: orderItems.modifications,
       })
       .from(orderItems)
@@ -42,7 +43,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           .where(eq(customers.id, row.customerId))
       : Promise.resolve([]),
     db
-      .select({ status: payments.status })
+      .select({ status: payments.status, yocoCheckoutId: payments.yocoCheckoutId, yocoPaymentId: payments.yocoPaymentId })
       .from(payments)
       .where(eq(payments.orderId, id))
       .limit(1),
@@ -59,12 +60,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     totalZar: row.totalZar,
     isStaffDiscount: row.isStaffDiscount,
     paymentStatus: paymentRow[0]?.status ?? null,
+    cardCheckout: !!(paymentRow[0]?.yocoCheckoutId || paymentRow[0]?.yocoPaymentId),
     items: items.map((i) => ({
       id: i.id,
       menuItemId: i.menuItemId,
       menuItemName: i.menuItemName,
       quantity: i.quantity,
       unitPriceZar: i.unitPriceZar,
+      discountZar: i.discountZar,
       modifications:
         (i.modifications as { id: string; name: string; priceDeltaZar: number }[]) ?? [],
     })),

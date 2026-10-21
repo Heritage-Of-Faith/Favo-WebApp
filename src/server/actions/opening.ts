@@ -22,6 +22,7 @@ import { openingSessions, customers } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import { todaySast } from "@/server/cogs/compute";
+import { defaultSessionMode, SATURDAY_CLOSED } from "@/lib/session-mode";
 import { sendOpeningPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
 import type { ActionResult } from "@/lib/types";
@@ -88,6 +89,9 @@ export async function submitOpeningTime(
   }
   const time = parsed.data;
   const date = todaySast();
+  // PRD §4.2: no session on a Saturday unless an event window is in force.
+  const mode = defaultSessionMode(date);
+  if (!mode) return { ok: false, ...SATURDAY_CLOSED };
 
   const existing = await listToday();
   const unchanged = existing.find((s) => s.opensAt === time);
@@ -103,7 +107,7 @@ export async function submitOpeningTime(
     const [row] = await tx
       .insert(openingSessions)
       .values({
-        sessionDate: date, opensAt: time, viaPos: true,
+        sessionDate: date, mode, opensAt: time, viaPos: true,
         createdByStaffId: auth.session.id, notifiedAt: new Date(),
       })
       .onConflictDoNothing({ target: [openingSessions.sessionDate, openingSessions.opensAt] })
@@ -185,6 +189,9 @@ export async function addTodaySession(
   if (!parsed.success) return { ok: false, code: "INVALID_INPUT", message: "Times must be HH:mm." };
 
   const date = todaySast();
+  // PRD §4.2: no session on a Saturday unless an event window is in force.
+  const mode = defaultSessionMode(date);
+  if (!mode) return { ok: false, ...SATURDAY_CLOSED };
   // A reopening if today already has at least one session before this add.
   const isReopening = (await listToday()).length > 0;
   const inserted = await db.transaction(async (tx) => {
@@ -192,7 +199,7 @@ export async function addTodaySession(
     const [row] = await tx
       .insert(openingSessions)
       .values({
-        sessionDate: date, opensAt: parsed.data.opensAt,
+        sessionDate: date, mode, opensAt: parsed.data.opensAt,
         closesAt: parsed.data.closesAt ?? null, viaPos: false,
         createdByStaffId: auth.session.id,
         notifiedAt: parsed.data.notify ? new Date() : null,

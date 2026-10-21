@@ -13,7 +13,9 @@ vi.mock("@/server/auth/guard", () => ({
 const mockWriteAudit = vi.fn().mockResolvedValue(undefined);
 vi.mock("@/server/audit", () => ({ writeAudit: (...a: unknown[]) => mockWriteAudit(...a) }));
 
-vi.mock("@/server/cogs/compute", () => ({ todaySast: () => "2026-07-09" }));
+// 2026-07-09 is a Thursday. AT-181 tests override it with a Saturday.
+const mockToday = vi.fn(() => "2026-07-09");
+vi.mock("@/server/cogs/compute", () => ({ todaySast: () => mockToday() }));
 
 const mockSendOpeningPush = vi.fn().mockResolvedValue(true);
 vi.mock("@/server/push/send", () => ({
@@ -189,5 +191,45 @@ describe("admin planner CRUD", () => {
     if (res.ok) expect(res.data.sessions).toEqual([]);
     expect(mockDeleteWhere).toHaveBeenCalled();
     expect(mockWriteAudit).toHaveBeenCalledTimes(1);
+  });
+});
+
+// AT-181 / PRD §4.2: a session's mode is defaulted from the date, and "a
+// session cannot be opened on a Saturday at all unless an event window is in
+// force". Event windows do not exist yet, so every Saturday session is refused.
+describe("AT-181: session mode and the Saturday refusal", () => {
+  const SATURDAY = "2026-07-11";
+  const SATURDAY_MESSAGE =
+    "The café is closed on Saturdays unless an event is set up. Events aren't available yet.";
+
+  it("the barista prompt records mode 'weekday' on a Thursday", async () => {
+    mockAuthorize.mockResolvedValue(BARISTA);
+    selectQueue.push([]);
+    selectQueue.push(SUBS);
+    selectQueue.push([SESSION_ROW]);
+    await submitOpeningTime("07:30");
+    await flush();
+    const values = tx.insert.mock.results[0].value.values;
+    expect(values).toHaveBeenCalledWith(expect.objectContaining({ sessionDate: "2026-07-09", mode: "weekday" }));
+  });
+
+  it("the barista prompt refuses a Saturday session: no insert, no push", async () => {
+    mockAuthorize.mockResolvedValue(BARISTA);
+    mockToday.mockReturnValueOnce(SATURDAY);
+    const res = await submitOpeningTime("07:30");
+    await flush();
+    expect(res).toEqual({ ok: false, code: "SATURDAY_CLOSED", message: SATURDAY_MESSAGE });
+    expect(tx.insert).not.toHaveBeenCalled();
+    expect(mockSendOpeningPush).not.toHaveBeenCalled();
+  });
+
+  it("the admin planner refuses a Saturday session: no insert", async () => {
+    mockAuthorize.mockResolvedValue(ADMIN);
+    mockToday.mockReturnValueOnce(SATURDAY);
+    const res = await addTodaySession({ opensAt: "14:00", notify: true });
+    await flush();
+    expect(res).toEqual({ ok: false, code: "SATURDAY_CLOSED", message: SATURDAY_MESSAGE });
+    expect(tx.insert).not.toHaveBeenCalled();
+    expect(mockSendOpeningPush).not.toHaveBeenCalled();
   });
 });

@@ -20,6 +20,7 @@ import {
 } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { computeOrderTotalZar } from "@/server/orders/pricing";
+import { revenueDay } from "@/lib/format";
 
 // ─── Input schema ─────────────────────────────────────────────────────────────
 
@@ -119,6 +120,8 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     state: "ordered",
     totalZar: serverTotalZar,
     paymentMode: item.paymentMode,
+    // REQ-039: the server's receipt time decides the revenue day, never the client's.
+    revenueDay: revenueDay(),
   });
 
   await db.insert(orderItems).values(
