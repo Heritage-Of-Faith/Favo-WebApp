@@ -32,10 +32,11 @@ describe("daysToHaveClosed", () => {
     expect(daysToHaveClosed(T("2026-10-21T01:00:00Z"), NOW)).toEqual([]);
   });
 
-  it("looks back no further than the catch-up window", () => {
-    const days = daysToHaveClosed(T("2025-01-01T00:00:00Z"), NOW);
-    expect(days).toHaveLength(35);
+  it("is not capped by the catch-up window: an old unclosed day is still reported (REQ-067)", () => {
+    const days = daysToHaveClosed(T("2026-01-01T08:00:00Z"), NOW);
+    expect(days[0]).toBe("2026-01-01");
     expect(days.at(-1)).toBe("2026-10-20");
+    expect(days).toHaveLength(293);
   });
 });
 

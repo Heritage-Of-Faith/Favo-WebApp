@@ -8,19 +8,19 @@
 
 import { closedDays } from "@/server/crons/close-daily";
 import { sastDate, sastMiddayDaysBack } from "./schedule";
-import { CATCH_UP_WINDOW_MS } from "./scheduler";
 import { auditJobStore } from "./store";
 import { pushAdmins } from "./alert";
 
 /**
  * The completed revenue days the scheduler was responsible for closing, oldest
- * first: from the SAST day it first started up to yesterday, bounded by the
- * same window as startup catch-up. Days before the scheduler existed are not
- * its to close and are never reported.
+ * first: from the SAST day it first started up to yesterday. Deliberately not
+ * bounded by the catch-up window: REQ-067's push "repeats daily until
+ * resolved", so a day too old to be caught up is still reported every
+ * morning. Days before the scheduler existed are not its to close and are
+ * never reported.
  */
 export function daysToHaveClosed(firstStart: Date, now: Date): string[] {
-  const from = new Date(Math.max(firstStart.getTime(), now.getTime() - CATCH_UP_WINDOW_MS));
-  const firstDay = sastDate(from);
+  const firstDay = sastDate(firstStart);
   const days: string[] = [];
   for (let back = 1; ; back++) {
     const day = sastDate(sastMiddayDaysBack(now, back));

@@ -81,7 +81,8 @@ type Compiled = { job: JobDefinition; matches: CronMatcher };
 
 export class Scheduler {
   private readonly jobs: Compiled[];
-  private readonly running = new Set<string>();
+  /** The run in progress per job, so a firing never overlaps it. */
+  private readonly inFlight = new Map<string, Promise<void>>();
   private readonly now: () => Date;
   private readonly log: Pick<Console, "info" | "warn" | "error">;
   private lastTick: Date | null = null;
@@ -100,16 +101,24 @@ export class Scheduler {
 
   /**
    * Run one job for the firing at `firedAt`. Never throws: a failure is
-   * audited and alerted (rule 3). A job already running is skipped rather
-   * than overlapped.
+   * audited and alerted (rule 3). Never overlaps a run of the same job: a
+   * `skip` job's firing is skipped (its missed-run rule); a `catchUp` job's
+   * firing waits for the run in progress and then runs, so a 00:05 close that
+   * lands during a long startup catch-up is deferred, not lost (AT-193). The
+   * job is idempotent per period, so running after the catch-up is safe.
    */
   async runJob(job: JobDefinition, firedAt: Date, late = false): Promise<RunRecord | null> {
     const period = job.periodFor(firedAt);
-    if (this.running.has(job.name)) {
-      this.log.warn(`[scheduler] ${job.name}:${period} skipped — previous run still in progress`);
-      return null;
+    if (this.inFlight.has(job.name)) {
+      if (job.missedRun !== "catchUp") {
+        this.log.warn(`[scheduler] ${job.name}:${period} skipped — previous run still in progress`);
+        return null;
+      }
+      this.log.info(`[scheduler] ${job.name}:${period} deferred until the run in progress finishes`);
+      for (let p = this.inFlight.get(job.name); p; p = this.inFlight.get(job.name)) await p;
     }
-    this.running.add(job.name);
+    let release!: () => void;
+    this.inFlight.set(job.name, new Promise<void>((r) => { release = r; }));
     const startedAt = this.now();
     let record: RunRecord;
     try {
@@ -129,7 +138,8 @@ export class Scheduler {
         this.log.error(`[scheduler] failure alert for ${job.name}:${period} not sent:`, e),
       );
     } finally {
-      this.running.delete(job.name);
+      this.inFlight.delete(job.name);
+      release();
     }
     await this.deps.store.recordRun(record).catch((e) =>
       this.log.error(`[scheduler] audit row for ${job.name}:${period} not written:`, e),

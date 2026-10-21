@@ -133,6 +133,30 @@ describe("Scheduler.runJob — failure raises, never retries silently (rule 3)",
     await first;
     expect(j.run).toHaveBeenCalledTimes(1);
   });
+
+  it("a catchUp job's firing during a long run is deferred until it finishes, not lost (AT-193)", async () => {
+    // A startup catch-up is still closing an old day when 00:05 fires.
+    const { store, runs } = memoryStore();
+    let release!: () => void;
+    const order: string[] = [];
+    const j = job({
+      cron: "5 0 * * *",
+      missedRun: "catchUp",
+      run: vi.fn(async (t: Date) => {
+        order.push(t.toISOString());
+        if (order.length === 1) await new Promise<void>((r) => { release = r; });
+      }),
+    });
+    const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet });
+    const catchUp = s.runJob(j, T("2026-10-18T22:05:00Z"), true);
+    const scheduled = s.runJob(j, T("2026-10-19T22:05:00Z"));
+    await Promise.resolve();
+    expect(order).toEqual(["2026-10-18T22:05:00.000Z"]);
+    release();
+    await Promise.all([catchUp, scheduled]);
+    expect(order).toEqual(["2026-10-18T22:05:00.000Z", "2026-10-19T22:05:00.000Z"]);
+    expect(runs.map((r) => r.action)).toEqual(["job_catch_up", "job_run"]);
+  });
 });
 
 describe("Scheduler.catchUp — startup catch-up per §9.6.2", () => {
