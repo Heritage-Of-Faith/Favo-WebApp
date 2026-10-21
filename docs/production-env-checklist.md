@@ -27,8 +27,8 @@ Coolify resolves them at container start. Do not store values in this file.
 | Variable | Source | Owner | Required | Rotation cadence | Notes |
 |---|---|---|---|---|---|
 | `DATABASE_URL` | Supabase dashboard → Project settings → Database → Connection string (Transaction pooler port 6543) | Gian | ✅ | On team member departure | `postgres://...@aws-0-eu-west-1.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true` |
-| `DATABASE_URL_SESSION` | Supabase dashboard → Session pooler port 5432 | Gian | ✅ | On team member departure | Used by SSE queue (LISTEN/NOTIFY requires non-pooled connection) and by the release migration step (its advisory lock needs a session). Unset → the container exits before starting and `/api/healthz` reports `sse` failing (AT-170). |
-| `SKIP_MIGRATIONS` | `1` | — | ❌ emergency only | — | Skips the release migration step for one boot against a hand-repaired DB. Leave unset (AT-170). |
+| `DATABASE_URL_SESSION` | Supabase dashboard → Session pooler port 5432 | Gian | ✅ | On team member departure | Used by SSE queue (LISTEN/NOTIFY requires non-pooled connection) and by the release migration step (its advisory lock needs a session). Unset → the container exits before starting and `/api/healthz` reports `sse_config` failing (AT-170). `sse_config` only checks the variable is set, not that LISTEN connected. |
+| `SKIP_MIGRATIONS` | The image's commit SHA | — | ❌ emergency only | — | Skips the release migration step for an emergency boot against a hand-repaired DB. **One-shot:** it only takes effect when it equals the running image's SHA (`IMAGE_SHA`); any other value, including `1`, is ignored with a warning, so a leftover value expires on the next deploy. Not needed for a rollback (AT-170). |
 | `AUTH_SECRET` | `openssl rand -hex 32` | Gian | ✅ | Annually | Auth.js signing secret — rotate requires re-login for all staff |
 | `AUTH_URL` | Manual | Gian | ✅ | On domain change | Must be `https://favo.hofmi.net` (no trailing slash) |
 | `YOCO_SECRET_KEY` | Yoco dashboard → Developers → API Keys | Gian | ✅ | On Yoco key compromise | Server-side only. NEVER commit or log. |

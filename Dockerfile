@@ -50,6 +50,11 @@ COPY --chown=nextjs:nodejs --chmod=755 docker-entrypoint.sh ./docker-entrypoint.
 USER nextjs
 EXPOSE 3000
 
+# The commit this image was built from. SKIP_MIGRATIONS only takes effect when
+# it equals this value, so a skip is one-shot per image (AT-170).
+ARG IMAGE_SHA=""
+ENV IMAGE_SHA=$IMAGE_SHA
+
 # Migrate, then serve (docker-entrypoint.sh). To migrate one-shot ahead of a
 # container swap: docker run --rm <image> bun migrate.js
 ENTRYPOINT ["./docker-entrypoint.sh"]

@@ -27,33 +27,48 @@ export interface AppliedMigration {
   created_at: string | number;
 }
 
+export interface JournalDrift {
+  /** Mismatches that must stop the release. */
+  problems: string[];
+  /**
+   * Applied `created_at`s newer than every journal entry: the database is
+   * ahead of this image, which is what a rollback to an older image looks like.
+   * Safe — drizzle applies nothing then — so it is reported, not refused.
+   */
+  ahead: number[];
+}
+
 /**
- * Compare drizzle.__drizzle_migrations against drizzle/meta/_journal.json and
- * return a human-readable problem for every way the two have drifted. Empty
- * means it is safe to run the migrator.
+ * Compare drizzle.__drizzle_migrations against drizzle/meta/_journal.json.
  *
  * drizzle's migrator only applies files whose `when` is newer than the newest
  * applied row, matching nothing else. So:
- * - an applied row with a `created_at` no journal entry has (a renumbered or
- *   regenerated file, the 0027 incident behind
- *   scripts/repair-drizzle-journal-0027.ts) makes it re-run SQL that is
+ * - an applied row with a `created_at` no journal entry has, inside the
+ *   journal's range (a renumbered or regenerated file, the 0027 incident behind
+ *   scripts/repair-drizzle-journal-0027.ts), makes it re-run SQL that is
  *   already in the database;
  * - a journal entry older than the newest applied row but never applied (a
  *   file inserted out of order) is skipped silently, forever.
- * Both have to stop the release instead.
+ * Both are `problems` and stop the release. An unknown row newer than every
+ * journal entry is `ahead` instead: refusing it would restart-loop a rollback.
  */
 export function findJournalDrift(
   applied: readonly AppliedMigration[],
   journal: readonly JournalEntry[],
-): string[] {
+): JournalDrift {
   const problems: string[] = [];
+  const ahead: number[] = [];
   const journalWhens = new Set(journal.map((e) => e.when));
+  const newestJournal = journal.length > 0 ? Math.max(...journalWhens) : -Infinity;
   const appliedWhens = new Set(applied.map((r) => Number(r.created_at)));
 
-  for (const when of appliedWhens) {
-    if (!journalWhens.has(when)) {
+  for (const when of [...appliedWhens].sort((a, b) => a - b)) {
+    if (journalWhens.has(when)) continue;
+    if (when > newestJournal) {
+      ahead.push(when);
+    } else {
       problems.push(
-        `database has an applied migration (created_at ${when}) that drizzle/meta/_journal.json does not list`,
+        `database has an applied migration (created_at ${when}) inside the journal's range that drizzle/meta/_journal.json does not list`,
       );
     }
   }
@@ -69,5 +84,32 @@ export function findJournalDrift(
     }
   }
 
-  return problems;
+  return { problems, ahead };
+}
+
+export type SkipMigrations =
+  | { skip: false; warning?: string }
+  | { skip: true; warning: string };
+
+/**
+ * SKIP_MIGRATIONS is one-shot: it only takes effect when its value is the SHA
+ * of the image being started (IMAGE_SHA, baked in at build time). Left set in
+ * Infisical, it expires by itself on the next deploy — the new image's SHA no
+ * longer matches, so migrations run again and a warning says to remove it.
+ * A bare "1" (or any non-matching value) never skips.
+ */
+export function skipMigrationsDecision(env: Record<string, string | undefined>): SkipMigrations {
+  const requested = env.SKIP_MIGRATIONS?.trim();
+  if (!requested) return { skip: false };
+  const image = env.IMAGE_SHA?.trim();
+  if (image && requested === image) {
+    return {
+      skip: true,
+      warning: `SKIP_MIGRATIONS matches this image (${image}) — migrations NOT run. Schema may be behind this image. Remove it from Infisical once the database is repaired.`,
+    };
+  }
+  return {
+    skip: false,
+    warning: `SKIP_MIGRATIONS=${requested} ignored: it must equal this image's SHA (${image || "unknown"}). Migrations run as normal. Remove the stale value from Infisical.`,
+  };
 }

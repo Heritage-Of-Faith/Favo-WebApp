@@ -18,8 +18,13 @@
 // - Journal drift (the 0027 incident) aborts before any SQL runs.
 // - drizzle applies all pending files in one transaction: a failure rolls back
 //   and leaves the database as it was.
-// - SKIP_MIGRATIONS=1 skips the migrator (emergency boot against a hand-repaired
-//   database). The env check still runs.
+// - A database ahead of this image (applied migrations newer than every file
+//   here, i.e. a rollback to an older image) is allowed with a warning: drizzle
+//   applies nothing then.
+// - SKIP_MIGRATIONS=<this image's SHA> skips the migrator for an emergency boot
+//   against a hand-repaired database. One-shot: any other value is ignored, so
+//   a value left in Infisical expires on the next deploy. The env check still
+//   runs.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -29,6 +34,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import {
   findJournalDrift,
   missingDatabaseEnv,
+  skipMigrationsDecision,
   type AppliedMigration,
   type JournalEntry,
 } from "../src/server/deploy/startup-checks";
@@ -52,10 +58,9 @@ if (missing.length > 0) {
   );
 }
 
-if (process.env.SKIP_MIGRATIONS === "1") {
-  console.warn("[migrate] SKIP_MIGRATIONS=1 — migrations NOT run. Schema may be behind this image.");
-  process.exit(0);
-}
+const skip = skipMigrationsDecision(process.env);
+if (skip.warning) console.warn(`[migrate] WARNING: ${skip.warning}`);
+if (skip.skip) process.exit(0);
 
 const journal: JournalEntry[] = JSON.parse(
   readFileSync(join(MIGRATIONS_FOLDER, "meta", "_journal.json"), "utf8"),
@@ -93,14 +98,20 @@ try {
 
   const applied = await appliedMigrations();
   const drift = findJournalDrift(applied, journal);
-  if (drift.length > 0) {
+  if (drift.problems.length > 0) {
     fatal(
-      `drizzle journal drift, repair it before releasing (see scripts/repair-drizzle-journal-0027.ts):\n  - ${drift.join("\n  - ")}`,
+      `drizzle journal drift, repair it before releasing (see scripts/repair-drizzle-journal-0027.ts):\n  - ${drift.problems.join("\n  - ")}`,
+    );
+  }
+  if (drift.ahead.length > 0) {
+    console.warn(
+      `[migrate] WARNING: database is AHEAD of this image — ${drift.ahead.length} applied migration(s) newer than every file in this image (created_at ${drift.ahead.join(", ")}). Expected after a rollback; nothing will be applied. This image's code must tolerate the newer schema.`,
     );
   }
 
-  const pending = journal.length - applied.length;
-  console.log(`[migrate] ${applied.length} applied, ${pending} pending`);
+  const appliedWhens = new Set(applied.map((r) => Number(r.created_at)));
+  const pending = journal.filter((e) => !appliedWhens.has(e.when)).length;
+  console.log(`[migrate] ${applied.length} applied, ${pending} pending (image ${process.env.IMAGE_SHA || "unknown"})`);
   await migrate(drizzle(sql), { migrationsFolder: MIGRATIONS_FOLDER });
   console.log(`[migrate] done — schema at ${journal.at(-1)?.tag ?? "(empty journal)"}`);
 } catch (err) {

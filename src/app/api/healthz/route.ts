@@ -1,6 +1,6 @@
 // Extended healthz — AT-83 (G25)
 // Checks Postgres, Yoco reachability, Loki reachability, and (AT-170) that the
-// SSE session URL is configured.
+// SSE session URL is configured (configuration only — see checkSseConfig).
 // Returns 200 when all configured checks pass; 503 otherwise.
 // Result is cached for 5 seconds to limit DB/external load from monitors.
 
@@ -20,7 +20,7 @@ interface HealthBody {
     postgres: CheckResult;
     yoco: CheckResult;
     loki: CheckResult;
-    sse: CheckResult;
+    sse_config: CheckResult;
   };
   timestamp: string;
 }
@@ -88,7 +88,11 @@ async function checkLoki(): Promise<CheckResult> {
 // the POS queue goes stale, so the instance must not report healthy. The
 // entrypoint already refuses to start without it; this catches an instance
 // started some other way.
-function checkSse(): CheckResult {
+//
+// Configuration only: it proves DATABASE_URL_SESSION is set, NOT that LISTEN
+// connected — src/server/queue/broker.ts swallows LISTEN failures, so a wrong
+// URL still reports ok here. Hence the name.
+function checkSseConfig(): CheckResult {
   return missingDatabaseEnv(process.env).includes("DATABASE_URL_SESSION")
     ? { ok: false, reason: "DATABASE_URL_SESSION not set" }
     : { ok: true };
@@ -111,12 +115,12 @@ export async function GET() {
 
   // Yoco is advisory: a card-payments API blip must never restart-loop a
   // working café, so it's reported but does not gate the health verdict.
-  const sse = checkSse();
-  const allOk = postgres.ok && loki.ok && sse.ok;
+  const sse_config = checkSseConfig();
+  const allOk = postgres.ok && loki.ok && sse_config.ok;
   const body: HealthBody = {
     ok: allOk,
     service: "favo-webapp",
-    checks: { postgres, yoco, loki, sse },
+    checks: { postgres, yoco, loki, sse_config },
     timestamp: new Date().toISOString(),
   };
 
