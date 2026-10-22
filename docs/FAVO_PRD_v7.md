@@ -22,7 +22,7 @@ identifier_schemes:
   - "T1–T10 — worked sequences (§6.0) and, separately, T10 the reconciliation control (§12.2)"
   - "D1–D10 — UI requirements (§17.2)"
   - "R1–R25 — risk register (§14)"
-  - "DEC-01…DEC-17 — dated owner decisions (§16.1)"
+  - "DEC-01…DEC-18 — dated owner decisions (§16.1)"
   - "DEF-A…DEF-G — defects found in v6.0 and fixed in v7.0 (§00)"
   - "COL-1…COL-31 — collisions between amendment pack A and v6.0, each resolved in place"
   - "OPEN-08, FACT-1, FACT-2, FEE-1 — what is still open (§16.2)"
@@ -379,7 +379,7 @@ Ordered by priority: ease first, cost second, platform last. Three of the rows b
 | STALE_STATE | The row moved under you (`SELECT … FOR UPDATE` loser) | "This order just changed — reloading", and the queue refreshes |
 | NO_SESSION | No `opening_sessions` row for today | The opening-window step, blocking |
 | MODE_FORBIDDEN | Action not permitted in the current mode | A named reason — e.g. "Saturday needs an event" |
-| ENTITLEMENT_USED | `UNIQUE(customer_id, day)` violated | "Free cup already claimed today" — the order continues as paid |
+| ENTITLEMENT_USED | `UNIQUE(customer_id, day)` violated | "Free cup already claimed today" — **the second drink is refused** (DEC-18). A weekday has no payment step to continue into (L19) |
 | NOT_ELIGIBLE | `applyFreeCoffee` on a church member, a FAVO-staff id, or an ineligible category | "Not eligible for the free cup" — the order continues as normal |
 | STOCK_EXHAUSTED | No open container and none openable, **at ring-up** | "Out of beans — tell the admin". The order is **blocked before payment** (S8) |
 | STOCK_EXHAUSTED_AT_MAKE | Deduction failed at `in_progress` — **the order is already paid** (S8b) | "Out of beans — this order is paid and cannot be made. Get an admin." Admin pushed immediately |
@@ -469,7 +469,7 @@ Ordered by priority: ease first, cost second, platform last. Three of the rows b
 | 1 | POS opening window | Confirm the opening time, then the mode | openSession(opensAt) → setDayMode | opening_sessions | — | `NO_SESSION` blocks all ordering → the opening step, unskippable |
 | 2 | Order entry | Tap the customer on the recents grid | searchCustomer | — | — | Offline → `OFFLINE_UNAVAILABLE`; the target falls back to `none` |
 | 3 | Order entry | Tap the item | — | — | — | `STOCK_EXHAUSTED` → blocked here, before any money (S8) |
-| 4 | Order entry | *none — automatic* | entitlement applied per L03 | — | — | `ENTITLEMENT_USED` → continues as a paid order, barista told once |
+| 4 | Order entry | *none — automatic* | entitlement applied per L03 | — | — | `ENTITLEMENT_USED` → **the second drink is refused**, barista told once (DEC-18) |
 | 5 | Order entry | Tap **Place** | createOrder (payment_mode='free') | orders · order_items · staff_entitlement_log · audit_log | **none** — nothing is ever sent to the machine | `VALIDATION` → field message |
 | 6 | Queue | Tap the order | transitionOrder('in_progress') | stock_movements · audit_log | — | `STALE_STATE` → queue reloads (S9) |
 | 7 | Queue | Tap **Done** | transitionOrder('ready') | orders.state · audit_log | Web Push | Push fails → R10: the queue board is the primary signal; the customer asks at the counter |
@@ -2841,6 +2841,8 @@ L01–L34 carry forward from v5.2. **L35–L40 are new in v6.0** and carry the d
 
 **"Weekday" requires both `mode='weekday'` and the date falling Mon–Fri in SAST** — a double condition that can never disagree, because a Saturday session cannot be opened without an event. The redundancy is a guard, not an oversight. **Baristas are eligible via their own `customers` row** (DEC-11). Ineligible-category attempts are rejected at the application layer **and audited** (§10.3.2).
 
+**A second weekday drink is refused, not charged (DEC-18, 22 Oct 2026).** A weekday order has no payment step (L19), so `ENTITLEMENT_USED` ends the attempt; it never turns into a paid order. **The one exception is team leaders and pastors**, who may have extra drinks, also free, logged separately from the entitlement — *the mechanism is Mia's proposal and is not yet specified.* Every free weekday order keeps the menu price on each line, and `discount_zar` zeroes each line, so `orders.total_zar` is R0.
+
 ⛔ **Not correctly implemented today, and the gap is material.** `staff_entitlement_log.staff_id` is a foreign key to the **staff** table, so the entitlement can only be granted to one of the ~3 FAVO staff. **The ~63 office staff the benefit exists for cannot receive it at all.** Fix in §13.2; risk R15; migration in §10.3.1.
 
 **L04** — **Operating hours are display-only.** The system never rejects an order based on time of day.
@@ -3290,6 +3292,7 @@ Dated owner decisions, with the reasoning that produced them. **Where a decision
 | **DEC-15 · A top-up in the books** [taken, with one read outstanding] | **Money owed in coffee, not income, until the coffee is drawn.** Owner decision, 14 Sep 2026. *Marked for a read by HOFMI's bookkeeper before the fund goes live — **it gates that and nothing else***, and it is the only treatment under which "how much is left in my fund" is a real figure | §6.10.4 · §7.0.2 |
 | **The group tab** [new in v7.0] | **Recommended against, and adopted as a non-goal.** Nikao, 14 Sep 2026. Settling many orders on one card tap needs a payment pointing at more than one order — **the one schema change FAVO cannot afford**. *A group fund with linked names does the same job with the cash moving one day earlier* | §8.11 · §6.10.2 |
 | **DEC-17 · Tips** [amended 22 Oct 2026] | **No tips, and no tip column.** Owner decision, Nikao, 22 Oct 2026, *reversing v7.0's `payments.tip_zar` guard column.* Tipping was already a non-goal with the machine's prompt suppressed; the column existed only so a stray tip would reconcile. It is dropped: `net_settled` loses its tip term, FIXTURE-B carries no tip, and **a tip that slips through is a T10 variance for an Admin, never booked revenue** | §7.0.2 · §10.3.3 · §11.2 · §15.1 · REQ-118 · REQ-120 |
+| **DEC-18 · Weekday drinks** [amended 22 Oct 2026] | **No payment step on a weekday, and no second drink for office staff.** Owner decision, Nikao, 22 Oct 2026. L19 stands: no weekday order ever has a payment step. **`ENTITLEMENT_USED` is therefore a refusal**, reversing v7.0's "continues as paid" (S1 codes, T-sequence step 4, REQ-025). **Exception:** team leaders and pastors may have extra drinks, also free, logged separately — *mechanism to be proposed by Mia.* Free weekday orders keep the menu price, and `discount_zar` zeroes each line (total R0) | L03 · L19 · §6.0.1 · REQ-025 |
 | Timeline | **No fixed date.** Gate zero first, then priority order | §13 |
 
 ### 16.2 Open
@@ -3584,6 +3587,12 @@ mm = css_px × 25.4 / device_logical_ppi
 
 ## Appendix B — What changed from v6.0, what changed from v5.2, and what did not
 
+### B.00 — Dated amendments to v7.0
+
+| Date | Change |
+| --- | --- |
+| 22 Oct 2026 | **DEC-17:** no tips and no `payments.tip_zar` column; `net_settled`, FIXTURE-B, REQ-118 and REQ-120 lose their tip terms, and a stray tip is a T10 variance. **DEC-18:** a second weekday drink for office staff is refused rather than charged (`ENTITLEMENT_USED`, REQ-025); team leaders and pastors are the logged exception; free weekday lines are zeroed by `discount_zar` (§16.1) |
+
 ### B.0 — v6.0 → v7.0: amendment pack A, merged [new in v7.0]
 
 > **Where the pack came from, and why it is a version rather than a patch**
@@ -3699,7 +3708,7 @@ mm = css_px × 25.4 / device_logical_ppi
 | REQ-022 | S8b | **Given** a paid order · **When** the `in_progress` deduction fails · **Then** `STOCK_EXHAUSTED_AT_MAKE` is returned with the resolution path, **the money is not reversed** (L02), and **the Admin is pushed immediately** |
 | REQ-023 | S9 | **Given** an order in any state · **When** a backwards or repeated transition is attempted · **Then** it is rejected with `STALE_STATE` and the audit records the rejection |
 | REQ-024 | T1, L03 | **Given** weekday mode and a matched `office_staff` customer with no entitlement today · **When** an eligible item is selected · **Then** the entitlement applies **without a tap**, discounting **one unit** — and the barista taps only to **decline** it |
-| REQ-025 | L03, §05 | **Given** a customer with an entitlement row today · **When** a second is attempted · **Then** `ENTITLEMENT_USED` is returned, **the order continues as paid**, and **the refusal is audited with `action='reject'`** |
+| REQ-025 | L03, §05 | **Given** a customer with an entitlement row today · **When** a second is attempted · **Then** `ENTITLEMENT_USED` is returned, **the second drink is refused** (DEC-18), and **the refusal is audited with `action='reject'`** |
 | REQ-026 | T2, P1 | **Given** a Sunday sale · **When** tender begins · **Then** `orders` → `order_items` → `payments` (`pending`, carrying `client_reference`) are **all written before anything is sent to the machine.** Never the reverse order |
 | REQ-027 | P3, §11.2 | **Given** attempt *n* on an order · **When** `beginTender` runs · **Then** `client_reference = client_uuid:n`, **NOT NULL and UNIQUE**, written **before** the send — and **never reused on a retry** |
 | REQ-028 | P4, §11.2 | **Given** an open tender attempt · **When** anything attempts to change the order's total — a comp, a free cup, a new line, a quantity step, a cancel · **Then** it is refused with `TENDER_IN_PROGRESS` |
