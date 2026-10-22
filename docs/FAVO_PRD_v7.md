@@ -1779,7 +1779,7 @@ DAY  (per revenue day, midnight-to-midnight SAST, L07)
   net_settled       = card_gross_zar + topups_settled − processing_fee
                       -- DEC-17: NO TIP TERM. FAVO takes no tips and stores none. A tip the machine
                       -- lets through anyway makes Yoco's payout exceed this figure by the tip, and
-                      -- T10 flags the difference as a variance (§6.8.3, REQ-120). It is never booked.
+                      -- T10 flags the difference as a variance (§6.8.4, REQ-120). It is never booked.
                       -- DEF-D, and it cuts BOTH ways. Was gross_zar, which over-claimed: a fund
                       -- DRAW never reaches Yoco. But a fund TOP-UP does — Yoco settles it into the
                       -- bank like any other card payment — so a figure defined on card_gross_zar
@@ -3289,7 +3289,7 @@ Dated owner decisions, with the reasoning that produced them. **Where a decision
 | **The top-up fee** [new in v7.0] | **The fund is credited the full amount; Yoco's fee flows to `processing_fee`** like any other card sale. Owner decision, 14 Sep 2026. *R13.25 on a R500 gift — about one cappuccino's margin — and nobody has to explain to a donor why R500 bought R486.75 of coffee* | §6.10.4 · §7.0.2 |
 | **DEC-15 · A top-up in the books** [taken, with one read outstanding] | **Money owed in coffee, not income, until the coffee is drawn.** Owner decision, 14 Sep 2026. *Marked for a read by HOFMI's bookkeeper before the fund goes live — **it gates that and nothing else***, and it is the only treatment under which "how much is left in my fund" is a real figure | §6.10.4 · §7.0.2 |
 | **The group tab** [new in v7.0] | **Recommended against, and adopted as a non-goal.** Nikao, 14 Sep 2026. Settling many orders on one card tap needs a payment pointing at more than one order — **the one schema change FAVO cannot afford**. *A group fund with linked names does the same job with the cash moving one day earlier* | §8.11 · §6.10.2 |
-| **DEC-17 · Tips** [amended 22 Oct 2026] | **No tips, and no tip column.** Owner decision, Nikao, 22 Oct 2026, *reversing v7.0's `payments.tip_zar` guard column.* Tipping was already a non-goal with the machine's prompt suppressed; the column existed only so a stray tip would reconcile. It is dropped: `net_settled` loses its tip term, FIXTURE-B carries no tip, and **a tip that slips through is a T10 variance for an Admin, never booked revenue** | §7.0.2 · §09 · §15.1 · REQ-118 · REQ-120 |
+| **DEC-17 · Tips** [amended 22 Oct 2026] | **No tips, and no tip column.** Owner decision, Nikao, 22 Oct 2026, *reversing v7.0's `payments.tip_zar` guard column.* Tipping was already a non-goal with the machine's prompt suppressed; the column existed only so a stray tip would reconcile. It is dropped: `net_settled` loses its tip term, FIXTURE-B carries no tip, and **a tip that slips through is a T10 variance for an Admin, never booked revenue** | §7.0.2 · §10.3.3 · §11.2 · §15.1 · REQ-118 · REQ-120 |
 | Timeline | **No fixed date.** Gate zero first, then priority order | §13 |
 
 ### 16.2 Open
