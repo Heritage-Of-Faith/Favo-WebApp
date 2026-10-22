@@ -11,6 +11,7 @@
 
 import { eq, sql, inArray } from "drizzle-orm";
 import {
+  orders,
   orderItems,
   menuItems,
   menuCustomisations,
@@ -27,6 +28,7 @@ import {
   willDepleteLot,
   DeductionError,
 } from "@/server/inventory/lot-picker";
+import { isCupOrLid, dayConsumesCupAndLid } from "@/server/orders/cup-lid";
 
 // Re-export so callers only need one import
 export { DeductionError };
@@ -58,6 +60,11 @@ export { DeductionError };
  *     selections deduct 3×addsQuantity, not 1×).
  * A customisation with neither field (e.g. Decaf) has no deduction effect.
  *
+ * AT-187 · REQ-125 · L24: cups and lids (kind 'packaging') are skipped when the
+ * order's revenue day is in weekday mode — own mugs, no cup/lid cost. Sunday
+ * and event days deduct them as before (see cup-lid.ts). The mode is read only
+ * when a cup or lid is actually met.
+ *
  * Throws `DeductionError` (caught by `transitionOrder`) when:
  *   - An order item's menu item has no recipe (skipped — food items allowed)
  *   - No active lot exists for an ingredient        → code NO_ACTIVE_LOT
@@ -82,6 +89,21 @@ export async function deductForOrder(
     .where(eq(orderItems.orderId, orderId));
 
   if (lines.length === 0) return; // Nothing to deduct (should not happen in practice)
+
+  // AT-187: resolved once, lazily, from the order's revenue_day sessions.
+  let cupLid: boolean | undefined;
+  const consumesCupLid = async (): Promise<boolean> => {
+    if (cupLid === undefined) {
+      const [order] = await tx
+        .select({ revenueDay: orders.revenueDay })
+        .from(orders)
+        .where(eq(orders.id, orderId));
+      // Unreachable: transitionOrder holds this order's row lock.
+      if (!order) throw new Error(`deductForOrder: order ${orderId} not found`);
+      cupLid = await dayConsumesCupAndLid(order.revenueDay, tx);
+    }
+    return cupLid;
+  };
 
   for (const line of lines) {
     if (!line.recipeId) {
@@ -154,6 +176,10 @@ export async function deductForOrder(
         ? effectItemById.get(substituteId)?.unit
         : ing.itemUnit;
 
+      // AT-187 / L24: a weekday order writes no cup or lid movement. A
+      // substitute shares the base ingredient's kind, so ing.itemKind decides.
+      if (isCupOrLid(ing.itemKind) && !(await consumesCupLid())) continue;
+
       if (!effectiveUnit) {
         // Should be unreachable (every id in substituteByKind was resolved
         // from effectItemById above) — fail loudly rather than silently
@@ -200,6 +226,7 @@ export async function deductForOrder(
       if (!full?.addsInventoryItemId) continue;
       const addItem = effectItemById.get(full.addsInventoryItemId);
       if (!addItem) continue;
+      if (isCupOrLid(addItem.kind) && !(await consumesCupLid())) continue; // AT-187 / L24
       const addQty = (full.addsQuantity ?? 1) * line.orderQty;
 
       if (addItem.unit === "cup") {
