@@ -24,7 +24,7 @@ export type Props = {
 
 const COPY: Record<Mode, {
   heading: string;
-  sub: string;
+  sub?: string;
   cta: string;
   submitting: string;
   altText: string;
@@ -42,7 +42,6 @@ const COPY: Record<Mode, {
   },
   signup: {
     heading: "Join FAVO",
-    sub: "Create your rewards account. Earn points on every cup.",
     cta: "Create account",
     submitting: "Creating account…",
     altText: "Already have an account?",
@@ -219,7 +218,9 @@ export default function AuthForm({ mode }: Props) {
         >
           {copy.heading}
         </h1>
-        <p className="favo-body mt-3" style={{ color: "var(--color-porcelain)", opacity: 0.85 }}>{copy.sub}</p>
+        {copy.sub && (
+          <p className="favo-body mt-3" style={{ color: "var(--color-porcelain)", opacity: 0.85 }}>{copy.sub}</p>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4" noValidate>
