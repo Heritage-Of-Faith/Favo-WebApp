@@ -57,9 +57,9 @@ export async function registerCustomer(input: {
   email: string;
   password: string;
   phone?: string;
-  /** AT-211 / PRD §10.3: set at self-registration. Absent → the column default, church_member. */
   surname?: string;
-  status?: CustomerStatus;
+  /** AT-211 / PRD §10.3: set at self-registration, and required — never defaulted. */
+  status: CustomerStatus;
 }): Promise<ActionResult<{ customerId: string; name: string; verificationSent: boolean }>> {
   const ip = await clientIp();
   const rl = checkRateLimit(`register:${ip}`, AUTH_LIMIT, AUTH_WINDOW_MS);
@@ -179,7 +179,7 @@ export async function registerCustomer(input: {
     action: "customer.register",
     entityKind: "customers",
     entityId: customer.id,
-    after: { email, surname: surname ?? null, status: status ?? null },
+    after: { email, surname: surname ?? null, status },
   });
 
   // data.session is null when Supabase email confirmation is enabled

@@ -33,7 +33,6 @@ export const surnameSchema = z.preprocess(
 
 export const customerIdentitySchema = z.object({
   surname: surnameSchema,
-  status: z
-    .enum(CUSTOMER_STATUSES, { message: "Please choose office staff or church member." })
-    .optional(),
+  // Required: a missing status is refused, never silently defaulted to church_member.
+  status: z.enum(CUSTOMER_STATUSES, { message: "Please choose office staff or church member." }),
 });

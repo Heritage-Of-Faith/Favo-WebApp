@@ -85,16 +85,16 @@ export default function AuthForm({ mode }: Props) {
       setError("Passwords don't match.");
       return;
     }
-    if (mode === "signup" && !status) {
-      setError("Please choose office staff or church member.");
-      return;
-    }
-
     setSubmitting(true);
     try {
       if (mode === "signup") {
+        // Required (AT-211, PRD §10.3); the server refuses a missing status with the same message.
+        if (!status) {
+          setError("Please choose office staff or church member.");
+          return;
+        }
         const res = await registerCustomer({
-          name, surname, status: status ?? undefined, email, phone, password,
+          name, surname, status, email, phone, password,
         });
         if (!res.ok) {
           setError(res.message);
