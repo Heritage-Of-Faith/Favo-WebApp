@@ -78,8 +78,6 @@ jobs:
       # exit 0 and leave a correct schema, but nothing proves they actually
       # contended for the advisory lock (one may finish before the other starts).
       - name: Migrate test DB (release migrator, concurrent + re-run)
-        env:
-          DATABASE_URL_SESSION: postgresql://favo:favo@localhost:5432/favo_test
         run: |
           bun scripts/migrate.ts & a=$!
           bun scripts/migrate.ts & b=$!
