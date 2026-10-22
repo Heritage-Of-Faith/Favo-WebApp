@@ -22,7 +22,7 @@ export type RevenueDayRange = {
 /** The query, exposed so tests can run its exact SQL against real Postgres. */
 export function walkInCupsQuery(client: Pick<DB, "select">, range: RevenueDayRange) {
   return client
-    .select({ cups: sql<number>`coalesce(sum(${walkIns.quantity}), 0)::int` })
+    .select({ cups: sql<number>`coalesce(sum(${walkIns.quantity}), 0)::int`.as("cups") })
     .from(walkIns)
     .innerJoin(orders, eq(walkIns.orderId, orders.id))
     .where(and(gte(orders.revenueDay, range.fromDay), lte(orders.revenueDay, range.toDay)));
