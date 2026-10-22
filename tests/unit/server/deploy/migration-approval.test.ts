@@ -36,6 +36,34 @@ describe("riskyReasons", () => {
   });
 });
 
+describe("riskyReasons: foreign-key targets (owner decision, Nikao, 22 Oct 2026)", () => {
+  it("does not flag 0034 (walk_ins): a new table whose only link to orders is an FK", () => {
+    // Verbatim from PR #265's drizzle/0034_at209_walk_ins.sql.
+    const sql = readFileSync("tests/fixtures/migrations/0034_at209_walk_ins.fk-only.sql", "utf8");
+    expect(riskyReasons(sql)).toEqual([]);
+    expect(unmarkedRiskyMigrations([m(34, "0034_at209_walk_ins", sql)])).toEqual([]);
+  });
+
+  it("does not flag an inline REFERENCES to payments or order_items, qualified or not", () => {
+    expect(riskyReasons(`CREATE TABLE "x" ("pid" text REFERENCES payments(id));`)).toEqual([]);
+    expect(riskyReasons(`CREATE TABLE "x" ("oi" text REFERENCES "public"."order_items"("id"));`)).toEqual([]);
+  });
+
+  it("still flags anything that alters, drops, updates or deletes those tables", () => {
+    expect(riskyReasons(`ALTER TABLE "orders" ADD COLUMN "note" text;`)).toEqual(["touches orders"]);
+    expect(riskyReasons(`ALTER TABLE "orders" ADD CONSTRAINT "c" FOREIGN KEY ("x") REFERENCES "public"."staff"("id");`)).toEqual(["touches orders"]);
+    expect(riskyReasons(`DROP TABLE "payments";`)).toEqual(["DROP", "touches payments"]);
+    expect(riskyReasons(`UPDATE "order_items" SET "quantity" = 1;`)).toEqual(["data rewrite (UPDATE … SET)", "touches order_items"]);
+    expect(riskyReasons(`DELETE FROM "public"."orders" WHERE false;`)).toEqual(["data delete (DELETE)", "touches orders"]);
+  });
+
+  it("still flags an FK-adding migration that also touches orders elsewhere", () => {
+    const sql = `ALTER TABLE "walk_ins" ADD CONSTRAINT "fk" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id");
+ALTER TABLE "orders" ADD COLUMN "walk_in" boolean;`;
+    expect(riskyReasons(sql)).toEqual(["touches orders"]);
+  });
+});
+
 describe("hasApprovalMarker", () => {
   it("finds the marker in the leading comment block", () => {
     expect(hasApprovalMarker(MARKED)).toBe(true);

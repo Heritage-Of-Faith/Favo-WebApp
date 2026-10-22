@@ -42,9 +42,24 @@ function stripComments(sql: string): string {
   return sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
 }
 
-/** Why a migration's SQL counts as risky; empty if it does not. Comments are ignored. */
+/**
+ * Drop the target of every `REFERENCES <table>` (owner decision, Nikao,
+ * 22 Oct 2026). A foreign key pointing AT orders/payments/order_items — in a
+ * CREATE TABLE or an `ALTER TABLE <other> ADD CONSTRAINT … FOREIGN KEY` — does
+ * not touch those tables, so it must not count as "touches orders" (it made
+ * 0034's walk_ins table look risky). Anything that alters, drops, updates or
+ * deletes them still names them outside a REFERENCES clause and is still caught.
+ */
+function stripForeignKeyTargets(sql: string): string {
+  return sql.replace(/\bREFERENCES\s+(?:"?\w+"?\s*\.\s*)?"?\w+"?/gi, "REFERENCES <fk-target>");
+}
+
+/**
+ * Why a migration's SQL counts as risky; empty if it does not. Comments and
+ * foreign-key targets are ignored.
+ */
 export function riskyReasons(sql: string): string[] {
-  const body = stripComments(sql);
+  const body = stripForeignKeyTargets(stripComments(sql));
   return RISKY_PATTERNS.filter((p) => p.re.test(body)).map((p) => p.reason);
 }
 
