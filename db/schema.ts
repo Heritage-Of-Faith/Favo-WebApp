@@ -330,6 +330,28 @@ export const staffEntitlementLog = pgTable(
   (t) => [unique().on(t.customerId, t.day)]
 );
 
+// ─── Walk-ins ─────────────────────────────────────────────────────────────────
+
+// AT-209 / PRD §6.5, §10.2, L20, REQ-058: a weekday non-staff visitor's cup,
+// logged for consumption reporting. NO IDENTITY OF ANY KIND — no customer
+// reference, name, email or phone column, ever. One row per order LINE, so
+// §7.0.2's walk_in_cups = Σ quantity counts walk-in cups, not the order's
+// (REQ-116). Never charged, never counted against staff_entitlement_log.
+export const walkIns = pgTable(
+  "walk_ins",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    orderId: text("order_id").notNull().references(() => orders.id),
+    menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
+    quantity: integer("quantity").default(1).notNull(),
+    category: menuCategory("category").notNull(),
+    loggedByStaffId: text("logged_by_staff_id").notNull().references(() => staff.id),
+    at: now(),
+  },
+  () => [check("walk_ins_quantity_positive", sql`quantity >= 1`)]
+);
+
 // ─── Waste + Purchases ────────────────────────────────────────────────────────
 
 export const wasteLog = pgTable("waste_log", {
