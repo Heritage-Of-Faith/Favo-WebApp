@@ -13,6 +13,8 @@ import {
   requestPasswordReset,
   resendVerificationEmail,
 } from "@/server/actions/customer-auth";
+import type { CustomerStatus } from "@/lib/customer/identity";
+import CustomerStatusPicker from "@/components/customer/CustomerStatusPicker";
 
 type Mode = "signin" | "signup";
 
@@ -57,6 +59,9 @@ export default function AuthForm({ mode }: Props) {
   const router = useRouter();
 
   const [name, setName] = useState("");
+  const [surname, setSurname] = useState("");
+  // AT-211 / PRD §10.3: status is set at self-registration — no preselection.
+  const [status, setStatus] = useState<CustomerStatus | null>(null);
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -81,11 +86,17 @@ export default function AuthForm({ mode }: Props) {
       setError("Passwords don't match.");
       return;
     }
+    if (mode === "signup" && !status) {
+      setError("Please choose office staff or church member.");
+      return;
+    }
 
     setSubmitting(true);
     try {
       if (mode === "signup") {
-        const res = await registerCustomer({ name, email, phone, password });
+        const res = await registerCustomer({
+          name, surname, status: status ?? undefined, email, phone, password,
+        });
         if (!res.ok) {
           setError(res.message);
           return;
@@ -216,20 +227,44 @@ export default function AuthForm({ mode }: Props) {
         {mode === "signup" && (
           <div className="flex flex-col gap-1.5">
             <label htmlFor="name" className="favo-label text-cool-steel">
-              Full name
+              First name
             </label>
             <input
               id="name"
               name="name"
               type="text"
-              autoComplete="name"
+              autoComplete="given-name"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
               className={inputClass}
-              placeholder="Thandeka Mokoena"
+              placeholder="Thandeka"
             />
           </div>
+        )}
+
+        {/* Surname — signup only (AT-211, REQ-142: tells two Thandekas apart at the POS) */}
+        {mode === "signup" && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="surname" className="favo-label text-cool-steel">
+              Surname
+            </label>
+            <input
+              id="surname"
+              name="surname"
+              type="text"
+              autoComplete="family-name"
+              value={surname}
+              onChange={(e) => setSurname(e.target.value)}
+              className={inputClass}
+              placeholder="Mokoena"
+            />
+          </div>
+        )}
+
+        {/* Office staff or church member — signup only (AT-211, PRD §10.3) */}
+        {mode === "signup" && (
+          <CustomerStatusPicker value={status} onChange={setStatus} />
         )}
 
         {/* Phone — signup only. Captured so baristas can find the customer at

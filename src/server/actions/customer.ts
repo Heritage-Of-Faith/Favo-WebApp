@@ -19,6 +19,7 @@ import { getCustomerSession } from "@/server/auth/customer-session";
 import { withCustomerScope } from "@/lib/db-rls";
 import { writeAudit } from "@/server/audit";
 import type { ActionResult } from "@/lib/types";
+import { surnameSchema } from "@/lib/customer/identity";
 import type {
   CustomerSummary,
   CustomerOrder,
@@ -154,14 +155,20 @@ export async function listCustomerOrders(limit = 10): Promise<ActionResult<Custo
 // ─── getCustomerProfile ───────────────────────────────────────────────────────
 
 export async function getCustomerProfile(): Promise<
-  ActionResult<{ id: string; name: string; email: string | null; phone: string | null }>
+  ActionResult<{
+    id: string; name: string; email: string | null; phone: string | null;
+    surname: string | null;
+  }>
 > {
   const session = await requireCustomer();
   if (!session.ok) return session;
 
   const [customer] = await withCustomerScope(session.customerId, (tx) =>
     tx
-      .select({ id: customers.id, name: customers.name, email: customers.email, phone: customers.phone })
+      .select({
+        id: customers.id, name: customers.name, email: customers.email, phone: customers.phone,
+        surname: customers.surname,
+      })
       .from(customers)
       .where(eq(customers.id, session.customerId))
   );
@@ -170,14 +177,24 @@ export async function getCustomerProfile(): Promise<
     return { ok: false, code: "NOT_FOUND", message: "Customer account not found." };
   }
 
-  return { ok: true, data: { id: customer.id, name: customer.name, email: customer.email, phone: customer.phone } };
+  return {
+    ok: true,
+    data: {
+      id: customer.id, name: customer.name, email: customer.email, phone: customer.phone,
+      surname: customer.surname ?? null,
+    },
+  };
 }
 
 // ─── updateCustomerProfile ────────────────────────────────────────────────────
 
+// AT-211: surname uses the same schema registerCustomer uses (§6.4). Status is
+// deliberately absent — §10.3 sets it at self-registration only, and zod strips
+// an unknown `status` key rather than writing it.
 const profileSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   phone: z.string().min(7).max(20).optional(),
+  surname: surnameSchema,
 });
 
 export async function updateCustomerProfile(
@@ -192,13 +209,15 @@ export async function updateCustomerProfile(
   }
   const data = parsed.data;
 
-  if (!data.name && !data.phone) {
+  if (!data.name && !data.phone && data.surname === undefined) {
     return { ok: false, code: "VALIDATION", message: "Provide at least one field to update." };
   }
 
-  const patch: Partial<{ name: string; phone: string }> = {};
+  const patch: Partial<{ name: string; phone: string; surname: string | null }> = {};
   if (data.name) patch.name = data.name;
   if (data.phone) patch.phone = data.phone;
+  // A blank surname arrives as null and clears it.
+  if (data.surname !== undefined) patch.surname = data.surname;
 
   const [updated] = await db
     .update(customers)
