@@ -29,6 +29,7 @@ import {
   DeductionError,
 } from "@/server/inventory/lot-picker";
 import { isCupOrLid, dayConsumesCupAndLid } from "@/server/orders/cup-lid";
+import { costShotFactor, type Consumption, type LotDraw } from "@/server/orders/order-cogs";
 
 // Re-export so callers only need one import
 export { DeductionError };
@@ -69,12 +70,16 @@ export { DeductionError };
  *   - An order item's menu item has no recipe (skipped — food items allowed)
  *   - No active lot exists for an ingredient        → code NO_ACTIVE_LOT
  *   - Lot/container has insufficient stock          → code OUT_OF_STOCK
+ *
+ * AT-188: returns what was consumed — per ingredient, the §7.0.2 cost units
+ * and the lots actually drawn — for writeOrderCogs (order-cogs.ts) to freeze
+ * the order's COGS in this same transaction. The stock taken is unchanged.
  */
 export async function deductForOrder(
   orderId: string,
   tx: DB,
   staffId: string
-): Promise<void> {
+): Promise<Consumption[]> {
   // 1. Load order items joined to menu_items for the recipe_id
   const lines = await tx
     .select({
@@ -83,12 +88,14 @@ export async function deductForOrder(
       orderQty: orderItems.quantity,
       recipeId: menuItems.recipeId,
       modifications: orderItems.modifications,
+      shots: orderItems.shots,
     })
     .from(orderItems)
     .innerJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
     .where(eq(orderItems.orderId, orderId));
 
-  if (lines.length === 0) return; // Nothing to deduct (should not happen in practice)
+  const consumed: Consumption[] = [];
+  if (lines.length === 0) return consumed; // Nothing to deduct (should not happen in practice)
 
   // AT-187: resolved once, lazily, from the order's revenue_day sessions.
   let cupLid: boolean | undefined;
@@ -190,12 +197,18 @@ export async function deductForOrder(
         );
       }
 
+      // AT-188: §7.0.2 cost units = quantity × recipe_qty (one cup per drink
+      // for container items) × shot_factor. A substitute shares the base
+      // ingredient's kind, so ing.itemKind decides the shot factor.
+      const costFactor = costShotFactor(ing.itemKind, line.shots);
+
       if (effectiveUnit === "cup") {
         // ── Container model (milk & beans): one cup per drink ──────────────────
-        await deductCups(effectiveInventoryItemId, line.orderQty, orderId, line.menuItemId, staffId, tx);
+        const draws = await deductCups(effectiveInventoryItemId, line.orderQty, orderId, line.menuItemId, staffId, tx);
+        consumed.push({ inventoryItemId: effectiveInventoryItemId, costUnits: line.orderQty * costFactor, draws });
       } else if (!substituteId) {
         // ── Quantity model (cups, lids, powder), no substitution: unchanged ────
-        await deductQuantity(
+        const draws = await deductQuantity(
           effectiveInventoryItemId,
           ing.quantity * line.orderQty,
           effectiveUnit,
@@ -204,6 +217,11 @@ export async function deductForOrder(
           staffId,
           tx
         );
+        consumed.push({
+          inventoryItemId: effectiveInventoryItemId,
+          costUnits: ing.quantity * line.orderQty * costFactor,
+          draws,
+        });
       } else {
         // A cup-tracked base ingredient (recipe quantity is meaningless for
         // cups — see container-model note above) substituted with a
@@ -229,11 +247,11 @@ export async function deductForOrder(
       if (isCupOrLid(addItem.kind) && !(await consumesCupLid())) continue; // AT-187 / L24
       const addQty = (full.addsQuantity ?? 1) * line.orderQty;
 
-      if (addItem.unit === "cup") {
-        await deductCups(full.addsInventoryItemId, addQty, orderId, line.menuItemId, staffId, tx);
-      } else {
-        await deductQuantity(full.addsInventoryItemId, addQty, addItem.unit, orderId, line.menuItemId, staffId, tx);
-      }
+      const draws =
+        addItem.unit === "cup"
+          ? await deductCups(full.addsInventoryItemId, addQty, orderId, line.menuItemId, staffId, tx)
+          : await deductQuantity(full.addsInventoryItemId, addQty, addItem.unit, orderId, line.menuItemId, staffId, tx);
+      consumed.push({ inventoryItemId: full.addsInventoryItemId, costUnits: addQty, draws });
     }
   }
 
@@ -241,6 +259,8 @@ export async function deductForOrder(
   await tx.execute(
     sql`SELECT pg_notify('inventory_changes', ${JSON.stringify({ orderId })})`
   );
+
+  return consumed;
 }
 
 type OrderModification = { id: string; name: string; priceDeltaZar: number };
@@ -265,7 +285,8 @@ async function deductCups(
   menuItemId: string,
   staffId: string,
   tx: DB
-): Promise<void> {
+): Promise<LotDraw[]> {
+  const draws: LotDraw[] = [];
   let remaining = cups;
   while (remaining > 0) {
     // Open container (opens the next sealed one as needed, or throws).
@@ -280,6 +301,7 @@ async function deductCups(
       menuItemId,
       byStaffId: staffId,
     });
+    draws.push({ lotId: lot.id, units: take });
 
     const emptied = lot.isLegacyLot && willDepleteLot(lot.currentStock, take);
     if (emptied) {
@@ -304,6 +326,7 @@ async function deductCups(
 
     remaining -= take;
   }
+  return draws;
 }
 
 // ─── deductQuantity (quantity model — cups, lids, powder) ───────────────────────
@@ -317,7 +340,7 @@ async function deductQuantity(
   menuItemId: string,
   staffId: string,
   tx: DB
-): Promise<void> {
+): Promise<LotDraw[]> {
   const lot = await pickActiveLot(inventoryItemId, tx);
 
   if (lot.currentStock < needed) {
@@ -359,4 +382,5 @@ async function deductQuantity(
     },
     tx
   );
+  return [{ lotId: lot.id, units: needed }];
 }

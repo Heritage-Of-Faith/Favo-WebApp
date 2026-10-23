@@ -239,6 +239,13 @@
       "when": 1791463736190,
       "tag": "0033_at181_day5_substrate",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792752696811,
+      "tag": "0034_at188_order_cogs",
+      "breakpoints": true
     }
   ]
 }
