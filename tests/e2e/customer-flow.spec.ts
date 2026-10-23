@@ -28,7 +28,8 @@ function testEmail(label: string): string {
 }
 
 const TEST_PASSWORD = "Playwright!2026";
-const TEST_NAME = "E2E Runner";
+const TEST_NAME = "E2E";
+const TEST_SURNAME = "Runner";
 const TEST_PHONE = "0821110001";
 
 /** Sign up and land on the dashboard. Returns the context for re-use. */
@@ -40,7 +41,9 @@ async function signUp(
   await page.goto("/signup", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: /join favo/i })).toBeVisible({ timeout: 15_000 });
 
-  await page.getByLabel(/full name/i).fill(TEST_NAME);
+  await page.getByLabel(/first name/i).fill(TEST_NAME);
+  await page.getByLabel(/surname/i).fill(TEST_SURNAME);
+  await page.getByRole("radio", { name: /office staff/i }).check();
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/phone/i).fill(TEST_PHONE);
   await page.getByLabel(/^password$/i).fill(TEST_PASSWORD);
