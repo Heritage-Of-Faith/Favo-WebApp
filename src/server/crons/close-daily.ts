@@ -1,5 +1,5 @@
 // Daily close reconciliation — task G10
-// Fires daily at 23:59 SAST. Compares order revenue vs confirmed payments
+// Scheduled 00:05 SAST for the completed day (src/server/jobs/registry.ts). Compares order revenue vs confirmed payments
 // for the day. Pushes an alert to admin staff devices on T01 variance band
 // breach (L09) — this used to page Discord; deletion pass replaced it with
 // Web Push (see docs on the deletion PR) so the alert doesn't vanish.
