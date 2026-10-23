@@ -24,6 +24,7 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { unmarkedRiskyMigrations } from "../src/server/deploy/migration-approval";
 
 type Severity = "FAIL" | "WARN";
 type Result = { name: string; ok: boolean; severity: Severity; detail: string };
@@ -182,6 +183,25 @@ mustBePresent("outbox_log.client_uuid UNIQUE survives", "clientUuid", "db/schema
 mustBePresent("the offline outbox itself survives", "outboxLog\\|outbox_log", "db/ src/");
 mustBePresent("deductForOrder is still modification-aware (0027)", "substitutesInventoryItemId", "src/server/orders/deduction.ts");
 mustBePresent("opening_sessions keeps UNIQUE(session_date, opens_at)", "session_date.*opens_at\\|sessionDate.*opensAt", "db/schema.ts drizzle/0029_at134_opening_sessions.sql");
+
+// Owner decision (Nikao, 21 Oct 2026, AT-170): risky migrations need an
+// explicit opt-in at deploy, so each must carry the approval marker. Same
+// check as the blocking CI step (scripts/check-migration-approval.ts).
+{
+  const journal: { idx: number; tag: string }[] = JSON.parse(
+    readFileSync("drizzle/meta/_journal.json", "utf8"),
+  ).entries;
+  const offenders = unmarkedRiskyMigrations(
+    journal.map((e) => ({ idx: e.idx, tag: e.tag, sql: readFileSync(`drizzle/${e.tag}.sql`, "utf8") })),
+  );
+  record(
+    "risky migrations carry -- favo:requires-approval",
+    offenders.length === 0,
+    offenders.length === 0
+      ? "no unmarked risky migrations"
+      : offenders.map((o) => `drizzle/${o.tag}.sql: ${o.reasons.join(", ")}`).join("\n      "),
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. MONEY SHAPE — REQ-101, REQ-106, REQ-109
