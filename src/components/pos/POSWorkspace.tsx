@@ -482,13 +482,15 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             {searchOpen && searchResults.length > 0 && (
               <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface shadow-[var(--shadow-2)] overflow-hidden">
                 {searchResults.map(c => {
-                  // REQ-142: where two results read alike, show the last four phone digits.
-                  const readsAlike = searchResults.some(o => o.id !== c.id && o.name.trim().toLowerCase() === c.name.trim().toLowerCase());
+                  // REQ-142 / DEF-F: the surname always renders beside the given
+                  // name; where two results still read alike, show the last four phone digits.
+                  const label = (r: CustomerSearchResult) => (r.surname ? `${r.name} ${r.surname}` : r.name);
+                  const readsAlike = searchResults.some(o => o.id !== c.id && label(o).trim().toLowerCase() === label(c).trim().toLowerCase());
                   return (
                   <li key={c.id}>
                     <button type="button" onMouseDown={() => { setCustomer({ id: c.id, name: c.name }); setQuery(""); setSearchOpen(false); }}
                       className="flex w-full items-center justify-between px-3 py-2 min-h-[44px] hover:bg-coffee-bean/8 text-left">
-                      <span className="favo-small text-coffee-bean font-semibold">{c.name}</span>
+                      <span className="favo-small text-coffee-bean font-semibold">{label(c)}</span>
                       {readsAlike && c.phoneLast4 && (
                         <span className="favo-caption text-cool-steel tabular-nums">…{c.phoneLast4}</span>
                       )}

@@ -1,16 +1,24 @@
 "use server";
 
-import { or, ilike, eq, desc, asc } from "drizzle-orm";
+import { or, and, ilike, eq, desc, asc, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customers, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import type { ActionResult, CustomerSearchResult } from "@/lib/types";
 
-// Docs: docs/API.md → searchCustomer · ILIKE on name + exact phone match.
-// Returns id, name and the last four phone digits only (read-only POS lookup).
-// REQ-142 / AT-185: no email and no full phone number ever leave the server.
+// Docs: docs/API.md → searchCustomer · PRD §6.9.4a (DEF-F) contract.
+// Prefix match on given name and surname, exact full phone, or a 2–4 digit
+// prefix of the phone's last four digits. Returns id, name, surname and the
+// last four phone digits only (read-only POS lookup).
+// REQ-142 / AT-185 / AT-213: no email, no full phone number and no status ever
+// leave the server.
 
 const MAX_RESULTS = 10;
+
+/** Escape LIKE wildcards so user input is matched literally (backslash is Postgres' default escape). */
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
 
 /** Last four digits of a phone number, or null if absent / fewer than four digits. */
 function phoneLast4(phone: string | null): string | null {
@@ -29,14 +37,40 @@ export async function searchCustomer(
     return { ok: false, code: "QUERY_TOO_SHORT", message: "Enter at least 2 characters." };
   }
 
+  // DEF-F: prefix match on the given name or the surname.
+  const prefix = `${escapeLike(q)}%`;
+  const conditions: SQL[] = [
+    ilike(customers.name, prefix),
+    ilike(customers.surname, prefix),
+    eq(customers.phone, q),
+  ];
+  // A "Given Surname" query (DEF-F is silent on this; AT-213's choice): the
+  // first word prefix-matches the given name AND the rest prefix-matches the surname.
+  const words = q.split(/\s+/);
+  if (words.length > 1) {
+    conditions.push(
+      and(
+        ilike(customers.name, `${escapeLike(words[0]!)}%`),
+        ilike(customers.surname, `${escapeLike(words.slice(1).join(" "))}%`)
+      )!
+    );
+  }
+  // DEF-F: "Prefix match … on the last four digits of a phone".
+  if (/^\d{2,4}$/.test(q)) {
+    conditions.push(
+      sql`right(regexp_replace(${customers.phone}, '\\D', '', 'g'), 4) like ${`${q}%`}`
+    );
+  }
+
   const rows = await db
     .select({
       id: customers.id,
       name: customers.name,
+      surname: customers.surname,
       phone: customers.phone,
     })
     .from(customers)
-    .where(or(ilike(customers.name, `%${q}%`), eq(customers.phone, q)))
+    .where(or(...conditions))
     .limit(MAX_RESULTS);
 
   // Build each result field by field — never spread the row, so the full
@@ -44,6 +78,7 @@ export async function searchCustomer(
   const results: CustomerSearchResult[] = rows.map((c) => ({
     id: c.id,
     name: c.name,
+    surname: c.surname ?? null,
     phoneLast4: phoneLast4(c.phone),
   }));
 
