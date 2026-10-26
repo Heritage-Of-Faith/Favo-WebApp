@@ -804,7 +804,8 @@ describe("review 4: an expired session reusing its opensAt does not loop", () =>
     mockReturning.mockResolvedValue([]); // UNIQUE(session_date, opens_at) clash
     selectQueue.push([bound]);           // the conflict lookup still sees the expired row
     const res = await openSession({ opensAt: "18:00", confirm: { mode: "sunday" } });
-    expect(res).toMatchObject({ ok: false, code: "INVALID_INPUT", message: "A session already opened at 18:00 today. Pick another time." });
+    // CHANGED (second review): an expired winner gets its own message.
+    expect(res).toMatchObject({ ok: false, code: "STALE_STATE", message: "The previous session just expired. Tap again to open." });
     expect(mockedDb.transaction).toHaveBeenCalledTimes(2); // forced close, then the insert
     expect(mockUpdateSet).toHaveBeenCalledWith({ closedAt: new Date("2026-10-11T18:30:00.000Z") });
   });
@@ -824,6 +825,55 @@ describe("review 4: an expired session reusing its opensAt does not loop", () =>
       expect.objectContaining({ entityId: "os_sat", action: "close", after: expect.objectContaining({ reason: "event_window_expired" }) }),
       expect.anything()
     );
+  });
+});
+
+describe("second review: remaining refusals are audited; an expired race winner has its own message", () => {
+  beforeEach(() => mockAuthorize.mockResolvedValue(BARISTA));
+  afterEach(() => mockToday.mockReturnValue("2026-07-09"));
+
+  it("a window longer than 24 h", async () => {
+    vi.setSystemTime(new Date("2026-10-10T06:00:00Z"));
+    selectQueue.push([UNTRACKED_PROFILE]);
+    await openEventWindow("evp_untracked_church", { startsAt: "2026-10-10T08:00:00.000Z", endsAt: "2026-10-11T08:00:01.000Z" });
+    expectRejectAudit("INVALID_INPUT");
+  });
+
+  it("an end time already past", async () => {
+    vi.setSystemTime(new Date("2026-10-10T06:00:00Z"));
+    selectQueue.push([UNTRACKED_PROFILE]);
+    await openEventWindow("evp_untracked_church", { startsAt: "2026-10-10T04:00:00.000Z", endsAt: "2026-10-10T05:00:00.000Z" });
+    expectRejectAudit("INVALID_INPUT");
+  });
+
+  it("an unknown or inactive profile", async () => {
+    selectQueue.push([]);
+    const res = await openEventWindow("evp_gone", { endsAt: "2026-10-10T12:00:00.000Z" });
+    expect(res).toMatchObject({ ok: false, code: "NOT_FOUND" });
+    expect(mockWriteAudit).toHaveBeenCalledWith(expect.objectContaining({ entityId: "evp_gone", action: "reject", reason: "NOT_FOUND" }));
+    expectRejectAudit("NOT_FOUND");
+  });
+
+  it("an ad-hoc window without a name or switches", async () => {
+    await openEventWindow(null, { endsAt: "2026-10-10T12:00:00.000Z" });
+    expectRejectAudit("INVALID_INPUT");
+  });
+
+  it("closing an unknown session", async () => {
+    selectQueue.push([]);
+    await closeSession("os_zzz");
+    expect(mockWriteAudit).toHaveBeenCalledWith(expect.objectContaining({ entityId: "os_zzz", action: "reject", reason: "NOT_FOUND" }));
+    expectRejectAudit("NOT_FOUND");
+  });
+
+  it("a time clash with no open winner keeps the pick-another-time message", async () => {
+    queueOpeningReads();
+    selectQueue.push([SESSION_ROW]); // isReopening: 07:30 exists, closed
+    mockReturning.mockResolvedValue([]);
+    selectQueue.push([]);            // conflict lookup: nothing open
+    const res = await submitOpeningTime("07:30");
+    expect(res).toMatchObject({ ok: false, code: "INVALID_INPUT", message: "A session already opened at 07:30 today. Pick another time." });
+    expectRejectAudit("INVALID_INPUT");
   });
 });
 

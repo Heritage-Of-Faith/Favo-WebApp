@@ -331,11 +331,18 @@ async function openSessionCore(input: CoreInput): Promise<CoreResult> {
     // Lost a race on the one-open index or on (session_date, opens_at). A
     // winner that is itself past its forced close is not current.
     const found = await findOpenSession();
-    const winner = found && !forcedCloseAt(found, openRowWindow(found), date, now) ? found : null;
+    const expired = found !== null && forcedCloseAt(found, openRowWindow(found), date, now) !== null;
+    const winner = found && !expired ? found : null;
     if (winner && !input.adminAdd && winner.sessionDate === date && winner.opensAt === input.opensAt) {
       return { ok: true, data: { session: toView(winner), notified: false, sessions: await listToday() } };
     }
     if (winner) return reject(input.adminAdd ? ADMIN_ALREADY_OPEN : alreadyOpen(winner), winner.id, "lost_race");
+    if (found && expired) {
+      return reject(
+        { ok: false, code: "STALE_STATE", message: "The previous session just expired. Tap again to open." },
+        found.id, "winner_expired"
+      );
+    }
     return reject(
       { ok: false, code: "INVALID_INPUT", message: `A session already opened at ${input.opensAt} today. Pick another time.` },
       slot, "time_taken"
@@ -531,7 +538,15 @@ export async function closeSession(
     return "ok" as const;
   });
 
-  if (result === "not_found") return { ok: false, code: "NOT_FOUND", message: "Session not found." };
+  if (result === "not_found") {
+    return refuse(
+      { ok: false, code: "NOT_FOUND", message: "Session not found." },
+      {
+        entityKind: "opening_session", entityId: sessionId, actor: { id: auth.session.id, role: auth.session.role },
+        after: { attempted: "close", why: "not_found" },
+      }
+    );
+  }
   if (result === "closed") {
     return refuse(
       { ok: false, code: "STALE_STATE", message: "This session is already closed." },
@@ -576,6 +591,7 @@ export async function openEventWindow(
     return { ok: false, code: "INVALID_INPUT", message: "An event needs an end time." };
   }
 
+  const actor = { id: auth.session.id, role: auth.session.role };
   let name: string;
   let switches: EventSwitches;
   if (profileId) {
@@ -588,12 +604,23 @@ export async function openEventWindow(
       })
       .from(eventProfiles)
       .where(and(eq(eventProfiles.id, profileId), eq(eventProfiles.active, true)));
-    if (!p) return { ok: false, code: "NOT_FOUND", message: "That event profile isn't available." };
+    if (!p) {
+      return refuse(
+        { ok: false, code: "NOT_FOUND", message: "That event profile isn't available." },
+        { entityKind: "event_window", entityId: profileId, actor, after: { attempted: "open_event_window", why: "profile_not_found", eventProfileId: profileId } }
+      );
+    }
     name = p.name;
     switches = snapshotSwitches(p as EventSwitches);
   } else {
     if (!parsed.data.name || !parsed.data.switches) {
-      return { ok: false, code: "INVALID_INPUT", message: "Name the event and set its switches." };
+      return refuse(
+        { ok: false, code: "INVALID_INPUT", message: "Name the event and set its switches." },
+        {
+          entityKind: "event_window", entityId: `ad_hoc:${parsed.data.name ?? ""}`, actor,
+          after: { attempted: "open_event_window", why: "name_or_switches_missing", eventProfileId: null },
+        }
+      );
     }
     name = parsed.data.name;
     switches = snapshotSwitches(parsed.data.switches);
@@ -603,7 +630,7 @@ export async function openEventWindow(
   const reject = (r: Refusal, why: string, extra: Record<string, unknown> = {}) =>
     refuse(r, {
       entityKind: "event_window", entityId: profileId ?? `ad_hoc:${name}`,
-      actor: { id: auth.session.id, role: auth.session.role },
+      actor,
       after: { attempted: "open_event_window", why, eventProfileId: profileId ?? null, name, ...switches, ...extra },
     });
 
@@ -626,9 +653,10 @@ export async function openEventWindow(
     : new Date(Math.floor(now.getTime() / 60000) * 60000);
   const endsAt = new Date(parsed.data.endsAt);
   const spanError = validateWindowSpan(startsAt, endsAt);
-  if (spanError) return { ok: false, code: "INVALID_INPUT", message: spanError };
+  const span = { startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() };
+  if (spanError) return reject({ ok: false, code: "INVALID_INPUT", message: spanError }, "invalid_span", span);
   if (endsAt.getTime() <= now.getTime()) {
-    return { ok: false, code: "INVALID_INPUT", message: "Pick an end time later than now." };
+    return reject({ ok: false, code: "INVALID_INPUT", message: "Pick an end time later than now." }, "ends_in_past", span);
   }
   // Temporary (review of 3779b6d, REQ-042): no event on Mon–Fri SAST until the
   // money story makes the order path session-aware; that story removes this.
