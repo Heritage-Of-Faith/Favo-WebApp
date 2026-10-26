@@ -28,7 +28,7 @@ import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import { LINE_SURCHARGE_CHARGED_ZAR, decideRedeem, decideRemove } from "@/server/orders/voucher";
 import { lockOpenSession } from "@/server/orders/voucher-session";
-import { pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
+import { pairAlreadyRecorded, pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
 import {
   CHECKOUT_EXISTS, ORDER_MOVED_ON as LOCK_ORDER_MOVED_ON, ROW_NOT_WRITTEN_YET, lockPaymentForTotalChange,
 } from "@/server/orders/payment-lock";
@@ -62,8 +62,27 @@ type LockedLine = {
   order: { id: string; state: string; totalZar: number; paymentMode: string | null };
 };
 
-/** Read the line, lock its order and any payments row, and say whether the total may change. */
+const LINE_NOT_FOUND: Fail = { ok: false, code: "NOT_FOUND", message: "That drink isn't on an order." };
+
+/**
+ * Lock the line's ORDER first, then read the line under its own lock. Every
+ * voucher write on an order takes the order lock first, so under READ
+ * COMMITTED the line, its live rows and the order total are all read after
+ * any earlier writer committed — never a stale discount_zar (review blocker).
+ * Only order_items.order_id, which never changes, is read before the lock.
+ */
 async function lockLine(tx: Tx, orderItemId: string): Promise<LockedLine | Fail> {
+  const [ref] = await tx
+    .select({ orderId: orderItems.orderId })
+    .from(orderItems)
+    .where(eq(orderItems.id, orderItemId));
+  if (!ref) return LINE_NOT_FOUND;
+  const [order] = await tx
+    .select({ id: orders.id, state: orders.state, totalZar: orders.totalZar, paymentMode: orders.paymentMode })
+    .from(orders)
+    .where(eq(orders.id, ref.orderId))
+    .for("update");
+  if (!order) return LINE_NOT_FOUND;
   const [line] = await tx
     .select({
       id: orderItems.id, orderId: orderItems.orderId, quantity: orderItems.quantity,
@@ -71,14 +90,9 @@ async function lockLine(tx: Tx, orderItemId: string): Promise<LockedLine | Fail>
       discountZar: orderItems.discountZar, compReason: orderItems.compReason,
     })
     .from(orderItems)
-    .where(eq(orderItems.id, orderItemId));
-  if (!line) return { ok: false, code: "NOT_FOUND", message: "That drink isn't on an order." };
-  const [order] = await tx
-    .select({ id: orders.id, state: orders.state, totalZar: orders.totalZar, paymentMode: orders.paymentMode })
-    .from(orders)
-    .where(eq(orders.id, line.orderId))
+    .where(eq(orderItems.id, orderItemId))
     .for("update");
-  if (!order) return { ok: false, code: "NOT_FOUND", message: "That drink isn't on an order." };
+  if (!line) return LINE_NOT_FOUND;
   return { line, order };
 }
 
@@ -250,10 +264,20 @@ export async function removeVoucher(
       return f;
     }
     const [session] = await tx
-      .select({ id: openingSessions.id, voucherRedemptionsRecorded: openingSessions.voucherRedemptionsRecorded })
+      .select({
+        id: openingSessions.id, closedAt: openingSessions.closedAt,
+        voucherRedemptionsRecorded: openingSessions.voucherRedemptionsRecorded,
+      })
       .from(openingSessions)
       .where(eq(openingSessions.id, target.sessionId))
       .for("update");
+    // A closed session's recorded count is what its tin was reconciled
+    // against; it is never changed after the close.
+    if (!session || session.closedAt) {
+      const f: Fail = { ok: false, code: "STALE_STATE", message: "That session is closed." };
+      await auditReject(tx, actor, order.id, "remove_voucher", line.id, f);
+      return f;
+    }
     const totalZar = order.totalZar + decision.restoredZar;
     const txDb = tx as unknown as DB;
     await tx
@@ -277,12 +301,10 @@ export async function removeVoucher(
       await tx.insert(payments).values({ orderId: order.id, amountZar: totalZar, status: "pending" });
       rowCreated = true;
     }
-    if (session) {
-      await tx
-        .update(openingSessions)
-        .set({ voucherRedemptionsRecorded: session.voucherRedemptionsRecorded - 1 })
-        .where(eq(openingSessions.id, session.id));
-    }
+    await tx
+      .update(openingSessions)
+      .set({ voucherRedemptionsRecorded: session.voucherRedemptionsRecorded - 1 })
+      .where(eq(openingSessions.id, session.id));
     await writeAudit(
       {
         entityKind: "order", entityId: order.id, action: "remove_voucher", actorId: actor.id, actorRole: actor.role,
@@ -369,6 +391,9 @@ export async function recordVoucherCount(
       .where(eq(openingSessions.id, id.data))
       .for("update");
     if (!s) return null;
+    // Push only when this (counted, recorded) pair has not been recorded before.
+    const v = slipVariance(s, counted);
+    const variance = v && !(await pairAlreadyRecorded(tx, v)) ? v : null;
     await tx.update(openingSessions).set({ voucherSlipsCounted: counted }).where(eq(openingSessions.id, s.id));
     await writeAudit(
       {
@@ -379,7 +404,7 @@ export async function recordVoucherCount(
       },
       tx as unknown as DB
     );
-    return { recorded: s.voucherRedemptionsRecorded, variance: slipVariance(s, counted) };
+    return { recorded: s.voucherRedemptionsRecorded, variance };
   });
 
   if (!result) return { ok: false, code: "NOT_FOUND", message: "Session not found." };

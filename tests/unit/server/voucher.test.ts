@@ -115,6 +115,15 @@ describe("decideRemove", () => {
     expect(d).toEqual({ status: "apply", redemptionId: "vr_2", lineDiscountZar: 3800, restoredZar: 3800 });
   });
 
+  it("the remaining line discount is the sum of the live rows left, never column − one row", () => {
+    // A stale column (R76) with one live R38 row left: the line ends at R0, not R38.
+    const d = decideRemove({
+      line: { ...cappuccinoX2, discountZar: 7600 },
+      live: [{ id: "vr_1", discountZar: 3800, at: new Date("2026-10-11T16:01:00Z") }],
+    });
+    expect(d).toEqual({ status: "apply", redemptionId: "vr_1", lineDiscountZar: 0, restoredZar: 3800 });
+  });
+
   it("a line with no live voucher → VALIDATION", () => {
     expect(decideRemove({ line: cappuccinoX2, live: [] })).toMatchObject({ status: "refused", code: "VALIDATION" });
   });

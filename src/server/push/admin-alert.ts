@@ -4,9 +4,10 @@
 // every admin staff row with a saved subscription. Carries both figures.
 
 import webpush from "web-push";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { staff } from "@db/schema";
+import type { DB } from "@/lib/db";
+import { auditLog, staff } from "@db/schema";
 import { initVapid } from "@/server/push/vapid";
 import { isValidPushSubscription } from "@/server/push/payload";
 
@@ -27,6 +28,26 @@ export function slipVariance(
   return counted === recorded
     ? null
     : { sessionId: s.id, sessionDate: s.sessionDate, opensAt: s.opensAt, counted, recorded };
+}
+
+/**
+ * True when the session's last recorded count (its latest `close` or
+ * `voucher_count` audit row) carried exactly this (counted, recorded) pair —
+ * that pair was already alerted, so it is not pushed again. Call it before
+ * the new audit row is written.
+ */
+export async function pairAlreadyRecorded(dbc: Pick<DB, "select">, v: VoucherVariance): Promise<boolean> {
+  const [last] = await dbc
+    .select({ after: auditLog.after })
+    .from(auditLog)
+    .where(and(
+      eq(auditLog.entityKind, "opening_session"), eq(auditLog.entityId, v.sessionId),
+      inArray(auditLog.action, ["close", "voucher_count"]),
+    ))
+    .orderBy(desc(auditLog.at))
+    .limit(1);
+  const after = (last?.after ?? null) as { voucherSlipsCounted?: unknown; voucherRedemptionsRecorded?: unknown } | null;
+  return after?.voucherSlipsCounted === v.counted && after?.voucherRedemptionsRecorded === v.recorded;
 }
 
 export function buildVoucherVariancePayload(v: VoucherVariance): string {

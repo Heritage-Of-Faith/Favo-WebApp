@@ -125,10 +125,14 @@ export function decideRemove(input: {
     return { status: "refused", code: "VALIDATION", message: "This drink has no voucher to remove." };
   }
   const latest = [...input.live].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())[0];
+  // The line's discount is what its live voucher rows add up to (L41: no other
+  // mechanism shares the line) — never derived from the column, which a
+  // concurrent caller may have read stale.
+  const liveSum = input.live.reduce((sum, r) => sum + r.discountZar, 0);
   return {
     status: "apply",
     redemptionId: latest.id,
-    lineDiscountZar: input.line.discountZar - latest.discountZar,
+    lineDiscountZar: liveSum - latest.discountZar,
     restoredZar: latest.discountZar,
   };
 }

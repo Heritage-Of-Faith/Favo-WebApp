@@ -41,7 +41,7 @@ import {
 } from "@/lib/session-mode";
 import { sendOpeningPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
-import { pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
+import { pairAlreadyRecorded, pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
 import type { ActionResult } from "@/lib/types";
 
 const POS_ROLES = ["barista", "admin"] as const;
@@ -533,6 +533,10 @@ export async function closeSession(
       .for("update");
     if (!row) return "not_found" as const;
     if (row.closedAt) return "closed" as const;
+    // Push only when this (counted, recorded) pair has not been recorded before
+    // (e.g. by recordVoucherCount) — read before this close's audit row.
+    const v = voucherSlipsCounted === undefined ? null : slipVariance(row, voucherSlipsCounted);
+    const variance = v && !(await pairAlreadyRecorded(txDb, v)) ? v : null;
     const closedAt = new Date();
     await tx
       .update(openingSessions)
@@ -550,7 +554,7 @@ export async function closeSession(
       },
       txDb
     );
-    return voucherSlipsCounted === undefined ? null : slipVariance(row, voucherSlipsCounted);
+    return variance;
   });
 
   if (result === "not_found") {

@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  orders, orderItems, payments, openingSessions, voucherRedemptions, eventWindows, staff,
+  orders, orderItems, payments, openingSessions, voucherRedemptions, eventWindows, staff, auditLog,
 } from "@db/schema";
 
 vi.mock("@/server/auth/guard", () => ({
@@ -311,6 +311,18 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
     expect(await removeVoucher("oi_1")).toMatchObject({ ok: false, code: "TENDER_IN_PROGRESS" });
     expect(updates).toEqual([]);
   });
+
+  it("a voucher from a CLOSED session is not removed: refused, audited, its count untouched", async () => {
+    given({
+      order: { ...DEFERRED_ORDER, totalZar: 3800 },
+      line: { ...CAPPUCCINO_X2, discountZar: 3800 },
+      live: [{ id: "vr_1", discountZar: 3800, at: at1, sessionId: "os_evening" }],
+      session: { ...SESSION, closedAt: new Date("2026-10-11T20:30:00+02:00"), voucherRedemptionsRecorded: 1 },
+    });
+    expect(await removeVoucher("oi_1")).toEqual({ ok: false, code: "STALE_STATE", message: "That session is closed." });
+    expect(updates).toEqual([]);
+    expect(audits().map((a) => a.action)).toEqual(["reject"]);
+  });
 });
 
 describe("recordVoucherCount (L43, REQ-156)", () => {
@@ -336,6 +348,24 @@ describe("recordVoucherCount (L43, REQ-156)", () => {
     expect(payload.data).toEqual({ sessionId: "os_evening", counted: 21, recorded: 23 });
     expect(payload.body).toContain("21");
     expect(payload.body).toContain("23");
+  });
+
+  it("the same (counted, recorded) pair already alerted is not pushed again", async () => {
+    given({ session: { ...SESSION, voucherRedemptionsRecorded: 23 } });
+    rows.set(staff, [{ id: "staff_admin", pushSubscription: { endpoint: "https://push/a", keys: { p256dh: "p", auth: "a" } } }]);
+    rows.set(auditLog, [{ after: { voucherSlipsCounted: 21, voucherRedemptionsRecorded: 23 } }]);
+    expect(await recordVoucherCount("os_evening", 21)).toEqual({ ok: true, data: { counted: 21, recorded: 23 } });
+    await flush();
+    expect(mockSendNotification).not.toHaveBeenCalled();
+  });
+
+  it("a changed pair is pushed (21/23 before, 22/23 now)", async () => {
+    given({ session: { ...SESSION, voucherRedemptionsRecorded: 23 } });
+    rows.set(staff, [{ id: "staff_admin", pushSubscription: { endpoint: "https://push/a", keys: { p256dh: "p", auth: "a" } } }]);
+    rows.set(auditLog, [{ after: { voucherSlipsCounted: 21, voucherRedemptionsRecorded: 23 } }]);
+    await recordVoucherCount("os_evening", 22);
+    await flush();
+    expect(mockSendNotification).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a negative or fractional count", async () => {
@@ -372,6 +402,15 @@ describe("closeSession and the slip count (REQ-156, REQ-157)", () => {
     expect(mockSendNotification).toHaveBeenCalledTimes(1);
     const payload = JSON.parse(mockSendNotification.mock.calls[0][1] as string);
     expect(payload.data).toEqual({ sessionId: "os_evening", counted: 20, recorded: 23 });
+  });
+
+  it("closing with the pair recordVoucherCount already alerted does not push twice", async () => {
+    given({ session: { ...SESSION, voucherRedemptionsRecorded: 23 } });
+    rows.set(staff, ADMIN_SUB);
+    rows.set(auditLog, [{ after: { voucherSlipsCounted: 20, voucherRedemptionsRecorded: 23 } }]);
+    expect((await closeSession("os_evening", 20)).ok).toBe(true);
+    await flush();
+    expect(mockSendNotification).not.toHaveBeenCalled();
   });
 
   it("a matching count closes without a push", async () => {
