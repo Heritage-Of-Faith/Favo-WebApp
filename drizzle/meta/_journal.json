@@ -239,6 +239,13 @@
       "when": 1791463736190,
       "tag": "0033_at181_day5_substrate",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793002925317,
+      "tag": "0036_at204_event_sessions",
+      "breakpoints": true
     }
   ]
 }

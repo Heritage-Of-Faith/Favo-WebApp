@@ -122,3 +122,26 @@ export const compReason = pgEnum("comp_reason", [
   "goodwill",
   "donation",
 ]);
+
+// AT-204 prerequisite / PRD §6.6 "The six switches" and §10.2 (event_profiles,
+// event_windows). Option labels are §6.6's: Full · coffee-only · custom subset.
+export const eventMenuScope = pgEnum("event_menu_scope", [
+  "full",
+  "coffee_only",
+  "custom",
+]);
+
+// PRD §6.6, L25: `free` · `standard` (normal prices) · `override` (event prices).
+export const eventPaymentPosture = pgEnum("event_payment_posture", [
+  "free",
+  "standard",
+  "override",
+]);
+
+// PRD §6.6 broadcast audience: Office staff · church member · both · nobody.
+export const eventAudience = pgEnum("event_audience", [
+  "office_staff",
+  "church_member",
+  "both",
+  "nobody",
+]);
