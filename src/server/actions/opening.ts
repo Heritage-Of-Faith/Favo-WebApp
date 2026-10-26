@@ -40,6 +40,7 @@ import {
 } from "@/lib/session-mode";
 import { sendOpeningPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
+import { pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
 import type { ActionResult } from "@/lib/types";
 
 const POS_ROLES = ["barista", "admin"] as const;
@@ -431,7 +432,9 @@ export async function openSession(input: {
 
 /**
  * closeSession(sessionId) — PRD §11, §6.11.1. Sets closed_at. The slip count is
- * optional and never blocks the close; omitted, it stays NULL (L43).
+ * optional and never blocks the close; omitted, it stays NULL (L43). A count
+ * that differs from voucher_redemptions_recorded pushes the Admin with both
+ * figures after the close commits, and the close completes (REQ-156).
  */
 export async function closeSession(
   sessionId: string,
@@ -446,7 +449,11 @@ export async function closeSession(
   const result = await db.transaction(async (tx) => {
     const txDb = tx as unknown as DB;
     const [row] = await tx
-      .select({ id: openingSessions.id, closedAt: openingSessions.closedAt, opensAt: openingSessions.opensAt })
+      .select({
+        id: openingSessions.id, closedAt: openingSessions.closedAt, opensAt: openingSessions.opensAt,
+        sessionDate: openingSessions.sessionDate,
+        voucherRedemptionsRecorded: openingSessions.voucherRedemptionsRecorded,
+      })
       .from(openingSessions)
       .where(eq(openingSessions.id, sessionId))
       .for("update");
@@ -462,16 +469,21 @@ export async function closeSession(
         entityKind: "opening_session", entityId: sessionId, action: "close",
         actorId: auth.session.id, actorRole: auth.session.role,
         before: { closedAt: null },
-        after: { closedAt: closedAt.toISOString(), voucherSlipsCounted: voucherSlipsCounted ?? null },
+        after: {
+          closedAt: closedAt.toISOString(), voucherSlipsCounted: voucherSlipsCounted ?? null,
+          voucherRedemptionsRecorded: row.voucherRedemptionsRecorded,
+        },
       },
       txDb
     );
-    return "ok" as const;
+    return voucherSlipsCounted === undefined ? null : slipVariance(row, voucherSlipsCounted);
   });
 
   if (result === "not_found") return { ok: false, code: "NOT_FOUND", message: "Session not found." };
   if (result === "closed") return { ok: false, code: "STALE_STATE", message: "This session is already closed." };
-  return { ok: true, data: { sessions: await listToday() } };
+  const sessions = await listToday();
+  if (result) pushVoucherVariance(result);
+  return { ok: true, data: { sessions } };
 }
 
 const isoSchema = z.string().refine((s) => !Number.isNaN(new Date(s).getTime()), "Invalid time");

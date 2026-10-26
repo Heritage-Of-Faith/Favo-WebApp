@@ -13,6 +13,7 @@ import {
   numeric,
   uuid,
   date,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -467,6 +468,51 @@ export const eventWindows = pgTable(
       sql`${t.endsAt} > ${t.startsAt} AND ${t.endsAt} - ${t.startsAt} <= interval '24 hours'`
     ),
   ]
+);
+
+// ─── Vouchers (AT-204 — PRD §6.9, §10.2, §10.4, L41, L43, COL-29) ─────────────
+// One row is one cup: a voucher discounts exactly one unit of one line.
+// Reversed, never deleted — counts and values read live rows (reversed_at IS NULL).
+
+export const voucherRedemptions = pgTable(
+  "voucher_redemptions",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    orderItemId: text("order_item_id").notNull().references(() => orderItems.id),
+    sessionId: text("session_id").notNull().references(() => openingSessions.id),
+    voucherKind: text("voucher_kind").notNull(),
+    // One unit's line_unit_price, snapshotted at redemption. Integer cents.
+    discountZar: integer("discount_zar").notNull(),
+    redeemedByStaffId: text("redeemed_by_staff_id").notNull().references(() => staff.id),
+    at: now(),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+    reversedByStaffId: text("reversed_by_staff_id").references(() => staff.id),
+  },
+  (t) => [
+    check("voucher_redemptions_discount_positive", sql`discount_zar > 0`),
+    // A reversal records both when and who, or neither.
+    check(
+      "voucher_redemptions_reversal_complete",
+      sql`(reversed_at IS NULL) = (reversed_by_staff_id IS NULL)`
+    ),
+    index("voucher_redemptions_order_item_idx").on(t.orderItemId),
+    index("voucher_redemptions_session_idx").on(t.sessionId),
+  ]
+);
+
+// ─── Config (PRD §10.4 — one store, keyed (tenant_id, key), jsonb values) ─────
+// Every write is audited with before/after and a reason; Admin-only.
+
+export const appConfig = pgTable(
+  "app_config",
+  {
+    tenantId: tenantId(),
+    key: text("key").notNull(),
+    value: jsonb("value").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.key] })]
 );
 
 export const operatingHours = pgTable("operating_hours", {
