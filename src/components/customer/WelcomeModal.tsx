@@ -5,6 +5,8 @@
 // components stay in sync: after the modal fires, PushOptIn won't re-prompt.
 
 import { useState, useEffect } from "react";
+import { detectInstallRequired } from "@/lib/push/install-step";
+import InstallStep from "./InstallStep";
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
@@ -28,8 +30,17 @@ export default function WelcomeModal({ customerId, firstName }: Props) {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [installRequired, setInstallRequired] = useState(false);
 
   useEffect(() => {
+    // REQ-048: an uninstalled iPhone sees the install step, never an enable prompt.
+    if (detectInstallRequired()) {
+      if (!localStorage.getItem(askedKey(customerId))) {
+        setInstallRequired(true);
+        setVisible(true);
+      }
+      return;
+    }
     if (typeof Notification === "undefined" || !("serviceWorker" in navigator)) return;
     if (Notification.permission !== "default") return;
     if (localStorage.getItem(askedKey(customerId))) return;
@@ -93,7 +104,24 @@ export default function WelcomeModal({ customerId, firstName }: Props) {
         flexDirection: "column",
         gap: 20,
       }}>
-        {success ? (
+        {installRequired ? (
+          <>
+            <InstallStep />
+            <button
+              onClick={dismiss}
+              style={{
+                backgroundColor: "transparent",
+                color: "var(--color-cool-steel)",
+                border: "none",
+                padding: "12px 28px",
+                width: "100%",
+                cursor: "pointer",
+              }}
+            >
+              Got it
+            </button>
+          </>
+        ) : success ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
             <span style={{
               fontFamily: "'DM Sans', sans-serif",
