@@ -37,6 +37,11 @@ export type RedeemDecision =
   | { status: "apply"; discountZar: number; lineDiscountZar: number }
   | { status: "refused"; code: VoucherRefusalCode; message: string };
 
+/** decideRedeem's own copy for a line already carrying another mechanism (L41). */
+export const OTHER_DISCOUNT = "This drink already has a different discount.";
+/** decideRedeem's own copy for a line whose every unit already carries a voucher. */
+export const TOO_MANY_VOUCHERS = "Every drink on this line already has a voucher.";
+
 const refuse = (code: VoucherRefusalCode, message: string) => ({ status: "refused" as const, code, message });
 
 export function decideRedeem(input: {
@@ -54,19 +59,57 @@ export function decideRedeem(input: {
   // L41: at most one discount mechanism per line. Any discount not made of
   // this line's live vouchers belongs to the free cup or a comp.
   if (line.compReason !== null || line.discountZar !== live.discountZar) {
-    return refuse("VALIDATION", "This drink already has a different discount.");
+    return refuse("VALIDATION", OTHER_DISCOUNT);
   }
   if (live.count >= line.quantity) {
-    return refuse("VALIDATION", "Every drink on this line already has a voucher.");
+    return refuse("VALIDATION", TOO_MANY_VOUCHERS);
   }
   const unit = lineUnitPriceZar(line);
   if (unit <= 0) return refuse("VALIDATION", "This drink is already free.");
   const lineDiscountZar = line.discountZar + unit;
   // DEF-A's floor (the DB CHECK): never past the line's own value.
   if (lineDiscountZar > line.quantity * unit) {
-    return refuse("VALIDATION", "Every drink on this line already has a voucher.");
+    return refuse("VALIDATION", TOO_MANY_VOUCHERS);
   }
   return { status: "apply", discountZar: unit, lineDiscountZar };
+}
+
+// createOrder charges no extra-shot surcharge today: there is no
+// extra_shot_zar in app_config and no surcharge on the order_items line, so
+// what the line was charged per unit is unit_price_zar + mods_zar. A voucher
+// can only take off what the line was charged. (Moved from actions/vouchers.ts.)
+export const LINE_SURCHARGE_CHARGED_ZAR = 0;
+
+export type LineVoucherPlan =
+  | { status: "apply"; perVoucherZar: number[]; lineDiscountZar: number }
+  | { status: "refused"; code: VoucherRefusalCode; message: string };
+
+/**
+ * `count` vouchers on one new line at createOrder — decideRedeem applied
+ * `count` times in a row, so placement and redeemVoucher share one rule.
+ * `line.discountZar` is any other mechanism's discount already on the line
+ * (e.g. the free cup); non-zero means L41 refuses.
+ */
+export function planLineVouchers(input: {
+  session: VoucherSession;
+  kind: string;
+  line: VoucherLine;
+  count: number;
+}): LineVoucherPlan {
+  const { session, kind, count } = input;
+  if (!Number.isInteger(count) || count < 0 || count > input.line.quantity) {
+    return refuse("VALIDATION", TOO_MANY_VOUCHERS);
+  }
+  let line = input.line;
+  const perVoucherZar: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const live = { count: i, discountZar: perVoucherZar.reduce((a, b) => a + b, 0) };
+    const d = decideRedeem({ session, kind, line, live });
+    if (d.status === "refused") return d;
+    perVoucherZar.push(d.discountZar);
+    line = { ...line, discountZar: d.lineDiscountZar };
+  }
+  return { status: "apply", perVoucherZar, lineDiscountZar: line.discountZar };
 }
 
 export type RemoveDecision =

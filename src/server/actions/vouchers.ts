@@ -22,13 +22,12 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { DB } from "@/lib/db";
 import {
-  orders, orderItems, payments, openingSessions, eventWindows, voucherRedemptions,
+  orders, orderItems, payments, openingSessions, voucherRedemptions,
 } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
-import { revenueDay } from "@/lib/format";
-import { forcedCloseAt } from "@/lib/session-mode";
-import { decideRedeem, decideRemove } from "@/server/orders/voucher";
+import { LINE_SURCHARGE_CHARGED_ZAR, decideRedeem, decideRemove } from "@/server/orders/voucher";
+import { lockOpenSession } from "@/server/orders/voucher-session";
 import { pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
 import {
   CHECKOUT_EXISTS, ORDER_MOVED_ON as LOCK_ORDER_MOVED_ON, ROW_NOT_WRITTEN_YET, lockPaymentForTotalChange,
@@ -37,12 +36,6 @@ import { createPaymentIntent } from "@/server/yoco/client";
 import type { ActionResult } from "@/lib/types";
 
 const POS_ROLES = ["barista", "admin"] as const;
-
-// createOrder charges no extra-shot surcharge today: there is no
-// extra_shot_zar in app_config and no surcharge on the order_items line, so
-// what the line was charged per unit is unit_price_zar + mods_zar. A voucher
-// can only take off what the line was charged.
-const LINE_SURCHARGE_CHARGED_ZAR = 0;
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Actor = { id: string; role: string };
@@ -106,29 +99,6 @@ async function paymentGuard(
   if (refusal === CHECKOUT_EXISTS) return { fail: PAYMENT_STARTED };
   if (refusal === LOCK_ORDER_MOVED_ON) return { fail: ORDER_MOVED_ON };
   return { fail: refusal };
-}
-
-/** The one open session (closed_at IS NULL), locked; null if none or past its end (L07, COL-11). */
-async function lockOpenSession(tx: Tx, now: Date) {
-  const [s] = await tx
-    .select({
-      id: openingSessions.id, sessionDate: openingSessions.sessionDate, mode: openingSessions.mode,
-      voucherKindsActive: openingSessions.voucherKindsActive, eventWindowId: openingSessions.eventWindowId,
-      voucherRedemptionsRecorded: openingSessions.voucherRedemptionsRecorded,
-    })
-    .from(openingSessions)
-    .where(isNull(openingSessions.closedAt))
-    .for("update");
-  if (!s) return null;
-  let window: { endsAt: Date } | null = null;
-  if (s.eventWindowId) {
-    const [w] = await tx
-      .select({ endsAt: eventWindows.endsAt })
-      .from(eventWindows)
-      .where(eq(eventWindows.id, s.eventWindowId));
-    window = w ?? null;
-  }
-  return forcedCloseAt(s, window, revenueDay(now), now) ? null : s;
 }
 
 async function liveRedemptions(tx: Tx, orderItemId: string) {

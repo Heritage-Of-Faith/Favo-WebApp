@@ -3,7 +3,7 @@
 // Money is integer cents: R38 = 3800.
 
 import { describe, it, expect } from "vitest";
-import { decideRedeem, decideRemove, lineUnitPriceZar } from "@/server/orders/voucher";
+import { decideRedeem, decideRemove, lineUnitPriceZar, planLineVouchers } from "@/server/orders/voucher";
 
 const UNTRACKED = { mode: "event" as const, voucherKindsActive: ["untracked_hot_drink"] };
 const KIND = "untracked_hot_drink";
@@ -117,5 +117,27 @@ describe("decideRemove", () => {
 
   it("a line with no live voucher → VALIDATION", () => {
     expect(decideRemove({ line: cappuccinoX2, live: [] })).toMatchObject({ status: "refused", code: "VALIDATION" });
+  });
+});
+
+describe("planLineVouchers — createOrder's n vouchers on one new line (L41, REQ-151)", () => {
+  it("2 vouchers on 2 × Cappuccino R38 with R8 oat → R46 each, line discount R92", () => {
+    expect(
+      planLineVouchers({ session: UNTRACKED, kind: KIND, line: { ...cappuccinoX2, modsZar: 800 }, count: 2 })
+    ).toEqual({ status: "apply", perVoucherZar: [4600, 4600], lineDiscountZar: 9200 });
+  });
+  it("3 vouchers on quantity 2 → VALIDATION", () => {
+    expect(planLineVouchers({ session: UNTRACKED, kind: KIND, line: cappuccinoX2, count: 3 }))
+      .toMatchObject({ status: "refused", code: "VALIDATION" });
+  });
+  it("a line already carrying the free cup's R38 → VALIDATION (L41)", () => {
+    expect(planLineVouchers({ session: UNTRACKED, kind: KIND, line: { ...cappuccinoX2, discountZar: 3800 }, count: 1 }))
+      .toMatchObject({ status: "refused", code: "VALIDATION" });
+  });
+  it("no session → NO_SESSION; weekday → VOUCHER_NOT_IN_MODE", () => {
+    expect(planLineVouchers({ session: null, kind: KIND, line: cappuccinoX2, count: 1 }))
+      .toMatchObject({ status: "refused", code: "NO_SESSION" });
+    expect(planLineVouchers({ session: { mode: "weekday", voucherKindsActive: [] }, kind: KIND, line: cappuccinoX2, count: 1 }))
+      .toMatchObject({ status: "refused", code: "VOUCHER_NOT_IN_MODE" });
   });
 });
