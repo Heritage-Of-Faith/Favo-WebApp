@@ -7,7 +7,8 @@ import { describe, it, expect } from "vitest";
 import {
   defaultSessionMode, SATURDAY_CLOSED, resolveSessionMode, effectiveSessionMode,
   eventSwitchesInForce, validateWindowSpan, describeEvent, forcedCloseAt, sastInstant,
-  profileOccurrence, type EventWindowView, type EventProfileView,
+  profileOccurrence, forcedClose, eventSwitchesInTill, EVENT_WEEKDAY_NOT_SUPPORTED,
+  type EventWindowView, type EventProfileView,
 } from "@/lib/session-mode";
 
 describe("defaultSessionMode", () => {
@@ -108,23 +109,36 @@ describe("resolveSessionMode — §6.6 precedence and L18", () => {
     expect(r).toMatchObject({ kind: "event", source: "window" });
   });
 
+  // CHANGED (coordinator decision): moved from Wednesday to Saturday — Mon–Fri
+  // now ignores events when resolving (see the weekday test below).
   it("a recurring profile is found on its day, inside its default window", () => {
-    const r = resolveSessionMode({ sessionDate: "2026-10-07", opensAt: "18:30", closesAt: null, windows: [], profiles: [profileOf()] });
+    const sat = profileOf({ recurrence: "FREQ=WEEKLY;BYDAY=SA" });
+    const r = resolveSessionMode({ sessionDate: "2026-10-10", opensAt: "18:30", closesAt: null, windows: [], profiles: [sat] });
     expect(r).toMatchObject({ kind: "event", source: "profile", overridesSunday: false });
     if (r.kind === "event" && r.source === "profile") {
       expect(r.profile.id).toBe("evp_social");
-      expect(r.startsAt).toBe("2026-10-07T16:30:00.000Z");
-      expect(r.endsAt).toBe("2026-10-07T18:30:00.000Z");
+      expect(r.startsAt).toBe("2026-10-10T16:30:00.000Z");
+      expect(r.endsAt).toBe("2026-10-10T18:30:00.000Z");
     }
-    // Not on a Thursday.
-    expect(resolveSessionMode({ sessionDate: "2026-10-08", opensAt: "18:30", closesAt: null, windows: [], profiles: [profileOf()] }))
-      .toEqual({ kind: "date", mode: "weekday" });
+    // Not on a Sunday.
+    expect(resolveSessionMode({ sessionDate: "2026-10-11", opensAt: "18:30", closesAt: null, windows: [], profiles: [sat] }))
+      .toEqual({ kind: "date", mode: "sunday" });
   });
 
+  // CHANGED (coordinator decision): moved from Wednesday to Saturday.
   it("precedence 1: a one-off window beats a recurring profile on the same date", () => {
-    const w = windowOf({ id: "evw_oneoff", name: "Baptism Social", startsAt: "2026-10-07T16:00:00.000Z", endsAt: "2026-10-07T19:00:00.000Z" });
-    const r = resolveSessionMode({ sessionDate: "2026-10-07", opensAt: "18:30", closesAt: null, windows: [w], profiles: [profileOf()] });
+    const w = windowOf({ id: "evw_oneoff", name: "Baptism Social", startsAt: "2026-10-10T16:00:00.000Z", endsAt: "2026-10-10T19:00:00.000Z" });
+    const r = resolveSessionMode({
+      sessionDate: "2026-10-10", opensAt: "18:30", closesAt: null, windows: [w],
+      profiles: [profileOf({ recurrence: "FREQ=WEEKLY;BYDAY=SA" })],
+    });
     expect(r).toMatchObject({ kind: "event", source: "window" });
+  });
+
+  it("Mon–Fri: event windows and recurring profiles are ignored; the session is plain weekday", () => {
+    const w = windowOf({ id: "evw_wed", startsAt: "2026-10-07T16:00:00.000Z", endsAt: "2026-10-07T19:00:00.000Z" });
+    expect(resolveSessionMode({ sessionDate: "2026-10-07", opensAt: "18:30", closesAt: null, windows: [w], profiles: [profileOf()] }))
+      .toEqual({ kind: "date", mode: "weekday" });
   });
 
   it("a profile with no default times is never auto-found (Untracked Church times are unconfirmed)", () => {
@@ -201,5 +215,54 @@ describe("describeEvent — L18 / §6.6 Path A copy", () => {
     expect(describeEvent("Discipleship 101", {
       paymentPosture: "free", consumesCupLid: true, audience: "church_member",
     }, "2026-10-07T18:30:00.000Z")).toBe("Discipleship 101 · Event · free · disposables · Church Member · until 20:30");
+  });
+});
+
+// ─── Review fixes (AT-204 prerequisite, independent review of 3779b6d) ────────
+
+describe("forcedClose — the reason matches the earlier closedAt", () => {
+  it("a past-day session whose window ended before midnight closes at ends_at, reason event_window_expired", () => {
+    // Saturday 10 Oct, window 18:00–20:00 SAST; read on Sunday morning.
+    const w = windowOf({ startsAt: "2026-10-10T16:00:00.000Z", endsAt: "2026-10-10T18:00:00.000Z" });
+    const fc = forcedClose({ sessionDate: "2026-10-10" }, w, "2026-10-11", new Date("2026-10-11T05:00:00.000Z"));
+    expect(fc).toEqual({ at: new Date("2026-10-10T18:00:00.000Z"), reason: "event_window_expired" });
+  });
+
+  it("a past-day session with no window closes at midnight, reason day_boundary", () => {
+    const fc = forcedClose({ sessionDate: "2026-10-10" }, null, "2026-10-11", new Date("2026-10-11T05:00:00.000Z"));
+    expect(fc).toEqual({ at: new Date("2026-10-10T22:00:00.000Z"), reason: "day_boundary" });
+  });
+});
+
+describe("eventSwitchesInTill — only switches the till honours may run", () => {
+  it("the Untracked Church switches (§6.11.2) are the normal-Sunday values and run", () => {
+    expect(eventSwitchesInTill({ ...SWITCHES_STANDARD, voucherKinds: ["untracked_hot_drink"] })).toBe(true);
+  });
+
+  it.each([
+    ["menuScope", "coffee_only"],
+    ["consumesCupLid", false],
+    ["audience", "nobody"],
+    ["extraShotSurcharge", false],
+    ["paymentPosture", "free"],
+  ] as const)("%s = %s is refused", (key, value) => {
+    expect(eventSwitchesInTill({ ...SWITCHES_STANDARD, voucherKinds: [], [key]: value })).toBe(false);
+  });
+
+  it("resolveSessionMode ignores a window whose switches the till cannot honour", () => {
+    const res = resolveSessionMode({
+      sessionDate: "2026-10-11", opensAt: "18:00", closesAt: null,
+      windows: [windowOf({ menuScope: "coffee_only" })], profiles: [],
+    });
+    expect(res).toEqual({ kind: "date", mode: "sunday" });
+  });
+});
+
+describe("EVENT_WEEKDAY_NOT_SUPPORTED", () => {
+  it("is a typed code with the plain message", () => {
+    expect(EVENT_WEEKDAY_NOT_SUPPORTED).toEqual({
+      code: "EVENT_WEEKDAY_NOT_SUPPORTED",
+      message: "Events can only run on a Saturday or Sunday for now.",
+    });
   });
 });

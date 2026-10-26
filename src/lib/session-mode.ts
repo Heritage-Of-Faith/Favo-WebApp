@@ -68,6 +68,55 @@ export function postureIsInTill(p: PaymentPosture): boolean {
 }
 
 /**
+ * The switches the till does not read yet (menu scope, cup & lid, audience,
+ * extra-shot surcharge) must hold the normal-Sunday values of PRD §4's mode
+ * table — the same values as Untracked Church (§6.11.2). Any other value would
+ * be shown as confirmed state while the till ignored it, so it is refused,
+ * exactly like a posture outside POSTURES_IN_TILL. Voucher kinds are honoured.
+ */
+export const SWITCHES_IN_TILL = {
+  menuScope: "full", consumesCupLid: true, audience: "both", extraShotSurcharge: true,
+} as const satisfies Partial<EventSwitches>;
+
+export function eventSwitchesInTill(s: EventSwitches): boolean {
+  return (
+    postureIsInTill(s.paymentPosture) &&
+    s.menuScope === SWITCHES_IN_TILL.menuScope &&
+    s.consumesCupLid === SWITCHES_IN_TILL.consumesCupLid &&
+    s.audience === SWITCHES_IN_TILL.audience &&
+    s.extraShotSurcharge === SWITCHES_IN_TILL.extraShotSurcharge
+  );
+}
+
+/**
+ * Temporary refusal (independent review of 3779b6d, REQ-042): the free-cup and
+ * cup/lid code treat a day as weekday only when every opening_sessions row of
+ * the date is mode 'weekday', so an event session on Mon–Fri would make office
+ * staff pay for the rest of the day. Until that money decision is taken (Tier
+ * A), no event-mode session or window may fall on Mon–Fri SAST. Remove this
+ * guard in the story that makes the order path session-aware.
+ */
+export const EVENT_WEEKDAY_NOT_SUPPORTED = {
+  code: "EVENT_WEEKDAY_NOT_SUPPORTED",
+  message: "Events can only run on a Saturday or Sunday for now.",
+} as const;
+
+/** True for a Mon–Fri revenue day (YYYY-MM-DD, already SAST). */
+export function isWeekdayDate(sessionDate: string): boolean {
+  return defaultSessionMode(sessionDate) === "weekday";
+}
+
+/** The SAST revenue day (YYYY-MM-DD) of an instant — UTC+2 all year. */
+export function sastDate(instant: string | Date): string {
+  return new Date(new Date(instant).getTime() + 2 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Does any part of [startsAt, endsAt) fall on a Mon–Fri SAST? (≤ 24 h, so two days at most.) */
+export function windowTouchesWeekday(startsAt: Date, endsAt: Date): boolean {
+  return isWeekdayDate(sastDate(startsAt)) || isWeekdayDate(sastDate(new Date(endsAt.getTime() - 1)));
+}
+
+/**
  * Default mode for a session date (YYYY-MM-DD, already the SAST revenue day —
  * see todaySast / revenueDay), or `null` on a Saturday, which has no default.
  * A calendar date's weekday does not depend on a timezone, so it is read at
@@ -184,14 +233,20 @@ export function resolveSessionMode(input: SessionSlot & {
   const dateMode = defaultSessionMode(input.sessionDate);
   const overridesSunday = dateMode === "sunday";
 
+  // Temporary (coordinator decision on the review of 3779b6d, REQ-042): on
+  // Mon–Fri a stray window or recurring profile is ignored, so a weekday session
+  // is always plain weekday and the barista is never blocked. Explicitly
+  // creating a weekday event stays refused (EVENT_WEEKDAY_NOT_SUPPORTED).
+  if (dateMode === "weekday") return { kind: "date", mode: "weekday" };
+
   // (1) A window that already exists (one-off or started) beats a recurring template.
   const window = [...input.windows]
-    .filter((w) => postureIsInTill(w.paymentPosture) && sessionMatchesWindow(input, w))
+    .filter((w) => eventSwitchesInTill(w) && sessionMatchesWindow(input, w))
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0];
   if (window) return { kind: "event", source: "window", window, overridesSunday };
 
   for (const profile of input.profiles) {
-    if (!postureIsInTill(profile.paymentPosture)) continue;
+    if (!eventSwitchesInTill(profile)) continue;
     const occ = profileOccurrence(profile, input.sessionDate);
     if (occ && sessionMatchesWindow(input, occ)) {
       return { kind: "event", source: "profile", profile, ...occ, overridesSunday };
@@ -237,11 +292,27 @@ export function forcedCloseAt(
   today: string,
   now: Date
 ): Date | null {
-  const candidates: Date[] = [];
-  if (session.sessionDate < today) candidates.push(sastInstant(nextDate(session.sessionDate), "00:00"));
-  if (window && new Date(window.endsAt).getTime() <= now.getTime()) candidates.push(new Date(window.endsAt));
+  return forcedClose(session, window, today, now)?.at ?? null;
+}
+
+export type ForcedCloseReason = "day_boundary" | "event_window_expired";
+
+/** forcedCloseAt plus the reason that owns the chosen (earlier) instant. A tie is the day boundary. */
+export function forcedClose(
+  session: { sessionDate: string },
+  window: { endsAt: string | Date } | null,
+  today: string,
+  now: Date
+): { at: Date; reason: ForcedCloseReason } | null {
+  const candidates: { at: Date; reason: ForcedCloseReason }[] = [];
+  if (session.sessionDate < today) {
+    candidates.push({ at: sastInstant(nextDate(session.sessionDate), "00:00"), reason: "day_boundary" });
+  }
+  if (window && new Date(window.endsAt).getTime() <= now.getTime()) {
+    candidates.push({ at: new Date(window.endsAt), reason: "event_window_expired" });
+  }
   if (candidates.length === 0) return null;
-  return candidates.reduce((a, b) => (a.getTime() <= b.getTime() ? a : b));
+  return candidates.reduce((a, b) => (a.at.getTime() <= b.at.getTime() ? a : b));
 }
 
 /** L27 / REQ-043: null when valid, otherwise the reason. */
