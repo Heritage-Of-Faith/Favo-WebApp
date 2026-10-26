@@ -8,7 +8,7 @@
 // rounded once at order_cogs — nothing here rounds (REQ-106).
 //
 // The states, never conflated (CLAUDE.md §5):
-//   empty       — no order in the period: a genuine zero.
+//   empty       — no order in the period that carried a cost: a genuine zero.
 //   unavailable — some order's cost input is absent: no number, the item named.
 //   provisional — every cost is present, but some lot is (or may be) an estimate.
 //   final       — every contributing lot is invoice-backed.
@@ -46,6 +46,7 @@ export function rollupOrderCogs(rows: readonly OrderCogsRow[]): CostRollup {
   let total = 0;
   let refused = false;
   let provisional = false;
+  let costed = false;
   let ordersWithoutCost = 0;
   const absent = new Set<string>();
 
@@ -60,7 +61,12 @@ export function rollupOrderCogs(rows: readonly OrderCogsRow[]): CostRollup {
       for (const id of r.absentItemIds) absent.add(id);
       continue;
     }
+    // An order that costed nothing (cogs 0 — e.g. it consumed no costed unit)
+    // is no evidence either way: it can neither make a period "final" (green)
+    // nor provisional. A period made only of such orders reads "empty".
+    if (r.cogsZar === 0) continue;
     total += r.cogsZar;
+    costed = true;
     if (r.estimated !== false) provisional = true;
   }
 
@@ -68,7 +74,7 @@ export function rollupOrderCogs(rows: readonly OrderCogsRow[]): CostRollup {
   if (refused) {
     return { state: "unavailable", cogsZar: null, absentItemIds, ordersWithoutCost, orderCount: rows.length };
   }
-  const state: CostState = rows.length === 0 ? "empty" : provisional ? "provisional" : "final";
+  const state: CostState = !costed ? "empty" : provisional ? "provisional" : "final";
   return { state, cogsZar: total, absentItemIds: [], ordersWithoutCost: 0, orderCount: rows.length };
 }
 

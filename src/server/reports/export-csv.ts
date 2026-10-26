@@ -40,17 +40,17 @@ export async function buildReportRows(from: string, to: string): Promise<ReportR
   const toStart = sastDayStart(to);
   const endUtc = new Date(toStart.getTime() + 24 * 60 * 60 * 1000);
 
-  // Revenue aggregated by SAST day
+  // Revenue per orders.revenue_day (L07) — the same bucket as COGS below.
   const revRows = await db.execute<{ sast_date: string; revenue: string }>(sql`
     SELECT
-      TO_CHAR(placed_at AT TIME ZONE 'Africa/Johannesburg', 'YYYY-MM-DD') AS sast_date,
+      TO_CHAR(revenue_day, 'YYYY-MM-DD') AS sast_date,
       COALESCE(SUM(total_zar), 0)::bigint AS revenue
     FROM orders
     WHERE state IN ('in_progress', 'ready', 'collected')
-      AND placed_at >= ${startUtc.toISOString()}::timestamptz
-      AND placed_at < ${endUtc.toISOString()}::timestamptz
-    GROUP BY sast_date
-    ORDER BY sast_date
+      AND revenue_day >= ${from}::date
+      AND revenue_day <= ${to}::date
+    GROUP BY revenue_day
+    ORDER BY revenue_day
   `);
 
   // COGS per revenue day = Σ order_cogs (AT-189, REQ-106) — never re-rounded,
@@ -88,9 +88,13 @@ function csvCell(value: string | number): string {
   return s;
 }
 
-/** A figure, or the literal UNAVAILABLE — never a blank and never 0 (REQ-109). */
-function figure(v: number | null): string | number {
-  return v === null ? UNAVAILABLE : v;
+/**
+ * A figure, or the row's named refusal ("UNAVAILABLE — Oat Milk") — never a
+ * blank, never 0, never a bare UNAVAILABLE (REQ-109).
+ */
+export function reportFigure(v: number | null, r: Pick<ReportRow, "costStatus">): string | number {
+  if (v !== null) return v;
+  return r.costStatus.startsWith(UNAVAILABLE) ? r.costStatus : UNAVAILABLE;
 }
 
 export function rowsToCsv(rows: ReportRow[]): string {
@@ -98,7 +102,7 @@ export function rowsToCsv(rows: ReportRow[]): string {
   const lines = [headers.map(csvCell).join(",")];
   for (const r of rows) {
     lines.push(
-      [r.date, r.revenueZar, figure(r.cogsZar), figure(r.grossMarginZar), figure(r.grossMarginPct), r.costStatus]
+      [r.date, r.revenueZar, reportFigure(r.cogsZar, r), reportFigure(r.grossMarginZar, r), reportFigure(r.grossMarginPct, r), r.costStatus]
         .map(csvCell)
         .join(",")
     );

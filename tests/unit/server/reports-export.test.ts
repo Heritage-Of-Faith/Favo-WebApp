@@ -148,6 +148,34 @@ describe("buildReportRows — date range enumeration", () => {
   // ::timestamptz cast — never raw JS Date params. Drizzle's `db.execute(sql`…`)`
   // with a bound Date fails on the Supabase transaction pooler (prepare:false),
   // which 500'd the Sales/COGS exports and the Monthly draft in production.
+  it("N2: revenue and COGS are both bucketed by orders.revenue_day, never placed_at", async () => {
+    const { db } = await import("@db/index");
+    vi.mocked(db.execute).mockResolvedValueOnce(emptyResult).mockResolvedValueOnce(emptyResult);
+    const { buildReportRows } = await import("@/server/reports/export-csv");
+    await buildReportRows("2026-08-10", "2026-08-16");
+    const dialect = new PgDialect();
+    for (const call of vi.mocked(db.execute).mock.calls) {
+      const { sql: text, params } = dialect.sqlToQuery(call[0] as Parameters<typeof dialect.sqlToQuery>[0]);
+      expect(text).toContain("revenue_day");
+      expect(text).not.toContain("placed_at");
+      expect(params).toEqual(["2026-08-10", "2026-08-16"]);
+    }
+  });
+
+  it("an UNAVAILABLE day's figure cells carry the named refusal, never a bare UNAVAILABLE", async () => {
+    const { db } = await import("@db/index");
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce([{ sast_date: "2026-08-16", revenue: "35000" }] as unknown as ExecResult)
+      .mockResolvedValueOnce([
+        { revenue_day: "2026-08-16", cogs_zar: null, absent_item_ids: [], estimated: null, missing: true },
+      ] as unknown as ExecResult);
+    const { buildReportRows } = await import("@/server/reports/export-csv");
+    const rows = await buildReportRows("2026-08-16", "2026-08-16");
+    const line = rowsToCsv(rows).split("\r\n")[1];
+    const named = "UNAVAILABLE — 1 order with no recorded cost";
+    expect(line).toBe(`2026-08-16,35000,${named},${named},${named},${named}`);
+  });
+
   it("binds date bounds as ::timestamptz string params, not raw Date objects", async () => {
     const { db } = await import("@db/index");
     vi.mocked(db.execute)

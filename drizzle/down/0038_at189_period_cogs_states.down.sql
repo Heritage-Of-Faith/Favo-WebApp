@@ -16,6 +16,8 @@
 
 ALTER TABLE "weekly_reports" DROP CONSTRAINT "weekly_report_cogs_or_unavailable";--> statement-breakpoint
 ALTER TABLE "monthly_reports" DROP CONSTRAINT "monthly_report_cogs_or_unavailable";--> statement-breakpoint
+ALTER TABLE "weekly_reports" DROP COLUMN "orders_without_cost";--> statement-breakpoint
+ALTER TABLE "monthly_reports" DROP COLUMN "orders_without_cost";--> statement-breakpoint
 ALTER TABLE "weekly_reports" DROP COLUMN "cogs_absent_items";--> statement-breakpoint
 ALTER TABLE "weekly_reports" DROP COLUMN "cost_state";--> statement-breakpoint
 ALTER TABLE "monthly_reports" DROP COLUMN "cogs_absent_items";--> statement-breakpoint

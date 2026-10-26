@@ -443,6 +443,8 @@ export type MonthlyReport = {
   costState: CostState;
   /** Inventory item names (or ids) whose cost was absent. */
   cogsAbsentItems: string[];
+  /** Orders in the month with no order_cogs row (named in the refusal). */
+  ordersWithoutCost: number;
   status: MonthlyReportStatus;
   adminSig: MonthlyReportSig | null;
   generatedAt: string; // ISO 8601

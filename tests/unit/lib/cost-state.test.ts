@@ -20,6 +20,31 @@ describe("rollupOrderCogs — a period is a SUM of per-order integers (REQ-106)"
     expect(r).toMatchObject({ state: "final", cogsZar: 1588 });
   });
 
+  it("N3: orders that costed nothing (cogs 0, nothing estimated) do not make a day final — it reads empty, not green", () => {
+    const r = rollupOrderCogs([
+      { cogsZar: 0, absentItemIds: [], estimated: false },
+      { cogsZar: 0, absentItemIds: [], estimated: false },
+    ]);
+    expect(r).toMatchObject({ state: "empty", cogsZar: 0, orderCount: 2 });
+    expect(netTone(r.state, 4000)).toBe("neutral");
+    expect(netTone(r.state, 4000)).not.toBe("positive");
+  });
+
+  it("N3: a zero-cost order beside an estimated one leaves the day provisional; beside an invoiced one, final", () => {
+    expect(
+      rollupOrderCogs([
+        { cogsZar: 0, absentItemIds: [], estimated: false },
+        { cogsZar: 441, absentItemIds: [], estimated: true },
+      ]).state
+    ).toBe("provisional");
+    expect(
+      rollupOrderCogs([
+        { cogsZar: 0, absentItemIds: [], estimated: false },
+        { cogsZar: 441, absentItemIds: [], estimated: false },
+      ]).state
+    ).toBe("final");
+  });
+
   it("no orders → empty, a genuine zero", () => {
     expect(rollupOrderCogs([])).toMatchObject({ state: "empty", cogsZar: 0, orderCount: 0 });
   });

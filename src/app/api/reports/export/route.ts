@@ -7,13 +7,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { canAccessAdmin } from "@/server/auth/rbac";
-import { buildReportRows, rowsToCsv } from "@/server/reports/export-csv";
+import { buildReportRows, reportFigure, rowsToCsv } from "@/server/reports/export-csv";
 import { buildSalesCsv } from "@/server/reports/sales-csv";
 import { buildInventoryCsv } from "@/server/reports/inventory-csv";
 import { buildMonthlyPnlCsv } from "@/server/reports/monthly-pnl-csv";
 import { renderPdfHtml, type PdfReportKind } from "@/server/reports/pdf-renderer";
 import { writeAudit } from "@/server/audit";
-import { UNAVAILABLE } from "@/lib/cost-state";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -114,9 +113,9 @@ export async function GET(req: NextRequest) {
         Date: r.date,
         "Revenue (ZAR)": r.revenueZar,
         // NULL = UNAVAILABLE — the word, never a blank or 0 (REQ-109).
-        "COGS (ZAR)": r.cogsZar ?? UNAVAILABLE,
-        "Gross Margin (ZAR)": r.grossMarginZar ?? UNAVAILABLE,
-        "Gross Margin %": r.grossMarginPct ?? UNAVAILABLE,
+        "COGS (ZAR)": reportFigure(r.cogsZar, r),
+        "Gross Margin (ZAR)": reportFigure(r.grossMarginZar, r),
+        "Gross Margin %": reportFigure(r.grossMarginPct, r),
         "Cost status": r.costStatus,
       }));
       break;

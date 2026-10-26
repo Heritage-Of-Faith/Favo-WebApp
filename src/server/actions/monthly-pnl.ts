@@ -7,7 +7,7 @@
 // DB CHECK: closed requires admin sig — enforced by migration 0011 (L11).
 // Docs: FAVO_PRD_v3.md §04 §06 §07 · BUSINESS_RULES.md L11
 
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { monthlyReports, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -23,23 +23,6 @@ import type { DB } from "@/lib/db";
 const ADMIN_ROLES = ["admin"] as const;
 const READER_ROLES = ["admin"] as const;
 
-// SAST offset for month boundary computation
-const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
-
-/** Parse a YYYY-MM-DD month string into UTC start/end Date objects. */
-function monthBounds(month: string): { start: Date; end: Date } {
-  // month = "YYYY-MM-01" (first of month in SAST)
-  const [year, mon] = month.split("-").map(Number);
-  // SAST midnight of the first day
-  const startSast = new Date(Date.UTC(year, mon - 1, 1, 0, 0, 0, 0));
-  // End = first day of next month SAST midnight
-  const endSast = new Date(Date.UTC(year, mon, 1, 0, 0, 0, 0));
-  return {
-    start: new Date(startSast.getTime() - SAST_OFFSET_MS),
-    end: new Date(endSast.getTime() - SAST_OFFSET_MS),
-  };
-}
-
 function rowToReport(r: {
   id: string;
   month: string;
@@ -50,6 +33,7 @@ function rowToReport(r: {
   netZar: number | null;
   costState: MonthlyReport["costState"];
   cogsAbsentItems: string[];
+  ordersWithoutCost: number;
   status: string;
   adminSig: unknown;
   generatedAt: Date;
@@ -65,6 +49,7 @@ function rowToReport(r: {
     netZar: r.netZar,
     costState: r.costState,
     cogsAbsentItems: r.cogsAbsentItems,
+    ordersWithoutCost: r.ordersWithoutCost,
     status: r.status as MonthlyReport["status"],
     adminSig: (r.adminSig as MonthlyReportSig | null) ?? null,
     generatedAt: r.generatedAt.toISOString(),
@@ -131,17 +116,17 @@ export async function generateMonthlyPnL(
     };
   }
 
-  const { start, end } = monthBounds(month);
+  const lastDay = lastDayOfMonth(month);
 
-  // ── Revenue ────────────────────────────────────────────────────────────────
+  // ── Revenue — by orders.revenue_day (L07), the same bucket as COGS below.
   const [revRow] = await db
     .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
     .from(orders)
     .where(
       and(
         sql`${orders.state} IN ('in_progress', 'ready', 'collected')`,
-        gte(orders.placedAt, start),
-        lt(orders.placedAt, end)
+        gte(orders.revenueDay, month),
+        lte(orders.revenueDay, lastDay)
       )
     );
   const revenueZar = revRow?.total ?? 0;
@@ -150,10 +135,11 @@ export async function generateMonthlyPnL(
   // Never re-rounded, never filtered: an absent cost input stores the month
   // UNAVAILABLE with the items named (AT-190, REQ-109); an estimated lot
   // stores it provisional (AT-191, REQ-110/REQ-131).
-  const cogs = await readPeriodCogs(month, lastDayOfMonth(month));
+  const cogs = await readPeriodCogs(month, lastDay);
   const cogsZar = cogs.cogsZar;
   const costState = cogs.state;
   const cogsAbsentItems = cogs.absentItemNames;
+  const ordersWithoutCost = cogs.ordersWithoutCost;
 
   const grossMarginZar = cogsZar === null ? null : revenueZar - cogsZar;
   const netZar = grossMarginZar;
@@ -174,6 +160,7 @@ export async function generateMonthlyPnL(
         netZar,
         costState,
         cogsAbsentItems,
+        ordersWithoutCost,
         status: "draft",
       })
       .returning({ id: monthlyReports.id });
@@ -188,7 +175,7 @@ export async function generateMonthlyPnL(
         actorId: session.id,
         actorRole: session.role,
         before: null,
-        after: { month, revenueZar, cogsZar, expensesZar: 0, netZar, costState, cogsAbsentItems, status: "draft" },
+        after: { month, revenueZar, cogsZar, expensesZar: 0, netZar, costState, cogsAbsentItems, ordersWithoutCost, status: "draft" },
       },
       txDb
     );

@@ -8,7 +8,7 @@ import { formatZar } from "@/lib/format";
 import StatusBadge from "@/components/shared/StatusBadge";
 import DualSignBlock from "@/components/admin/DualSignBlock";
 import type { MonthlyReport } from "@/lib/types";
-import { NET_TONE_COLOR, netTone, PROVISIONAL, UNAVAILABLE, unavailableText } from "@/lib/cost-state";
+import { NET_TONE_COLOR, netTone, PROVISIONAL, unavailableText } from "@/lib/cost-state";
 
 export interface MonthlyReportRowProps {
   report: MonthlyReport;
@@ -38,6 +38,8 @@ function monthLabel(monthIso: string): string {
 export default function MonthlyReportRow({ report, canSignAdmin, onChanged }: MonthlyReportRowProps) {
   const [open, setOpen] = useState(report.status !== "closed");
   const tone = netTone(report.costState, report.netZar);
+  // The named refusal — never a bare UNAVAILABLE (REQ-109).
+  const refusal = unavailableText(report.cogsAbsentItems, report.ordersWithoutCost);
 
   return (
     <li className="rounded-[var(--radius-card)] border" style={{ borderColor: "var(--color-border-subtle)" }}>
@@ -53,7 +55,7 @@ export default function MonthlyReportRow({ report, canSignAdmin, onChanged }: Mo
           </p>
           <p className="favo-caption" style={{ color: "var(--color-text-muted)" }}>
             Rev {formatZar(report.revenueZar)} · COGS{" "}
-            {report.cogsZar === null ? unavailableText(report.cogsAbsentItems, 0) : formatZar(report.cogsZar)}
+            {report.cogsZar === null ? refusal : formatZar(report.cogsZar)}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -66,7 +68,7 @@ export default function MonthlyReportRow({ report, canSignAdmin, onChanged }: Mo
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {report.netZar === null ? UNAVAILABLE : formatZar(report.netZar)}
+            {report.netZar === null ? refusal : formatZar(report.netZar)}
             {tone === "warn" && ` · ${PROVISIONAL}`}
           </span>
           <StatusBadge variant={STATUS_VARIANT[report.status]}>{STATUS_LABEL[report.status]}</StatusBadge>

@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { approveMonthlyPnL } from "@/server/actions/monthly-pnl";
 import { formatZar, formatDate } from "@/lib/format";
 import type { MonthlyReport } from "@/lib/types";
-import { NET_TONE_COLOR, netTone, PROVISIONAL, UNAVAILABLE, type NetTone } from "@/lib/cost-state";
+import { NET_TONE_COLOR, netTone, PROVISIONAL, unavailableText, type NetTone } from "@/lib/cost-state";
 
 export interface DualSignBlockProps {
   report: MonthlyReport;
@@ -30,6 +30,7 @@ export interface DualSignBlockProps {
 export default function DualSignBlock({ report, canSignAdmin, onSigned }: DualSignBlockProps) {
   const [confirm, setConfirm] = useState(false);
   const [signing, setSigning] = useState(false);
+  const refusal = unavailableText(report.cogsAbsentItems, report.ordersWithoutCost);
 
   const closed = report.status === "closed";
 
@@ -88,9 +89,9 @@ export default function DualSignBlock({ report, canSignAdmin, onSigned }: DualSi
             </DialogDescription>
           </DialogHeader>
           <dl className="grid grid-cols-2 gap-y-1 py-2">
-            <Figure label="Revenue" value={report.revenueZar} />
-            <Figure label="COGS" value={report.cogsZar} />
-            <Figure label="Net" value={report.netZar} strong tone={netTone(report.costState, report.netZar)} />
+            <Figure label="Revenue" value={report.revenueZar} refusal={refusal} />
+            <Figure label="COGS" value={report.cogsZar} refusal={refusal} />
+            <Figure label="Net" value={report.netZar} refusal={refusal} strong tone={netTone(report.costState, report.netZar)} />
           </dl>
           <p className="favo-caption" style={{ color: "var(--color-text-muted)", textTransform: "none", letterSpacing: 0 }}>
             Once signed, the report closes and can no longer be edited (L11).
@@ -112,12 +113,15 @@ export default function DualSignBlock({ report, canSignAdmin, onSigned }: DualSi
 function Figure({
   label,
   value,
+  refusal,
   strong,
   tone,
 }: {
   label: string;
-  /** NULL = UNAVAILABLE (REQ-109) — rendered as the word, never as R0.00. */
+  /** NULL = UNAVAILABLE (REQ-109) — rendered as the named refusal, never as R0.00. */
   value: number | null;
+  /** "UNAVAILABLE — Oat Milk": what a NULL value renders as. */
+  refusal: string;
   strong?: boolean;
   /** AT-191/AT-192: the net's tone from its cost state — never green on estimates. */
   tone?: NetTone;
@@ -135,7 +139,7 @@ function Figure({
           fontVariantNumeric: "tabular-nums",
         }}
       >
-        {value === null ? UNAVAILABLE : formatZar(value)}
+        {value === null ? refusal : formatZar(value)}
         {tone === "warn" && ` · ${PROVISIONAL}`}
       </dd>
     </>

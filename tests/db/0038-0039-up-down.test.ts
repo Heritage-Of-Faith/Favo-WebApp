@@ -54,6 +54,8 @@ maybe("0038/0039: up → down → up, and the refusals (AT-189..192)", () => {
       expect(weekly.cogs_zar).toBe("YES");
       expect(weekly.cost_state).toBe("NO");
       expect(weekly.cogs_absent_items).toBe("NO");
+      expect(weekly.orders_without_cost).toBe("NO");
+      expect((await columns(tx, "monthly_reports")).orders_without_cost).toBe("NO");
       const monthly = await columns(tx, "monthly_reports");
       expect(monthly.net_zar).toBe("YES");
       expect(monthly.cost_state).toBe("NO");

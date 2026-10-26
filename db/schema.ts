@@ -489,6 +489,8 @@ export const monthlyReports = pgTable(
     // AT-192 (REQ-129): empty | unavailable | provisional | final — see src/lib/cost-state.ts.
     costState: reportCostState("cost_state").default("provisional").notNull(),
     cogsAbsentItems: text("cogs_absent_items").array().default(sql`'{}'::text[]`).notNull(),
+    /** Orders in the month with no order_cogs row — part of the named refusal. */
+    ordersWithoutCost: integer("orders_without_cost").default(0).notNull(),
     /** draft → awaiting_signatures → closed */
     status: text("status", {
       enum: ["draft", "awaiting_signatures", "closed"],
@@ -541,6 +543,7 @@ export const weeklyReports = pgTable("weekly_reports", {
   netZar: integer("net_zar"),
   costState: reportCostState("cost_state").default("provisional").notNull(),
   cogsAbsentItems: text("cogs_absent_items").array().default(sql`'{}'::text[]`).notNull(),
+  ordersWithoutCost: integer("orders_without_cost").default(0).notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
 }, () => [
   check("weekly_report_cogs_or_unavailable", sql`(cogs_zar IS NULL) = (cost_state = 'unavailable')`),

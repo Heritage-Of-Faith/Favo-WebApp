@@ -910,6 +910,13 @@
           "notNull": true,
           "default": "'{}'::text[]"
         },
+        "orders_without_cost": {
+          "name": "orders_without_cost",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "status": {
           "name": "status",
           "type": "text",
@@ -2684,6 +2691,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::text[]"
+        },
+        "orders_without_cost": {
+          "name": "orders_without_cost",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "generated_at": {
           "name": "generated_at",

@@ -3,7 +3,7 @@
 // Mon 00:00 – Sun 23:59 SAST and inserts into weekly_reports.
 // Docs: API.md · BUSINESS_RULES.md T05 L09 · FAVO_PRD_v3.md §07 §09
 
-import { and, gte, lt, sql, eq } from "drizzle-orm";
+import { and, gte, lt, lte, sql, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, weeklyReports, expenses } from "@db/schema";
 import { readPeriodCogs } from "@/server/cogs/period-cogs";
@@ -62,15 +62,17 @@ export async function generateWeeklyPnL(
     return { weekStarting, reportId: existing.id, alreadyExists: true };
   }
 
-  // ── Revenue ────────────────────────────────────────────────────────────────
+  const weekEnding = addDays(weekStarting, 6);
+
+  // ── Revenue — by orders.revenue_day (L07), the same bucket as COGS below.
   const [revRow] = await db
     .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
     .from(orders)
     .where(
       and(
         sql`${orders.state} IN ('in_progress', 'ready', 'collected')`,
-        gte(orders.placedAt, start),
-        lt(orders.placedAt, end)
+        gte(orders.revenueDay, weekStarting),
+        lte(orders.revenueDay, weekEnding)
       )
     );
   const revenueZar = revRow?.total ?? 0;
@@ -79,7 +81,7 @@ export async function generateWeeklyPnL(
   // Never re-rounded, never filtered: an absent cost input stores the week as
   // UNAVAILABLE with the items named (AT-190, REQ-109), and an estimated lot
   // stores it provisional (AT-191, REQ-110/REQ-131).
-  const cogs = await readPeriodCogs(weekStarting, addDays(weekStarting, 6));
+  const cogs = await readPeriodCogs(weekStarting, weekEnding);
   const cogsZar = cogs.cogsZar;
 
   // ── Expenses ─────────────────────────────────────────────────────────────
@@ -107,6 +109,7 @@ export async function generateWeeklyPnL(
       netZar,
       costState: cogs.state,
       cogsAbsentItems: cogs.absentItemNames,
+      ordersWithoutCost: cogs.ordersWithoutCost,
     })
     .returning({ id: weeklyReports.id });
 
