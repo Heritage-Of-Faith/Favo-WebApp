@@ -4,6 +4,7 @@ import { or, ilike, eq, desc, asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customers, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
+import { phoneLast4 as maskPhoneLast4 } from "@/lib/mask-phone";
 import type { ActionResult, CustomerSearchResult } from "@/lib/types";
 
 // Docs: docs/API.md → searchCustomer · ILIKE on name + exact phone match.
@@ -55,12 +56,13 @@ export async function searchCustomer(
 export type CustomerListItem = {
   id: string;
   name: string;
-  email: string | null;
-  phone: string | null;
+  surname: string | null;
+  status: "office_staff" | "church_member";
+  phoneLast4: string | null; // AT-214 / REQ-142: no email, no full phone
   createdAt: string; // ISO
 };
 
-/** List up to `limit` customers. If `query` is supplied, filters by name or email ILIKE. */
+/** List up to `limit` customers. If `query` is supplied, filters by name or surname ILIKE. */
 export async function listCustomers(opts?: {
   query?: string;
   limit?: number;
@@ -72,23 +74,32 @@ export async function listCustomers(opts?: {
   const q = opts?.query?.trim();
 
   const rows = await db
-    .select()
+    .select({
+      id: customers.id,
+      name: customers.name,
+      surname: customers.surname,
+      status: customers.status,
+      phone: customers.phone,
+      createdAt: customers.createdAt,
+    })
     .from(customers)
     .where(
       q && q.length >= 2
-        ? or(ilike(customers.name, `%${q}%`), ilike(customers.email, `%${q}%`))
+        ? or(ilike(customers.name, `%${q}%`), ilike(customers.surname, `%${q}%`))
         : undefined
     )
     .orderBy(asc(customers.name))
     .limit(limit);
 
+  // Field by field — never spread the row, so the full phone cannot ride along.
   return {
     ok: true,
     data: rows.map((c) => ({
       id: c.id,
       name: c.name,
-      email: c.email,
-      phone: c.phone,
+      surname: c.surname,
+      status: c.status,
+      phoneLast4: maskPhoneLast4(c.phone),
       createdAt: c.createdAt.toISOString(),
     })),
   };
@@ -106,8 +117,9 @@ export type AdminOrderRow = {
 export type CustomerDetail = {
   id: string;
   name: string;
-  email: string | null;
-  phone: string | null;
+  surname: string | null;
+  status: "office_staff" | "church_member";
+  phoneLast4: string | null;
   createdAt: string;
   recentOrders: AdminOrderRow[];
 };
@@ -119,7 +131,14 @@ export async function getCustomerDetail(
   if (!auth.ok) return auth;
 
   const [customer] = await db
-    .select()
+    .select({
+      id: customers.id,
+      name: customers.name,
+      surname: customers.surname,
+      status: customers.status,
+      phone: customers.phone,
+      createdAt: customers.createdAt,
+    })
     .from(customers)
     .where(eq(customers.id, customerId))
     .limit(1);
@@ -145,8 +164,9 @@ export async function getCustomerDetail(
     data: {
       id: customer.id,
       name: customer.name,
-      email: customer.email,
-      phone: customer.phone,
+      surname: customer.surname,
+      status: customer.status,
+      phoneLast4: maskPhoneLast4(customer.phone),
       createdAt: customer.createdAt.toISOString(),
       recentOrders: recentOrders.map((o) => ({
         id: o.id,
