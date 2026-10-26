@@ -34,8 +34,9 @@ import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import { todaySast } from "@/server/cogs/compute";
 import {
-  SATURDAY_CLOSED, resolveSessionMode, forcedCloseAt, sastInstant, validateWindowSpan,
-  postureIsInTill, type DateMode, type EventProfileView, type EventSwitches, type EventWindowView,
+  SATURDAY_CLOSED, resolveSessionMode, forcedCloseAt, forcedClose, sastInstant, validateWindowSpan,
+  postureIsInTill, eventSwitchesInTill, EVENT_WEEKDAY_NOT_SUPPORTED, isWeekdayDate, windowTouchesWeekday,
+  type DateMode, type EventProfileView, type EventSwitches, type EventWindowView,
   type SessionMode,
 } from "@/lib/session-mode";
 import { sendOpeningPush } from "@/server/push/send";
@@ -174,6 +175,38 @@ const CHANGED_UNDER_YOU = {
   message: "Today's events just changed — reloading the opening step.",
 };
 
+// Review of 3779b6d: the admin planner may not add a session while one is open
+// (adding opened it at once, so a planned evening session took over the day).
+const ADMIN_ALREADY_OPEN = {
+  ok: false as const, code: "STALE_STATE",
+  message: "A session is already open. Close it before adding another.",
+};
+
+const SWITCHES_NOT_IN_TILL = {
+  ok: false as const, code: "INVALID_INPUT",
+  message: "This event's menu, cup, audience or extra-shot settings can't run in the till yet. Use the normal Sunday settings.",
+};
+
+type Refusal = { ok: false; code: string; message: string };
+
+/**
+ * CLAUDE.md §5: a rejected state transition is audited and the row survives.
+ * Written on its own — never inside a transaction that could roll it back —
+ * as createOrder's reject audit is (src/server/actions/orders.ts).
+ */
+async function refuse(
+  refusal: Refusal,
+  audit: { entityKind: string; entityId: string; actor: { id: string; role: string }; after: Record<string, unknown> }
+): Promise<Refusal> {
+  await writeAudit({
+    entityKind: audit.entityKind, entityId: audit.entityId, action: "reject",
+    actorId: audit.actor.id, actorRole: audit.actor.role,
+    after: { ...audit.after, code: refusal.code },
+    reason: refusal.code,
+  });
+  return { ok: false, code: refusal.code, message: refusal.message };
+}
+
 /** What the barista confirmed in the opening step (L18). */
 export type OpeningConfirm =
   | { mode: DateMode }
@@ -197,6 +230,8 @@ type CoreInput = {
   viaPos: boolean;
   notify: boolean;
   actor: { id: string; role: string };
+  /** Admin planner add: any open session refuses it, even at the same time. */
+  adminAdd?: boolean;
 };
 
 type CoreResult = ActionResult<{ session: OpeningSession; notified: boolean; sessions: OpeningSession[] }>;
@@ -209,15 +244,24 @@ async function openSessionCore(input: CoreInput): Promise<CoreResult> {
   const date = todaySast();
   const now = new Date();
 
+  // Every refusal below is audited outside any transaction (CLAUDE.md §5).
+  const reject = (r: Refusal, entityId: string, why: string) =>
+    refuse(r, {
+      entityKind: "opening_session", entityId, actor: input.actor,
+      after: { attempted: "open", why, sessionDate: date, opensAt: input.opensAt, confirm: input.confirm },
+    });
+  const slot = `${date} ${input.opensAt}`;
+
   const open = await findOpenSession();
-  const forceClose = open ? forcedCloseAt(open, openRowWindow(open), date, now) : null;
-  if (open && !forceClose) {
+  const forced = open ? forcedClose(open, openRowWindow(open), date, now) : null;
+  if (open && !forced) {
+    if (input.adminAdd) return reject(ADMIN_ALREADY_OPEN, open.id, "session_open");
     if (open.sessionDate === date && open.opensAt === input.opensAt) {
       // Re-confirming the open session's time — never re-notifies (AT-134 rule 1).
       const sessions = await listToday();
       return { ok: true, data: { session: toView(open), notified: false, sessions } };
     }
-    return alreadyOpen(open);
+    return reject(alreadyOpen(open), open.id, "session_open");
   }
 
   const [windows, profiles] = [await listLiveWindows(date, now), await listActiveProfiles()];
@@ -226,7 +270,17 @@ async function openSessionCore(input: CoreInput): Promise<CoreResult> {
   });
 
   // REQ-057: no session opens on a Saturday without an event window in force.
-  if (resolved.kind === "closed") return { ok: false, ...SATURDAY_CLOSED };
+  if (resolved.kind === "closed") return reject({ ok: false, ...SATURDAY_CLOSED }, slot, "saturday_closed");
+
+  // Temporary (review of 3779b6d, REQ-042): no event-mode session on Mon–Fri
+  // until the order path's weekday test is made session-aware. See
+  // EVENT_WEEKDAY_NOT_SUPPORTED in src/lib/session-mode.ts; the money story removes this.
+  // resolveSessionMode already ignores events on Mon–Fri; this refuses a
+  // client-confirmed event mode there (and stays as a backstop).
+  const confirmsEvent = input.confirm !== "default" && input.confirm.mode === "event";
+  if ((resolved.kind === "event" || confirmsEvent) && isWeekdayDate(date)) {
+    return reject({ ok: false, ...EVENT_WEEKDAY_NOT_SUPPORTED }, slot, "event_on_weekday");
+  }
 
   if (input.confirm !== "default") {
     const c = input.confirm;
@@ -236,48 +290,56 @@ async function openSessionCore(input: CoreInput): Promise<CoreResult> {
         : resolved.source === "window"
           ? "eventWindowId" in c && c.eventWindowId === resolved.window.id
           : "eventProfileId" in c && c.eventProfileId === resolved.profile.id;
-    if (!matches) return CHANGED_UNDER_YOU;
+    if (!matches) return reject(CHANGED_UNDER_YOU, slot, "confirm_mismatch");
   }
 
   // §6.6 precedence 2: an event overriding a Sunday needs a confirmation step.
   if (resolved.kind === "event" && resolved.overridesSunday && !input.sundayOverrideConfirmed) {
-    return {
-      ok: false, code: "CONFIRM_REQUIRED",
-      message: "This event replaces Sunday mode for the session. Confirm it in the POS opening step.",
-    };
+    return reject(
+      {
+        ok: false, code: "CONFIRM_REQUIRED",
+        message: "This event replaces Sunday mode for the session. Confirm it in the POS opening step.",
+      },
+      slot, "sunday_override_unconfirmed"
+    );
+  }
+
+  // L07 / COL-11: the forced close commits on its own, before the insert, so a
+  // clash on the new row can never roll it back and hand the expired session
+  // back as current (review of 3779b6d).
+  if (open && forced) {
+    await db.transaction(async (tx) => {
+      await tx.update(openingSessions).set({ closedAt: forced.at }).where(eq(openingSessions.id, open.id));
+      await writeAudit(
+        {
+          entityKind: "opening_session", entityId: open.id, action: "close", actorRole: "system",
+          before: { closedAt: null },
+          after: { closedAt: forced.at.toISOString(), reason: forced.reason },
+        },
+        tx as unknown as DB
+      );
+    });
   }
 
   const isReopening = (await listToday()).length > 0;
 
   let inserted: Awaited<ReturnType<typeof insertSession>>;
   try {
-    inserted = await db.transaction(async (tx) => {
-      const txDb = tx as unknown as DB;
-      if (open && forceClose) {
-        await tx.update(openingSessions).set({ closedAt: forceClose }).where(eq(openingSessions.id, open.id));
-        await writeAudit(
-          {
-            entityKind: "opening_session", entityId: open.id, action: "close", actorRole: "system",
-            before: { closedAt: null },
-            after: {
-              closedAt: forceClose.toISOString(),
-              reason: open.sessionDate < date ? "day_boundary" : "event_window_expired",
-            },
-          },
-          txDb
-        );
-      }
-      return insertSession(txDb, date, input, resolved);
-    });
+    inserted = await db.transaction(async (tx) => insertSession(tx as unknown as DB, date, input, resolved));
   } catch (err) {
     if (!(err instanceof SessionConflict)) throw err;
-    // Lost a race on the one-open index or on (session_date, opens_at).
-    const winner = await findOpenSession();
-    if (winner && winner.sessionDate === date && winner.opensAt === input.opensAt) {
+    // Lost a race on the one-open index or on (session_date, opens_at). A
+    // winner that is itself past its forced close is not current.
+    const found = await findOpenSession();
+    const winner = found && !forcedCloseAt(found, openRowWindow(found), date, now) ? found : null;
+    if (winner && !input.adminAdd && winner.sessionDate === date && winner.opensAt === input.opensAt) {
       return { ok: true, data: { session: toView(winner), notified: false, sessions: await listToday() } };
     }
-    if (winner) return alreadyOpen(winner);
-    return { ok: false, code: "INVALID_INPUT", message: `A session already opened at ${input.opensAt} today. Pick another time.` };
+    if (winner) return reject(input.adminAdd ? ADMIN_ALREADY_OPEN : alreadyOpen(winner), winner.id, "lost_race");
+    return reject(
+      { ok: false, code: "INVALID_INPUT", message: `A session already opened at ${input.opensAt} today. Pick another time.` },
+      slot, "time_taken"
+    );
   }
 
   // Fan out to every subscribed customer — fire-and-forget so a push failure
@@ -470,7 +532,15 @@ export async function closeSession(
   });
 
   if (result === "not_found") return { ok: false, code: "NOT_FOUND", message: "Session not found." };
-  if (result === "closed") return { ok: false, code: "STALE_STATE", message: "This session is already closed." };
+  if (result === "closed") {
+    return refuse(
+      { ok: false, code: "STALE_STATE", message: "This session is already closed." },
+      {
+        entityKind: "opening_session", entityId: sessionId, actor: { id: auth.session.id, role: auth.session.role },
+        after: { attempted: "close", why: "already_closed" },
+      }
+    );
+  }
   return { ok: true, data: { sessions: await listToday() } };
 }
 
@@ -529,12 +599,25 @@ export async function openEventWindow(
     switches = snapshotSwitches(parsed.data.switches);
   }
 
+  // Refusals are audited outside any transaction (CLAUDE.md §5).
+  const reject = (r: Refusal, why: string, extra: Record<string, unknown> = {}) =>
+    refuse(r, {
+      entityKind: "event_window", entityId: profileId ?? `ad_hoc:${name}`,
+      actor: { id: auth.session.id, role: auth.session.role },
+      after: { attempted: "open_event_window", why, eventProfileId: profileId ?? null, name, ...switches, ...extra },
+    });
+
   if (!postureIsInTill(switches.paymentPosture)) {
-    return {
-      ok: false, code: "INVALID_INPUT",
-      message: "Free and event-price events can't run in the till yet. Use normal prices.",
-    };
+    return reject(
+      {
+        ok: false, code: "INVALID_INPUT",
+        message: "Free and event-price events can't run in the till yet. Use normal prices.",
+      },
+      "posture_not_in_till"
+    );
   }
+  // Mirrors the posture guard: a switch the till ignores is refused, never shown as confirmed.
+  if (!eventSwitchesInTill(switches)) return reject(SWITCHES_NOT_IN_TILL, "switches_not_in_till");
 
   const now = new Date();
   // Path C "start now": to the minute, so a session opened at this HH:mm is inside it.
@@ -546,6 +629,13 @@ export async function openEventWindow(
   if (spanError) return { ok: false, code: "INVALID_INPUT", message: spanError };
   if (endsAt.getTime() <= now.getTime()) {
     return { ok: false, code: "INVALID_INPUT", message: "Pick an end time later than now." };
+  }
+  // Temporary (review of 3779b6d, REQ-042): no event on Mon–Fri SAST until the
+  // money story makes the order path session-aware; that story removes this.
+  if (windowTouchesWeekday(startsAt, endsAt)) {
+    return reject({ ok: false, ...EVENT_WEEKDAY_NOT_SUPPORTED }, "event_on_weekday", {
+      startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(),
+    });
   }
 
   const created = await db.transaction(async (tx) => {
@@ -646,13 +736,17 @@ export async function addTodaySession(
   const parsed = adminSessionSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "INVALID_INPUT", message: "Times must be HH:mm." };
 
-  // AT-204: the same path as the barista's open — STALE_STATE while a session
-  // is open, the mode resolved against this session's window, Saturday
-  // refused without an event. Opt-in notify: only a newly created row pushes.
+  // AT-204: the same path as the barista's open — the mode resolved against
+  // this session's window, Saturday refused without an event. Adding opens the
+  // session at once (there is no "planned, not yet open" state), so it is
+  // refused with STALE_STATE whenever any session is open — otherwise an
+  // evening session planned at 06:00 would become the open one and lock out
+  // the morning barista. Opt-in notify: only a newly created row pushes.
   const res = await openSessionCore({
     opensAt: parsed.data.opensAt, closesAt: parsed.data.closesAt ?? null,
     confirm: "default", sundayOverrideConfirmed: false,
     viaPos: false, notify: parsed.data.notify, actor: { id: auth.session.id, role: auth.session.role },
+    adminAdd: true,
   });
   if (!res.ok) return res;
   return { ok: true, data: { sessions: res.data.sessions } };
@@ -673,11 +767,15 @@ export async function updateTodaySession(
 
   const updated = await db.transaction(async (tx) => {
     const txDb = tx as unknown as DB;
-    const [before] = await tx
-      .select({ opensAt: openingSessions.opensAt, closesAt: openingSessions.closesAt })
+    const [row] = await tx
+      .select({ opensAt: openingSessions.opensAt, closesAt: openingSessions.closesAt, closedAt: openingSessions.closedAt })
       .from(openingSessions)
       .where(and(eq(openingSessions.id, id), eq(openingSessions.sessionDate, todaySast())));
-    if (!before) return false;
+    if (!row) return false;
+    // Moving an open session's times would leave its mode and event binding
+    // stale (both are resolved at open), so it is refused, not recomputed.
+    if (row.closedAt === null) return "open" as const;
+    const before = { opensAt: row.opensAt, closesAt: row.closesAt };
 
     await tx
       .update(openingSessions)
@@ -699,6 +797,15 @@ export async function updateTodaySession(
   });
 
   if (!updated) return { ok: false, code: "NOT_FOUND", message: "Session not found for today." };
+  if (updated === "open") {
+    return refuse(
+      { ok: false, code: "STALE_STATE", message: "This session is open. Close it before changing its times." },
+      {
+        entityKind: "opening_session", entityId: id, actor: { id: auth.session.id, role: auth.session.role },
+        after: { attempted: "update", why: "session_open", ...parsed.data },
+      }
+    );
+  }
   // Opt-in notify: push the (possibly changed) opening time when the admin asked.
   if (parsed.data.notify) fanOutOpeningPush(parsed.data.opensAt, false);
   return { ok: true, data: { sessions: await listToday() } };
@@ -713,11 +820,14 @@ export async function deleteTodaySession(
 
   const deleted = await db.transaction(async (tx) => {
     const txDb = tx as unknown as DB;
-    const [before] = await tx
-      .select({ opensAt: openingSessions.opensAt, closesAt: openingSessions.closesAt })
+    const [row] = await tx
+      .select({ opensAt: openingSessions.opensAt, closesAt: openingSessions.closesAt, closedAt: openingSessions.closedAt })
       .from(openingSessions)
       .where(and(eq(openingSessions.id, id), eq(openingSessions.sessionDate, todaySast())));
-    if (!before) return false;
+    if (!row) return false;
+    // The open session is the current session (§6.11.1); it ends by closeSession, never a hard delete.
+    if (row.closedAt === null) return "open" as const;
+    const before = { opensAt: row.opensAt, closesAt: row.closesAt };
 
     await tx.delete(openingSessions).where(eq(openingSessions.id, id));
     await writeAudit(
@@ -732,5 +842,14 @@ export async function deleteTodaySession(
   });
 
   if (!deleted) return { ok: false, code: "NOT_FOUND", message: "Session not found for today." };
+  if (deleted === "open") {
+    return refuse(
+      { ok: false, code: "STALE_STATE", message: "This session is open. Close it before removing it." },
+      {
+        entityKind: "opening_session", entityId: id, actor: { id: auth.session.id, role: auth.session.role },
+        after: { attempted: "delete", why: "session_open" },
+      }
+    );
+  }
   return { ok: true, data: { sessions: await listToday() } };
 }
