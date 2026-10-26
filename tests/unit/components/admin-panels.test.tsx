@@ -31,6 +31,9 @@ function draftReport(over: Partial<MonthlyReport> = {}): MonthlyReport {
     expensesZar: 0,
     grossMarginZar: 70000,
     netZar: 70000,
+    // CHANGED (AT-191/AT-192): MonthlyReport carries its cost state.
+    costState: "provisional",
+    cogsAbsentItems: [],
     status: "awaiting_signatures",
     adminSig: null,
     generatedAt: "2026-06-01T08:00:00+02:00",

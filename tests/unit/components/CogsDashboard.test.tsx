@@ -26,8 +26,10 @@ function makeCogs(over: Partial<CogsLive> = {}): CogsLive {
     expensesZar: 0,
     grossMarginZar: 35000,
     netZar: 35000,
-    profit: true,
-    costEstimatedWarning: false,
+    // CHANGED (AT-191/AT-192): profit/costEstimatedWarning → costState.
+    costState: "final",
+    absentItems: [],
+    ordersWithoutCost: 0,
     ...over,
   };
 }
@@ -56,20 +58,44 @@ describe("CogsDashboard", () => {
     expect(screen.getAllByText(/R\s*450,00/).length).toBeGreaterThan(0);
   });
 
-  it("shows the cost-estimate warning banner when flagged (R10)", () => {
-    mockUseCogsLive.mockReturnValue({
-      today: makeCogs({ costEstimatedWarning: true }),
-      status: "live",
-      refresh: vi.fn(),
-    });
+  // CHANGED (AT-191): replaces the R10 "best-estimate" banner test.
+  it("estimated costs: the provisional banner links to recosting, and Net is warn — never teal (REQ-110)", () => {
+    const est = (d: CogsLive) => ({ ...d, costState: "provisional" as const });
+    mockUseCogsLive.mockReturnValue({ today: est(makeCogs()), status: "live", refresh: vi.fn() });
     render(
-      <CogsDashboard
-        initialToday={makeCogs({ costEstimatedWarning: true })}
-        initialHistory={history}
-        todayDate="2026-06-04"
-      />
+      <CogsDashboard initialToday={est(makeCogs())} initialHistory={history.map(est)} todayDate="2026-06-04" />
     );
-    expect(screen.getByText(/best-estimate/i)).toBeInTheDocument();
+    expect(screen.getByText(/Provisional/)).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /recost/i })[0]).toHaveAttribute("href", "/admin/yield");
+    const net = screen.getAllByText(/R\s*650,00/);
+    expect(net.some((el) => el.style.color === "var(--status-warn)")).toBe(true);
+    expect(net.some((el) => el.style.color === "var(--color-dark-teal)")).toBe(false);
+  });
+
+  it("an absent cost input: COGS and Net read UNAVAILABLE naming the item, never R0,00 (REQ-109, REQ-129)", () => {
+    const refused = makeCogs({
+      cogsZar: null,
+      grossMarginZar: null,
+      netZar: null,
+      costState: "unavailable",
+      absentItems: ["Oat Milk"],
+    });
+    mockUseCogsLive.mockReturnValue({ today: refused, status: "live", refresh: vi.fn() });
+    render(<CogsDashboard initialToday={refused} initialHistory={history} todayDate="2026-06-04" />);
+    const words = screen.getAllByText("UNAVAILABLE");
+    expect(words.length).toBeGreaterThanOrEqual(2); // COGS tile + Net tile
+    expect(words.every((el) => el.style.color === "var(--status-unavailable)")).toBe(true);
+    expect(screen.getAllByText(/UNAVAILABLE — Oat Milk/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Provisional/)).toBeNull();
+  });
+
+  it("an empty period shows zeroes, not UNAVAILABLE and not provisional (REQ-129)", () => {
+    const empty = makeCogs({ revenueZar: 0, cogsZar: 0, grossMarginZar: 0, netZar: 0, costState: "empty" });
+    mockUseCogsLive.mockReturnValue({ today: empty, status: "live", refresh: vi.fn() });
+    render(<CogsDashboard initialToday={empty} initialHistory={[]} todayDate="2026-06-04" />);
+    expect(screen.getByText(/No activity recorded/)).toBeInTheDocument();
+    expect(screen.queryByText("UNAVAILABLE")).toBeNull();
+    expect(screen.queryByText(/Provisional/)).toBeNull();
   });
 
   it("colours the Net tile with brand tones (profit → teal, loss → crimson)", () => {
@@ -84,7 +110,7 @@ describe("CogsDashboard", () => {
     ).toBe(true);
 
     // Loss: today's net = -4500; merged into Jun 4 → aggregate = 10000+20000+(-4500) = 25500 = R255,00
-    const loss = makeCogs({ netZar: -4500, profit: false });
+    const loss = makeCogs({ netZar: -4500 });
     mockUseCogsLive.mockReturnValue({ today: loss, status: "live", refresh: vi.fn() });
     rerender(<CogsDashboard initialToday={loss} initialHistory={history} todayDate="2026-06-04" />);
     // aggregate net = 10000 + 20000 + (-4500) = 25500 = R255,00 — still positive (teal), not a loss

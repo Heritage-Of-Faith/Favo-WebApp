@@ -115,6 +115,20 @@ export function computeOrderCogs(items: readonly CostedConsumption[]): OrderCogs
 }
 
 /**
+ * Pure. §7.0.1b: an order is estimated when any lot it drew a costed unit from
+ * is not invoice-backed. A lot whose cost_source is unknown (not read) counts
+ * as an estimate — green needs proof, never a default.
+ */
+export function orderUsesEstimate(
+  consumed: readonly Consumption[],
+  sourceByLot: ReadonlyMap<string, "estimate" | "invoice">
+): boolean {
+  return consumed.some(
+    (c) => c.costUnits > 0 && c.draws.some((d) => sourceByLot.get(d.lotId) !== "invoice")
+  );
+}
+
+/**
  * Writes the order's order_cogs row. Call inside the transaction that ran
  * deductForOrder, right after it succeeds, with what it returned: if the
  * deduction throws, this never runs and the rollback leaves no row.
@@ -132,11 +146,12 @@ export async function writeOrderCogs(
   const lotIds = [...new Set(consumed.flatMap((c) => c.draws.map((d) => d.lotId)))];
   const lots = lotIds.length
     ? await tx
-        .select({ id: inventoryLots.id, unitCostZar: inventoryLots.unitCostZar })
+        .select({ id: inventoryLots.id, unitCostZar: inventoryLots.unitCostZar, costSource: inventoryLots.costSource })
         .from(inventoryLots)
         .where(inArray(inventoryLots.id, lotIds))
     : [];
   const costByLot = new Map(lots.map((l) => [l.id, l.unitCostZar]));
+  const sourceByLot = new Map(lots.map((l) => [l.id, l.costSource]));
 
   const { cogsZar, absentItemIds } = computeOrderCogs(
     consumed.map((c) => ({
@@ -152,9 +167,9 @@ export async function writeOrderCogs(
       orderId,
       cogsZar,
       absentItemIds,
-      // NULL = unknown: inventory_lots.cost_source arrives with AT-191. Never
-      // defaulted to true or false (§10.6).
-      estimated: null,
+      // AT-191 (§7.0.1b, REQ-110): true when any lot this order drew from is
+      // cost_source 'estimate' — the order's margin then renders provisional.
+      estimated: orderUsesEstimate(consumed, sourceByLot),
     })
     .onConflictDoNothing({ target: orderCogs.orderId });
 }

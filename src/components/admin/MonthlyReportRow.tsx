@@ -8,6 +8,7 @@ import { formatZar } from "@/lib/format";
 import StatusBadge from "@/components/shared/StatusBadge";
 import DualSignBlock from "@/components/admin/DualSignBlock";
 import type { MonthlyReport } from "@/lib/types";
+import { NET_TONE_COLOR, netTone, PROVISIONAL, UNAVAILABLE, unavailableText } from "@/lib/cost-state";
 
 export interface MonthlyReportRowProps {
   report: MonthlyReport;
@@ -36,6 +37,7 @@ function monthLabel(monthIso: string): string {
 
 export default function MonthlyReportRow({ report, canSignAdmin, onChanged }: MonthlyReportRowProps) {
   const [open, setOpen] = useState(report.status !== "closed");
+  const tone = netTone(report.costState, report.netZar);
 
   return (
     <li className="rounded-[var(--radius-card)] border" style={{ borderColor: "var(--color-border-subtle)" }}>
@@ -50,19 +52,22 @@ export default function MonthlyReportRow({ report, canSignAdmin, onChanged }: Mo
             {monthLabel(report.month)}
           </p>
           <p className="favo-caption" style={{ color: "var(--color-text-muted)" }}>
-            Rev {formatZar(report.revenueZar)} · COGS {formatZar(report.cogsZar)}
+            Rev {formatZar(report.revenueZar)} · COGS{" "}
+            {report.cogsZar === null ? unavailableText(report.cogsAbsentItems, 0) : formatZar(report.cogsZar)}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <span
             className="favo-small"
             style={{
-              color: report.netZar >= 0 ? "var(--color-success)" : "var(--color-error)",
+              // AT-191/AT-192: never green on estimated costs; UNAVAILABLE its own tone.
+              color: NET_TONE_COLOR[tone],
               fontWeight: 700,
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {formatZar(report.netZar)}
+            {report.netZar === null ? UNAVAILABLE : formatZar(report.netZar)}
+            {tone === "warn" && ` · ${PROVISIONAL}`}
           </span>
           <StatusBadge variant={STATUS_VARIANT[report.status]}>{STATUS_LABEL[report.status]}</StatusBadge>
           <span aria-hidden style={{ color: "var(--color-text-muted)" }}>

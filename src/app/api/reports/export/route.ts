@@ -13,6 +13,7 @@ import { buildInventoryCsv } from "@/server/reports/inventory-csv";
 import { buildMonthlyPnlCsv } from "@/server/reports/monthly-pnl-csv";
 import { renderPdfHtml, type PdfReportKind } from "@/server/reports/pdf-renderer";
 import { writeAudit } from "@/server/audit";
+import { UNAVAILABLE } from "@/lib/cost-state";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -112,9 +113,11 @@ export async function GET(req: NextRequest) {
       rows = reportRows.map((r) => ({
         Date: r.date,
         "Revenue (ZAR)": r.revenueZar,
-        "COGS (ZAR)": r.cogsZar,
-        "Gross Margin (ZAR)": r.grossMarginZar,
-        "Gross Margin %": r.grossMarginPct,
+        // NULL = UNAVAILABLE — the word, never a blank or 0 (REQ-109).
+        "COGS (ZAR)": r.cogsZar ?? UNAVAILABLE,
+        "Gross Margin (ZAR)": r.grossMarginZar ?? UNAVAILABLE,
+        "Gross Margin %": r.grossMarginPct ?? UNAVAILABLE,
+        "Cost status": r.costStatus,
       }));
       break;
     }

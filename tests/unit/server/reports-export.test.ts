@@ -19,24 +19,25 @@ describe("rowsToCsv — RFC 4180 output", () => {
 
   it("encodes one data row correctly", () => {
     const rows: ReportRow[] = [
-      { date: "2026-06-08", revenueZar: 150000, cogsZar: 45000, grossMarginZar: 105000, grossMarginPct: 70.0 },
+      { date: "2026-06-08", revenueZar: 150000, cogsZar: 45000, grossMarginZar: 105000, grossMarginPct: 70.0, costStatus: "final" },
     ];
     const csv = rowsToCsv(rows);
     const lines = csv.split("\r\n");
     expect(lines).toHaveLength(2);
-    expect(lines[1]).toBe("2026-06-08,150000,45000,105000,70");
+    // CHANGED (AT-192, REQ-131): a trailing "Cost status" column.
+    expect(lines[1]).toBe("2026-06-08,150000,45000,105000,70,final");
   });
 
   it("uses CRLF line endings (RFC 4180)", () => {
     const csv = rowsToCsv([
-      { date: "2026-06-08", revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0 },
+      { date: "2026-06-08", revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0, costStatus: "final" },
     ]);
     expect(csv).toContain("\r\n");
   });
 
   it("escapes values containing commas with double-quotes", () => {
     const rows: ReportRow[] = [
-      { date: "2026,06,08", revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0 },
+      { date: "2026,06,08", revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0, costStatus: "final" },
     ];
     const csv = rowsToCsv(rows);
     expect(csv).toContain('"2026,06,08"');
@@ -44,7 +45,7 @@ describe("rowsToCsv — RFC 4180 output", () => {
 
   it("escapes internal double-quotes per RFC 4180", () => {
     const rows: ReportRow[] = [
-      { date: '"quoted"', revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0 },
+      { date: '"quoted"', revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0, costStatus: "final" },
     ];
     const csv = rowsToCsv(rows);
     expect(csv).toContain('"""quoted"""');
@@ -58,8 +59,8 @@ describe("rowsToCsv — RFC 4180 output", () => {
 
   it("handles multiple rows in order", () => {
     const rows: ReportRow[] = [
-      { date: "2026-06-01", revenueZar: 10000, cogsZar: 3000, grossMarginZar: 7000, grossMarginPct: 70 },
-      { date: "2026-06-02", revenueZar: 20000, cogsZar: 6000, grossMarginZar: 14000, grossMarginPct: 70 },
+      { date: "2026-06-01", revenueZar: 10000, cogsZar: 3000, grossMarginZar: 7000, grossMarginPct: 70, costStatus: "final" },
+      { date: "2026-06-02", revenueZar: 20000, cogsZar: 6000, grossMarginZar: 14000, grossMarginPct: 70, costStatus: "final" },
     ];
     const csv = rowsToCsv(rows);
     const lines = csv.split("\r\n").filter(Boolean);
@@ -114,7 +115,11 @@ describe("buildReportRows — date range enumeration", () => {
     const { db } = await import("@db/index");
     vi.mocked(db.execute)
       .mockResolvedValueOnce([{ sast_date: "2026-06-08", revenue: "80000" }] as unknown as ExecResult)
-      .mockResolvedValueOnce([{ sast_date: "2026-06-08", cogs: "24000" }] as unknown as ExecResult);
+      // CHANGED (AT-189): COGS is now a sum of order_cogs rows, not a per-day ROUND(SUM).
+      .mockResolvedValueOnce([
+        { revenue_day: "2026-06-08", cogs_zar: 14000, absent_item_ids: [], estimated: true, missing: false },
+        { revenue_day: "2026-06-08", cogs_zar: 10000, absent_item_ids: [], estimated: false, missing: false },
+      ] as unknown as ExecResult);
 
     const { buildReportRows } = await import("@/server/reports/export-csv");
     const rows = await buildReportRows("2026-06-08", "2026-06-08");
@@ -122,6 +127,7 @@ describe("buildReportRows — date range enumeration", () => {
     expect(rows[0].cogsZar).toBe(24000);
     expect(rows[0].grossMarginZar).toBe(56000);
     expect(rows[0].grossMarginPct).toBe(70);
+    expect(rows[0].costStatus).toBe("provisional (estimated costs)");
   });
 
   it("days without transactions show zero revenue and COGS", async () => {
@@ -135,6 +141,7 @@ describe("buildReportRows — date range enumeration", () => {
     expect(rows[0].revenueZar).toBe(0);
     expect(rows[0].cogsZar).toBe(0);
     expect(rows[0].grossMarginPct).toBe(0);
+    expect(rows[0].costStatus).toBe("no orders");
   });
 
   // Regression guard: date bounds must be bound as ISO strings with an explicit
@@ -153,7 +160,8 @@ describe("buildReportRows — date range enumeration", () => {
     const dialect = new PgDialect();
     for (const call of vi.mocked(db.execute).mock.calls) {
       const { sql: text, params } = dialect.sqlToQuery(call[0] as Parameters<typeof dialect.sqlToQuery>[0]);
-      expect(text).toContain("::timestamptz");
+      // CHANGED (AT-189): the order_cogs read binds revenue days as ::date.
+      expect(text).toMatch(/::timestamptz|::date/);
       // No bound parameter may be a JS Date — they must be ISO strings.
       for (const p of params) {
         expect(p).not.toBeInstanceOf(Date);

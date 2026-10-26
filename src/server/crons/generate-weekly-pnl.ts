@@ -6,6 +6,14 @@
 import { and, gte, lt, sql, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, weeklyReports, expenses } from "@db/schema";
+import { readPeriodCogs } from "@/server/cogs/period-cogs";
+
+/** "2026-08-10" + 6 → "2026-08-16" (calendar arithmetic on a YYYY-MM-DD). */
+function addDays(yyyymmdd: string, days: number): string {
+  const d = new Date(`${yyyymmdd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 // Africa/Johannesburg = UTC+2 (no DST)
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
@@ -67,17 +75,12 @@ export async function generateWeeklyPnL(
     );
   const revenueZar = revRow?.total ?? 0;
 
-  // ── COGS ───────────────────────────────────────────────────────────────────
-  const [cogsRow] = await db.execute<{ total: string | null }>(sql`
-    SELECT ROUND(COALESCE(SUM(-sm.delta::numeric * il.unit_cost_zar), 0))::bigint AS total
-    FROM stock_movements sm
-    JOIN inventory_lots il ON sm.inventory_lot_id = il.id
-    WHERE sm.kind = 'deduction'
-      AND il.unit_cost_zar IS NOT NULL
-      AND sm.at >= ${start.toISOString()}::timestamptz
-      AND sm.at < ${end.toISOString()}::timestamptz
-  `);
-  const cogsZar = parseInt(cogsRow?.total ?? "0", 10) || 0;
+  // ── COGS — Σ order_cogs over the week's seven revenue days (AT-189, REQ-106).
+  // Never re-rounded, never filtered: an absent cost input stores the week as
+  // UNAVAILABLE with the items named (AT-190, REQ-109), and an estimated lot
+  // stores it provisional (AT-191, REQ-110/REQ-131).
+  const cogs = await readPeriodCogs(weekStarting, addDays(weekStarting, 6));
+  const cogsZar = cogs.cogsZar;
 
   // ── Expenses ─────────────────────────────────────────────────────────────
   // Operating expenses (rent, utilities, staff, …) incurred within the week.
@@ -89,13 +92,22 @@ export async function generateWeeklyPnL(
     .where(and(gte(expenses.incurredAt, start), lt(expenses.incurredAt, end)));
   const expensesZar = expRow?.total ?? 0;
 
-  const grossMarginZar = revenueZar - cogsZar;
-  const netZar = grossMarginZar - expensesZar;
+  const grossMarginZar = cogsZar === null ? null : revenueZar - cogsZar;
+  const netZar = grossMarginZar === null ? null : grossMarginZar - expensesZar;
 
   // ── Insert report ──────────────────────────────────────────────────────────
   const [report] = await db
     .insert(weeklyReports)
-    .values({ weekStarting, revenueZar, cogsZar, expensesZar, grossMarginZar, netZar })
+    .values({
+      weekStarting,
+      revenueZar,
+      cogsZar,
+      expensesZar,
+      grossMarginZar,
+      netZar,
+      costState: cogs.state,
+      cogsAbsentItems: cogs.absentItemNames,
+    })
     .returning({ id: weeklyReports.id });
 
   return { weekStarting, reportId: report.id, alreadyExists: false };

@@ -1,0 +1,144 @@
+// AT-189 · AT-190 · AT-191 · AT-192 — REQ-106, REQ-109, REQ-110, REQ-129, REQ-131.
+// PRD §7.0.2 (cogs_zar = Σ order_cogs, the refusal rule L1790–1795),
+// §7.0.1b (cost_source → provisional, never green), §7.5 / REQ-129 (three
+// states, three renderings), §17.6.1 (--status-warn ≠ --status-unavailable).
+//
+// Pure and client-safe: the server sums with it, the screens and exports
+// render with it. Every period figure is a SUM of per-order integers already
+// rounded once at order_cogs — nothing here rounds (REQ-106).
+//
+// The states, never conflated (CLAUDE.md §5):
+//   empty       — no order in the period: a genuine zero.
+//   unavailable — some order's cost input is absent: no number, the item named.
+//   provisional — every cost is present, but some lot is (or may be) an estimate.
+//   final       — every contributing lot is invoice-backed.
+
+export type CostState = "empty" | "unavailable" | "provisional" | "final";
+
+/** One order's frozen order_cogs row, as a period read sees it. */
+export type OrderCogsRow = {
+  /** NULL when the order has no order_cogs row, or the row refused. */
+  cogsZar: number | null;
+  absentItemIds: readonly string[];
+  /**
+   * order_cogs.estimated. NULL (unknown — e.g. written before cost_source
+   * existed) is NOT treated as invoice-backed: green needs proof (§7.0.1b
+   * "turns green only when every contributing lot is invoice-backed").
+   */
+  estimated: boolean | null;
+  /** True when the order has no order_cogs row at all. */
+  missing?: boolean;
+};
+
+export type CostRollup = {
+  state: CostState;
+  /** Σ order_cogs, integer cents. NULL whenever state is "unavailable". */
+  cogsZar: number | null;
+  /** Inventory item ids named by the refusal, sorted, each once. */
+  absentItemIds: string[];
+  /** Orders in the period with no order_cogs row (also a refusal). */
+  ordersWithoutCost: number;
+  orderCount: number;
+};
+
+/** Σ order_cogs over a period, with the refusal rule and the provisional flag. */
+export function rollupOrderCogs(rows: readonly OrderCogsRow[]): CostRollup {
+  let total = 0;
+  let refused = false;
+  let provisional = false;
+  let ordersWithoutCost = 0;
+  const absent = new Set<string>();
+
+  for (const r of rows) {
+    if (r.missing) {
+      ordersWithoutCost += 1;
+      refused = true;
+      continue;
+    }
+    if (r.cogsZar === null) {
+      refused = true;
+      for (const id of r.absentItemIds) absent.add(id);
+      continue;
+    }
+    total += r.cogsZar;
+    if (r.estimated !== false) provisional = true;
+  }
+
+  const absentItemIds = [...absent].sort();
+  if (refused) {
+    return { state: "unavailable", cogsZar: null, absentItemIds, ordersWithoutCost, orderCount: rows.length };
+  }
+  const state: CostState = rows.length === 0 ? "empty" : provisional ? "provisional" : "final";
+  return { state, cogsZar: total, absentItemIds: [], ordersWithoutCost: 0, orderCount: rows.length };
+}
+
+/**
+ * Combines the states of sub-periods (e.g. the days of a trend window).
+ * Any unavailable → unavailable; else any provisional → provisional; else any
+ * final → final; else empty.
+ */
+export function combineCostStates(states: readonly CostState[]): CostState {
+  if (states.includes("unavailable")) return "unavailable";
+  if (states.includes("provisional")) return "provisional";
+  if (states.includes("final")) return "final";
+  return "empty";
+}
+
+export type NetTone = "neutral" | "positive" | "negative" | "warn" | "unavailable";
+
+/**
+ * The profit/loss flag's tone. Green ("positive") ONLY on a final state —
+ * a provisional figure is "warn" whatever its sign (§7.0.1b: "never green —
+ * --status-warn, never --status-success"), and unavailable has its own tone.
+ */
+export function netTone(state: CostState, netZar: number | null): NetTone {
+  if (state === "unavailable" || netZar === null) return "unavailable";
+  if (state === "provisional") return "warn";
+  if (state === "empty") return "neutral";
+  return netZar >= 0 ? "positive" : "negative";
+}
+
+/** CSS colour per tone — §17.6.1: warn and unavailable are their own tokens. */
+export const NET_TONE_COLOR: Record<NetTone, string> = {
+  neutral: "var(--color-text-strong)",
+  positive: "var(--color-success)",
+  negative: "var(--color-error)",
+  warn: "var(--status-warn)",
+  unavailable: "var(--status-unavailable)",
+};
+
+/** The literal render word for an absent input (§7.0.2, REQ-109, REQ-129). */
+export const UNAVAILABLE = "UNAVAILABLE";
+
+/** The label for an estimated figure (§7.0.1b, REQ-110, REQ-131). */
+export const PROVISIONAL = "provisional";
+
+/**
+ * "UNAVAILABLE — Oat milk, Macadamia milk" — the named refusal. `names` maps
+ * inventory item id → display name; an unknown id is shown as the id.
+ */
+export function unavailableText(
+  absentItemIds: readonly string[],
+  ordersWithoutCost: number,
+  names?: ReadonlyMap<string, string>
+): string {
+  const parts = absentItemIds.map((id) => names?.get(id) ?? id);
+  if (ordersWithoutCost > 0) {
+    parts.push(`${ordersWithoutCost} order${ordersWithoutCost === 1 ? "" : "s"} with no recorded cost`);
+  }
+  return parts.length > 0 ? `${UNAVAILABLE} — ${parts.join(", ")}` : UNAVAILABLE;
+}
+
+/** The export's status column: one word per state, plus the names on a refusal. */
+export function costStatusLabel(rollup: Pick<CostRollup, "state" | "absentItemIds" | "ordersWithoutCost">, names?: ReadonlyMap<string, string>): string {
+  switch (rollup.state) {
+    case "unavailable":
+      return unavailableText(rollup.absentItemIds, rollup.ordersWithoutCost, names);
+    case "provisional":
+      return `${PROVISIONAL} (estimated costs)`;
+    case "final":
+      return "final";
+    case "empty":
+      return "no orders";
+  }
+}

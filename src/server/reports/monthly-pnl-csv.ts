@@ -5,6 +5,7 @@ import { and, gte, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { monthlyReports } from "@db/schema";
 import { formatZar } from "@/lib/format";
+import { costStatusLabel, UNAVAILABLE } from "@/lib/cost-state";
 
 function csvCell(value: string | number | null | undefined): string {
   const s = value == null ? "" : String(value);
@@ -33,6 +34,7 @@ export async function buildMonthlyPnlCsv(from: string, to: string): Promise<stri
     "COGS (ZAR)",
     "Gross Margin (ZAR)",
     "Net (ZAR)",
+    "Cost status",
     "Status",
     "Admin Signed",
   ];
@@ -44,9 +46,12 @@ export async function buildMonthlyPnlCsv(from: string, to: string): Promise<stri
       [
         r.month,
         formatZar(r.revenueZar),
-        formatZar(r.cogsZar),
-        formatZar(r.grossMarginZar),
-        formatZar(r.netZar),
+        // NULL = UNAVAILABLE (REQ-109), never 0; the status column marks
+        // provisional (estimated) figures in the export too (REQ-131).
+        r.cogsZar === null ? UNAVAILABLE : formatZar(r.cogsZar),
+        r.grossMarginZar === null ? UNAVAILABLE : formatZar(r.grossMarginZar),
+        r.netZar === null ? UNAVAILABLE : formatZar(r.netZar),
+        costStatusLabel({ state: r.costState, absentItemIds: r.cogsAbsentItems, ordersWithoutCost: 0 }),
         r.status,
         adminSig ? `${adminSig.signerName ?? "yes"} (${adminSig.at ?? ""})` : "",
       ]

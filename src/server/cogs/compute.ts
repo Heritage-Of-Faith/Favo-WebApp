@@ -1,16 +1,13 @@
-// COGS computation — task G13
-// getCogsLive: queries v_daily_revenue and v_daily_cogs for
-// a given SAST date and returns the daily P&L breakdown.
-//
-// The cost_estimated_warning flag is true when any inventory_lot contributing
-// to today's COGS was seeded with reason containing 'cost_estimated' in the
-// audit_log (R10 mitigation). Admin dismisses this by recosting via A8.
-//
-// Docs: FAVO_PRD_v3.md §04 §07 §10 R10 · BUSINESS_RULES.md L07
+// COGS computation — task G13, rewritten for AT-189 / AT-190 / AT-191 / AT-192.
+// getCogsLive: revenue from v_daily_revenue; COGS as Σ order_cogs for the SAST
+// revenue day (PRD v7 §7.0.2 L1790 — v_daily_cogs is dropped by 0038); and
+// the day's cost state: empty | unavailable | provisional | final (§7.0.1b,
+// REQ-110, REQ-129). Spec: docs/FAVO_PRD_v7.md · BUSINESS_RULES.md L07.
 
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { CogsLive } from "@/lib/types";
+import { readPeriodCogs } from "@/server/cogs/period-cogs";
 
 // Africa/Johannesburg = UTC+2 (no DST)
 const SAST_OFFSET_HOURS = 2;
@@ -28,12 +25,9 @@ export function todaySast(): string {
 /**
  * Computes the COGS summary for a given SAST date.
  *
- * Queries the v_daily_revenue and v_daily_cogs views created in migration 0004.
- * Returns zeros for any missing view row (e.g. no orders / no deductions on that day).
- *
- * cost_estimated_warning: checks the audit_log for any deduction on this
- * date where the linked lot's creation audit row has reason LIKE
- * '%cost_estimated%'.
+ * A day with no orders is a genuine zero (state "empty"). A day with an absent
+ * cost input has cogs, gross margin and net NULL — UNAVAILABLE, the offending
+ * items named — never a smaller number (REQ-109).
  */
 export async function getCogsLive(date: string): Promise<CogsLive> {
   // ── Revenue ────────────────────────────────────────────────────────────────
@@ -42,11 +36,10 @@ export async function getCogsLive(date: string): Promise<CogsLive> {
   );
   const revenueZar = parseInt(revRow?.revenue_zar ?? "0", 10) || 0;
 
-  // ── COGS ───────────────────────────────────────────────────────────────────
-  const [cogsRow] = await db.execute<{ cogs_zar: string | null }>(
-    sql`SELECT cogs_zar FROM v_daily_cogs WHERE sast_date = ${date}::date`
-  );
-  const cogsZar = parseInt(cogsRow?.cogs_zar ?? "0", 10) || 0;
+  // ── COGS — Σ order_cogs (REQ-106): integers rounded once per order at the
+  // sale, never re-rounded here, never filtered.
+  const cogs = await readPeriodCogs(date, date);
+  const cogsZar = cogs.cogsZar;
 
   // ── Expenses ─────────────────────────────────────────────────────────────
   // Non-stock operating expenses for the day (rent, utilities, wages, …).
@@ -57,23 +50,8 @@ export async function getCogsLive(date: string): Promise<CogsLive> {
   );
   const expensesZar = parseInt(expRow?.expenses_zar ?? "0", 10) || 0;
 
-  // ── cost_estimated_warning (R10) ───────────────────────────────────────────
-  // A lot is considered "estimated" if its creation audit row contains
-  // 'cost_estimated' in the reason field.
-  const [warnRow] = await db.execute<{ cnt: string }>(sql`
-    SELECT COUNT(DISTINCT al.entity_id) AS cnt
-    FROM audit_log al
-    JOIN stock_movements sm ON sm.inventory_lot_id = al.entity_id
-    WHERE al.entity_kind = 'inventory_lot'
-      AND al.action        = 'create'
-      AND al.reason LIKE '%cost_estimated%'
-      AND sm.kind          = 'deduction'
-      AND (sm.at AT TIME ZONE 'Africa/Johannesburg')::date = ${date}::date
-  `);
-  const costEstimatedWarning = parseInt(warnRow?.cnt ?? "0", 10) > 0;
-
-  const grossMarginZar = revenueZar - cogsZar;
-  const netZar = grossMarginZar - expensesZar;
+  const grossMarginZar = cogsZar === null ? null : revenueZar - cogsZar;
+  const netZar = grossMarginZar === null ? null : grossMarginZar - expensesZar;
 
   return {
     date,
@@ -82,7 +60,8 @@ export async function getCogsLive(date: string): Promise<CogsLive> {
     expensesZar,
     grossMarginZar,
     netZar,
-    profit: netZar > 0,
-    costEstimatedWarning,
+    costState: cogs.state,
+    absentItems: cogs.absentItemNames,
+    ordersWithoutCost: cogs.ordersWithoutCost,
   };
 }

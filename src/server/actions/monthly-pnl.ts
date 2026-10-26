@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import { monthlyReports, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
+import { readPeriodCogs } from "@/server/cogs/period-cogs";
 import type {
   ActionResult,
   MonthlyReport,
@@ -43,10 +44,12 @@ function rowToReport(r: {
   id: string;
   month: string;
   revenueZar: number;
-  cogsZar: number;
+  cogsZar: number | null;
   expensesZar: number;
-  grossMarginZar: number;
-  netZar: number;
+  grossMarginZar: number | null;
+  netZar: number | null;
+  costState: MonthlyReport["costState"];
+  cogsAbsentItems: string[];
   status: string;
   adminSig: unknown;
   generatedAt: Date;
@@ -60,11 +63,19 @@ function rowToReport(r: {
     expensesZar: r.expensesZar,
     grossMarginZar: r.grossMarginZar,
     netZar: r.netZar,
+    costState: r.costState,
+    cogsAbsentItems: r.cogsAbsentItems,
     status: r.status as MonthlyReport["status"],
     adminSig: (r.adminSig as MonthlyReportSig | null) ?? null,
     generatedAt: r.generatedAt.toISOString(),
     closedAt: r.closedAt?.toISOString() ?? null,
   };
+}
+
+/** "2026-08-01" → "2026-08-31": the month's last revenue day. */
+function lastDayOfMonth(month: string): string {
+  const [year, mon] = month.split("-").map(Number);
+  return new Date(Date.UTC(year, mon, 0)).toISOString().slice(0, 10);
 }
 
 // ─── listMonthlyReports ───────────────────────────────────────────────────────
@@ -135,18 +146,16 @@ export async function generateMonthlyPnL(
     );
   const revenueZar = revRow?.total ?? 0;
 
-  // ── COGS ───────────────────────────────────────────────────────────────────
-  const [cogsRow] = await db.execute<{ total: string | null }>(sql`
-    SELECT ROUND(COALESCE(SUM(-sm.delta::numeric * il.unit_cost_zar), 0))::bigint AS total
-    FROM stock_movements sm
-    JOIN inventory_lots il ON sm.inventory_lot_id = il.id
-    WHERE sm.kind = 'deduction'
-      AND il.unit_cost_zar IS NOT NULL
-      AND sm.at >= ${start} AND sm.at < ${end}
-  `);
-  const cogsZar = parseInt(cogsRow?.total ?? "0", 10) || 0;
+  // ── COGS — Σ order_cogs over the month's revenue days (AT-189, REQ-106).
+  // Never re-rounded, never filtered: an absent cost input stores the month
+  // UNAVAILABLE with the items named (AT-190, REQ-109); an estimated lot
+  // stores it provisional (AT-191, REQ-110/REQ-131).
+  const cogs = await readPeriodCogs(month, lastDayOfMonth(month));
+  const cogsZar = cogs.cogsZar;
+  const costState = cogs.state;
+  const cogsAbsentItems = cogs.absentItemNames;
 
-  const grossMarginZar = revenueZar - cogsZar;
+  const grossMarginZar = cogsZar === null ? null : revenueZar - cogsZar;
   const netZar = grossMarginZar;
 
   let reportId!: string;
@@ -163,6 +172,8 @@ export async function generateMonthlyPnL(
         expensesZar: 0,
         grossMarginZar,
         netZar,
+        costState,
+        cogsAbsentItems,
         status: "draft",
       })
       .returning({ id: monthlyReports.id });
@@ -177,7 +188,7 @@ export async function generateMonthlyPnL(
         actorId: session.id,
         actorRole: session.role,
         before: null,
-        after: { month, revenueZar, cogsZar, expensesZar: 0, netZar, status: "draft" },
+        after: { month, revenueZar, cogsZar, expensesZar: 0, netZar, costState, cogsAbsentItems, status: "draft" },
       },
       txDb
     );

@@ -1,6 +1,8 @@
 // Shared types — imported by all verticals.
 // Source of truth: docs/DATA_MODEL.md + docs/API.md
 
+import type { CostState } from "@/lib/cost-state";
+
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 export type OrderState =
@@ -256,16 +258,20 @@ export type ContainerYield = {
 export type CogsLive = {
   date: string; // YYYY-MM-DD in Africa/Johannesburg
   revenueZar: number;
-  cogsZar: number;
+  /** Σ order_cogs (REQ-106). NULL = UNAVAILABLE — an absent cost input (REQ-109). */
+  cogsZar: number | null;
   expensesZar: number;
-  grossMarginZar: number; // revenueZar - cogsZar
-  netZar: number; // grossMarginZar - expensesZar
-  profit: boolean; // netZar > 0
+  grossMarginZar: number | null; // revenueZar - cogsZar; NULL when cogs is
+  netZar: number | null; // grossMarginZar - expensesZar; NULL when cogs is
   /**
-   * True if any lot contributing to today's COGS was flagged
-   * cost_estimated=true (R10 mitigation).  Admin should recost via A8.
+   * AT-191/AT-192 (REQ-110, REQ-129): empty | unavailable | provisional | final.
+   * provisional = some contributing lot's cost_source is 'estimate' — never green.
    */
-  costEstimatedWarning: boolean;
+  costState: CostState;
+  /** Names of the inventory items whose cost is absent (state "unavailable"). */
+  absentItems: string[];
+  /** Orders in the period with no order_cogs row (state "unavailable"). */
+  ordersWithoutCost: number;
 };
 
 /**
@@ -429,10 +435,14 @@ export type MonthlyReport = {
   id: string;
   month: string; // YYYY-MM-DD (first of month)
   revenueZar: number;
-  cogsZar: number;
+  /** NULL = UNAVAILABLE (REQ-109); see costState / cogsAbsentItems. */
+  cogsZar: number | null;
   expensesZar: number;
-  grossMarginZar: number;
-  netZar: number;
+  grossMarginZar: number | null;
+  netZar: number | null;
+  costState: CostState;
+  /** Inventory item names (or ids) whose cost was absent. */
+  cogsAbsentItems: string[];
   status: MonthlyReportStatus;
   adminSig: MonthlyReportSig | null;
   generatedAt: string; // ISO 8601
