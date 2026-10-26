@@ -2,11 +2,22 @@
 // src/server/actions/vouchers.ts (AT-204) so createOrder reuses it. Not a
 // "use server" module: nothing here may become a client-callable action.
 
-import { eq, isNull } from "drizzle-orm";
-import { openingSessions, eventWindows } from "@db/schema";
+import { and, count, eq, isNull } from "drizzle-orm";
+import { openingSessions, eventWindows, orderItems, voucherRedemptions } from "@db/schema";
 import type { DB } from "@/lib/db";
 import { revenueDay } from "@/lib/format";
 import { forcedCloseAt } from "@/lib/session-mode";
+
+/** Read-only: live (unreversed) voucher redemptions per line of one order — for the order panels' "Voucher m of n". */
+export async function liveVoucherCountsByLine(dbc: Pick<DB, "select">, orderId: string): Promise<Map<string, number>> {
+  const rows = await dbc
+    .select({ orderItemId: voucherRedemptions.orderItemId, n: count() })
+    .from(voucherRedemptions)
+    .innerJoin(orderItems, eq(voucherRedemptions.orderItemId, orderItems.id))
+    .where(and(eq(orderItems.orderId, orderId), isNull(voucherRedemptions.reversedAt)))
+    .groupBy(voucherRedemptions.orderItemId);
+  return new Map(rows.map((r) => [r.orderItemId, Number(r.n)]));
+}
 
 /** The one open session (closed_at IS NULL), locked; null if none or past its end (L07, COL-11). */
 export async function lockOpenSession(tx: Pick<DB, "select">, now: Date) {

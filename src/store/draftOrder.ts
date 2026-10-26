@@ -14,6 +14,8 @@ export type DraftItem = {
   unitPriceZar: number;
   quantity: number;
   modifications: MenuCustomisation[];
+  /** §6.9 Untracked vouchers on this line, 0..quantity (L41). Absent = 0. */
+  voucherCount?: number;
 };
 
 /**
@@ -39,7 +41,8 @@ export type DraftOrderState = {
   // Line items
   items: DraftItem[];
 
-  // Derived — kept in sync by actions
+  // Derived — kept in sync by actions. GROSS: vouchers are not taken off here
+  // (the POS shows the net via draftNetZar; createOrder decides the total).
   totalZar: number;
 
   // Set after createOrder succeeds
@@ -55,6 +58,8 @@ export type DraftOrderActions = {
   removeItem: (key: string) => void;
   /** Update quantity for the exact line identified by its lineKey. Removes line if quantity ≤ 0. */
   updateQuantity: (key: string, quantity: number) => void;
+  /** Set the line's voucher count (§6.9.3 chip), clamped to 0..quantity. */
+  setVoucherCount: (key: string, count: number) => void;
   setOrderCreated: (orderId: string, yocoClientSecret: string) => void;
   reset: () => void;
 };
@@ -110,9 +115,22 @@ export const useDraftOrder = create<DraftOrderState & DraftOrderActions>((set) =
       const updated =
         quantity <= 0
           ? state.items.filter((i) => lineKey(i) !== key)
-          : state.items.map((i) => (lineKey(i) === key ? { ...i, quantity } : i));
+          : state.items.map((i) =>
+              lineKey(i) !== key
+                ? i
+                : i.voucherCount === undefined
+                  ? { ...i, quantity }
+                  : { ...i, quantity, voucherCount: Math.min(i.voucherCount, quantity) }
+            );
       return { items: updated, totalZar: calcTotal(updated) };
     }),
+
+  setVoucherCount: (key, count) =>
+    set((state) => ({
+      items: state.items.map((i) =>
+        lineKey(i) === key ? { ...i, voucherCount: Math.min(Math.max(Math.trunc(count), 0), i.quantity) } : i
+      ),
+    })),
 
   setOrderCreated: (orderId, yocoClientSecret) =>
     set({ orderId, yocoClientSecret, step: "pay" }),

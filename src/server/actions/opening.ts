@@ -94,6 +94,7 @@ type OpenRow = {
   id: string; sessionDate: string; opensAt: string; closesAt: string | null;
   viaPos: boolean; notifiedAt: Date | null; mode: SessionMode; eventWindowId: string | null;
   windowStartsAt: Date | null; windowEndsAt: Date | null;
+  voucherKindsActive: string[];
 };
 
 /** The one session with closed_at IS NULL (§6.11.1), with its window's span. */
@@ -105,6 +106,7 @@ async function findOpenSession(dbc: Pick<DB, "select"> = db): Promise<OpenRow | 
       viaPos: openingSessions.viaPos, notifiedAt: openingSessions.notifiedAt,
       mode: openingSessions.mode, eventWindowId: openingSessions.eventWindowId,
       windowStartsAt: eventWindows.startsAt, windowEndsAt: eventWindows.endsAt,
+      voucherKindsActive: openingSessions.voucherKindsActive,
     })
     .from(openingSessions)
     .leftJoin(eventWindows, eq(openingSessions.eventWindowId, eventWindows.id))
@@ -441,6 +443,8 @@ export type CurrentSession = {
   opensAt: string;
   mode: SessionMode;
   eventWindow: EventWindowView | null;
+  /** Non-empty → closeSession prompts for the voucher slip count (§6.11.1, L43). */
+  voucherKindsActive: string[];
 };
 
 /**
@@ -470,6 +474,7 @@ export async function getOpeningStep(): Promise<ActionResult<{
     current = {
       id: open.id, opensAt: open.opensAt, mode: open.mode,
       eventWindow: open.eventWindowId ? windows.find((w) => w.id === open.eventWindowId) ?? null : null,
+      voucherKindsActive: [...(open.voucherKindsActive ?? [])],
     };
   }
   return { ok: true, data: { date, current, sessions, windows, profiles } };

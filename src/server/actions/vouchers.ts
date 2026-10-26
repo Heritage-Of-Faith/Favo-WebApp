@@ -22,7 +22,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { DB } from "@/lib/db";
 import {
-  orders, orderItems, payments, openingSessions, voucherRedemptions,
+  orders, orderItems, payments, openingSessions, voucherRedemptions, eventWindows,
 } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
@@ -34,6 +34,9 @@ import {
 } from "@/server/orders/payment-lock";
 import { createPaymentIntent } from "@/server/yoco/client";
 import type { ActionResult } from "@/lib/types";
+import { revenueDay } from "@/lib/format";
+import { forcedCloseAt } from "@/lib/session-mode";
+import { NO_VOUCHERS, voucherContextFor, type VoucherContext } from "@/lib/pos-vouchers";
 
 const POS_ROLES = ["barista", "admin"] as const;
 
@@ -313,6 +316,30 @@ export async function removeVoucher(
     yocoClientSecret = intent?.clientSecret ?? "";
   }
   return { ok: true, data: { totalZar, lineDiscountZar, yocoClientSecret } };
+}
+
+/**
+ * getVoucherContext() — read-only, for the POS chip (§6.9.3, L48, REQ-146).
+ * The open session (closed_at IS NULL, not past its forced close) decides
+ * whether the chip renders and which kind it redeems. Writes nothing.
+ */
+export async function getVoucherContext(): Promise<ActionResult<VoucherContext>> {
+  const auth = await authorize(...POS_ROLES);
+  if (!auth.ok) return auth;
+  const now = new Date();
+  const [s] = await db
+    .select({
+      sessionDate: openingSessions.sessionDate, mode: openingSessions.mode,
+      voucherKindsActive: openingSessions.voucherKindsActive, windowEndsAt: eventWindows.endsAt,
+    })
+    .from(openingSessions)
+    .leftJoin(eventWindows, eq(openingSessions.eventWindowId, eventWindows.id))
+    .where(isNull(openingSessions.closedAt))
+    .limit(1);
+  if (!s) return { ok: true, data: NO_VOUCHERS };
+  const window = s.windowEndsAt ? { endsAt: s.windowEndsAt } : null;
+  if (forcedCloseAt(s, window, revenueDay(now), now)) return { ok: true, data: NO_VOUCHERS };
+  return { ok: true, data: voucherContextFor(s) };
 }
 
 /**

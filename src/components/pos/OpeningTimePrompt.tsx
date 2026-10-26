@@ -28,12 +28,20 @@ import {
   resolveSessionMode, describeEvent, switchLines, dateModeLabel, postureIsInTill, sastClock, sastInstant,
   type EventProfileView, type EventWindowView, type ModeResolution,
 } from "@/lib/session-mode";
+import { SESSION_CHANGED_EVENT } from "@/lib/pos-vouchers";
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function snoozeKey(date: string) {
   return `favo-opening-snoozed:${date}`;
 }
+
+/** After a session opens or closes, the POS re-reads what depends on it (the voucher chip). */
+function announceSessionChange() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
+}
+
+const COUNT_RE = /^\d+$/;
 
 type Step = {
   date: string;
@@ -58,6 +66,8 @@ export default function OpeningTimePrompt() {
   const [endTime, setEndTime] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // L43: the tin count as typed. "" is "not counted", never zero.
+  const [slipCount, setSlipCount] = useState("");
 
   const load = useCallback(async (opts: { initial: boolean; time?: string; isStale?: () => boolean }) => {
     const r = await getOpeningStep();
@@ -70,6 +80,7 @@ export default function OpeningTimePrompt() {
     setSundayOk(false);
     setStarting(false);
     setError(null);
+    setSlipCount("");
     setOpen(true);
     return true;
   }, []);
@@ -112,15 +123,22 @@ export default function OpeningTimePrompt() {
     if (res.data.notified) toast.success(`Session open — customers notified (${time}).`);
     else toast.message("Session confirmed — already open.");
     setOpen(false);
+    announceSessionChange();
   }
 
-  async function close(id: string) {
+  /**
+   * closeSession, with the slip count only when one was typed (L43, REQ-157):
+   * `counted` undefined leaves voucher_slips_counted NULL. Never blocks (REQ-156).
+   */
+  async function close(id: string, counted?: number) {
     if (busy) return;
     setBusy(true);
     setError(null);
-    const res = await closeSession(id).catch(() => ({ ok: false as const, code: "ERR", message: "Could not close the session." }));
+    const call = counted === undefined ? closeSession(id) : closeSession(id, counted);
+    const res = await call.catch(() => ({ ok: false as const, code: "ERR", message: "Could not close the session." }));
     setBusy(false);
     if (!res.ok) { setError(res.message); return; }
+    announceSessionChange();
     await load({ initial: false });
   }
 
@@ -134,6 +152,7 @@ export default function OpeningTimePrompt() {
     }));
     setBusy(false);
     if (!res.ok) { setError(res.message); return; }
+    announceSessionChange();
     await load({ initial: false, time: sastClock(res.data.window.startsAt) });
   }
 
@@ -144,6 +163,8 @@ export default function OpeningTimePrompt() {
       : { name: resolution.profile.name, switches: resolution.profile, endsAt: resolution.endsAt }
     : null;
   const needsSundayOk = resolution?.kind === "event" && resolution.overridesSunday;
+  // §6.11.1: closeSession prompts for the slip count when vouchers were in force.
+  const countsSlips = (data.current?.voucherKindsActive?.length ?? 0) > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-coffee-bean/60 px-4"
@@ -154,13 +175,29 @@ export default function OpeningTimePrompt() {
             <h2 className="favo-h3 text-coffee-bean">
               {`Session open since ${data.current.opensAt} · ${currentLabel(data.current)}`}
             </h2>
+            {countsSlips && (
+              <>
+                <label className="favo-small text-cool-steel" htmlFor="voucher-slips">Voucher slips counted</label>
+                <input id="voucher-slips" type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off"
+                  value={slipCount} onChange={(e) => setSlipCount(e.target.value.trim())} className={inputClass} />
+              </>
+            )}
             {error && <p role="alert" className="favo-caption text-crimson-carrot">{error}</p>}
             <div className="flex items-center justify-between gap-3 mt-1">
               <button type="button" onClick={snooze} disabled={busy} className={linkClass}>Remind me later</button>
-              <button type="button" onClick={() => close(data.current!.id)} disabled={busy} className={ctaClass} style={ctaStyle}>
-                {busy && <Loader2 size={14} strokeWidth={2.25} className="animate-spin" />}
-                Close session
-              </button>
+              <div className="flex items-center gap-3">
+                {countsSlips && (
+                  <button type="button" onClick={() => close(data.current!.id)} disabled={busy} className={linkClass}>
+                    Not counted
+                  </button>
+                )}
+                <button type="button"
+                  onClick={() => close(data.current!.id, countsSlips ? Number(slipCount) : undefined)}
+                  disabled={busy || (countsSlips && !COUNT_RE.test(slipCount))} className={ctaClass} style={ctaStyle}>
+                  {busy && <Loader2 size={14} strokeWidth={2.25} className="animate-spin" />}
+                  Close session
+                </button>
+              </div>
             </div>
           </>
         ) : (
