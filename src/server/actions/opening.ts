@@ -41,7 +41,7 @@ import {
 } from "@/lib/session-mode";
 import { sendOpeningPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
-import { pairAlreadyRecorded, pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
+import { pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
 import type { ActionResult } from "@/lib/types";
 
 const POS_ROLES = ["barista", "admin"] as const;
@@ -526,6 +526,7 @@ export async function closeSession(
       .select({
         id: openingSessions.id, closedAt: openingSessions.closedAt, opensAt: openingSessions.opensAt,
         sessionDate: openingSessions.sessionDate,
+        voucherSlipsCounted: openingSessions.voucherSlipsCounted,
         voucherRedemptionsRecorded: openingSessions.voucherRedemptionsRecorded,
       })
       .from(openingSessions)
@@ -533,10 +534,9 @@ export async function closeSession(
       .for("update");
     if (!row) return "not_found" as const;
     if (row.closedAt) return "closed" as const;
-    // Push only when this (counted, recorded) pair has not been recorded before
-    // (e.g. by recordVoucherCount) — read before this close's audit row.
-    const v = voucherSlipsCounted === undefined ? null : slipVariance(row, voucherSlipsCounted);
-    const variance = v && !(await pairAlreadyRecorded(txDb, v)) ? v : null;
+    // REQ-156: a close with a differing count always pushes — no de-dupe here
+    // (recordVoucherCount de-dupes mid-session re-sends only).
+    const variance = voucherSlipsCounted === undefined ? null : slipVariance(row, voucherSlipsCounted);
     const closedAt = new Date();
     await tx
       .update(openingSessions)
@@ -548,7 +548,8 @@ export async function closeSession(
         actorId: auth.session.id, actorRole: auth.session.role,
         before: { closedAt: null },
         after: {
-          closedAt: closedAt.toISOString(), voucherSlipsCounted: voucherSlipsCounted ?? null,
+          // What is actually stored: a count given now, else any count already recorded.
+          closedAt: closedAt.toISOString(), voucherSlipsCounted: voucherSlipsCounted ?? row.voucherSlipsCounted ?? null,
           voucherRedemptionsRecorded: row.voucherRedemptionsRecorded,
         },
       },

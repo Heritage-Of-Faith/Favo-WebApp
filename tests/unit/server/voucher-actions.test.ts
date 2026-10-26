@@ -404,13 +404,25 @@ describe("closeSession and the slip count (REQ-156, REQ-157)", () => {
     expect(payload.data).toEqual({ sessionId: "os_evening", counted: 20, recorded: 23 });
   });
 
-  it("closing with the pair recordVoucherCount already alerted does not push twice", async () => {
+  // CHANGED (final review): REQ-156 — a close with a differing count ALWAYS
+  // pushes, even if recordVoucherCount already pushed the same pair mid-session.
+  it("closing with a pair recordVoucherCount already alerted still pushes (REQ-156)", async () => {
     given({ session: { ...SESSION, voucherRedemptionsRecorded: 23 } });
     rows.set(staff, ADMIN_SUB);
     rows.set(auditLog, [{ after: { voucherSlipsCounted: 20, voucherRedemptionsRecorded: 23 } }]);
     expect((await closeSession("os_evening", 20)).ok).toBe(true);
     await flush();
-    expect(mockSendNotification).not.toHaveBeenCalled();
+    expect(mockSendNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("closing without a count after a mid-session count audits the stored count, not null", async () => {
+    given({ session: { ...SESSION, voucherRedemptionsRecorded: 23, voucherSlipsCounted: 21 } });
+    rows.set(staff, ADMIN_SUB);
+    expect((await closeSession("os_evening")).ok).toBe(true);
+    expect(updatesOf(openingSessions)[0]).not.toHaveProperty("voucherSlipsCounted");
+    expect(audits()[0]).toMatchObject({
+      action: "close", after: { voucherSlipsCounted: 21, voucherRedemptionsRecorded: 23 },
+    });
   });
 
   it("a matching count closes without a push", async () => {
