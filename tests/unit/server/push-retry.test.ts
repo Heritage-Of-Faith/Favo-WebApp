@@ -100,3 +100,39 @@ describe("push retry", () => {
     expect(body.url).toBeUndefined();
   });
 });
+
+describe("push timeout and permanent client errors", () => {
+  it("passes a 2500 ms request timeout to every send", async () => {
+    sendNotification.mockResolvedValue({});
+    await sendOrderReadyPush(SUB, "o1");
+    expect(sendNotification.mock.calls[0]![2]).toEqual({ timeout: 2500 });
+  });
+
+  it("a hanging endpoint settles the whole deliver() in under 10 s (REQ-047)", async () => {
+    // Model web-push honouring its timeout option: each attempt rejects after 2500 ms.
+    sendNotification.mockImplementation(
+      (_s: unknown, _p: unknown, opts: { timeout: number }) =>
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), opts.timeout))
+    );
+    const start = Date.now();
+    let settled = false;
+    const p = sendOrderReadyPush(SUB, "o1").then((v) => { settled = true; return v; });
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(settled).toBe(true);
+    await expect(p).resolves.toBe(true);
+    expect(Date.now() - start).toBeLessThan(10_000);
+    expect(sendNotification).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([400, 403, 413])("%i: one attempt, subscription kept, status logged without payload or endpoint", async (code) => {
+    sendNotification.mockRejectedValue(Object.assign(new Error("bad"), { statusCode: code }));
+    const p = sendOrderReadyPush(SUB, "o1", "Sam");
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(p).resolves.toBe(true);
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+    const logged = JSON.stringify((console.error as unknown as { mock: { calls: unknown[][] } }).mock.calls);
+    expect(logged).toContain(String(code));
+    expect(logged).not.toContain(SUB.endpoint);
+    expect(logged).not.toContain("Sam");
+  });
+});

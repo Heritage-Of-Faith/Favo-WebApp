@@ -16,6 +16,8 @@ import {
 
 export const PUSH_MAX_ATTEMPTS = 3;
 export const PUSH_BACKOFF_BASE_MS = 500;
+// Worst case 3 x 2500 + 500 + 1000 = 9000 ms, inside REQ-047's 10 s.
+export const PUSH_REQUEST_TIMEOUT_MS = 2500;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -31,7 +33,7 @@ async function deliver(
   initVapid();
   for (let attempt = 1; attempt <= PUSH_MAX_ATTEMPTS; attempt++) {
     try {
-      await webpush.sendNotification(subscription, payload);
+      await webpush.sendNotification(subscription, payload, { timeout: PUSH_REQUEST_TIMEOUT_MS });
       return true;
     } catch (err) {
       const statusCode = (err as { statusCode?: number }).statusCode;
@@ -39,12 +41,14 @@ async function deliver(
         // Subscription expired/unsubscribed — terminal, signal the caller to prune.
         return false;
       }
+      if (statusCode === 400 || statusCode === 403 || statusCode === 413) {
+        // Permanent client error: retrying cannot help, but the subscription
+        // is not known dead, so it is kept. Log the status only.
+        console.error("[push] permanent push error, not retrying", { statusCode });
+        return true;
+      }
       if (attempt === PUSH_MAX_ATTEMPTS) {
-        console.error(
-          "[push] giving up after retries",
-          { statusCode, attempts: attempt, endpoint: subscription.endpoint },
-          err
-        );
+        console.error("[push] giving up after retries", { statusCode, attempts: attempt });
         return true;
       }
       await sleep(PUSH_BACKOFF_BASE_MS * 2 ** (attempt - 1));
