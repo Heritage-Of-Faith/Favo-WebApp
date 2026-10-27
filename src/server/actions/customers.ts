@@ -2,6 +2,7 @@
 
 import { or, and, ilike, eq, desc, asc, sql, type SQL } from "drizzle-orm";
 import { planSearch } from "@/lib/pos/customer-match";
+import { checkRateLimit } from "@/server/rate-limit";
 import { db } from "@/lib/db";
 import { customers, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -12,6 +13,26 @@ import type { ActionResult, CustomerSearchResult } from "@/lib/types";
 // REQ-142 / AT-185: no email and no full phone number ever leave the server.
 
 const MAX_RESULTS = 10;
+const SEARCH_LIMIT = 60;
+const SEARCH_WINDOW_MS = 60_000;
+
+/**
+ * Cheap read for the POS: does this customer id still exist? Returns id + name only
+ * (REQ-142: no email, no phone). Used to drop a stale customer from a restored draft.
+ */
+export async function resolveCustomer(
+  id: string
+): Promise<ActionResult<{ id: string; name: string }>> {
+  const auth = await authorize("barista", "admin");
+  if (!auth.ok) return auth;
+  const [row] = await db
+    .select({ id: customers.id, name: customers.name })
+    .from(customers)
+    .where(eq(customers.id, id))
+    .limit(1);
+  if (!row) return { ok: false, code: "NOT_FOUND", message: "Customer not found." };
+  return { ok: true, data: { id: row.id, name: row.name } };
+}
 
 /** Last four digits of a phone number, or null if absent / fewer than four digits. */
 function phoneLast4(phone: string | null): string | null {
@@ -25,6 +46,12 @@ export async function searchCustomer(
   const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
 
+  // Per-staff throttle: stops a barista scripting lookups to harvest numbers.
+  const rl = checkRateLimit(`customer-search:${auth.session.id}`, SEARCH_LIMIT, SEARCH_WINDOW_MS);
+  if (!rl.allowed) {
+    return { ok: false, code: "RATE_LIMITED", message: `Searching too fast. Wait ${rl.retryAfterSecs}s and try again.` };
+  }
+
   const q = query.trim();
   if (q.length < 2) {
     return { ok: false, code: "QUERY_TOO_SHORT", message: "Enter at least 2 characters." };
@@ -35,14 +62,14 @@ export async function searchCustomer(
   const plan = planSearch(q);
   let where: SQL | undefined;
   if (plan.kind === "phone") {
+    // Full number (local or +27 form, equality) or EXACTLY the last 4 digits — never a prefix.
     const stored = sql`regexp_replace(coalesce(${customers.phone}, ''), '\\D', '', 'g')`;
-    const intl = `27${plan.localPrefix.replace(/^0/, "")}`;
-    const conds: SQL[] = [
-      sql`${stored} LIKE ${plan.localPrefix + "%"}`,
-      sql`${stored} LIKE ${intl + "%"}`,
-    ];
-    if (plan.last4) conds.push(sql`${stored} LIKE ${"%" + plan.last4}`);
-    where = or(...conds);
+    if (plan.full) {
+      const intl = `27${plan.full.replace(/^0/, "")}`;
+      where = or(sql`${stored} = ${plan.full}`, sql`${stored} = ${intl}`);
+    } else if (plan.last4) {
+      where = sql`right(${stored}, 4) = ${plan.last4}`;
+    }
   } else if (plan.kind === "name") {
     where = and(
       ...plan.tokens.map((t) => {

@@ -16,9 +16,9 @@ export function normalisePhoneDigits(input: string): string {
   return rest.startsWith("0") ? rest : `0${rest}`;
 }
 
-/** A phone query is digits plus the usual separators only, with at least 3 digits. */
+/** A phone-looking query: digits plus the usual separators only. */
 export function isPhoneQuery(input: string): boolean {
-  return /^[\s+\-()\d]+$/.test(input.trim()) && input.replace(/\D/g, "").length >= 3;
+  return /^[\s+\-()\d]+$/.test(input.trim()) && /\d/.test(input);
 }
 
 /** Name tokens: any word order, comma and space tolerant. "Dlamini, Louis" -> ["dlamini","louis"]. */
@@ -27,7 +27,9 @@ export function nameTokens(input: string): string[] {
 }
 
 export type SearchPlan =
-  | { kind: "phone"; localPrefix: string; last4: string | null }
+  // Privacy: a phone query is the FULL normalised number, or EXACTLY the last 4 digits.
+  // Never a prefix/suffix/partial: those would let a barista rebuild a number digit by digit.
+  | { kind: "phone"; full: string | null; last4: string | null }
   | { kind: "name"; tokens: string[] }
   | { kind: "none" };
 
@@ -35,7 +37,10 @@ export function planSearch(query: string): SearchPlan {
   const q = query.trim();
   if (isPhoneQuery(q)) {
     const raw = q.replace(/\D/g, "");
-    return { kind: "phone", localPrefix: normalisePhoneDigits(q), last4: raw.length === 4 ? raw : null };
+    if (raw.length < 4) return { kind: "none" };
+    return raw.length === 4
+      ? { kind: "phone", full: null, last4: raw }
+      : { kind: "phone", full: normalisePhoneDigits(q), last4: null };
   }
   const tokens = nameTokens(q);
   return tokens.length ? { kind: "name", tokens } : { kind: "none" };
@@ -50,7 +55,7 @@ export function customerMatches(c: Candidate, query: string): boolean {
   if (plan.kind === "phone") {
     const stored = normalisePhoneDigits(c.phone ?? "");
     if (!stored) return false;
-    return stored.startsWith(plan.localPrefix) || (plan.last4 !== null && stored.endsWith(plan.last4));
+    return plan.full !== null ? stored === plan.full : stored.endsWith(plan.last4 ?? "\u0000");
   }
   const hay = `${c.name} ${c.surname ?? ""}`.toLowerCase();
   return plan.tokens.every((t) => hay.includes(t));

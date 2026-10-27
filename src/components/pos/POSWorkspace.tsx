@@ -9,7 +9,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { signOut } from "@/server/actions/auth";
-import { searchCustomer } from "@/server/actions/customers";
+import { searchCustomer, resolveCustomer } from "@/server/actions/customers";
 import { getMenu } from "@/server/actions/menu";
 import { getActiveBeanLot } from "@/server/actions/inventory";
 import { createOrder, transitionOrder, cancelOrder, declineFreeCoffee } from "@/server/actions/orders";
@@ -18,7 +18,7 @@ import type { FavoView } from "@/server/favo/schema";
 import FavoPicker from "@/components/favo/FavoPicker";
 import { useOrderStream } from "@/hooks/useOrderStream";
 import { useDraftOrder, lineKey } from "@/store/draftOrder";
-import { formatZar, formatDate } from "@/lib/format";
+import { formatZar, formatDate, revenueDay } from "@/lib/format";
 import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, Plus, Minus, Trash2, ChevronDown, ChevronUp,
@@ -140,6 +140,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchDone, setSearchDone] = useState(false); // current query has been answered
   const [activeIdx, setActiveIdx] = useState(-1);
+  const searchSeq = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draft = useDraftOrder();
   const { customer, items, totalZar, reset } = draft;
@@ -273,17 +274,48 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
 
   // Restore the draft (cart + customer) kept in sessionStorage, so History
   // navigation or a reload does not lose it. Optional-chained: tests stub the store.
-  useEffect(() => { void useDraftOrder.persist?.rehydrate(); }, []);
+  // The saved draft only counts for the same staff member on the same SAST day, and
+  // its customer must still exist; otherwise it is dropped, never restored stale.
+  useEffect(() => {
+    const store = useDraftOrder;
+    if (!store.persist) return;
+    let cancelled = false;
+    (async () => {
+      await store.persist.rehydrate();
+      if (cancelled) return;
+      const owner = `${staffId}|${revenueDay()}`;
+      const s = store.getState();
+      if (s.draftOwner !== owner) {
+        s.reset();
+        store.setState({ draftOwner: owner });
+        return;
+      }
+      if (!s.customer) return;
+      try {
+        const r = await resolveCustomer(s.customer.id);
+        if (cancelled) return;
+        if (r.ok) store.setState({ customer: { id: r.data.id, name: r.data.name } });
+        else if (r.code === "NOT_FOUND") store.setState({ customer: null });
+      } catch { /* offline or unavailable: keep what we have */ }
+    })();
+    return () => { cancelled = true; };
+  }, [staffId]);
 
-  // Customer search debounce
+  // Customer search debounce. Results belong to the query that produced them: they are
+  // cleared the moment the query changes, and a slower older response is dropped.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    const seq = ++searchSeq.current;
     setSearchDone(false);
     setActiveIdx(-1);
-    if (query.trim().length < 2) { setSearchResults([]); setSearchOpen(false); return; }
+    setSearchResults([]);
+    setSearchOpen(false);
+    if (query.trim().length < 2) return;
     debounceRef.current = setTimeout(async () => {
       const r = await searchCustomer(query);
+      if (seq !== searchSeq.current) return; // stale
       if (r.ok) { setSearchResults(r.data); setSearchOpen(true); setSearchDone(true); }
+      else if (r.code === "RATE_LIMITED") toast.warning(r.message);
     }, 320);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
@@ -367,7 +399,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       // L03 free cup: the server decided it — show the net total, and tell the
       // barista once (applied, already claimed, not eligible, pick a customer).
       const net = typeof r.data.totalZar === "number" ? r.data.totalZar : null;
-      setPlacedTotalZar(net);
+      // The order exists now. Show its total from component state and empty the saved
+      // draft straight away, so a reload or History trip can never bring back a sent cart.
+      setPlacedTotalZar(net ?? totalZar);
+      reset();
       setPlacedFreeCup(r.data.freeCup?.applied === true);
       setPlacedCardCheckout(r.data.cardCheckout === true);
       if (r.data.freeCup?.message) {
@@ -497,6 +532,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   async function handleSignOut() {
     // The kept draft must not carry over to whoever signs in next on this tab.
     reset();
+    useDraftOrder.persist?.clearStorage();
     await signOut();
     router.push("/pos");
   }

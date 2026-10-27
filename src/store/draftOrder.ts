@@ -46,6 +46,8 @@ export type DraftOrderState = {
   // Set after createOrder succeeds
   orderId: string | null;
   yocoClientSecret: string | null;
+  /** Who the saved draft belongs to: "<staffId>|<SAST date>". A draft for anyone/any other day is discarded. */
+  draftOwner: string | null;
 };
 
 export type DraftOrderActions = {
@@ -67,6 +69,7 @@ const INITIAL: DraftOrderState = {
   totalZar: 0,
   orderId: null,
   yocoClientSecret: null,
+  draftOwner: null,
 };
 
 function calcTotal(items: DraftItem[]): number {
@@ -129,12 +132,18 @@ export const useDraftOrder = create<DraftOrderState & DraftOrderActions>()(persi
   setOrderCreated: (orderId, yocoClientSecret) =>
     set({ orderId, yocoClientSecret, step: "pay" }),
 
-  reset: () => set(INITIAL),
+  reset: () => set((s) => ({ ...INITIAL, draftOwner: s.draftOwner })),
 }), {
   // Survives History navigation and reload within the tab; gone when the tab closes.
   // Hydrated explicitly from POSWorkspace (skipHydration) so SSR and first paint match.
   name: "favo-pos-draft",
   storage: createJSONStorage(() => safeSessionStorage),
   skipHydration: true,
-  partialize: (s) => ({ customer: s.customer, items: s.items, totalZar: s.totalZar }),
+  partialize: (s) => ({ customer: s.customer, items: s.items, totalZar: s.totalZar, draftOwner: s.draftOwner }),
 }));
+
+/** Sign-out: empty the draft and remove the saved copy so the next person never inherits it. */
+export function clearDraftOnSignOut(): void {
+  useDraftOrder.getState().reset();
+  useDraftOrder.persist.clearStorage();
+}
