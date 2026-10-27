@@ -289,7 +289,11 @@ export async function recordPurchase(
             : {
                 inventoryItemId: item.inventoryItemId,
                 sourceName,
-                unitCostZar: item.unitCostZar,
+                // Server is the single source: store the derived value, not the client string.
+                unitCostZar: (() => {
+                  const d = deriveUnitCostCents(item.totalZar, item.quantity!);
+                  return d.ok ? d.value : item.unitCostZar;
+                })(),
                 quantityReceived: String(item.quantity),
                 state: lotState,
               }
