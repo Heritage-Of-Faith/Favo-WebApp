@@ -1,6 +1,7 @@
 "use server";
 
-import { or, ilike, eq, desc, asc } from "drizzle-orm";
+import { or, and, ilike, eq, desc, asc, sql, type SQL } from "drizzle-orm";
+import { planSearch } from "@/lib/pos/customer-match";
 import { db } from "@/lib/db";
 import { customers, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -29,6 +30,29 @@ export async function searchCustomer(
     return { ok: false, code: "QUERY_TOO_SHORT", message: "Enter at least 2 characters." };
   }
 
+  // Matching rules live in src/lib/pos/customer-match.ts (any word order on given
+  // name + surname; phone by prefix, tolerant of spaces and +27). Response shape unchanged.
+  const plan = planSearch(q);
+  let where: SQL | undefined;
+  if (plan.kind === "phone") {
+    const stored = sql`regexp_replace(coalesce(${customers.phone}, ''), '\\D', '', 'g')`;
+    const intl = `27${plan.localPrefix.replace(/^0/, "")}`;
+    const conds: SQL[] = [
+      sql`${stored} LIKE ${plan.localPrefix + "%"}`,
+      sql`${stored} LIKE ${intl + "%"}`,
+    ];
+    if (plan.last4) conds.push(sql`${stored} LIKE ${"%" + plan.last4}`);
+    where = or(...conds);
+  } else if (plan.kind === "name") {
+    where = and(
+      ...plan.tokens.map((t) => {
+        const pat = `%${t.replace(/[\\%_]/g, (ch) => "\\" + ch)}%`;
+        return or(ilike(customers.name, pat), ilike(customers.surname, pat));
+      })
+    );
+  }
+  if (!where) return { ok: true, data: [] };
+
   const rows = await db
     .select({
       id: customers.id,
@@ -36,7 +60,7 @@ export async function searchCustomer(
       phone: customers.phone,
     })
     .from(customers)
-    .where(or(ilike(customers.name, `%${q}%`), eq(customers.phone, q)))
+    .where(where)
     .limit(MAX_RESULTS);
 
   // Build each result field by field — never spread the row, so the full

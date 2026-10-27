@@ -46,7 +46,6 @@ import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
 import type { CustomerSearchResult, MenuItem, MenuCustomisation, Order, OrderState, InventoryLot } from "@/lib/types";
-import WasteLogModal from "@/components/pos/WasteLogModal";
 
 /**
  * AT-145: quantity-based customisations (e.g. Extra Shot) appear once per unit
@@ -117,6 +116,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [modTarget, setModTarget] = useState<MenuItem | null>(null);
   const [selectedMods, setSelectedMods] = useState<MenuCustomisation[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const placingRef = useRef(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   // Yoco checkout id from createOrder (created server-side, keyed to the pending
@@ -136,9 +138,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CustomerSearchResult[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchDone, setSearchDone] = useState(false); // current query has been answered
+  const [activeIdx, setActiveIdx] = useState(-1);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draft = useDraftOrder();
   const { customer, items, totalZar, reset } = draft;
+  // Clear removes the lines only — the attached customer stays (never detached silently).
+  const clearItems = () => { for (const i of items) draft.removeItem(lineKey(i)); };
   // Starting a new draft drops the previous order's "sent to the queue" message.
   const setCustomer = clearOnDraft(draft.setCustomer);
   const addItem = clearOnDraft(draft.addItem);
@@ -265,16 +271,28 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     };
   }, []);
 
+  // Restore the draft (cart + customer) kept in sessionStorage, so History
+  // navigation or a reload does not lose it. Optional-chained: tests stub the store.
+  useEffect(() => { void useDraftOrder.persist?.rehydrate(); }, []);
+
   // Customer search debounce
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    setSearchDone(false);
+    setActiveIdx(-1);
     if (query.trim().length < 2) { setSearchResults([]); setSearchOpen(false); return; }
     debounceRef.current = setTimeout(async () => {
       const r = await searchCustomer(query);
-      if (r.ok) { setSearchResults(r.data); setSearchOpen(true); }
+      if (r.ok) { setSearchResults(r.data); setSearchOpen(true); setSearchDone(true); }
     }, 320);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
+
+  function pickCustomer(c: CustomerSearchResult) {
+    setCustomer({ id: c.id, name: c.name });
+    setQuery("");
+    setSearchOpen(false);
+  }
 
   // Fetch full order when expanded
   async function fetchFullOrder(orderId: string) {
@@ -313,15 +331,25 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   // ── Order building ─────────────────────────────────────────────────────────
 
   async function handlePlaceOrder() {
-    if (items.length === 0 || submitting) return;
+    // A ref, not just state: a fast double tap fires twice before React re-renders,
+    // and the second tap must be ignored, never create a second order.
+    if (items.length === 0 || submitting || placingRef.current) return;
+    placingRef.current = true;
     setSubmitting(true);
     setOrderError(null);
+    try {
+      await placeOrder();
+    } finally {
+      placingRef.current = false;
+      setSubmitting(false);
+    }
+  }
 
+  async function placeOrder() {
     // Offline at place-order — createOrder can't run. Go straight to the payment
     // screen, which (being offline) shows the deferred-payment notice. There's no
     // order in the DB yet, so confirming queues it to the outbox.
     if (!navigator.onLine) {
-      setSubmitting(false);
       setPaymentOrderId(null);
       setYocoCheckoutId("");
       setShowPayment(true);
@@ -331,7 +359,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       customerId: customer?.id,
       items: items.map(i => ({ menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id) })),
     }).catch(() => ({ ok: false as const, code: "ERR", message: "Failed to place order." }));
-    setSubmitting(false);
     if (r.ok) {
       // Auto-expand the new order in the queue so barista sees it immediately
       setExpandedId(r.data.orderId);
@@ -468,8 +495,21 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   }
 
   async function handleSignOut() {
+    // The kept draft must not carry over to whoever signs in next on this tab.
+    reset();
     await signOut();
     router.push("/pos");
+  }
+
+  /** Start a fresh draft after an order was already placed (never restores the sent cart). */
+  function startNewOrder() {
+    reset();
+    setShowPayment(false);
+    setYocoCheckoutId("");
+    setPaymentOrderId(null);
+    setPlacedTotalZar(null);
+    setPlacedFreeCup(false);
+    setPlacedCardCheckout(false);
   }
 
   // ── Zone A top — customer search/attach panel (Phase 5 wireframe states A1-A4) ──
@@ -486,17 +526,31 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               onChange={e => { setQuery(e.target.value); if (!e.target.value) setCustomer(null); }}
               onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
               onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+              onKeyDown={e => {
+                if (!searchOpen || searchResults.length === 0) return;
+                if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => (i + 1) % searchResults.length); }
+                else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => (i <= 0 ? searchResults.length - 1 : i - 1)); }
+                else if (e.key === "Enter") { e.preventDefault(); pickCustomer(searchResults[activeIdx >= 0 ? activeIdx : 0]); }
+                else if (e.key === "Escape") setSearchOpen(false);
+              }}
+              role="combobox" aria-expanded={searchOpen} aria-controls="customer-search-results" aria-autocomplete="list"
+              aria-activedescendant={activeIdx >= 0 ? `customer-result-${activeIdx}` : undefined}
               className="w-full rounded-[4px] border border-cool-steel/20 bg-coffee-bean/5 pl-7 pr-7 py-1.5 text-coffee-bean placeholder:text-cool-steel text-xs focus:border-crimson-carrot focus:outline-none min-h-[44px]"
             />
+            {searchOpen && searchDone && searchResults.length === 0 && (
+              <p role="status" className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface px-3 py-2 favo-small text-cool-steel shadow-[var(--shadow-2)]">
+                No results
+              </p>
+            )}
             {searchOpen && searchResults.length > 0 && (
-              <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface shadow-[var(--shadow-2)] overflow-hidden">
-                {searchResults.map(c => {
+              <ul id="customer-search-results" role="listbox" className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface shadow-[var(--shadow-2)] overflow-hidden">
+                {searchResults.map((c, idx) => {
                   // REQ-142: where two results read alike, show the last four phone digits.
                   const readsAlike = searchResults.some(o => o.id !== c.id && o.name.trim().toLowerCase() === c.name.trim().toLowerCase());
                   return (
-                  <li key={c.id}>
-                    <button type="button" onMouseDown={() => { setCustomer({ id: c.id, name: c.name }); setQuery(""); setSearchOpen(false); }}
-                      className="flex w-full items-center justify-between px-3 py-2 min-h-[44px] hover:bg-coffee-bean/8 text-left">
+                  <li key={c.id} id={`customer-result-${idx}`} role="option" aria-selected={idx === activeIdx}>
+                    <button type="button" tabIndex={-1} onMouseDown={() => pickCustomer(c)}
+                      className={["flex w-full items-center justify-between px-3 py-2 min-h-[44px] hover:bg-coffee-bean/8 text-left", idx === activeIdx ? "bg-coffee-bean/10" : ""].join(" ")}>
                       <span className="favo-small text-coffee-bean font-semibold">{c.name}</span>
                       {readsAlike && c.phoneLast4 && (
                         <span className="favo-caption text-cool-steel tabular-nums">…{c.phoneLast4}</span>
@@ -594,10 +648,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                     prev.some(m => m.id === mod.id) ? prev.filter(m => m.id !== mod.id) : [...prev, mod]
                   )} aria-pressed={on}
                     className={["flex w-full items-center justify-between rounded-[2px] border px-3 py-2 min-h-[44px] transition-colors",
-                      on ? "border-crimson-carrot bg-crimson-carrot/10 text-coffee-bean" : "border-cool-steel/30 bg-coffee-bean/5 text-coffee-bean hover:bg-coffee-bean/8"
+                      on ? "border-2 border-crimson-carrot bg-crimson-carrot text-porcelain" : "border-cool-steel/30 bg-coffee-bean/5 text-coffee-bean hover:bg-coffee-bean/8"
                     ].join(" ")}>
-                    <span className="favo-small font-semibold">{mod.name}</span>
-                    {mod.priceDeltaZar !== 0 && <span className="favo-caption text-cool-steel">+{formatZar(mod.priceDeltaZar)}</span>}
+                    <span className="favo-small font-semibold">{on ? "✓ " : ""}{mod.name}</span>
+                    {mod.priceDeltaZar !== 0 && <span className={["favo-caption", on ? "text-porcelain" : "text-cool-steel"].join(" ")}>+{formatZar(mod.priceDeltaZar)}</span>}
                   </button>
                 </li>
               );
@@ -669,7 +723,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             <p className="favo-label text-cool-steel">Total</p>
             <p className="favo-subhead text-coffee-bean">{formatZar(totalZar)}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
               onClick={() => setShowWasteModal(true)}
@@ -679,12 +733,26 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               <Trash2 size={12} strokeWidth={2} aria-hidden />
               <span>Waste</span>
             </button>
-            <button type="button" onClick={() => reset()} disabled={items.length === 0}
-              className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel hover:bg-coffee-bean/8 min-h-[44px] disabled:opacity-40">
-              Clear
-            </button>
+            {confirmClear && items.length > 0 ? (
+              <span className="flex items-center gap-1" role="group" aria-label="Clear the order?">
+                <span className="favo-small text-coffee-bean whitespace-nowrap">Clear {items.length} {items.length === 1 ? "item" : "items"}?</span>
+                <button type="button" onClick={() => { clearItems(); setConfirmClear(false); }}
+                  className="rounded-[4px] border border-[var(--color-error)]/50 px-3 py-2 favo-small text-[var(--color-error)] min-h-[44px]">
+                  Yes, clear
+                </button>
+                <button type="button" onClick={() => setConfirmClear(false)}
+                  className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel min-h-[44px]">
+                  Keep
+                </button>
+              </span>
+            ) : (
+              <button type="button" onClick={() => setConfirmClear(true)} disabled={items.length === 0}
+                className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel hover:bg-coffee-bean/8 min-h-[44px] disabled:opacity-40">
+                Clear
+              </button>
+            )}
             <button type="button" onClick={handlePlaceOrder} disabled={submitting || items.length === 0}
-              className="flex items-center gap-2 rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
+              className="flex items-center gap-2 whitespace-nowrap rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
               style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
               {submitting
                 ? <Loader2 size={14} strokeWidth={2} className="animate-spin" />
@@ -713,7 +781,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
         <Image src="/brand/logos/logo-monogram.svg" alt="FAVO" width={24} height={24} className="opacity-80 shrink-0" />
         <span className="favo-h3 text-coffee-bean mr-auto whitespace-nowrap shrink-0">FAVO · POS</span>
         {/* Own row (scrolls sideways inside itself) until 2xl, so it can never push Sign out off-screen. */}
-        <div data-pos-strip className="hidden lg:flex order-last basis-full min-w-0 max-w-full items-center gap-3 overflow-x-auto 2xl:order-none 2xl:basis-auto">
+        <div data-pos-strip className="flex order-last basis-full min-w-0 max-w-full items-center gap-3 overflow-x-auto 2xl:order-none 2xl:basis-auto">
           <div className="shrink-0"><ActiveBeanCard /></div>
           <div className="shrink-0"><OpenContainersCard /></div>
         </div>
@@ -735,7 +803,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             Admin
           </a>
         )}
-        <button type="button" onClick={handleSignOut} aria-label="Sign out"
+        <button type="button" onClick={() => (items.length > 0 ? setConfirmSignOut(true) : handleSignOut())} aria-label="Sign out"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
           <LogOut size={16} strokeWidth={2} />
         </button>
@@ -841,7 +909,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 <DeferredPaymentNotice
                   totalZar={amountDueZar}
                   onConfirmDeferred={handleDeferredConfirm}
-                  onBack={() => { setShowPayment(false); setPaymentOrderId(null); setYocoCheckoutId(""); }}
+                  onBack={() => {
+                    // Order already created: the cart was sent, so start fresh — never restore it.
+                    if (paymentOrderId) { startNewOrder(); return; }
+                    setShowPayment(false); setPaymentOrderId(null); setYocoCheckoutId("");
+                  }}
                 />
               );
             }
@@ -865,12 +937,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
 
                 <div className="flex flex-col gap-3 w-full max-w-[320px]">
                   {isFree ? (
-                    /* Free order — one tap to confirm and send to the queue. */
-                    <button type="button" onClick={finishPayment}
+                    /* Free order. Once it exists it is already in the queue, so this is
+                       not a second send: it only starts the next order. */
+                    <button type="button" onClick={paymentOrderId ? startNewOrder : finishPayment}
                       className="flex w-full items-center justify-center gap-2 rounded-[4px] py-4 min-h-[52px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-porcelain"
                       style={{ background: "var(--color-success)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
                       <CheckCircle size={16} strokeWidth={2} className="mr-1" />
-                      Confirm — send to queue
+                      {paymentOrderId ? "New order" : "Confirm — send to queue"}
                     </button>
                   ) : paymentOrderId && yocoCheckoutId ? (
                     /* Real card capture via Yoco; backend webhook + poll confirm. */
@@ -908,10 +981,19 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                     </p>
                   )}
 
-                  <button type="button" onClick={() => setShowPayment(false)}
-                    className="favo-small text-cool-steel underline underline-offset-2 hover:text-coffee-bean transition-colors min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
-                    ← Back to order
-                  </button>
+                  {/* With an order already created, "Back to order" would restore the
+                      cart that was just sent (duplicate orders). Offer a fresh draft instead. */}
+                  {paymentOrderId ? (!isFree && (
+                    <button type="button" onClick={startNewOrder}
+                      className="favo-small text-cool-steel underline underline-offset-2 hover:text-coffee-bean transition-colors min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
+                      New order
+                    </button>
+                  )) : (
+                    <button type="button" onClick={() => setShowPayment(false)}
+                      className="favo-small text-cool-steel underline underline-offset-2 hover:text-coffee-bean transition-colors min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
+                      ← Back to order
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -973,9 +1055,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                   <div className="flex min-w-0 items-center gap-2">
                     <span className={["block h-2 w-2 rounded-full shrink-0", STATE_DOT[o.state]].join(" ")} />
                     <div className="min-w-0">
-                      <p className="favo-small text-coffee-bean font-semibold leading-tight truncate">
+                      {/* Wraps to two lines (name, then id) so a portrait iPad never shows "Thabo Mokoe…". */}
+                      <p className="favo-small text-coffee-bean font-semibold leading-tight break-words">
                         {o.customerName ?? "Walk-in"}
-                        <span className="favo-caption text-cool-steel font-normal ml-1.5">
+                        <span className="favo-caption text-cool-steel font-normal block">
                           #{o.orderId.slice(-6).toUpperCase()}
                         </span>
                       </p>
@@ -1133,9 +1216,29 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       </div>
       </div>{/* end flex flex-1 row */}
 
-      {/* ════════ WASTE LOG MODAL (M8) ════════ */}
+      {/* ════════ SIGN-OUT WITH A FULL CART — ask first ════════ */}
+      {confirmSignOut && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-coffee-bean/60 px-4"
+          role="alertdialog" aria-modal="true" aria-label="Sign out with an order in progress">
+          <div className="w-full max-w-[380px] rounded-[var(--radius-card)] bg-porcelain p-5 flex flex-col gap-3">
+            <p className="favo-small text-coffee-bean">
+              There {items.length === 1 ? "is 1 item" : `are ${items.length} items`} in the order that has not been sent.
+              Signing out will throw it away.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setConfirmSignOut(false)}
+                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 px-4 favo-small text-coffee-bean">Stay signed in</button>
+              <button type="button" onClick={() => { setConfirmSignOut(false); void handleSignOut(); }}
+                className="min-h-[44px] rounded-[4px] px-4 favo-small font-bold"
+                style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)" }}>Sign out anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════ WASTE (M8) — item picker, validated quantity ════════ */}
       {showWasteModal && (
-        <WasteLogModal
+        <WasteDialog
           onClose={() => setShowWasteModal(false)}
           onLogged={() => setShowWasteModal(false)}
         />
