@@ -6,8 +6,16 @@
 // the entry the outermost trusted proxy appended: the TRUSTED_PROXY_HOPS-th
 // entry from the end (default 1: one reverse proxy). If the chain is shorter
 // than that, the right-most entry is used — never the first, which is the one
-// the client wrote. CF-Connecting-IP is preferred only when the chain shows the
-// request really came through all the trusted hops.
+// the client wrote.
+//
+// CF-Connecting-IP is IGNORED by default: anyone can send that header, and a
+// request that reaches the origin without going through Cloudflare carries
+// whatever the client put there. It is used only when TRUST_CF_CONNECTING_IP
+// is exactly "1" (set that only once the origin accepts traffic from
+// Cloudflare alone) AND the X-Forwarded-For chain has at least
+// TRUSTED_PROXY_HOPS entries. A chain that long does not prove the request
+// came through Cloudflare. That guarantee has to come from the network
+// setting, not from this code.
 //
 // TRUSTED_PROXY_HOPS=0 means nothing sits in front of Next. Then every header
 // is client-written, and the socket address is what should be used — but a
@@ -51,7 +59,7 @@ export function clientKeyFrom(
     .filter((e): e is string => e !== null);
   if (entries.length === 0) return SHARED_KEY;
 
-  if (entries.length >= hops && h.cfConnectingIp) {
+  if (process.env.TRUST_CF_CONNECTING_IP === "1" && entries.length >= hops && h.cfConnectingIp) {
     const cf = normaliseAddress(h.cfConnectingIp);
     if (cf) return cf;
   }

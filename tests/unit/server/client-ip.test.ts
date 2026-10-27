@@ -5,6 +5,7 @@ import { clientKeyFrom, normaliseAddress, trustedProxyHops } from "@/server/clie
 
 afterEach(() => {
   delete process.env.TRUSTED_PROXY_HOPS;
+  delete process.env.TRUST_CF_CONNECTING_IP;
 });
 
 describe("trustedProxyHops", () => {
@@ -66,7 +67,16 @@ describe("clientKeyFrom", () => {
     expect(key(" , ", 1)).toBe("direct");
   });
 
-  it("prefers CF-Connecting-IP only when the request came through the trusted hop count", () => {
+  it("CHANGED: ignores CF-Connecting-IP unless TRUST_CF_CONNECTING_IP=1 (default off)", () => {
+    delete process.env.TRUST_CF_CONNECTING_IP;
+    expect(key("203.0.113.77, 198.51.100.9, 10.0.0.2", 2, "198.51.100.44")).toBe("198.51.100.9");
+    expect(key("203.0.113.77, 198.51.100.9", 1, "203.0.113.5")).toBe("198.51.100.9");
+    process.env.TRUST_CF_CONNECTING_IP = "true"; // only the exact value "1" turns it on
+    expect(key("203.0.113.77, 198.51.100.9", 1, "203.0.113.5")).toBe("198.51.100.9");
+  });
+
+  it("with TRUST_CF_CONNECTING_IP=1, uses CF-Connecting-IP only when the chain shows the trusted hops", () => {
+    process.env.TRUST_CF_CONNECTING_IP = "1";
     expect(key("203.0.113.77, 198.51.100.9, 10.0.0.2", 2, "198.51.100.44")).toBe("198.51.100.44");
     // Chain shorter than the hops: it did not come through our proxies — ignore the CF header.
     expect(key("10.0.0.2", 2, "203.0.113.99")).toBe("10.0.0.2");

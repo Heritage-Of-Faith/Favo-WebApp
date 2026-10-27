@@ -45,9 +45,9 @@ const ADMIN_FAIL_LIMIT = 5;
 const ADMIN_COOLDOWN_KEY = "pin-admin-cooldown";
 const ADMIN_COOLDOWN_MS = 5 * 60_000;
 
-function tooManyAttempts(retryAfterSecs: number): ActionResult<never> {
-  return { ok: false, code: "RATE_LIMITED", message: `Too many attempts. Try again in ${retryAfterSecs}s.` };
-}
+// The one answer for any PIN that does not sign in — wrong, unknown, or an
+// admin PIN refused by the cooldown.
+const INCORRECT_PIN = { ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect PIN." } as const;
 
 /** PRD §9.5.3: every breach writes action='reject' with a reason — never the attempted value. Outside any transaction. */
 async function auditReject(reason: string): Promise<void> {
@@ -102,26 +102,34 @@ export async function loginWithPin(
       action: "login_failed",
       reason: "No active staff matched the supplied PIN",
     });
-    return { ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect PIN." };
+    return { ...INCORRECT_PIN };
   }
 
   if (matched.role === "admin") {
+    // A refused admin PIN must look exactly like a wrong PIN — same result,
+    // same counters, one audit insert — or the answer would reveal that the
+    // PIN was a correct admin one. It is still refused and audited.
+    const refuseAsWrongPin = async (reason: string) => {
+      noteAttempt(clientFailKey, FAIL_WINDOW_MS);
+      noteAttempt(GLOBAL_FAIL_KEY, FAIL_WINDOW_MS);
+      noteAttempt(ADMIN_FAIL_KEY, FAIL_WINDOW_MS);
+      await auditReject(reason);
+      return { ...INCORRECT_PIN };
+    };
     const left = cooldownSecsLeft(ADMIN_COOLDOWN_KEY);
     if (left > 0) {
-      await auditReject(`Admin PIN refused: cooldown running (${left}s left)`);
-      return tooManyAttempts(left);
+      return refuseAsWrongPin(`Admin PIN refused: cooldown running (${left}s left)`);
     }
     const failures = countRecent(ADMIN_FAIL_KEY, FAIL_WINDOW_MS);
     if (failures >= ADMIN_FAIL_LIMIT) {
       startCooldown(ADMIN_COOLDOWN_KEY, ADMIN_COOLDOWN_MS);
       clearAttempts(ADMIN_FAIL_KEY); // the counter resets after the cooldown
-      await auditReject(`Admin PIN cooldown started: ${failures} failed PIN attempts; 5-minute cooldown`);
       void alertAdmins(
         "Admin PIN cooldown",
         `${failures} failed PIN attempts at the till. Admin sign-in is paused for 5 minutes. Baristas are not affected.`,
         { failures }
       );
-      return tooManyAttempts(Math.ceil(ADMIN_COOLDOWN_MS / 1000));
+      return refuseAsWrongPin(`Admin PIN cooldown started: ${failures} failed PIN attempts; 5-minute cooldown`);
     }
   }
 

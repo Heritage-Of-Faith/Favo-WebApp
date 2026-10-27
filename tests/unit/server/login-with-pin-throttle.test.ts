@@ -125,12 +125,13 @@ describe("Admin PIN: 5 attempts → 5-minute cooldown + immediate Admin alert", 
 
     for (let i = 0; i < 5; i++) await loginWithPin("9998");
 
+    // CHANGED: the cooled-down admin PIN answers exactly like a wrong PIN, so
+    // the response cannot reveal that the PIN was a correct admin one.
+    const wrong = await loginWithPin("9997");
     const r = await loginWithPin("1111");
-    expect(r.ok).toBe(false);
-    if (!r.ok) {
-      expect(r.code).toBe("RATE_LIMITED");
-      expect(r.message).toMatch(/^Too many attempts\. Try again in \d+s\.$/);
-    }
+    expect(r).toEqual({ ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect PIN." });
+    expect(r).toEqual(wrong);
+    expect(Object.keys(r).sort()).toEqual(Object.keys(wrong).sort());
     expect(alertAdmins).toHaveBeenCalledTimes(1);
     const rows = rejectRows().filter((a) => /admin pin/i.test(a.reason ?? ""));
     expect(rows.length).toBeGreaterThanOrEqual(1);
@@ -141,8 +142,15 @@ describe("Admin PIN: 5 attempts → 5-minute cooldown + immediate Admin alert", 
 
     // Still cooling down 4 min later: refused again, no second alert.
     vi.setSystemTime(t0 + 4 * 60_000);
-    expect((await loginWithPin("1111")).ok).toBe(false);
+    vi.mocked(writeAudit).mockClear();
+    expect(await loginWithPin("1111")).toEqual({ ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect PIN." });
     expect(alertAdmins).toHaveBeenCalledTimes(1);
+    // Still refused AND audited as a reject (never the PIN).
+    const during = rejectRows().filter((a) => /admin pin/i.test(a.reason ?? ""));
+    expect(during).toHaveLength(1);
+    expect(JSON.stringify(during)).not.toContain("1111");
+    // A barista PIN during the admin cooldown is never refused.
+    expect((await loginWithPin("2222")).ok).toBe(true);
 
     // After the 5-minute cooldown the counter has reset: the admin gets in.
     vi.setSystemTime(t0 + 5 * 60_000 + 1);
