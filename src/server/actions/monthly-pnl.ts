@@ -7,12 +7,12 @@
 // DB CHECK: closed requires admin sig — enforced by migration 0011 (L11).
 // Docs: FAVO_PRD_v3.md §04 §06 §07 · BUSINESS_RULES.md L11
 
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { monthlyReports, orders } from "@db/schema";
+import { monthlyReports } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
-import { readPeriodCogs } from "@/server/cogs/period-cogs";
+import { readPeriodFigures } from "@/server/cogs/period-cogs";
 import type {
   ActionResult,
   MonthlyReport,
@@ -118,31 +118,15 @@ export async function generateMonthlyPnL(
 
   const lastDay = lastDayOfMonth(month);
 
-  // ── Revenue — by orders.revenue_day (L07), the same bucket as COGS below.
-  const [revRow] = await db
-    .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
-    .from(orders)
-    .where(
-      and(
-        sql`${orders.state} IN ('in_progress', 'ready', 'collected')`,
-        gte(orders.revenueDay, month),
-        lte(orders.revenueDay, lastDay)
-      )
-    );
-  const revenueZar = revRow?.total ?? 0;
-
-  // ── COGS — Σ order_cogs over the month's revenue days (AT-189, REQ-106).
-  // Never re-rounded, never filtered: an absent cost input stores the month
-  // UNAVAILABLE with the items named (AT-190, REQ-109); an estimated lot
-  // stores it provisional (AT-191, REQ-110/REQ-131).
-  const cogs = await readPeriodCogs(month, lastDay);
-  const cogsZar = cogs.cogsZar;
-  const costState = cogs.state;
-  const cogsAbsentItems = cogs.absentItemNames;
-  const ordersWithoutCost = cogs.ordersWithoutCost;
-
-  const grossMarginZar = cogsZar === null ? null : revenueZar - cogsZar;
-  const netZar = grossMarginZar;
+  // Revenue (orders.revenue_day), COGS (Σ order_cogs — never re-rounded, never
+  // filtered: AT-189/AT-190, REQ-106/REQ-109) and expenses over the month's
+  // revenue days, through the same reads and periodFigures arithmetic as the
+  // dashboard, the CSV and the weekly report — so net subtracts expenses here
+  // too (it used to hard-code expenses to 0 and disagree with weekly).
+  const f = await readPeriodFigures(month, lastDay);
+  const { revenueZar, cogsZar, expensesZar, grossMarginZar, netZar, costState } = f;
+  const cogsAbsentItems = f.cogs.absentItemNames;
+  const ordersWithoutCost = f.cogs.ordersWithoutCost;
 
   let reportId!: string;
 
@@ -155,7 +139,7 @@ export async function generateMonthlyPnL(
         month,
         revenueZar,
         cogsZar,
-        expensesZar: 0,
+        expensesZar,
         grossMarginZar,
         netZar,
         costState,
@@ -175,7 +159,7 @@ export async function generateMonthlyPnL(
         actorId: session.id,
         actorRole: session.role,
         before: null,
-        after: { month, revenueZar, cogsZar, expensesZar: 0, netZar, costState, cogsAbsentItems, ordersWithoutCost, status: "draft" },
+        after: { month, revenueZar, cogsZar, expensesZar, netZar, costState, cogsAbsentItems, ordersWithoutCost, status: "draft" },
       },
       txDb
     );

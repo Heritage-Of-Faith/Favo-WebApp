@@ -3,10 +3,10 @@
 // Mon 00:00 – Sun 23:59 SAST and inserts into weekly_reports.
 // Docs: API.md · BUSINESS_RULES.md T05 L09 · FAVO_PRD_v3.md §07 §09
 
-import { and, gte, lt, lte, sql, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders, weeklyReports, expenses } from "@db/schema";
-import { readPeriodCogs } from "@/server/cogs/period-cogs";
+import { weeklyReports } from "@db/schema";
+import { readPeriodFigures } from "@/server/cogs/period-cogs";
 
 /** "2026-08-10" + 6 → "2026-08-16" (calendar arithmetic on a YYYY-MM-DD). */
 function addDays(yyyymmdd: string, days: number): string {
@@ -50,7 +50,7 @@ export function weekBounds(referenceDate?: Date): { start: Date; end: Date; week
 export async function generateWeeklyPnL(
   referenceDate?: Date
 ): Promise<{ weekStarting: string; reportId: string; alreadyExists: boolean }> {
-  const { start, end, weekStarting } = weekBounds(referenceDate);
+  const { weekStarting } = weekBounds(referenceDate);
 
   // Idempotent: skip if already generated
   const [existing] = await db
@@ -64,38 +64,12 @@ export async function generateWeeklyPnL(
 
   const weekEnding = addDays(weekStarting, 6);
 
-  // ── Revenue — by orders.revenue_day (L07), the same bucket as COGS below.
-  const [revRow] = await db
-    .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
-    .from(orders)
-    .where(
-      and(
-        sql`${orders.state} IN ('in_progress', 'ready', 'collected')`,
-        gte(orders.revenueDay, weekStarting),
-        lte(orders.revenueDay, weekEnding)
-      )
-    );
-  const revenueZar = revRow?.total ?? 0;
-
-  // ── COGS — Σ order_cogs over the week's seven revenue days (AT-189, REQ-106).
-  // Never re-rounded, never filtered: an absent cost input stores the week as
-  // UNAVAILABLE with the items named (AT-190, REQ-109), and an estimated lot
-  // stores it provisional (AT-191, REQ-110/REQ-131).
-  const cogs = await readPeriodCogs(weekStarting, weekEnding);
-  const cogsZar = cogs.cogsZar;
-
-  // ── Expenses ─────────────────────────────────────────────────────────────
-  // Operating expenses (rent, utilities, staff, …) incurred within the week.
-  // Net P&L must subtract these, not just COGS — a report that ignores them
-  // overstates profit and disagrees with the live COGS/expenses figures (SC01).
-  const [expRow] = await db
-    .select({ total: sql<number>`COALESCE(SUM(${expenses.amountZar}), 0)::int` })
-    .from(expenses)
-    .where(and(gte(expenses.incurredAt, start), lt(expenses.incurredAt, end)));
-  const expensesZar = expRow?.total ?? 0;
-
-  const grossMarginZar = cogsZar === null ? null : revenueZar - cogsZar;
-  const netZar = grossMarginZar === null ? null : grossMarginZar - expensesZar;
+  // Revenue (orders.revenue_day), COGS (Σ order_cogs — never re-rounded, never
+  // filtered: AT-189/AT-190, REQ-106/REQ-109) and expenses over the week's
+  // seven revenue days, through the same reads and periodFigures arithmetic
+  // as the dashboard, the CSV and the monthly report.
+  const f = await readPeriodFigures(weekStarting, weekEnding);
+  const { cogs, revenueZar, cogsZar, expensesZar, grossMarginZar, netZar } = f;
 
   // ── Insert report ──────────────────────────────────────────────────────────
   const [report] = await db

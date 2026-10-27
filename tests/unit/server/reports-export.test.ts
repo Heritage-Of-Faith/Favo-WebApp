@@ -19,25 +19,25 @@ describe("rowsToCsv — RFC 4180 output", () => {
 
   it("encodes one data row correctly", () => {
     const rows: ReportRow[] = [
-      { date: "2026-06-08", revenueZar: 150000, cogsZar: 45000, grossMarginZar: 105000, grossMarginPct: 70.0, costStatus: "final" },
+      { date: "2026-06-08", revenueZar: 150000, cogsZar: 45000, grossMarginZar: 105000, grossMarginPct: 70.0, expensesZar: 0, netZar: 105000, costStatus: "final" },
     ];
     const csv = rowsToCsv(rows);
     const lines = csv.split("\r\n");
     expect(lines).toHaveLength(2);
-    // CHANGED (AT-192, REQ-131): a trailing "Cost status" column.
-    expect(lines[1]).toBe("2026-06-08,150000,45000,105000,70,final");
+    // CHANGED (AT-192, REQ-131; QA P1): Expenses and Net columns, then "Cost status".
+    expect(lines[1]).toBe("2026-06-08,150000,45000,105000,70,0,105000,final");
   });
 
   it("uses CRLF line endings (RFC 4180)", () => {
     const csv = rowsToCsv([
-      { date: "2026-06-08", revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0, costStatus: "final" },
+      { date: "2026-06-08", revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0, expensesZar: 0, netZar: 0, costStatus: "final" },
     ]);
     expect(csv).toContain("\r\n");
   });
 
   it("escapes values containing commas with double-quotes", () => {
     const rows: ReportRow[] = [
-      { date: "2026,06,08", revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0, costStatus: "final" },
+      { date: "2026,06,08", revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0, expensesZar: 0, netZar: 0, costStatus: "final" },
     ];
     const csv = rowsToCsv(rows);
     expect(csv).toContain('"2026,06,08"');
@@ -45,7 +45,7 @@ describe("rowsToCsv — RFC 4180 output", () => {
 
   it("escapes internal double-quotes per RFC 4180", () => {
     const rows: ReportRow[] = [
-      { date: '"quoted"', revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0, costStatus: "final" },
+      { date: '"quoted"', revenueZar: 0, cogsZar: 0, grossMarginZar: 0, grossMarginPct: 0, expensesZar: 0, netZar: 0, costStatus: "final" },
     ];
     const csv = rowsToCsv(rows);
     expect(csv).toContain('"""quoted"""');
@@ -59,8 +59,8 @@ describe("rowsToCsv — RFC 4180 output", () => {
 
   it("handles multiple rows in order", () => {
     const rows: ReportRow[] = [
-      { date: "2026-06-01", revenueZar: 10000, cogsZar: 3000, grossMarginZar: 7000, grossMarginPct: 70, costStatus: "final" },
-      { date: "2026-06-02", revenueZar: 20000, cogsZar: 6000, grossMarginZar: 14000, grossMarginPct: 70, costStatus: "final" },
+      { date: "2026-06-01", revenueZar: 10000, cogsZar: 3000, grossMarginZar: 7000, grossMarginPct: 70, expensesZar: 0, netZar: 7000, costStatus: "final" },
+      { date: "2026-06-02", revenueZar: 20000, cogsZar: 6000, grossMarginZar: 14000, grossMarginPct: 70, expensesZar: 0, netZar: 14000, costStatus: "final" },
     ];
     const csv = rowsToCsv(rows);
     const lines = csv.split("\r\n").filter(Boolean);
@@ -74,9 +74,12 @@ describe("rowsToCsv — RFC 4180 output", () => {
 
 import { PgDialect } from "drizzle-orm/pg-core";
 
+// CHANGED (QA P1): buildReportRows now reads revenue, COGS and expenses
+// (three queries, in that order) through readDailyFigures; unmocked calls
+// resolve to no rows.
 vi.mock("@db/index", () => ({
   db: {
-    execute: vi.fn(),
+    execute: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -114,7 +117,7 @@ describe("buildReportRows — date range enumeration", () => {
   it("merges revenue and COGS by date correctly", async () => {
     const { db } = await import("@db/index");
     vi.mocked(db.execute)
-      .mockResolvedValueOnce([{ sast_date: "2026-06-08", revenue: "80000" }] as unknown as ExecResult)
+      .mockResolvedValueOnce([{ revenue_day: "2026-06-08", revenue_zar: "80000" }] as unknown as ExecResult)
       // CHANGED (AT-189): COGS is now a sum of order_cogs rows, not a per-day ROUND(SUM).
       .mockResolvedValueOnce([
         { revenue_day: "2026-06-08", cogs_zar: 14000, absent_item_ids: [], estimated: true, missing: false },
@@ -140,7 +143,8 @@ describe("buildReportRows — date range enumeration", () => {
     const rows = await buildReportRows("2026-06-08", "2026-06-08");
     expect(rows[0].revenueZar).toBe(0);
     expect(rows[0].cogsZar).toBe(0);
-    expect(rows[0].grossMarginPct).toBe(0);
+    // CHANGED (QA P1): no revenue → the margin % is n/a (null), not 0%.
+    expect(rows[0].grossMarginPct).toBeNull();
     expect(rows[0].costStatus).toBe("no orders");
   });
 
@@ -156,7 +160,8 @@ describe("buildReportRows — date range enumeration", () => {
     const dialect = new PgDialect();
     for (const call of vi.mocked(db.execute).mock.calls) {
       const { sql: text, params } = dialect.sqlToQuery(call[0] as Parameters<typeof dialect.sqlToQuery>[0]);
-      expect(text).toContain("revenue_day");
+      // Orders (revenue and COGS) by revenue_day; expenses by their SAST day.
+      if (text.includes("FROM orders")) expect(text).toContain("revenue_day");
       expect(text).not.toContain("placed_at");
       expect(params).toEqual(["2026-08-10", "2026-08-16"]);
     }
@@ -165,7 +170,7 @@ describe("buildReportRows — date range enumeration", () => {
   it("an UNAVAILABLE day's figure cells carry the named refusal, never a bare UNAVAILABLE", async () => {
     const { db } = await import("@db/index");
     vi.mocked(db.execute)
-      .mockResolvedValueOnce([{ sast_date: "2026-08-16", revenue: "35000" }] as unknown as ExecResult)
+      .mockResolvedValueOnce([{ revenue_day: "2026-08-16", revenue_zar: "35000" }] as unknown as ExecResult)
       .mockResolvedValueOnce([
         { revenue_day: "2026-08-16", cogs_zar: null, absent_item_ids: [], estimated: null, missing: true },
       ] as unknown as ExecResult);
@@ -173,7 +178,7 @@ describe("buildReportRows — date range enumeration", () => {
     const rows = await buildReportRows("2026-08-16", "2026-08-16");
     const line = rowsToCsv(rows).split("\r\n")[1];
     const named = "UNAVAILABLE — 1 order with no recorded cost";
-    expect(line).toBe(`2026-08-16,35000,${named},${named},${named},${named}`);
+    expect(line).toBe(`2026-08-16,35000,${named},${named},${named},0,${named},${named}`);
   });
 
   it("binds date bounds as ::timestamptz string params, not raw Date objects", async () => {

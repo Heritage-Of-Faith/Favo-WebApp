@@ -104,6 +104,78 @@ export function netTone(state: CostState, netZar: number | null): NetTone {
   return netZar >= 0 ? "positive" : "negative";
 }
 
+/** The net/profit word per tone. An empty (R0) period reads "No sales", never "loss". */
+export function netLabel(tone: NetTone): string {
+  switch (tone) {
+    case "unavailable":
+      return UNAVAILABLE;
+    case "warn":
+      return PROVISIONAL;
+    case "negative":
+      return "loss";
+    case "positive":
+      return "profit";
+    case "neutral":
+      return "No sales";
+  }
+}
+
+export type PeriodFigures = {
+  revenueZar: number;
+  /** NULL = UNAVAILABLE. */
+  cogsZar: number | null;
+  /** revenue − cogs. NULL when cogs is. */
+  grossMarginZar: number | null;
+  expensesZar: number;
+  /** revenue − cogs − expenses. NULL when cogs is. */
+  netZar: number | null;
+  /** cogs as % of revenue, 2 dp. NULL when cogs is NULL or revenue is 0. */
+  cogsPctOfRevenue: number | null;
+  /** gross margin as % of revenue, 2 dp. NULL when cogs is NULL or revenue is 0. */
+  grossMarginPct: number | null;
+  costState: CostState;
+  tone: NetTone;
+  label: string;
+};
+
+/** A display percentage of two integer-cent figures, to 2 dp (not a money amount). */
+function pctOf(part: number | null, whole: number): number | null {
+  if (part === null || whole === 0) return null;
+  return Math.round((part / whole) * 10000) / 100;
+}
+
+/**
+ * THE one place a period's derived figures are computed — dashboard tiles and
+ * donut, the CSV/PDF export, the weekly and the monthly report all call this,
+ * so the same orders give the same numbers everywhere. Every input and output
+ * is integer cents; nothing here rounds money (REQ-106).
+ */
+export function periodFigures(input: {
+  revenueZar: number;
+  cogsZar: number | null;
+  expensesZar: number;
+  costState: CostState;
+}): PeriodFigures {
+  const { revenueZar, cogsZar, expensesZar, costState } = input;
+  const grossMarginZar = cogsZar === null ? null : revenueZar - cogsZar;
+  const netZar = grossMarginZar === null ? null : grossMarginZar - expensesZar;
+  // An empty period (no costed order) is neutral whatever its expenses — never
+  // "loss", never green (N3).
+  const tone = netTone(costState, netZar);
+  return {
+    revenueZar,
+    cogsZar,
+    grossMarginZar,
+    expensesZar,
+    netZar,
+    cogsPctOfRevenue: pctOf(cogsZar, revenueZar),
+    grossMarginPct: pctOf(grossMarginZar, revenueZar),
+    costState,
+    tone,
+    label: tone === "neutral" && revenueZar > 0 ? "no cost recorded" : netLabel(tone),
+  };
+}
+
 /** CSS colour per tone — §17.6.1: warn and unavailable are their own tokens. */
 export const NET_TONE_COLOR: Record<NetTone, string> = {
   neutral: "var(--color-text-strong)",

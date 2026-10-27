@@ -21,8 +21,7 @@ import DonutChart from "@/components/shared/charts/DonutChart";
 import type { CogsLive } from "@/lib/types";
 import {
   combineCostStates,
-  netTone,
-  PROVISIONAL,
+  periodFigures,
   UNAVAILABLE,
   unavailableText,
   type NetTone,
@@ -60,21 +59,46 @@ function trendOf(current: number, previous: number | undefined) {
   };
 }
 
-/** Σ of several days. A cost figure is NULL (UNAVAILABLE) if any day's is. */
-function aggregate(days: readonly CogsLive[], date: string): CogsLive {
-  const sumOrNull = (key: "cogsZar" | "grossMarginZar" | "netZar") =>
-    days.some((d) => d[key] === null) ? null : days.reduce((s, d) => s + (d[key] as number), 0);
+/**
+ * Σ of several days' inputs (revenue, COGS, expenses — integer cents), then
+ * the derived figures from periodFigures, the same function the CSV and the
+ * weekly/monthly reports use. COGS is NULL (UNAVAILABLE) if any day's is.
+ */
+export function aggregate(days: readonly CogsLive[], date: string): CogsLive {
+  const revenueZar = days.reduce((s, d) => s + d.revenueZar, 0);
+  const cogsZar = days.some((d) => d.cogsZar === null) ? null : days.reduce((s, d) => s + (d.cogsZar as number), 0);
+  const expensesZar = days.reduce((s, d) => s + d.expensesZar, 0);
+  const costState = combineCostStates(days.map((d) => d.costState));
+  const f = periodFigures({ revenueZar, cogsZar, expensesZar, costState });
   return {
     date,
-    revenueZar: days.reduce((s, d) => s + d.revenueZar, 0),
-    cogsZar: sumOrNull("cogsZar"),
-    expensesZar: days.reduce((s, d) => s + d.expensesZar, 0),
-    grossMarginZar: sumOrNull("grossMarginZar"),
-    netZar: sumOrNull("netZar"),
-    costState: combineCostStates(days.map((d) => d.costState)),
+    revenueZar,
+    cogsZar,
+    expensesZar,
+    grossMarginZar: f.grossMarginZar,
+    netZar: f.netZar,
+    costState,
     absentItems: [...new Set(days.flatMap((d) => d.absentItems))].sort(),
     ordersWithoutCost: days.reduce((s, d) => s + d.ordersWithoutCost, 0),
   };
+}
+
+/**
+ * The revenue-allocation donut. When net ≥ 0 the slices are COGS, expenses and
+ * net, which add up to revenue — so each slice's % is its share OF REVENUE,
+ * the same % the COGS tile shows. On a loss the slices are COGS and expenses
+ * (their share of costs) and the centre says so. NULL when COGS is UNAVAILABLE.
+ */
+export function allocationSlices(kpi: Pick<CogsLive, "revenueZar" | "cogsZar" | "expensesZar" | "netZar">) {
+  if (kpi.cogsZar === null || kpi.netZar === null) return null;
+  const slices: { label: string; value: number; color: string }[] = [
+    { label: "COGS", value: kpi.cogsZar, color: chartColor.warning },
+    { label: "Expenses", value: kpi.expensesZar, color: chartColor.brand },
+  ];
+  // A slice split only — the net's tone/colour comes from periodFigures, never this sign.
+  if (kpi.netZar < 0) return { slices, centerZar: kpi.cogsZar + kpi.expensesZar, centerSub: "costs" };
+  slices.push({ label: "Net", value: kpi.netZar, color: chartColor.positive });
+  return { slices, centerZar: kpi.revenueZar, centerSub: "revenue" };
 }
 
 const KPI_TONE: Record<NetTone, "default" | "positive" | "negative" | "warn" | "unavailable"> = {
@@ -181,21 +205,16 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
   const kpiSub = inspectDate ? undefined : `last ${rangeDays}d`;
 
   const trendCostKnown = trend.every((t) => t.cogsZar !== null && t.netZar !== null);
-  const tone = netTone(kpi.costState, kpi.netZar);
+  // Every derived figure on screen — tone, label, COGS % — from periodFigures.
+  const fig = periodFigures(kpi);
+  const tone = fig.tone;
   const unavailable = kpi.costState === "unavailable";
   const unavailableLine = unavailableText(kpi.absentItems, kpi.ordersWithoutCost);
-  const netLabel =
-    tone === "unavailable" ? UNAVAILABLE : tone === "warn" ? PROVISIONAL : tone === "negative" ? "loss" : tone === "positive" ? "profit" : "no orders";
+  const netWord = fig.label;
 
   // Revenue allocation for the viewed day or period (handles loss gracefully).
   // Not drawn while the cost is UNAVAILABLE — a split of an absent number.
-  const allocation =
-    kpi.cogsZar === null || kpi.netZar === null
-      ? []
-      : [
-          { label: "COGS", value: Math.max(kpi.cogsZar, 0), color: chartColor.warning },
-          { label: tone === "positive" ? "Net profit" : kpi.netZar < 0 ? "Net loss" : "Net", value: Math.max(kpi.netZar, 0), color: chartColor.positive },
-        ];
+  const allocation = allocationSlices(kpi);
 
   return (
     <div className="space-y-6">
@@ -284,19 +303,27 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
           sub={
             kpi.cogsZar === null
               ? unavailableLine
-              : kpi.revenueZar > 0
-                ? `${Math.round((kpi.cogsZar / kpi.revenueZar) * 100)}% of revenue`
+              : fig.cogsPctOfRevenue !== null
+                ? `${Math.round(fig.cogsPctOfRevenue)}% of revenue`
                 : undefined
           }
           hint="ingredient cost of items sold"
         />
         <KpiTile
+          label="Gross margin"
+          {...(fig.grossMarginZar === null ? { valueText: UNAVAILABLE } : { valueZar: fig.grossMarginZar })}
+          tone={unavailable ? "unavailable" : kpi.costState === "provisional" ? "warn" : "default"}
+          sub={fig.grossMarginPct !== null ? `${Math.round(fig.grossMarginPct)}% of revenue` : undefined}
+          hint="revenue − COGS (the export's margin)"
+        />
+        <KpiTile label="Expenses" valueZar={kpi.expensesZar} hint="operating expenses logged" />
+        <KpiTile
           label="Net"
           {...(kpi.netZar === null ? { valueText: UNAVAILABLE } : { valueZar: kpi.netZar })}
           tone={KPI_TONE[tone]}
           trend={kpiTrend.net}
-          sub={kpiSub ? `${kpiSub} · ${netLabel}` : netLabel}
-          hint="revenue − COGS"
+          sub={kpiSub ? `${kpiSub} · ${netWord}` : netWord}
+          hint="revenue − COGS − expenses"
         />
       </TileGrid>
 
@@ -390,21 +417,22 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
           style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-elevated)" }}
         >
           <h2 className="favo-label mb-3">Revenue allocation — {inspectDate ?? `last ${rangeDays}d`}</h2>
-          {kpi.cogsZar === null || kpi.netZar === null ? (
+          {allocation === null || kpi.cogsZar === null || kpi.netZar === null ? (
             <p className="favo-small" style={{ color: "var(--status-unavailable)", fontWeight: 600 }}>
               {unavailableLine}
             </p>
           ) : (
             <DonutChart
-              data={allocation}
+              data={allocation.slices}
               size={150}
               formatValue={formatZar}
-              centerLabel={formatZar(kpi.revenueZar)}
-              centerSub="revenue"
-              ariaLabel={`Revenue allocation: COGS ${formatZar(kpi.cogsZar)}, net ${formatZar(kpi.netZar)}`}
+              centerLabel={formatZar(allocation.centerZar)}
+              centerSub={allocation.centerSub}
+              ariaLabel={`Revenue allocation: COGS ${formatZar(kpi.cogsZar)}, expenses ${formatZar(kpi.expensesZar)}, net ${formatZar(kpi.netZar)}`}
             />
           )}
-          {kpi.netZar !== null && kpi.netZar < 0 && (
+          {/* Only a costed period with a real loss says "loss" — never an empty R0 day. */}
+          {tone === "negative" && kpi.netZar !== null && (
             <p className="favo-caption mt-2" style={{ color: "var(--color-crimson-carrot)", textTransform: "none", letterSpacing: 0 }}>
               Operating at a loss of {formatZar(Math.abs(kpi.netZar))} — costs exceed revenue.
             </p>

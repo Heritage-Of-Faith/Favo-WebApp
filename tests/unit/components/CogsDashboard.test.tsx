@@ -34,10 +34,13 @@ function makeCogs(over: Partial<CogsLive> = {}): CogsLive {
   };
 }
 
+// CHANGED (QA P1): the fixture's nets were inconsistent with its revenue and
+// COGS (net R100 on R500 − R150 with no expenses) — the very mismatch QA hit.
+// Each day's net now follows from its own revenue − COGS − expenses.
 const history: CogsLive[] = [
-  makeCogs({ date: "2026-06-02", netZar: 10000 }),
-  makeCogs({ date: "2026-06-03", netZar: 20000 }),
-  makeCogs({ date: "2026-06-04", netZar: 30000 }),
+  makeCogs({ date: "2026-06-02", expensesZar: 25000, netZar: 10000 }),
+  makeCogs({ date: "2026-06-03", expensesZar: 15000, netZar: 20000 }),
+  makeCogs({ date: "2026-06-04", expensesZar: 5000, netZar: 30000 }),
 ];
 
 describe("CogsDashboard", () => {
@@ -98,6 +101,27 @@ describe("CogsDashboard", () => {
     expect(screen.queryByText(/Provisional/)).toBeNull();
   });
 
+  it("QA P1: an R0 day with no orders reads 'No sales' in a neutral tone — never 'loss'", () => {
+    const empty = makeCogs({ revenueZar: 0, cogsZar: 0, grossMarginZar: 0, expensesZar: 0, netZar: 0, costState: "empty" });
+    mockUseCogsLive.mockReturnValue({ today: empty, status: "live", refresh: vi.fn() });
+    render(<CogsDashboard initialToday={empty} initialHistory={[]} todayDate="2026-06-04" />);
+    expect(screen.getAllByText(/No sales/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\bloss\b/i)).toBeNull();
+  });
+
+  it("QA P1: the tiles show the expenses that net subtracts, and the COGS % agrees with the donut", () => {
+    const day = makeCogs({
+      revenueZar: 311300, cogsZar: 32052, grossMarginZar: 279248, expensesZar: 273000, netZar: 6248,
+    });
+    mockUseCogsLive.mockReturnValue({ today: day, status: "live", refresh: vi.fn() });
+    render(<CogsDashboard initialToday={day} initialHistory={[]} todayDate="2026-06-04" />);
+    expect(screen.getAllByText(/R\s*2\s*730,00/).length).toBeGreaterThan(0); // Expenses tile
+    expect(screen.getAllByText(/R\s*62,48/).length).toBeGreaterThan(0); // Net tile
+    expect(screen.getByText("10% of revenue")).toBeInTheDocument(); // COGS tile
+    expect(screen.getAllByText(/· 10%/).length).toBeGreaterThan(0); // donut legend: COGS share of revenue
+    expect(screen.queryByText(/· 84%/)).toBeNull();
+  });
+
   it("colours the Net tile with brand tones (profit → teal, loss → crimson)", () => {
     // Profit — the Net KPI value is rendered in the brand positive colour.
     mockUseCogsLive.mockReturnValue({ today: makeCogs(), status: "live", refresh: vi.fn() });
@@ -110,7 +134,7 @@ describe("CogsDashboard", () => {
     ).toBe(true);
 
     // Loss: today's net = -4500; merged into Jun 4 → aggregate = 10000+20000+(-4500) = 25500 = R255,00
-    const loss = makeCogs({ netZar: -4500 });
+    const loss = makeCogs({ expensesZar: 39500, netZar: -4500 }); // CHANGED (QA P1): consistent fixture
     mockUseCogsLive.mockReturnValue({ today: loss, status: "live", refresh: vi.fn() });
     rerender(<CogsDashboard initialToday={loss} initialHistory={history} todayDate="2026-06-04" />);
     // aggregate net = 10000 + 20000 + (-4500) = 25500 = R255,00 — still positive (teal), not a loss
