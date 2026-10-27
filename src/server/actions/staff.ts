@@ -10,7 +10,7 @@ import { db } from "@/lib/db";
 import { staff } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
-import { hashPin, isValidPinFormat } from "@/server/auth/pin";
+import { hashPin, isValidPinFormat, verifyPin } from "@/server/auth/pin";
 import type { ActionResult, Staff, StaffRole } from "@/lib/types";
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -35,6 +35,27 @@ function toStaff(row: typeof staff.$inferSelect): Staff {
     role: row.role as StaffRole,
     active: row.active,
   };
+}
+
+// Login (auth.ts loginWithPin) matches a PIN against every ACTIVE staff row with
+// bcrypt, so two active holders of one PIN make login and attribution
+// ambiguous. Same comparison here; the message never says whose PIN it is.
+const PIN_TAKEN = {
+  ok: false as const,
+  code: "PIN_TAKEN",
+  message: "That PIN can't be used. Choose a different PIN.",
+};
+
+async function pinHeldByOtherActiveStaff(pin: string, exceptStaffId?: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: staff.id, pinHash: staff.pinHash })
+    .from(staff)
+    .where(eq(staff.active, true));
+  for (const r of rows) {
+    if (r.id === exceptStaffId) continue;
+    if (await verifyPin(pin, r.pinHash)) return true;
+  }
+  return false;
 }
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
@@ -79,6 +100,8 @@ export async function createStaff(input: {
   if (!isValidPinFormat(parsed.data.pin)) {
     return { ok: false, code: "INVALID_PIN", message: "PIN must be 4–6 digits." };
   }
+
+  if (await pinHeldByOtherActiveStaff(parsed.data.pin)) return PIN_TAKEN;
 
   const pinHash = await hashPin(parsed.data.pin);
 
@@ -136,6 +159,10 @@ export async function setStaffPin(input: {
 
   if (!existing) {
     return { ok: false, code: "NOT_FOUND", message: "Staff member not found." };
+  }
+
+  if (await pinHeldByOtherActiveStaff(parsed.data.newPin, parsed.data.staffId)) {
+    return PIN_TAKEN;
   }
 
   const pinHash = await hashPin(parsed.data.newPin);

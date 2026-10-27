@@ -4,12 +4,12 @@
 // Docs: docs/DATA_MODEL.md → audit_log · docs/API.md → listAudit
 
 import AuditViewer from "@/components/admin/AuditViewer";
-import { listAudit } from "@/server/actions/audit";
+import { listAudit, listAuditEntityKinds } from "@/server/actions/audit";
 
 export const metadata = { title: "Audit Log — FAVO Admin" };
 
 export default async function AuditPage() {
-  const result = await listAudit({ page: 0 });
+  const [result, kindsRes] = await Promise.all([listAudit({ page: 0 }), listAuditEntityKinds()]);
 
   // If auth fails the layout redirect fires first — this is a fallback.
   if (!result.ok) {
@@ -33,6 +33,7 @@ export default async function AuditPage() {
       <AuditViewer
         initialRows={result.data.rows}
         total={result.data.total}
+        entityKinds={kindsRes.ok ? kindsRes.data : []}
       />
     </div>
   );

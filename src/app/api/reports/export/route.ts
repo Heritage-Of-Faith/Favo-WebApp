@@ -140,7 +140,8 @@ export async function GET(req: NextRequest) {
   return new NextResponse(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Disposition": `inline; filename="favo-${kind}-${from}-to-${to}.pdf"`,
+      // HTML, not PDF — name it .html so the saved file opens correctly.
+      "Content-Disposition": `inline; filename="favo-${kind}-${from}-to-${to}.html"`,
     },
   });
 }
