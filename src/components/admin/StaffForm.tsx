@@ -30,13 +30,15 @@ export type Props = {
   // When set, the dialog is in "reset PIN" mode for this existing staff member.
   staffId?: string;
   staffName?: string;
+  /** Reset-PIN mode that also switches an inactive member back on. */
+  reactivate?: boolean;
   onClose: () => void;
   onSaved: () => void;
 };
 
 const ROLES: StaffRole[] = ["barista", "admin"];
 
-export default function StaffForm({ staffId, staffName, onClose, onSaved }: Props) {
+export default function StaffForm({ staffId, staffName, reactivate, onClose, onSaved }: Props) {
   const isEdit = Boolean(staffId);
   const [name, setName] = useState("");
   const [role, setRole] = useState<StaffRole>("barista");
@@ -63,7 +65,7 @@ export default function StaffForm({ staffId, staffName, onClose, onSaved }: Prop
     setSubmitting(true);
     try {
       const res = isEdit
-        ? await setStaffPin({ staffId: staffId!, newPin: pin })
+        ? await setStaffPin({ staffId: staffId!, newPin: pin, reactivate })
         : await createStaff({ name: name.trim(), role, pin });
       if (!res.ok) {
         setError(res.message);

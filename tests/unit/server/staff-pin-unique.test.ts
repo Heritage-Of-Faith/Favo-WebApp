@@ -77,3 +77,20 @@ describe("setStaffPin — PIN already held by another active staff member", () =
     expect(res.ok).toBe(true);
   });
 });
+
+describe("switching a staff member back on", () => {
+  it("reactivateStaff alone is refused: a new PIN is required", async () => {
+    const { reactivateStaff } = await import("@/server/actions/staff");
+    const res = await reactivateStaff("staff_old");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("PIN_REQUIRED");
+    expect(updateSet).not.toHaveBeenCalled();
+  });
+
+  it("setStaffPin with reactivate refuses a PIN another active member holds", async () => {
+    const { setStaffPin } = await import("@/server/actions/staff");
+    const res = await setStaffPin({ staffId: "staff_old", newPin: "1234", reactivate: true });
+    expect(res.ok).toBe(false);
+    expect(updateSet).not.toHaveBeenCalled();
+  });
+});

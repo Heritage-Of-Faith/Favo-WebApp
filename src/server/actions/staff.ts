@@ -24,6 +24,7 @@ const createStaffSchema = z.object({
 const setPinSchema = z.object({
   staffId: z.string().min(1),
   newPin: z.string().regex(/^\d{4,6}$/, "PIN must be 4–6 digits"),
+  reactivate: z.boolean().optional(),
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -139,6 +140,8 @@ export async function createStaff(input: {
 export async function setStaffPin(input: {
   staffId: string;
   newPin: string;
+  /** Switch an inactive member back on with this new PIN, so no PIN clash can slip in. */
+  reactivate?: boolean;
 }): Promise<ActionResult> {
   const auth = await authorize("admin");
   if (!auth.ok) return auth;
@@ -169,7 +172,7 @@ export async function setStaffPin(input: {
 
   await db
     .update(staff)
-    .set({ pinHash })
+    .set(parsed.data.reactivate ? { pinHash, active: true } : { pinHash })
     .where(eq(staff.id, parsed.data.staffId));
 
   await writeAudit({
@@ -179,7 +182,7 @@ export async function setStaffPin(input: {
     actorId: auth.session.id,
     actorRole: auth.session.role,
     // Never log the PIN itself — only that it was reset.
-    after: { pinReset: true },
+    after: parsed.data.reactivate ? { pinReset: true, active: true } : { pinReset: true },
   });
 
   return { ok: true, data: undefined };
@@ -238,33 +241,13 @@ export async function reactivateStaff(staffId: string): Promise<ActionResult> {
   const auth = await authorize("admin");
   if (!auth.ok) return auth;
 
-  const [existing] = await db
-    .select({ id: staff.id, active: staff.active })
-    .from(staff)
-    .where(eq(staff.id, staffId));
-
-  if (!existing) {
-    return { ok: false, code: "NOT_FOUND", message: "Staff member not found." };
-  }
-
-  if (existing.active) {
-    return { ok: false, code: "ALREADY_ACTIVE", message: "Staff member is already active." };
-  }
-
-  await db
-    .update(staff)
-    .set({ active: true })
-    .where(eq(staff.id, staffId));
-
-  await writeAudit({
-    entityKind: "staff",
-    entityId: staffId,
-    action: "reactivate",
-    actorId: auth.session.id,
-    actorRole: auth.session.role,
-    before: { active: false },
-    after: { active: true },
-  });
-
-  return { ok: true, data: undefined };
+  // A PIN may have been given to someone else while this person was away, and stored
+  // PINs are salted hashes that cannot be compared. So switching back on always sets a
+  // new PIN: use setStaffPin({ reactivate: true }).
+  void staffId;
+  return {
+    ok: false,
+    code: "PIN_REQUIRED",
+    message: "Set a new PIN to switch this staff member back on.",
+  };
 }
