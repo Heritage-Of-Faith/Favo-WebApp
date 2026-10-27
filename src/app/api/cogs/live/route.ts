@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { getCogsLive as computeCogsLive, todaySast } from "@/server/cogs/compute";
+import { isCalendarDate } from "@/server/http/request-guards";
 
 const ALLOWED_ROLES = new Set(["admin"]);
 
@@ -25,9 +26,15 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const dateParam = searchParams.get("date");
 
-  // Basic YYYY-MM-DD validation
-  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
-  const date = dateParam && dateRe.test(dateParam) ? dateParam : todaySast();
+  // SEC-5: a supplied date must be a real calendar day (1999-13-45 used to
+  // pass the shape check and blow up as a bare 500). Absent → today.
+  if (dateParam && !isCalendarDate(dateParam)) {
+    return NextResponse.json(
+      { error: "date must be a real calendar date in YYYY-MM-DD format." },
+      { status: 400 }
+    );
+  }
+  const date = dateParam ?? todaySast();
 
   // ── Compute ─────────────────────────────────────────────────────────────────
   const data = await computeCogsLive(date);

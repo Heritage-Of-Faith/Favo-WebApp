@@ -4,6 +4,7 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { csvCell } from "@/server/reports/csv";
 
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
 
@@ -79,15 +80,6 @@ export async function buildReportRows(from: string, to: string): Promise<ReportR
   }
 
   return rows;
-}
-
-/** Encode a value for RFC 4180 CSV (wrap in quotes, escape internal quotes). */
-function csvCell(value: string | number): string {
-  const s = String(value);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
 }
 
 export function rowsToCsv(rows: ReportRow[]): string {
