@@ -117,3 +117,21 @@ describe("searchCustomer — REQ-142 payload privacy", () => {
     expect(JSON.stringify(result)).not.toContain("t@example.com");
   });
 });
+
+describe("searchCustomer — per-staff rate limit (review round)", () => {
+  it("allows 60 searches a minute, then refuses with a friendly message", async () => {
+    const { _resetStoreForTest } = await import("@/server/rate-limit");
+    _resetStoreForTest();
+    vi.mocked(db.select).mockReturnValue(buildDbMock([]) as unknown as ReturnType<typeof db.select>);
+    for (let i = 0; i < 60; i++) {
+      expect((await searchCustomer("Lou")).ok).toBe(true);
+    }
+    const blocked = await searchCustomer("Lou");
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) {
+      expect(blocked.code).toBe("RATE_LIMITED");
+      expect(blocked.message).toMatch(/too fast/i);
+    }
+    _resetStoreForTest();
+  });
+});

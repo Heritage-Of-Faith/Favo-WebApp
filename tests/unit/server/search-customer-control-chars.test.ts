@@ -28,6 +28,9 @@ function boundParams(): unknown[] {
     if (!n || typeof n !== "object" || seen.has(n)) return;
     seen.add(n);
     if ("value" in (n as object) && typeof (n as { value: unknown }).value === "string") out.push((n as { value: string }).value);
+    // ilike() binds its value as a bare string inside queryChunks, not as a Param.
+    const chunks = (n as { queryChunks?: unknown }).queryChunks;
+    if (Array.isArray(chunks)) for (const c of chunks) if (typeof c === "string") out.push(c);
     for (const v of Object.values(n as object)) walk(v, seen);
   };
   walk(where.mock.calls[0]?.[0]);

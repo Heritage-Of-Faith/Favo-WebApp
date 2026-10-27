@@ -1,6 +1,6 @@
 // Global 404 page — rendered for any unmatched route.
 
-import Link from "next/link";
+import NotFoundLink from "./NotFoundLink";
 
 export const metadata = {
   title: "Page not found — FAVO Café",
@@ -69,26 +69,7 @@ export default function NotFound() {
         </p>
       </div>
 
-      <Link
-        href="/"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 8,
-          backgroundColor: "var(--color-crimson-carrot)",
-          color: "var(--color-paper)",
-          fontFamily: "var(--font-sans)",
-          fontWeight: 700,
-          fontSize: 12,
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-          textDecoration: "none",
-          padding: "14px 28px",
-          borderRadius: 2,
-        }}
-      >
-        ← Back to FAVO
-      </Link>
+      <NotFoundLink />
     </main>
   );
 }

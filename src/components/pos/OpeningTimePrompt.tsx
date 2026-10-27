@@ -29,6 +29,7 @@ export default function OpeningTimePrompt() {
   const [time, setTime] = useState("");
   const [prefill, setPrefill] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [timeError, setTimeError] = useState<string | null>(null);
 
   useEffect(() => {
     let stale = false;
@@ -57,7 +58,9 @@ export default function OpeningTimePrompt() {
   }
 
   async function confirm() {
-    if (!time || submitting) return;
+    if (submitting) return;
+    if (!time) { setTimeError("Enter the time you are opening, for example 07:30."); return; }
+    setTimeError(null);
     setSubmitting(true);
     const res = await submitOpeningTime(time).catch(() => ({
       ok: false as const, code: "ERR", message: "Could not record the opening time.",
@@ -80,8 +83,10 @@ export default function OpeningTimePrompt() {
             : "Submitting notifies every subscribed customer."}
         </p>
 
-        <input type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Opening time"
+        <input type="time" value={time} onChange={(e) => { setTime(e.target.value); setTimeError(null); }} aria-label="Opening time" aria-invalid={timeError ? true : undefined}
           className="w-full rounded-[4px] border border-cool-steel/30 bg-coffee-bean/5 px-3 py-2.5 text-coffee-bean text-lg tabular-nums focus:border-crimson-carrot focus:outline-none min-h-[48px]" />
+
+        {timeError && <p className="favo-small text-[var(--color-error)]" role="alert">{timeError}</p>}
 
         {alreadySet && changed && (
           <p className="favo-caption text-crimson-carrot">
@@ -94,7 +99,7 @@ export default function OpeningTimePrompt() {
             className="favo-small text-cool-steel underline underline-offset-4 hover:text-coffee-bean min-h-[44px]">
             Remind me later
           </button>
-          <button type="button" onClick={confirm} disabled={!time || submitting}
+          <button type="button" onClick={confirm} disabled={submitting}
             className="flex items-center justify-center gap-2 rounded-[var(--radius-btn)] px-6 py-2.5 min-h-[44px] favo-small font-bold uppercase disabled:opacity-40"
             style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", letterSpacing: "var(--tracking-cta)" }}>
             {submitting && <Loader2 size={14} strokeWidth={2.25} className="animate-spin" />}
