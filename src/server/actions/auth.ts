@@ -2,12 +2,12 @@
 
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { staff } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
-import { checkRateLimit } from "@/server/rate-limit";
+import { checkFailureBudget, checkRateLimit, recordFailure } from "@/server/rate-limit";
+import { clientKey } from "@/server/client-ip";
 import { signIn, signOut as nextSignOut } from "../../../auth";
 import { mintLoginAttestation } from "../../../auth";
 import type { ActionResult, StaffRole } from "@/lib/types";
@@ -18,16 +18,20 @@ import type { ActionResult, StaffRole } from "@/lib/types";
 const pinSchema = z.string().regex(/^\d{4,6}$/, "PIN must be 4–6 digits");
 
 // SEC-4 rate limit — mirrors the customer-auth.ts login path.
+// Keyed on the trusted proxy hop (src/server/client-ip.ts), not the
+// client-supplied first X-Forwarded-For entry (SEC-1).
 const PIN_LOGIN_LIMIT = 5;           // attempts per window
 const PIN_LOGIN_WINDOW_MS = 60_000;  // 1 minute
 
-async function clientIp(): Promise<string> {
-  try {
-    const h = await headers();
-    return h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "anonymous";
-  } catch {
-    return "anonymous";
-  }
+// SEC-1 global budget: failed PINs from ALL clients together. A PIN-only login
+// has no identity to throttle per staff member, and a client can always find a
+// new key, so this cap is what actually bounds brute force (10 per 15 min).
+const PIN_GLOBAL_FAILURE_KEY = "pin-login:global-failures";
+const PIN_GLOBAL_FAILURE_LIMIT = 10;
+const PIN_GLOBAL_FAILURE_WINDOW_MS = 15 * 60_000;
+
+function tooManyAttempts(retryAfterSecs: number): ActionResult<never> {
+  return { ok: false, code: "RATE_LIMITED", message: `Too many attempts. Try again in ${retryAfterSecs}s.` };
 }
 
 /**
@@ -37,11 +41,13 @@ async function clientIp(): Promise<string> {
 export async function loginWithPin(
   pin: string
 ): Promise<ActionResult<{ staffId: string; name: string; role: StaffRole }>> {
-  const ip = await clientIp();
-  const rl = checkRateLimit(`pin-login:${ip}`, PIN_LOGIN_LIMIT, PIN_LOGIN_WINDOW_MS);
-  if (!rl.allowed) {
-    return { ok: false, code: "RATE_LIMITED", message: `Too many attempts. Try again in ${rl.retryAfterSecs}s.` };
-  }
+  const key = await clientKey();
+  const rl = checkRateLimit(`pin-login:${key}`, PIN_LOGIN_LIMIT, PIN_LOGIN_WINDOW_MS);
+  if (!rl.allowed) return tooManyAttempts(rl.retryAfterSecs);
+
+  // Same message as the per-client limit, so a caller cannot tell which fired.
+  const budget = checkFailureBudget(PIN_GLOBAL_FAILURE_KEY, PIN_GLOBAL_FAILURE_LIMIT);
+  if (!budget.allowed) return tooManyAttempts(budget.retryAfterSecs);
 
   const parsed = pinSchema.safeParse(pin);
   if (!parsed.success || !isValidPinFormat(pin)) {
@@ -59,6 +65,7 @@ export async function loginWithPin(
   }
 
   if (!matched) {
+    recordFailure(PIN_GLOBAL_FAILURE_KEY, PIN_GLOBAL_FAILURE_WINDOW_MS);
     // Failed attempt — audit without ever recording the attempted PIN.
     await writeAudit({
       entityKind: "staff",

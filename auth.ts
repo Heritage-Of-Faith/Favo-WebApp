@@ -67,6 +67,8 @@ function verifyLoginAttestation(token: string): string | null {
 
 // ─── Auth.js config ───────────────────────────────────────────────────────────
 
+const SESSION_MAX_AGE_S = 8 * 60 * 60; // one 8-hour shift
+
 export const authConfig: NextAuthConfig = {
   providers: [
     Credentials({
@@ -99,7 +101,15 @@ export const authConfig: NextAuthConfig = {
   ],
   // 8h — one shift on a shared café tablet. NextAuth's 30-day default is
   // wrong for a staff PIN session on a public counter device.
-  session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
+  session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_S },
+  // SEC-3: pin the JWT expiry and the cookie's own Max-Age to the same 8h, so
+  // no path can fall back to the 30-day default. Auth.js deep-merges this
+  // over its defaults, so the cookie name (and its __Secure- prefix on https)
+  // is kept — hence the cast: the type wants a name we deliberately omit.
+  jwt: { maxAge: SESSION_MAX_AGE_S },
+  cookies: {
+    sessionToken: { options: { maxAge: SESSION_MAX_AGE_S } },
+  } as unknown as NextAuthConfig["cookies"],
   pages: {
     signIn: "/pos",
   },

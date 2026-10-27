@@ -5,20 +5,13 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { formatZar } from "@/lib/format";
+import { csvCell } from "@/server/reports/csv";
 
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
 
 function sastDayStart(yyyymmdd: string): Date {
   const utcMidnight = new Date(`${yyyymmdd}T00:00:00Z`);
   return new Date(utcMidnight.getTime() - SAST_OFFSET_MS);
-}
-
-function csvCell(value: string | number | null | undefined): string {
-  const s = value == null ? "" : String(value);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
 }
 
 export async function buildSalesCsv(from: string, to: string): Promise<string> {

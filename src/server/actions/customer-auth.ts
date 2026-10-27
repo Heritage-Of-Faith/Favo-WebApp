@@ -5,12 +5,12 @@
 // Intentionally separate from the staff Auth.js/PIN flow.
 
 import { and, eq, isNull } from "drizzle-orm";
-import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { customers } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { createClient } from "@/lib/supabase/server";
 import { checkRateLimit } from "@/server/rate-limit";
+import { clientKey } from "@/server/client-ip";
 import { customerIdentitySchema, type CustomerStatus } from "@/lib/customer/identity";
 import type { ActionResult } from "@/lib/types";
 
@@ -22,14 +22,9 @@ const AUTH_WINDOW_MS = 60_000;  // 1 minute
 const RESET_LIMIT = 3;          // requests per window
 const RESET_WINDOW_MS = 60 * 60_000; // 1 hour
 
-async function clientIp(): Promise<string> {
-  try {
-    const h = await headers();
-    return h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "anonymous";
-  } catch {
-    return "anonymous";
-  }
-}
+// SEC-1: key on the trusted proxy hop, never the client-supplied first
+// X-Forwarded-For entry (src/server/client-ip.ts).
+const clientIp = clientKey;
 
 // ── Validation helpers ────────────────────────────────────────────────────────
 

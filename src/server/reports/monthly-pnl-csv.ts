@@ -5,14 +5,7 @@ import { and, gte, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { monthlyReports } from "@db/schema";
 import { formatZar } from "@/lib/format";
-
-function csvCell(value: string | number | null | undefined): string {
-  const s = value == null ? "" : String(value);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
+import { csvCell } from "@/server/reports/csv";
 
 function monthFromDate(yyyymmdd: string): string {
   return yyyymmdd.slice(0, 7); // "YYYY-MM"
