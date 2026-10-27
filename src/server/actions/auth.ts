@@ -6,8 +6,16 @@ import { db } from "@/lib/db";
 import { staff } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { isValidPinFormat, verifyPin } from "@/server/auth/pin";
-import { checkFailureBudget, checkRateLimit, recordFailure } from "@/server/rate-limit";
+import {
+  clearAttempts,
+  cooldownSecsLeft,
+  countRecent,
+  noteAttempt,
+  startCooldown,
+  timing,
+} from "@/server/auth/attempts";
 import { clientKey } from "@/server/client-ip";
+import { alertAdmins } from "@/server/push/admin-alert";
 import { signIn, signOut as nextSignOut } from "../../../auth";
 import { mintLoginAttestation } from "../../../auth";
 import type { ActionResult, StaffRole } from "@/lib/types";
@@ -17,21 +25,33 @@ import type { ActionResult, StaffRole } from "@/lib/types";
 
 const pinSchema = z.string().regex(/^\d{4,6}$/, "PIN must be 4–6 digits");
 
-// SEC-4 rate limit — mirrors the customer-auth.ts login path.
-// Keyed on the trusted proxy hop (src/server/client-ip.ts), not the
-// client-supplied first X-Forwarded-For entry (SEC-1).
-const PIN_LOGIN_LIMIT = 5;           // attempts per window
-const PIN_LOGIN_WINDOW_MS = 60_000;  // 1 minute
+// PRD §9.5.3 / REQ-062 / L36: the barista till session is NEVER rate-limited.
+// No attempt here is ever refused for volume. Failed PINs only slow the next
+// attempt down — 250 ms per recent failure from this client, or across all
+// clients if that is higher, capped at 3 s. A delay never refuses and never
+// touches a session that is already signed in.
+const FAIL_WINDOW_MS = 15 * 60_000;
+const DELAY_STEP_MS = 250;
+const DELAY_CAP_MS = 3_000;
+const GLOBAL_FAIL_KEY = "pin-fail:global";
 
-// SEC-1 global budget: failed PINs from ALL clients together. A PIN-only login
-// has no identity to throttle per staff member, and a client can always find a
-// new key, so this cap is what actually bounds brute force (10 per 15 min).
-const PIN_GLOBAL_FAILURE_KEY = "pin-login:global-failures";
-const PIN_GLOBAL_FAILURE_LIMIT = 10;
-const PIN_GLOBAL_FAILURE_WINDOW_MS = 15 * 60_000;
+// PRD §9.5.3 Admin PIN: 5 attempts → a 5-minute cooldown and an immediate
+// Admin alert. A PIN-only login has no identity until a PIN matches, so the
+// "attempts" are the failed PINs since the last admin cooldown; the cooldown
+// applies when the PIN that matches is an admin's, so a correct admin PIN is
+// not the way past a flood. Baristas are never affected.
+const ADMIN_FAIL_KEY = "pin-fail:admin-budget";
+const ADMIN_FAIL_LIMIT = 5;
+const ADMIN_COOLDOWN_KEY = "pin-admin-cooldown";
+const ADMIN_COOLDOWN_MS = 5 * 60_000;
 
 function tooManyAttempts(retryAfterSecs: number): ActionResult<never> {
   return { ok: false, code: "RATE_LIMITED", message: `Too many attempts. Try again in ${retryAfterSecs}s.` };
+}
+
+/** PRD §9.5.3: every breach writes action='reject' with a reason — never the attempted value. Outside any transaction. */
+async function auditReject(reason: string): Promise<void> {
+  await writeAudit({ entityKind: "staff", entityId: "unknown", action: "reject", reason });
 }
 
 /**
@@ -41,17 +61,24 @@ function tooManyAttempts(retryAfterSecs: number): ActionResult<never> {
 export async function loginWithPin(
   pin: string
 ): Promise<ActionResult<{ staffId: string; name: string; role: StaffRole }>> {
-  const key = await clientKey();
-  const rl = checkRateLimit(`pin-login:${key}`, PIN_LOGIN_LIMIT, PIN_LOGIN_WINDOW_MS);
-  if (!rl.allowed) return tooManyAttempts(rl.retryAfterSecs);
-
-  // Same message as the per-client limit, so a caller cannot tell which fired.
-  const budget = checkFailureBudget(PIN_GLOBAL_FAILURE_KEY, PIN_GLOBAL_FAILURE_LIMIT);
-  if (!budget.allowed) return tooManyAttempts(budget.retryAfterSecs);
-
   const parsed = pinSchema.safeParse(pin);
   if (!parsed.success || !isValidPinFormat(pin)) {
     return { ok: false, code: "INVALID_PIN_FORMAT", message: "PIN must be 4–6 digits." };
+  }
+
+  const clientFailKey = `pin-fail:${await clientKey()}`;
+  const recentFailures = Math.max(
+    countRecent(clientFailKey, FAIL_WINDOW_MS),
+    countRecent(GLOBAL_FAIL_KEY, FAIL_WINDOW_MS)
+  );
+  const delayMs = Math.min(DELAY_CAP_MS, DELAY_STEP_MS * recentFailures);
+  if (delayMs > 0) {
+    if (delayMs >= DELAY_CAP_MS) {
+      await auditReject(
+        `Till PIN login slowed by ${delayMs} ms after ${recentFailures} failed attempts in 15 min (delayed, not refused)`
+      );
+    }
+    await timing.sleep(delayMs);
   }
 
   // Find the active staff member whose stored hash matches this PIN.
@@ -65,7 +92,9 @@ export async function loginWithPin(
   }
 
   if (!matched) {
-    recordFailure(PIN_GLOBAL_FAILURE_KEY, PIN_GLOBAL_FAILURE_WINDOW_MS);
+    noteAttempt(clientFailKey, FAIL_WINDOW_MS);
+    noteAttempt(GLOBAL_FAIL_KEY, FAIL_WINDOW_MS);
+    noteAttempt(ADMIN_FAIL_KEY, FAIL_WINDOW_MS);
     // Failed attempt — audit without ever recording the attempted PIN.
     await writeAudit({
       entityKind: "staff",
@@ -74,6 +103,26 @@ export async function loginWithPin(
       reason: "No active staff matched the supplied PIN",
     });
     return { ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect PIN." };
+  }
+
+  if (matched.role === "admin") {
+    const left = cooldownSecsLeft(ADMIN_COOLDOWN_KEY);
+    if (left > 0) {
+      await auditReject(`Admin PIN refused: cooldown running (${left}s left)`);
+      return tooManyAttempts(left);
+    }
+    const failures = countRecent(ADMIN_FAIL_KEY, FAIL_WINDOW_MS);
+    if (failures >= ADMIN_FAIL_LIMIT) {
+      startCooldown(ADMIN_COOLDOWN_KEY, ADMIN_COOLDOWN_MS);
+      clearAttempts(ADMIN_FAIL_KEY); // the counter resets after the cooldown
+      await auditReject(`Admin PIN cooldown started: ${failures} failed PIN attempts; 5-minute cooldown`);
+      void alertAdmins(
+        "Admin PIN cooldown",
+        `${failures} failed PIN attempts at the till. Admin sign-in is paused for 5 minutes. Baristas are not affected.`,
+        { failures }
+      );
+      return tooManyAttempts(Math.ceil(ADMIN_COOLDOWN_MS / 1000));
+    }
   }
 
   // Mint a short-lived HMAC attestation token so Auth.js can take the fast

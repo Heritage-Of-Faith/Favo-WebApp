@@ -67,7 +67,23 @@ function verifyLoginAttestation(token: string): string | null {
 
 // ─── Auth.js config ───────────────────────────────────────────────────────────
 
-const SESSION_MAX_AGE_S = 8 * 60 * 60; // one 8-hour shift
+// REQ-061 / PRD §9.5.1: "Absolute session lifetime 12 hours, then re-auth …
+// A session can never span two trading days." The trading (revenue) day is
+// midnight-to-midnight SAST (L07). Rolling refresh is kept, but the jwt
+// callback ends the session once 12 h have passed since loginAt, or the SAST
+// day has changed, whichever comes first.
+const SESSION_MAX_AGE_S = 12 * 60 * 60;
+const SESSION_CEILING_MS = SESSION_MAX_AGE_S * 1000;
+
+const sastDay = (ms: number) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Johannesburg" }).format(new Date(ms));
+
+/** True while a session that started at `loginAt` may still be used. */
+export function sessionStillValid(loginAt: unknown, now: number = Date.now()): boolean {
+  if (typeof loginAt !== "number" || !Number.isFinite(loginAt)) return false;
+  if (now - loginAt >= SESSION_CEILING_MS) return false;
+  return sastDay(loginAt) === sastDay(now);
+}
 
 export const authConfig: NextAuthConfig = {
   providers: [
@@ -99,10 +115,10 @@ export const authConfig: NextAuthConfig = {
       },
     }),
   ],
-  // 8h — one shift on a shared café tablet. NextAuth's 30-day default is
-  // wrong for a staff PIN session on a public counter device.
+  // 12h ceiling (REQ-061). NextAuth's 30-day default is wrong for a staff
+  // PIN session on a public counter device.
   session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_S },
-  // SEC-3: pin the JWT expiry and the cookie's own Max-Age to the same 8h, so
+  // SEC-3: pin the JWT expiry and the cookie's own Max-Age to the same 12h, so
   // no path can fall back to the 30-day default. Auth.js deep-merges this
   // over its defaults, so the cookie name (and its __Secure- prefix on https)
   // is kept — hence the cast: the type wants a name we deliberately omit.
@@ -118,8 +134,11 @@ export const authConfig: NextAuthConfig = {
       if (user) {
         token.id = user.id;
         token.role = (user as { role?: string }).role;
+        token.loginAt = Date.now();
+        return token;
       }
-      return token;
+      // Absolute ceiling — returning null ends the session and clears the cookie.
+      return sessionStillValid(token.loginAt) ? token : null;
     },
     session({ session, token }) {
       if (token.id) session.user.id = token.id as string;

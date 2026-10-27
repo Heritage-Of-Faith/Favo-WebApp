@@ -1,10 +1,11 @@
-// SEC-1 — loginWithPin throttle cannot be reset by the client.
-// (a) the per-client key comes from the trusted proxy hop, so rotating a
-//     client-supplied X-Forwarded-For value does not give a fresh bucket;
-// (b) a global failed-attempt budget across ALL clients locks PIN login even
-//     when every attempt arrives with a different key;
-// (c) "Incorrect PIN." stays the one message for any wrong PIN.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+// SEC-1 redesigned to PRD §9.5.3 / REQ-062 / L36:
+// - the barista till session is NEVER rate-limited: no refusal, no lockout;
+//   failed PINs only add a growing delay (250 ms per recent failure, capped at 3 s);
+// - the Admin PIN rule: 5 failed attempts → a 5-minute cooldown on admin PINs
+//   plus an immediate Admin alert; a correct admin PIN does not get past it;
+// - every breach writes audit_log action='reject', never the attempted PIN;
+// - "Incorrect PIN." stays the one message for any wrong PIN.
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
 
 let forwardedFor: string | null = null;
 vi.mock("next/headers", () => ({
@@ -13,21 +14,26 @@ vi.mock("next/headers", () => ({
   })),
 }));
 
-const STAFF_ROW = { id: "staff-olivia", name: "Olivia Owner", role: "admin", pinHash: "hash", active: true };
+const ROWS = [
+  { id: "staff-olivia", name: "Olivia Owner", role: "admin", pinHash: "h1", active: true },
+  { id: "staff-louis", name: "Louis", role: "barista", pinHash: "h2", active: true },
+];
 vi.mock("@/lib/db", () => ({
   db: {
     select: vi.fn(() => ({
-      from: () => ({ where: () => Promise.resolve([STAFF_ROW]) }),
+      from: () => ({ where: () => Promise.resolve(ROWS) }),
     })),
   },
 }));
 
+const PINS: Record<string, string> = { h1: "1111", h2: "2222" };
 vi.mock("@/server/auth/pin", () => ({
   isValidPinFormat: (pin: string) => /^\d{4,6}$/.test(pin),
-  verifyPin: vi.fn(async (pin: string) => pin === "1111"),
+  verifyPin: vi.fn(async (pin: string, hash: string) => PINS[hash] === pin),
 }));
 
 vi.mock("@/server/audit", () => ({ writeAudit: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/server/push/admin-alert", () => ({ alertAdmins: vi.fn().mockResolvedValue(undefined) }));
 
 vi.mock("../../../auth", () => ({
   signIn: vi.fn().mockResolvedValue(undefined),
@@ -36,85 +42,110 @@ vi.mock("../../../auth", () => ({
 }));
 
 import { loginWithPin } from "@/server/actions/auth";
-import { _resetStoreForTest } from "@/server/rate-limit";
-import { verifyPin } from "@/server/auth/pin";
+import { timing, _resetAttemptsForTest } from "@/server/auth/attempts";
+import { writeAudit } from "@/server/audit";
+import { alertAdmins } from "@/server/push/admin-alert";
 
-const PROXY_SEEN = "198.51.100.9";
+let sleep: MockInstance<(ms: number) => Promise<void>>;
 
 beforeEach(() => {
-  _resetStoreForTest();
-  vi.mocked(verifyPin).mockClear();
+  _resetAttemptsForTest();
+  vi.clearAllMocks();
+  sleep = vi.spyOn(timing, "sleep").mockResolvedValue(undefined);
+  forwardedFor = "198.51.100.9";
   delete process.env.TRUSTED_PROXY_HOPS;
 });
 
-describe("loginWithPin — per-client throttle keys on the trusted hop", () => {
-  it("rotating the client-supplied first X-Forwarded-For entry does not reset the counter", async () => {
-    for (let i = 0; i < 5; i++) {
-      forwardedFor = `203.0.113.${i}, ${PROXY_SEEN}`;
+afterEach(() => {
+  sleep.mockRestore();
+  vi.useRealTimers();
+});
+
+const rejectRows = () =>
+  vi.mocked(writeAudit).mock.calls.map((c) => c[0]).filter((a) => a.action === "reject");
+
+describe("till PIN login is never refused (L36)", () => {
+  it("50 wrong PINs, from one key or many, never lock the till: the right barista PIN still signs in", async () => {
+    for (let i = 0; i < 50; i++) {
+      forwardedFor = i % 2 ? "198.51.100.9" : `198.51.100.${i}`;
       const r = await loginWithPin("9998");
-      expect(r).toMatchObject({ ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect PIN." });
+      expect(r).toEqual({ ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect PIN." });
     }
-    // A fresh spoofed value, same real (proxy-seen) address — still blocked,
-    // and the correct PIN does not get in.
-    forwardedFor = `203.0.113.78, ${PROXY_SEEN}`;
-    const blocked = await loginWithPin("1111");
-    expect(blocked.ok).toBe(false);
-    if (!blocked.ok) {
-      expect(blocked.code).toBe("RATE_LIMITED");
-      expect(blocked.message).toMatch(/^Too many attempts\. Try again in \d+s\.$/);
+    forwardedFor = "198.51.100.9";
+    const ok = await loginWithPin("2222");
+    expect(ok).toMatchObject({ ok: true, data: { staffId: "staff-louis", role: "barista" } });
+  });
+
+  it("each recent failure adds 250 ms of delay, capped at 3 s — a delay, never a refusal", async () => {
+    const delays: number[] = [];
+    for (let i = 0; i < 15; i++) {
+      sleep.mockClear();
+      await loginWithPin("9998");
+      delays.push((sleep.mock.calls[0]?.[0] as number | undefined) ?? 0);
+    }
+    expect(delays.slice(0, 5)).toEqual([0, 250, 500, 750, 1000]);
+    expect(Math.max(...delays)).toBe(3000);
+    expect(delays.at(-1)).toBe(3000);
+  });
+
+  it("the same slowdown applies globally, so a new key does not start from zero", async () => {
+    for (let i = 0; i < 4; i++) {
+      forwardedFor = `198.51.100.${i}`;
+      await loginWithPin("9998");
+    }
+    forwardedFor = "198.51.100.250";
+    sleep.mockClear();
+    await loginWithPin("2222");
+    expect(sleep).toHaveBeenCalledWith(1000);
+  });
+
+  it("an attempt slowed to the 3 s cap is audited as action='reject' without the PIN", async () => {
+    for (let i = 0; i < 13; i++) await loginWithPin("9998");
+    const rows = rejectRows();
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      expect(r.reason).toMatch(/slowed/i);
+      expect(JSON.stringify(r)).not.toContain("9998");
     }
   });
 });
 
-describe("loginWithPin — global failed-attempt budget", () => {
-  it("locks PIN login for everyone after 10 failures in 15 minutes, even with a new key per attempt", async () => {
-    for (let i = 0; i < 10; i++) {
-      forwardedFor = `198.51.100.${100 + i}`; // a different trusted key every time
-      const r = await loginWithPin("9998");
-      expect(r).toMatchObject({ ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect PIN." });
-    }
+describe("Admin PIN: 5 attempts → 5-minute cooldown + immediate Admin alert", () => {
+  it("fewer than 5 recent failures: the admin PIN signs in", async () => {
+    for (let i = 0; i < 4; i++) await loginWithPin("9998");
+    const r = await loginWithPin("1111");
+    expect(r).toMatchObject({ ok: true, data: { role: "admin" } });
+    expect(alertAdmins).not.toHaveBeenCalled();
+  });
 
-    forwardedFor = "198.51.100.250"; // a never-seen key
-    vi.mocked(verifyPin).mockClear();
-    const r = await loginWithPin("1111"); // the correct PIN
+  it("after 5 failures the correct admin PIN is cooled down, alerted once, audited; baristas unaffected", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t0 = new Date("2026-10-25T08:10:00+02:00").getTime();
+    vi.setSystemTime(t0);
+
+    for (let i = 0; i < 5; i++) await loginWithPin("9998");
+
+    const r = await loginWithPin("1111");
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.code).toBe("RATE_LIMITED");
       expect(r.message).toMatch(/^Too many attempts\. Try again in \d+s\.$/);
     }
-    // No PIN comparison is attempted while locked.
-    expect(verifyPin).not.toHaveBeenCalled();
-  });
+    expect(alertAdmins).toHaveBeenCalledTimes(1);
+    const rows = rejectRows().filter((a) => /admin pin/i.test(a.reason ?? ""));
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    for (const a of rows) expect(JSON.stringify(a)).not.toContain("1111");
 
-  it("the lockout lifts once the 15-minute window has passed", async () => {
-    vi.useFakeTimers();
-    try {
-      const t0 = new Date("2026-10-26T08:00:00+02:00").getTime();
-      vi.setSystemTime(t0);
-      for (let i = 0; i < 10; i++) {
-        forwardedFor = `198.51.100.${100 + i}`;
-        await loginWithPin("9998");
-      }
-      forwardedFor = "198.51.100.251";
-      expect((await loginWithPin("1111")).ok).toBe(false);
+    // The till is untouched.
+    expect((await loginWithPin("2222")).ok).toBe(true);
 
-      vi.setSystemTime(t0 + 15 * 60_000 + 1);
-      forwardedFor = "198.51.100.252";
-      const r = await loginWithPin("1111");
-      expect(r.ok).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    // Still cooling down 4 min later: refused again, no second alert.
+    vi.setSystemTime(t0 + 4 * 60_000);
+    expect((await loginWithPin("1111")).ok).toBe(false);
+    expect(alertAdmins).toHaveBeenCalledTimes(1);
 
-  it("successful logins and badly formatted input do not spend the failure budget", async () => {
-    for (let i = 0; i < 12; i++) {
-      forwardedFor = `198.51.100.${i}`;
-      expect((await loginWithPin("1111")).ok).toBe(true);
-      forwardedFor = `198.51.101.${i}`;
-      expect((await loginWithPin("12")).ok).toBe(false);
-    }
-    forwardedFor = "198.51.102.1";
+    // After the 5-minute cooldown the counter has reset: the admin gets in.
+    vi.setSystemTime(t0 + 5 * 60_000 + 1);
     expect((await loginWithPin("1111")).ok).toBe(true);
   });
 });

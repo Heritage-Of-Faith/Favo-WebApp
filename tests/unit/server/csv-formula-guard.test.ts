@@ -13,6 +13,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { csvCell } from "@/server/reports/csv";
+import { formatZar } from "@/lib/format";
 import { rowsToCsv } from "@/server/reports/export-csv";
 import { buildSalesCsv } from "@/server/reports/sales-csv";
 import { buildInventoryCsv } from "@/server/reports/inventory-csv";
@@ -36,6 +37,22 @@ describe("csvCell", () => {
     expect(csvCell("-12.5")).toBe("-12.5");
     expect(csvCell(null)).toBe("");
     expect(csvCell('say "hi"')).toBe('"say ""hi"""');
+  });
+
+  it("CHANGED: rand amounts and signed numbers are not formulas — no prefix", () => {
+    expect(csvCell("-R12,50")).toBe('"-R12,50"');
+    expect(csvCell("-R 12,50")).toBe('"-R 12,50"');
+    expect(csvCell("-R 1 234 567,89")).toBe('"-R 1 234 567,89"');
+    expect(csvCell("+12,5")).toBe('"+12,5"');
+    // Exactly what the sales / P&L writers emit for a negative amount.
+    const neg = formatZar(-123456789);
+    expect(csvCell(neg)).toBe(`"${neg}"`);
+    expect(csvCell("-12.5")).toBe("-12.5");
+  });
+
+  it("but text that merely starts like money is still neutralised", () => {
+    expect(csvCell("-R12+cmd")).toBe("'-R12+cmd");
+    expect(csvCell("-1+1")).toBe("'-1+1");
   });
 });
 

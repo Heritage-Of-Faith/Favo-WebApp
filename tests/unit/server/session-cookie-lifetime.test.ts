@@ -1,8 +1,9 @@
 // @vitest-environment node
-// SEC-3 / CLAUDE.md §4 defect 10 — a staff session on a café counter tablet
-// lasts one 8-hour shift: the JWT expiry AND the session cookie's own lifetime.
-// Drives the real Auth.js core with our authConfig (no network, no DB).
-import { describe, it, expect, vi } from "vitest";
+// CHANGED (was: an 8-hour rolling cookie). REQ-061 / PRD §9.5.1: the staff
+// session has a 12-hour ABSOLUTE ceiling and can never span two trading days
+// (revenue day = midnight-to-midnight SAST, L07). Rolling refresh stays inside
+// that ceiling. Drives the real Auth.js core with our authConfig (no network, no DB).
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
 
@@ -10,71 +11,95 @@ import { Auth } from "@auth/core";
 import { encode, decode } from "@auth/core/jwt";
 import { authConfig } from "../../../auth";
 
-const EIGHT_HOURS_S = 8 * 60 * 60;
+const TWELVE_HOURS_S = 12 * 60 * 60;
 const SECRET = "test-secret-for-session-cookie-lifetime";
 const COOKIE = "authjs.session-token";
 
-async function sessionResponse() {
+afterEach(() => vi.useRealTimers());
+
+async function sessionResponse(claims: Record<string, unknown>, origin = "http://localhost:3000", name = COOKIE) {
   const token = await encode({
-    token: { id: "staff-1", role: "barista", name: "Louis" },
+    token: { id: "staff-1", role: "barista", name: "Louis", ...claims },
     secret: SECRET,
-    salt: COOKIE,
-    maxAge: EIGHT_HOURS_S,
+    salt: name,
+    maxAge: TWELVE_HOURS_S,
   });
-  const req = new Request("http://localhost:3000/api/auth/session", {
-    headers: { cookie: `${COOKIE}=${token}` },
-  });
+  const req = new Request(`${origin}/api/auth/session`, { headers: { cookie: `${name}=${token}` } });
   return Auth(req, { ...authConfig, secret: SECRET, basePath: "/api/auth", trustHost: true });
 }
 
-function sessionCookie(res: Response): string {
-  const c = res.headers.getSetCookie().find((h) => h.startsWith(`${COOKIE}=`));
-  if (!c) throw new Error("no session cookie set");
-  return c;
+function sessionCookie(res: Response, name = COOKIE): string | undefined {
+  return res.headers.getSetCookie().find((h) => h.startsWith(`${name}=`));
 }
 
-describe("staff session lifetime = 8 hours", () => {
-  it("configures session and JWT maxAge as 8 hours", () => {
-    expect(authConfig.session?.maxAge).toBe(EIGHT_HOURS_S);
-    expect(authConfig.jwt?.maxAge).toBe(EIGHT_HOURS_S);
+const isCleared = (c: string | undefined) => !!c && (/Max-Age=0(;|$)/i.test(c) || c.startsWith(`${COOKIE}=;`));
+
+function at(iso: string) {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(iso));
+}
+
+describe("staff session: 12-hour absolute ceiling, one trading day", () => {
+  it("configures session, JWT and cookie maxAge as 12 hours", () => {
+    expect(authConfig.session?.maxAge).toBe(TWELVE_HOURS_S);
+    expect(authConfig.jwt?.maxAge).toBe(TWELVE_HOURS_S);
   });
 
-  it("sets the session cookie with Max-Age=28800 and an Expires about 8h out (not 30 days)", async () => {
-    const before = Date.now();
-    const cookie = sessionCookie(await sessionResponse());
-
-    expect(cookie).toMatch(/Max-Age=28800(;|$)/i);
-    const expires = /Expires=([^;]+)/i.exec(cookie)?.[1];
-    expect(expires).toBeDefined();
-    const ms = new Date(expires!).getTime() - before;
-    expect(ms).toBeGreaterThan((EIGHT_HOURS_S - 120) * 1000);
-    expect(ms).toBeLessThan((EIGHT_HOURS_S + 120) * 1000);
-    expect(cookie).toMatch(/HttpOnly/i);
-    expect(cookie).toMatch(/SameSite=Lax/i);
+  it("the sign-in jwt callback stamps loginAt", async () => {
+    at("2026-10-25T08:00:00+02:00");
+    const token = await authConfig.callbacks!.jwt!({
+      token: {},
+      user: { id: "staff-1", role: "barista" } as never,
+      account: null,
+    } as never);
+    expect(token).toMatchObject({ id: "staff-1", loginAt: Date.parse("2026-10-25T08:00:00+02:00") });
   });
 
-  it("keeps the default cookie name on http and the __Secure- prefix on https", async () => {
-    const plain = sessionCookie(await sessionResponse());
-    expect(plain.startsWith(`${COOKIE}=`)).toBe(true);
+  it("inside the ceiling: session kept, cookie refreshed with Max-Age=43200", async () => {
+    at("2026-10-25T09:00:00+02:00");
+    const res = await sessionResponse({ loginAt: Date.parse("2026-10-25T08:00:00+02:00") });
+    const body = await res.json();
+    expect(body?.user?.id).toBe("staff-1");
+    const c = sessionCookie(res);
+    expect(c).toMatch(/Max-Age=43200(;|$)/i);
+    expect(c).toMatch(/HttpOnly/i);
+    expect(c).toMatch(/SameSite=Lax/i);
+    const payload = await decode({ token: c!.split(";")[0]!.slice(COOKIE.length + 1), secret: SECRET, salt: COOKIE });
+    expect(payload?.loginAt).toBe(Date.parse("2026-10-25T08:00:00+02:00"));
+  });
 
+  it("12 hours after loginAt the session ends, even though it was used a minute ago", async () => {
+    at("2026-10-25T18:00:01+02:00");
+    // Same trading day, but 12h00m01s after a 06:00 sign-in.
+    const res = await sessionResponse({ loginAt: Date.parse("2026-10-25T06:00:00+02:00") });
+    expect(await res.json()).toBeNull();
+    expect(isCleared(sessionCookie(res))).toBe(true);
+  });
+
+  it("a session never spans two trading days: 23:30 SAST sign-in ends at SAST midnight", async () => {
+    at("2026-10-26T00:00:30+02:00");
+    const res = await sessionResponse({ loginAt: Date.parse("2026-10-25T23:30:00+02:00") });
+    expect(await res.json()).toBeNull();
+    expect(isCleared(sessionCookie(res))).toBe(true);
+  });
+
+  it("the day boundary is SAST, not UTC: 01:30 SAST sign-in (23:30 UTC the day before) survives to 03:00 SAST", async () => {
+    at("2026-10-26T03:00:00+02:00");
+    const res = await sessionResponse({ loginAt: Date.parse("2026-10-26T01:30:00+02:00") });
+    expect((await res.json())?.user?.id).toBe("staff-1");
+  });
+
+  it("a token without loginAt (issued before this rule) is ended", async () => {
+    const res = await sessionResponse({});
+    expect(await res.json()).toBeNull();
+  });
+
+  it("keeps the __Secure- cookie name on https", async () => {
+    at("2026-10-25T09:00:00+02:00");
     const secureName = `__Secure-${COOKIE}`;
-    const token = await encode({ token: { id: "staff-1" }, secret: SECRET, salt: secureName, maxAge: EIGHT_HOURS_S });
-    const res = await Auth(
-      new Request("https://favo.hofmi.net/api/auth/session", { headers: { cookie: `${secureName}=${token}` } }),
-      { ...authConfig, secret: SECRET, basePath: "/api/auth", trustHost: true }
-    );
-    const c = res.headers.getSetCookie().find((h) => h.startsWith(`${secureName}=`));
-    expect(c).toBeDefined();
-    expect(c).toMatch(/Max-Age=28800(;|$)/i);
+    const res = await sessionResponse({ loginAt: Date.parse("2026-10-25T08:00:00+02:00") }, "https://favo.hofmi.net", secureName);
+    const c = sessionCookie(res, secureName);
+    expect(c).toMatch(/Max-Age=43200(;|$)/i);
     expect(c).toMatch(/Secure/);
-  });
-
-  it("the refreshed JWT inside the cookie also expires 8h out", async () => {
-    const cookie = sessionCookie(await sessionResponse());
-    const value = cookie.split(";")[0]!.slice(COOKIE.length + 1);
-    const payload = await decode({ token: value, secret: SECRET, salt: COOKIE });
-    const secsLeft = (payload!.exp as number) - Math.floor(Date.now() / 1000);
-    expect(secsLeft).toBeGreaterThan(EIGHT_HOURS_S - 120);
-    expect(secsLeft).toBeLessThanOrEqual(EIGHT_HOURS_S);
   });
 });
