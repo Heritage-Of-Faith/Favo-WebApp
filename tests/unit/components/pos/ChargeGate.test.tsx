@@ -1,7 +1,7 @@
 // Queue-card payment gate: an unpaid order shows "Take payment" and cannot start
 // making; a paid order shows "Start Making". (Rule L01.)
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -49,25 +49,20 @@ function fullOrder(paymentStatus: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
-  // L01 gate is only active when Yoco is configured — simulate that here.
-  process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY = "pk_test_key";
 });
 
-afterEach(() => {
-  delete process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
-});
-
-async function expandCard() {
-  render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
+// L01 gate is only active when Yoco is configured. REQ-071: the page tells the
+// workspace via a server-computed boolean prop — never a client-side Yoco key.
+async function expandCard(yocoConfigured = true) {
+  render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" yocoConfigured={yocoConfigured} />);
   const card = await screen.findByText("#ORD_1");
   await act(async () => { fireEvent.click(card); });
 }
 
 describe("queue payment gate (L01)", () => {
-  it("without Yoco key, order can start without Take payment", async () => {
-    delete process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
+  it("without Yoco configured, order can start without Take payment", async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => fullOrder("pending") }) as unknown as typeof fetch;
-    await expandCard();
+    await expandCard(false);
     expect(await screen.findByRole("button", { name: /start making/i })).toBeDefined();
     expect(screen.queryByRole("button", { name: /take payment/i })).toBeNull();
   });
@@ -86,5 +81,29 @@ describe("queue payment gate (L01)", () => {
     expect(await screen.findByRole("button", { name: /start making/i })).toBeDefined();
     expect(screen.queryByRole("button", { name: /take payment/i })).toBeNull();
     expect(screen.getByText(/paid/i)).toBeDefined();
+  });
+
+  it("REQ-008 / S4: a SENT attempt that ended unresolved does not hold the drink back — Start Making shows", async () => {
+    const o = fullOrder("unresolved");
+    const sent = { order: { ...o.order, paymentAwaitingLookup: true } };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sent }) as unknown as typeof fetch;
+    await expandCard();
+    expect(await screen.findByRole("button", { name: /start making/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /take payment/i })).toBeNull();
+  });
+
+  it("a closed-out NEVER-sent attempt (unresolved, nothing sent) is still owed — Take payment shows (re-tenderable)", async () => {
+    const o = fullOrder("unresolved");
+    const neverSent = { order: { ...o.order, paymentAwaitingLookup: false } };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => neverSent }) as unknown as typeof fetch;
+    await expandCard();
+    expect(await screen.findByRole("button", { name: /take payment/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /start making/i })).toBeNull();
+  });
+
+  it("REQ-004 / S3: a declined order stays chargeable — Take payment shows", async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => fullOrder("declined") }) as unknown as typeof fetch;
+    await expandCard();
+    expect(await screen.findByRole("button", { name: /take payment/i })).toBeDefined();
   });
 });

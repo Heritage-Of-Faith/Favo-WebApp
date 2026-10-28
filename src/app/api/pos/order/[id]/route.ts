@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, orderItems, menuItems, customers, payments } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
+import { summarisePayments } from "@/server/tender/summary";
 import { NextResponse } from "next/server";
 import type { Order } from "@/lib/types";
 
@@ -43,11 +44,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           .where(eq(customers.id, row.customerId))
       : Promise.resolve([]),
     db
-      .select({ status: payments.status, yocoCheckoutId: payments.yocoCheckoutId, yocoPaymentId: payments.yocoPaymentId })
+      .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId })
       .from(payments)
       .where(eq(payments.orderId, id))
-      .limit(1),
+      .orderBy(payments.attempt), // one row per attempt: the LATEST decides (§10.3.3)
   ]);
+  const payState = summarisePayments(paymentRow);
 
   const order: Order = {
     id: row.id,
@@ -59,8 +61,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
     totalZar: row.totalZar,
     isStaffDiscount: row.isStaffDiscount,
-    paymentStatus: paymentRow[0]?.status ?? null,
-    cardCheckout: !!(paymentRow[0]?.yocoCheckoutId || paymentRow[0]?.yocoPaymentId),
+    paymentStatus: payState.paymentStatus,
+    cardCheckout: payState.totalFrozen,
+    paymentAwaitingLookup: payState.awaitingLookup,
     items: items.map((i) => ({
       id: i.id,
       menuItemId: i.menuItemId,

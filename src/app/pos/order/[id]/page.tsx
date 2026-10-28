@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { orders, orderItems, menuItems, payments } from "@db/schema";
 import { getSession } from "@/lib/auth/session";
 import ActiveOrder from "@/components/pos/ActiveOrder";
+import { summarisePayments } from "@/server/tender/summary";
 import type { Order } from "@/lib/types";
 
 type Props = { params: Promise<{ id: string }> };
@@ -37,11 +38,12 @@ export default async function ActiveOrderPage({ params }: Props) {
       .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
       .where(eq(orderItems.orderId, id)),
     db
-      .select({ status: payments.status, yocoCheckoutId: payments.yocoCheckoutId, yocoPaymentId: payments.yocoPaymentId })
+      .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId })
       .from(payments)
       .where(eq(payments.orderId, id))
-      .limit(1),
+      .orderBy(payments.attempt), // one row per attempt: the LATEST decides (§10.3.3)
   ]);
+  const payState = summarisePayments(paymentRow);
 
   const order: Order = {
     id: row.id,
@@ -53,8 +55,9 @@ export default async function ActiveOrderPage({ params }: Props) {
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
     totalZar: row.totalZar,
     isStaffDiscount: row.isStaffDiscount,
-    paymentStatus: paymentRow[0]?.status ?? null,
-    cardCheckout: !!(paymentRow[0]?.yocoCheckoutId || paymentRow[0]?.yocoPaymentId),
+    paymentStatus: payState.paymentStatus,
+    cardCheckout: payState.totalFrozen,
+    paymentAwaitingLookup: payState.awaitingLookup,
     items: itemRows.map((i) => ({
       id: i.id,
       menuItemId: i.menuItemId,

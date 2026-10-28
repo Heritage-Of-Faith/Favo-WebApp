@@ -97,7 +97,7 @@ Any outage > 5 minutes: Gian writes a post-mortem on the work-item record within
 ### When to escalate
 - Yoco is healthy but payments still fail → Page Gian
 - You see `"signature verification failed"` in Loki → page Gian immediately (potential replay attack — see § 8)
-- Any `500` errors from `/api/payments/yoco/webhook` → page Gian
+- (`/api/payments/yoco/webhook` is retired (404), PRD v7.0 §11.1 — it no longer takes traffic.)
 
 ### Restoration
 - **Yoco outage:** No action needed on our side. Staff take orders with "paid in person — reconcile later" note. Gian will run the 24-hour reconciliation from the audit log when Yoco recovers
@@ -246,6 +246,8 @@ Every PIN compromise triggers a review. Gian runs: `SELECT * FROM audit_log WHER
 ---
 
 ## § 8 — Suspected webhook replay attack (R8)
+
+> The Yoco webhook is retired (404), PRD v7.0 §11.1, so this section no longer applies to a live endpoint.
 
 ### How would I notice this?
 - Loki shows `"signature verification failed"` errors from `/api/payments/yoco/webhook`

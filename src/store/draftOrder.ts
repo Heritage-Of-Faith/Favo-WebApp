@@ -44,7 +44,6 @@ export type DraftOrderState = {
 
   // Set after createOrder succeeds
   orderId: string | null;
-  yocoClientSecret: string | null;
 };
 
 export type DraftOrderActions = {
@@ -55,7 +54,7 @@ export type DraftOrderActions = {
   removeItem: (key: string) => void;
   /** Update quantity for the exact line identified by its lineKey. Removes line if quantity ≤ 0. */
   updateQuantity: (key: string, quantity: number) => void;
-  setOrderCreated: (orderId: string, yocoClientSecret: string) => void;
+  setOrderCreated: (orderId: string) => void;
   reset: () => void;
 };
 
@@ -65,7 +64,6 @@ const INITIAL: DraftOrderState = {
   items: [],
   totalZar: 0,
   orderId: null,
-  yocoClientSecret: null,
 };
 
 function calcTotal(items: DraftItem[]): number {
@@ -114,8 +112,8 @@ export const useDraftOrder = create<DraftOrderState & DraftOrderActions>((set) =
       return { items: updated, totalZar: calcTotal(updated) };
     }),
 
-  setOrderCreated: (orderId, yocoClientSecret) =>
-    set({ orderId, yocoClientSecret, step: "pay" }),
+  setOrderCreated: (orderId) =>
+    set({ orderId, step: "pay" }),
 
   reset: () => set(INITIAL),
 }));

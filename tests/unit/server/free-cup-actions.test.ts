@@ -21,9 +21,29 @@ const mockWriteAudit = vi.fn(async (..._a: unknown[]) => {});
 vi.mock("@/server/audit", () => ({ writeAudit: (...a: unknown[]) => mockWriteAudit(...a) }));
 vi.mock("@/server/queue/notify", () => ({ notifyOrderChange: vi.fn(async () => {}) }));
 vi.mock("@/server/inventory/lot-picker", () => ({ checkRecipeStock: vi.fn(async () => ({ ok: true })) }));
-const mockCreatePaymentIntent = vi.fn(async (..._a: unknown[]) => ({ id: "ch_1", clientSecret: "cs_1" }));
-vi.mock("@/server/yoco/client", () => ({
-  createPaymentIntent: (...a: unknown[]) => mockCreatePaymentIntent(...a),
+// AT-201 part 2b: createOrder begins the tender through the tender service
+// (beginTender writes the pending payments row). Stubbed here; the chain itself
+// is proven in tests/unit/server/tender/. `seq` records the order of events.
+// Like the real beginTender, the stub reads the order's COMMITTED total (the
+// orders row as inserted, then as updated) — so `tender.amountZar` is what the
+// payments row would carry, and tests assert it against the PRD's literal cents.
+const seq: string[] = [];
+function committedOrderTotal(): number {
+  const inserted = inserts.filter((i) => i.table === orders).map((i) => i.values as Row);
+  let total = inserted[inserted.length - 1]?.totalZar as number;
+  for (const u of updates) if (u.table === orders && typeof u.set.totalZar === "number") total = u.set.totalZar;
+  return total;
+}
+const mockStartTender = vi.fn(async (..._a: unknown[]) => {
+  seq.push("beginTender");
+  return { ok: true as const, paymentId: "pmt_1", attempt: 1, clientReference: "cu-1:1", amountZar: committedOrderTotal() };
+});
+vi.mock("@/server/tender/service", () => ({
+  startTender: (...a: unknown[]) => mockStartTender(...a),
+  TENDER_NOT_BEGUN: {
+    ok: false, code: "TENDER_NOT_BEGUN",
+    message: "Couldn't start the card payment — nothing was sent. Try again.", retryOffered: true,
+  },
 }));
 
 // ─── Table-aware DB mock ──────────────────────────────────────────────────────
@@ -50,6 +70,7 @@ function insertChain(table: unknown) {
   return {
     values: (values: unknown) => {
       inserts.push({ table, values });
+      if (table === orders) seq.push("insert:orders");
       const done = Promise.resolve();
       return Object.assign(done, {
         onConflictDoNothing: () => ({
@@ -83,7 +104,11 @@ vi.mock("@/lib/db", () => ({
     insert: (t: unknown) => client.insert(t),
     update: (t: unknown) => client.update(t),
     delete: (t: unknown) => client.delete(t),
-    transaction: async (cb: (tx: unknown) => Promise<unknown>) => cb(client),
+    transaction: async (cb: (tx: unknown) => Promise<unknown>) => {
+      const r = await cb(client);
+      seq.push("commit");
+      return r;
+    },
   },
 }));
 
@@ -115,19 +140,19 @@ function given(opts: {
 
 const insertsInto = (t: unknown) => inserts.filter((i) => i.table === t).map((i) => i.values);
 const updatesOf = (t: unknown) => updates.filter((u) => u.table === t).map((u) => u.set);
-// AT-201 part 1: the legacy checkout flow writes attempt 1 with a legacy
-// client_reference and device until part 2 rewires createOrder to beginTender.
-const LEGACY_ROW = (orderId: string) => ({
-  attempt: 1,
-  clientReference: `legacy:${orderId}:1`,
-  webposDeviceId: "legacy:yoco-online-checkout",
-});
+/** REQ-026: the order commits, THEN beginTender writes the pending row — never the reverse. */
+function expectOrderCommittedBeforeTender() {
+  expect(seq.indexOf("insert:orders")).toBeGreaterThanOrEqual(0);
+  expect(seq.lastIndexOf("commit")).toBeLessThan(seq.indexOf("beginTender"));
+}
+// Sent attempts (yoco ids) vs a begun-but-unsent one — the shapes isAttemptOpen reads.
+const SENT = new Date("2026-10-08T07:00:00Z");
 const auditActions = () => mockWriteAudit.mock.calls.map((c) => (c[0] as { action: string }).action);
 const one = (id: string, quantity = 1) => ({ menuItemId: id, quantity, modifications: [] as string[] });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  inserts.length = 0; updates.length = 0; deletes.length = 0;
+  inserts.length = 0; updates.length = 0; deletes.length = 0; seq.length = 0;
   entitlementConflict = false;
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(THURSDAY);
@@ -166,11 +191,14 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
     expect(insertsInto(staffEntitlementLog)).toEqual([]);
     expect(auditActions()).toContain("reject");
     // The reject audit is written inside the order's transaction, which COMMITS
-    // (the order is created) — it is never discarded by a rollback.
-    expect(insertsInto(payments)[0]).toMatchObject({ amountZar: 3000 });
+    // (the order is created) — it is never discarded by a rollback. Then the
+    // tender begins on the committed order (createOrder writes no payments row).
+    expect(insertsInto(payments)).toEqual([]);
+    expect(mockStartTender).toHaveBeenCalledWith({ kind: "staff", staffId: "staff_louis", role: "barista" }, res.data.orderId);
+    expectOrderCommittedBeforeTender();
   });
 
-  it("2b. lost UNIQUE(customer_id, day) race → paid; checkout = payments.amount_zar = order total (round-2 item 1)", async () => {
+  it("2b. lost UNIQUE(customer_id, day) race → paid; the tender begins only after the order's final total commits (round-2 item 1)", async () => {
     given({ customer: OFFICE });
     entitlementConflict = true; // the pre-check saw nothing; the DB said no
     const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)] });
@@ -181,12 +209,12 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
     expect(res.data.totalZar).toBe(3000);
     expect(updatesOf(orderItems)).toContainEqual({ discountZar: 0 });
     expect(updatesOf(orders)).toContainEqual({ totalZar: 3000, isStaffDiscount: false, paymentMode: null });
-    // The three amounts agree: the order's final total, the payments row, the checkout.
-    expect(insertsInto(payments)).toEqual([
-      { orderId: res.data.orderId, amountZar: 3000, status: "pending", yocoCheckoutId: "ch_1", ...LEGACY_ROW(res.data.orderId) },
-    ]);
-    expect(mockCreatePaymentIntent).toHaveBeenCalledTimes(1);
-    expect(mockCreatePaymentIntent).toHaveBeenCalledWith({ amountZar: 3000, metadata: { orderId: res.data.orderId } });
+    // beginTender reads orders.total_zar under the order lock, so it can only
+    // see this committed 3000: it runs once, after the commit (REQ-026).
+    expect(insertsInto(payments)).toEqual([]);
+    expect(mockStartTender).toHaveBeenCalledTimes(1);
+    expectOrderCommittedBeforeTender();
+    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 3000 });
     expect(auditActions()).toContain("reject");
   });
 
@@ -199,9 +227,9 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
     expect(res.data.freeCup).toMatchObject({ applied: false, code: "NOT_ELIGIBLE", message: "Not eligible for the free cup" });
     expect(res.data.totalZar).toBe(3000);
     expect(insertsInto(staffEntitlementLog)).toEqual([]);
-    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: null });
-    expect(insertsInto(payments)).toHaveLength(1);
-    expect(mockCreatePaymentIntent).toHaveBeenCalledWith(expect.objectContaining({ amountZar: 3000 }));
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: null, totalZar: 3000 });
+    expect(mockStartTender).toHaveBeenCalledTimes(1);
+    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 3000 }); // R30,00, charged in full
   });
 
   it("4. sunday mode or event mode → NOT_ELIGIBLE (weekday mode only)", async () => {
@@ -268,8 +296,9 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
     expect(lines.map((l) => l.discountZar)).toEqual([3800, 0]); // first eligible line, one unit
     // 1×3800 + 2×3000 − 3800 = 6000
     expect(res.data.totalZar).toBe(6000);
-    expect(insertsInto(payments)[0]).toMatchObject({ amountZar: 6000 });
-    expect(mockCreatePaymentIntent).toHaveBeenCalledWith(expect.objectContaining({ amountZar: 6000 }));
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 6000 });
+    expect(mockStartTender).toHaveBeenCalledTimes(1);
+    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 6000 }); // R60,00 on the machine
   });
 
   it("9. only coffee is eligible: a non-coffee-only order → NOT_ELIGIBLE, no entitlement, audited", async () => {
@@ -287,29 +316,63 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
 
 // ─── REQ-153 / AT-186: a net-R0 order never touches payments ────────────────
 describe("REQ-153: a net-R0 order writes no payments row and sends nothing (round-2 item 3)", () => {
-  it("weekday free cup → 0 payments rows, Yoco not called, payment_mode='free'", async () => {
+  it("weekday free cup → 0 payments rows, no tender begun, payment_mode='free'", async () => {
     given({ customer: OFFICE });
     const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)] });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.totalZar).toBe(0);
-    expect(res.data.yocoClientSecret).toBe("");
+    expect(res.data.tender).toBeNull();
+    expect(res.data.cardCheckout).toBe(false);
     expect(insertsInto(payments)).toEqual([]);
-    expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
+    expect(mockStartTender).not.toHaveBeenCalled();
     expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "free" });
   });
 
-  it("a non-R0 order is unchanged: one pending payments row and one checkout at its total", async () => {
+  it("a non-R0 order: the order commits, then ONE tender begins on it; createOrder writes no payments row itself (REQ-026)", async () => {
     given({ customer: null });
     const res = await createOrder({ notificationTarget: "none", items: [one(AMERICANO.id)] });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(insertsInto(payments)).toEqual([
-      { orderId: res.data.orderId, amountZar: 3000, status: "pending", yocoCheckoutId: "ch_1", ...LEGACY_ROW(res.data.orderId) },
-    ]);
-    expect(mockCreatePaymentIntent).toHaveBeenCalledTimes(1);
-    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: null });
-    expect(res.data.yocoClientSecret).toBe("cs_1");
+    expect(insertsInto(payments)).toEqual([]);
+    expect(mockStartTender).toHaveBeenCalledTimes(1);
+    expect(mockStartTender).toHaveBeenCalledWith(expect.anything(), res.data.orderId);
+    expectOrderCommittedBeforeTender();
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: null, totalZar: 3000 });
+    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 3000 });
+    expect(res.data.cardCheckout).toBe(true);
+  });
+
+  it("a refused tender (no machine configured) is returned beside the committed order, never thrown", async () => {
+    given({ customer: null });
+    mockStartTender.mockResolvedValueOnce({
+      ok: false, code: "TERMINAL_UNREACHABLE",
+      message: "Card machine not responding — check it's on and on the wifi, or switch to deferred",
+    } as never);
+    const res = await createOrder({ notificationTarget: "none", items: [one(AMERICANO.id)] });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.tender).toEqual({
+      ok: false, code: "TERMINAL_UNREACHABLE",
+      message: "Card machine not responding — check it's on and on the wifi, or switch to deferred",
+    });
+    expect(res.data.cardCheckout).toBe(false);
+    expect(insertsInto(orders)).toHaveLength(1);
+  });
+
+  it("an exception inside beginTender (e.g. a DB outage) → TENDER_NOT_BEGUN with a retry, beside the committed order — never STALE_STATE or PAYMENT_UNKNOWN", async () => {
+    given({ customer: null });
+    mockStartTender.mockRejectedValueOnce(new Error("connection refused"));
+    const res = await createOrder({ notificationTarget: "none", items: [one(AMERICANO.id)] });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.tender).toEqual({
+      ok: false, code: "TENDER_NOT_BEGUN",
+      message: "Couldn't start the card payment — nothing was sent. Try again.", retryOffered: true,
+    });
+    expect(res.data.cardCheckout).toBe(false);
+    expect(insertsInto(orders)).toHaveLength(1);
+    expect(insertsInto(payments)).toEqual([]);
   });
 });
 
@@ -326,7 +389,7 @@ describe("B1: the free cup discounts unit_price_zar + mods_zar (oat milk)", () =
     rows.set(menuCustomisations, [OAT]);
   }
 
-  it("oat-milk Cappuccino, weekday, office_staff → total 0, no payments row, Yoco not called, payment_mode='free'", async () => {
+  it("oat-milk Cappuccino, weekday, office_staff → total 0, no payments row, no tender, payment_mode='free'", async () => {
     givenOat();
     const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [oatCappuccino()] });
     expect(res.ok).toBe(true);
@@ -334,8 +397,8 @@ describe("B1: the free cup discounts unit_price_zar + mods_zar (oat milk)", () =
     expect(res.data.totalZar).toBe(0);
     expect(res.data.freeCup).toEqual({ applied: true, code: null, message: "Free cup applied", discountZar: 4600 });
     expect(insertsInto(payments)).toEqual([]);
-    expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
-    expect(res.data.yocoClientSecret).toBe("");
+    expect(mockStartTender).not.toHaveBeenCalled();
+    expect(res.data.tender).toBeNull();
     expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 0, paymentMode: "free", isStaffDiscount: true });
     const [line] = insertsInto(orderItems)[0] as Row[];
     expect(line).toMatchObject({ unitPriceZar: 3800, modsZar: 800, discountZar: 4600 });
@@ -351,8 +414,9 @@ describe("B1: the free cup discounts unit_price_zar + mods_zar (oat milk)", () =
     expect(line).toMatchObject({ quantity: 2, unitPriceZar: 3800, modsZar: 800, discountZar: 4600 });
     expect(res.data.totalZar).toBe(4600); // 2 × 4600 − 4600
     expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 4600, paymentMode: null });
-    expect(insertsInto(payments)[0]).toMatchObject({ amountZar: 4600 });
-    expect(mockCreatePaymentIntent).toHaveBeenCalledWith(expect.objectContaining({ amountZar: 4600 }));
+    expect(mockStartTender).toHaveBeenCalledTimes(1);
+    if (res.ok) expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 4600 }); // R46,00
+    expectOrderCommittedBeforeTender();
   });
 
   it("a plain line snapshots mods_zar = 0", async () => {
@@ -370,12 +434,12 @@ describe("B1: the free cup discounts unit_price_zar + mods_zar (oat milk)", () =
       [customers, [OFFICE]],
       [openingSessions, [{ mode: "weekday" }]],
       [staffEntitlementLog, []],
-      [payments, [{ id: "pay_b1", status: "pending", yocoCheckoutId: null, yocoPaymentId: null }]],
+      [payments, []],
     ]);
     const res = await applyFreeCoffee("ord_b1", OFFICE.id);
     expect(res).toEqual({ ok: true, data: { totalZar: 4600 } });
     expect(updatesOf(orderItems)).toContainEqual({ discountZar: 4600 });
-    expect(updatesOf(payments)).toEqual([{ amountZar: 4600 }]);
+    expect(updatesOf(payments)).toEqual([]); // an attempt's amount is never rewritten (P4)
   });
 });
 
@@ -400,25 +464,25 @@ describe("8. declineFreeCoffee — one tap to decline (REQ-024)", () => {
     ]);
   }
 
-  it("a FREE order (no payments row): removes the entitlement row, reverts discount + total, writes the pending row FIRST, then the checkout", async () => {
+  it("a FREE order (no payments row): removes the entitlement row, reverts discount + total; writes NO payments row (the screen then begins a tender)", async () => {
     givenAppliedOrder();
     const res = await declineFreeCoffee("ord_1");
 
-    expect(res).toEqual({ ok: true, data: { totalZar: 3000, yocoClientSecret: "cs_1" } });
+    expect(res).toEqual({ ok: true, data: { totalZar: 3000 } });
     expect(deletes.map((d) => d.table)).toEqual([staffEntitlementLog]);
     expect(updatesOf(orderItems)).toContainEqual({ discountZar: 0 });
     expect(updatesOf(orders)).toContainEqual({ totalZar: 3000, isStaffDiscount: false, paymentMode: null });
-    expect(insertsInto(payments)).toEqual([{ orderId: "ord_1", amountZar: 3000, status: "pending", ...LEGACY_ROW("ord_1") }]);
-    expect(mockCreatePaymentIntent).toHaveBeenCalledWith({ amountZar: 3000, metadata: { orderId: "ord_1" } });
-    expect(updatesOf(payments)).toEqual([{ yocoCheckoutId: "ch_1" }]); // checkout id recorded on that row
+    expect(insertsInto(payments)).toEqual([]);
+    expect(updatesOf(payments)).toEqual([]);
+    expect(mockStartTender).not.toHaveBeenCalled();
     expect(auditActions()).toEqual(["decline_free_cup"]);
   });
 
-  it("refused once a checkout exists — even with status pending and no Yoco payment id (owner rule)", async () => {
+  it("REQ-028: refused with TENDER_IN_PROGRESS while an attempt is open — begun, sent and pending, or sent and unresolved", async () => {
     for (const payment of [
-      { id: "pay_1", status: "pending", yocoCheckoutId: "ch_old", yocoPaymentId: null },
-      { id: "pay_1", status: "pending", yocoCheckoutId: null, yocoPaymentId: "p_yoco_1" },
-      { id: "pay_1", status: "failed", yocoCheckoutId: "ch_old", yocoPaymentId: "p_yoco_1" },
+      { id: "pay_1", status: "pending", sentAt: null, yocoPaymentId: null },
+      { id: "pay_1", status: "pending", sentAt: SENT, yocoPaymentId: "p_yoco_1" },
+      { id: "pay_1", status: "unresolved", sentAt: SENT, yocoPaymentId: "p_yoco_1" },
     ]) {
       deletes.length = 0; updates.length = 0; inserts.length = 0;
       givenAppliedOrder({ totalZar: 3000, paymentMode: null, payment, lines: [{ id: "oi_1", quantity: 2, unitPriceZar: 3000, discountZar: 3000 }] });
@@ -427,30 +491,28 @@ describe("8. declineFreeCoffee — one tap to decline (REQ-024)", () => {
       expect(deletes).toEqual([]);
       expect(updates).toEqual([]);
       expect(inserts).toEqual([]);
-      expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
     }
   });
 
-  it("a pending row with NO checkout (Yoco was down at ring-up) is repriced, no checkout made", async () => {
-    givenAppliedOrder({
-      totalZar: 3000, paymentMode: null,
-      payment: { id: "pay_1", status: "pending", yocoCheckoutId: null, yocoPaymentId: null },
-      lines: [{ id: "oi_1", quantity: 2, unitPriceZar: 3000, discountZar: 3000 }],
-    });
-    const res = await declineFreeCoffee("ord_1");
-    expect(res).toEqual({ ok: true, data: { totalZar: 6000, yocoClientSecret: "" } });
-    expect(updatesOf(payments)).toEqual([{ amountZar: 6000 }]);
-    expect(insertsInto(payments)).toEqual([]);
-    expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
+  it("a declined or never-sent closed-out attempt does not freeze the total; no payments row is written or repriced", async () => {
+    for (const payment of [
+      { id: "pay_1", status: "declined", sentAt: SENT, yocoPaymentId: "p_yoco_1" },
+      { id: "pay_1", status: "unresolved", sentAt: null, yocoPaymentId: null },
+    ]) {
+      deletes.length = 0; updates.length = 0; inserts.length = 0;
+      givenAppliedOrder({ totalZar: 3000, paymentMode: null, payment, lines: [{ id: "oi_1", quantity: 2, unitPriceZar: 3000, discountZar: 3000 }] });
+      const res = await declineFreeCoffee("ord_1");
+      expect(res).toEqual({ ok: true, data: { totalZar: 6000 } });
+      expect(updatesOf(payments)).toEqual([]);
+      expect(insertsInto(payments)).toEqual([]);
+    }
   });
 
-  it("a chargeable order whose payments row createOrder hasn't written yet → STALE_STATE, nothing written (round-3 item 3)", async () => {
+  it("a chargeable order with no attempt yet (beginTender refused, e.g. no machine) may still change: nothing to freeze", async () => {
     givenAppliedOrder({ totalZar: 3000, paymentMode: null, payment: null, lines: [{ id: "oi_1", quantity: 2, unitPriceZar: 3000, discountZar: 3000 }] });
     const res = await declineFreeCoffee("ord_1");
-    expect(res).toEqual({ ok: false, code: "STALE_STATE", message: "This order just changed — reloading" });
-    expect(deletes).toEqual([]);
-    expect(updates).toEqual([]);
-    expect(inserts).toEqual([]);
+    expect(res).toEqual({ ok: true, data: { totalZar: 6000 } });
+    expect(insertsInto(payments)).toEqual([]);
   });
 
   it("clears the line the cup paid for — not simply the first line (round-2 item 6)", async () => {
@@ -475,7 +537,7 @@ describe("8. declineFreeCoffee — one tap to decline (REQ-024)", () => {
   });
 
   it("refuses once the order is paid", async () => {
-    givenAppliedOrder({ totalZar: 3000, paymentMode: null, payment: { id: "pay_1", status: "successful", yocoCheckoutId: "ch_1", yocoPaymentId: "p_1" } });
+    givenAppliedOrder({ totalZar: 3000, paymentMode: null, payment: { id: "pay_1", status: "successful", sentAt: SENT, yocoPaymentId: "p_1" } });
     const res = await declineFreeCoffee("ord_1");
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("ALREADY_RESOLVED");
@@ -493,11 +555,11 @@ describe("applyFreeCoffee(orderId, beneficiaryCustomerId) — was applyStaffDisc
       [customers, customer ? [customer] : []],
       [openingSessions, [{ mode: "weekday" }]],
       [staffEntitlementLog, opts.claimedToday ? [{ id: "ent_earlier" }] : []],
-      [payments, opts.payment === null ? [] : [opts.payment ?? { id: "pay_9", status: "pending", yocoCheckoutId: null, yocoPaymentId: null }]],
+      [payments, opts.payment ? [opts.payment] : []],
     ]);
   }
 
-  it("applies one unit to an order with no checkout, keys the row on the customer, keeps the payment amount equal", async () => {
+  it("applies one unit to an order with no tender attempt, keys the row on the customer, writes no payments row", async () => {
     givenOrder(OFFICE);
     const res = await applyFreeCoffee("ord_9", OFFICE.id);
     expect(res).toEqual({ ok: true, data: { totalZar: 3000 } });
@@ -506,15 +568,15 @@ describe("applyFreeCoffee(orderId, beneficiaryCustomerId) — was applyStaffDisc
     ]);
     expect(updatesOf(orderItems)).toContainEqual({ discountZar: 3000 });
     expect(updatesOf(orders)).toContainEqual({ totalZar: 3000, isStaffDiscount: true, paymentMode: null });
-    expect(updatesOf(payments)).toEqual([{ amountZar: 3000 }]);
-    expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
+    expect(updatesOf(payments)).toEqual([]);
+    expect(mockStartTender).not.toHaveBeenCalled();
     const audit = mockWriteAudit.mock.calls.map((c) => c[0] as { action: string; after?: Row });
     expect(audit[0].action).toBe("free_cup");
     expect(audit[0].after).toMatchObject({ beneficiaryCustomerId: "cust_thabo" });
   });
 
-  it("refused when a checkout exists (owner rule)", async () => {
-    givenOrder(OFFICE, { payment: { id: "pay_9", status: "pending", yocoCheckoutId: "ch_9", yocoPaymentId: null } });
+  it("REQ-028: refused with TENDER_IN_PROGRESS while an attempt is open (owner rule)", async () => {
+    givenOrder(OFFICE, { payment: { id: "pay_9", status: "pending", sentAt: SENT, yocoPaymentId: "p_9" } });
     const res = await applyFreeCoffee("ord_9", OFFICE.id);
     expect(res).toEqual(CANCEL_AND_RERING);
     expect(insertsInto(staffEntitlementLog)).toEqual([]);
@@ -522,7 +584,7 @@ describe("applyFreeCoffee(orderId, beneficiaryCustomerId) — was applyStaffDisc
   });
 
   it("never deletes a payments row: taking a row-carrying order to R0 is refused instead", async () => {
-    givenOrder(OFFICE, { quantity: 1 });
+    givenOrder(OFFICE, { quantity: 1, payment: { id: "pay_9", status: "declined", sentAt: SENT, yocoPaymentId: "p_9" } });
     const res = await applyFreeCoffee("ord_9", OFFICE.id);
     expect(res).toEqual(CANCEL_AND_RERING);
     expect(deletes).toEqual([]);
