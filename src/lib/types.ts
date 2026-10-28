@@ -20,7 +20,8 @@ export type MenuCategory =
   | "merchandise"
   | "other";
 
-export type PaymentStatus = "pending" | "successful" | "failed" | "refunded" | "deferred";
+// AT-201 / PRD §10.3.3 — mirrors db/enums.ts paymentStatus.
+export type PaymentStatus = "pending" | "successful" | "declined" | "unresolved";
 
 // ─── Domain Types ─────────────────────────────────────────────────────────────
 
