@@ -184,4 +184,29 @@ describe("closeDaily — reconciliation", () => {
     const auditCall = vi.mocked(writeAudit).mock.calls[0][0];
     expect(auditCall.action).toBe("daily_close");
   });
+
+  // AT-209 / L02: a paid order cancelled after start keeps its money. Revenue
+  // reads the shared revenue scope, so it covers the same orders as the
+  // payments query and that order raises no variance alert.
+  it("revenue uses the shared revenue scope (cancelled-with-successful-payment counts); no false alert", async () => {
+    const { db } = await import("@db/index");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const { REVENUE_ORDER_SCOPE_SQL } = await import("@/server/reports/revenue-scope");
+    let whereArg: unknown;
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn((w: unknown) => { whereArg = w; return Promise.resolve([{ total: 3000 }]); }),
+      }),
+    } as unknown as ReturnType<typeof db.select>);
+    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "3000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
+
+    const { closeDaily } = await import("@/server/crons/close-daily");
+    const result = await closeDaily(new Date("2026-06-08T10:00:00Z"));
+
+    const rendered = new PgDialect().sqlToQuery(whereArg as import("drizzle-orm").SQL).sql;
+    expect(rendered).toContain(REVENUE_ORDER_SCOPE_SQL);
+    expect(rendered).not.toContain(`"orders"."state" = $`);
+    expect(result.band).toBe("ok");
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
 });

@@ -130,6 +130,24 @@ maybe("0043 comps/cancel/abandon: up → down → up, and the refusal (AT-209)",
     });
   });
 
+  it("v_daily_revenue counts an order once when a declined attempt is followed by a successful one", async () => {
+    await inRolledBackTx(async (tx) => {
+      const day = "2001-01-14";
+      const [s] = await tx`INSERT INTO staff (name, role, pin_hash) VALUES ('T', 'barista', 'x') RETURNING id`;
+      for (const state of ["collected", "cancelled"]) {
+        const [o] = await tx`
+          INSERT INTO orders (staff_id, state, total_zar, revenue_day, notification_target, placed_at)
+          VALUES (${s.id as string}, ${state}, 2000, ${day}, 'none', ${"2001-01-14T08:00:00+02:00"}) RETURNING id, client_uuid`;
+        await tx`
+          INSERT INTO payments (order_id, attempt, client_reference, webpos_device_id, amount_zar, status)
+          VALUES (${o.id as string}, 1, ${(o.client_uuid as string) + ":1"}, 'dev', 2000, 'declined'),
+                 (${o.id as string}, 2, ${(o.client_uuid as string) + ":2"}, 'dev', 2000, 'successful')`;
+      }
+      const [r] = await tx`SELECT revenue_zar::int AS v FROM v_daily_revenue WHERE sast_date = ${day}::date`;
+      expect(r.v).toBe(4000); // R20 served + R20 cancelled-but-paid, each once
+    });
+  });
+
   it("down refuses, changing nothing, while an abandoned waste row exists", async () => {
     await inRolledBackTx(async (tx) => {
       const [s] = await tx`INSERT INTO staff (name, role, pin_hash) VALUES ('T', 'barista', 'x') RETURNING id`;

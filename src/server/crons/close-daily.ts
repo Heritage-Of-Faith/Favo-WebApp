@@ -8,6 +8,7 @@
 import { and, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, staff } from "@db/schema";
+import { revenueOrderScope } from "@/server/reports/revenue-scope";
 import { writeAudit } from "@/server/audit";
 import { formatZarField } from "@/lib/format";
 import webpush from "web-push";
@@ -77,16 +78,18 @@ export type CloseDailyResult = {
 export async function closeDaily(referenceDate?: Date): Promise<CloseDailyResult> {
   const { start, end, date } = dayBounds(referenceDate);
 
-  // Revenue = sum of totalZar for orders fully collected today.
-  // in_progress and ready orders have been paid but not yet served — counting
-  // them here inflates revenue vs. the payments query and creates a nightly
-  // admin alert for variance that resolves itself only after collection.
+  // Revenue = sum of totalZar for today's orders in the shared revenue scope
+  // (src/server/reports/revenue-scope.ts): started orders, plus a cancelled
+  // order that holds a successful payment (AT-209, L02 — cancelling does not
+  // return money). The payments query below counts every successful payment
+  // on today's orders, so both sides now cover the same orders and a paid
+  // order cancelled after start raises no false variance.
   const [revRow] = await db
     .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
     .from(orders)
     .where(
       and(
-        eq(orders.state, "collected"),
+        revenueOrderScope,
         gte(orders.placedAt, start),
         lt(orders.placedAt, end)
       )

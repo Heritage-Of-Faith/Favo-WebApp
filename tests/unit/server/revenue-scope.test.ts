@@ -61,6 +61,13 @@ describe("revenue scope (AT-209)", () => {
     expect(text(executed[0])).toContain(REVENUE_ORDER_SCOPE_SQL);
   });
 
+  it("the POS Day summary's order count uses the same scope as v_daily_revenue", async () => {
+    executed.length = 0;
+    await getPosToday();
+    const count = executed.map(text).find((q) => q.includes("COUNT(*)::text AS n FROM orders"));
+    expect(count).toContain(REVENUE_ORDER_SCOPE_SQL);
+  });
+
   it("the POS Day summary's waste count leaves out abandoned orders", async () => {
     executed.length = 0;
     await getPosToday();

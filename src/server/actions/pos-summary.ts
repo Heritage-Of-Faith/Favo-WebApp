@@ -10,14 +10,17 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { authorize } from "@/server/auth/guard";
 import { todaySast } from "@/server/cogs/compute";
+import { revenueOrderScope } from "@/server/reports/revenue-scope";
 import type { ActionResult, PosTodaySummary } from "@/lib/types";
 
 const POS_ROLES = ["barista", "admin"] as const;
 
 /**
  * Today's barista-facing volume summary for the current SAST day.
- * Revenue counts orders in in_progress / ready / collected (same definition
- * as v_daily_revenue). Waste count is waste_log rows logged today (SAST).
+ * Revenue and the order count use the shared revenue scope (started orders,
+ * plus a cancelled order holding a successful payment — the v_daily_revenue
+ * definition, src/server/reports/revenue-scope.ts). Waste count is waste_log
+ * rows logged today (SAST), not counting abandoned orders.
  */
 export async function getPosToday(): Promise<ActionResult<PosTodaySummary>> {
   const auth = await authorize(...POS_ROLES);
@@ -31,10 +34,10 @@ export async function getPosToday(): Promise<ActionResult<PosTodaySummary>> {
   );
   const revenueZar = parseInt(revRow?.revenue_zar ?? "0", 10) || 0;
 
-  // Order count — same state filter and SAST-day boundary as revenue.
+  // Order count — the same revenue scope and SAST-day boundary as the view.
   const [orderRow] = await db.execute<{ n: string | null }>(
     sql`SELECT COUNT(*)::text AS n FROM orders
-        WHERE state IN ('in_progress','ready','collected')
+        WHERE ${revenueOrderScope}
           AND (placed_at AT TIME ZONE 'Africa/Johannesburg')::date = ${date}::date`
   );
   const orderCount = parseInt(orderRow?.n ?? "0", 10) || 0;
