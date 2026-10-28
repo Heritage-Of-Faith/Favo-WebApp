@@ -18,6 +18,7 @@ import { authorize } from "@/server/auth/guard";
 import { revenueDay } from "@/lib/format";
 import { canTransition } from "@/server/orders/state-machine";
 import { deductForOrder, DeductionError } from "@/server/orders/deduction";
+import { writeOrderCogs } from "@/server/orders/order-cogs";
 import { checkRecipeStock } from "@/server/inventory/lot-picker";
 import type { DB } from "@/lib/db";
 import {
@@ -466,8 +467,11 @@ export async function transitionOrder(
         .where(eq(orders.id, orderId));
 
       // ── 2. Deduct stock on ordered → in_progress (L01 / R5) ───────────────
+      // AT-188 / REQ-106: freeze the order's COGS in this same transaction,
+      // only after deduction succeeded (if it throws, no row is written).
       if (toState === "in_progress") {
-        await deductForOrder(orderId, txDb, session.id);
+        const consumed = await deductForOrder(orderId, txDb, session.id);
+        await writeOrderCogs(orderId, consumed, txDb);
       }
 
       // ── 3. Fetch subscription for order-ready push (in_progress → ready) ──

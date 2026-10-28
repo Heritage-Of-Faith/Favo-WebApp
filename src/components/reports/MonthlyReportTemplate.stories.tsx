@@ -32,6 +32,7 @@ export const ProfitableMonth: Story = {
     expenses_zar: 180000,
     // Net: R3,450.00
     net_zar: 345000,
+    cost_state: "final",
     approvers: [
       {
         name: "Mia van Zyl",
@@ -59,6 +60,7 @@ export const LossMonth: Story = {
     expenses_zar: 240000,
     // Net: −R300.00
     net_zar: -30000,
+    cost_state: "final",
     approvers: [
       {
         name: "Mia van Zyl",
@@ -77,6 +79,8 @@ export const ThreeApprovers: Story = {
     cogs_zar: 408000,
     expenses_zar: 204000,
     net_zar: 408000,
+    // Every lot is an estimate today (§7.0.1b): net renders provisional, never teal.
+    cost_state: "provisional",
     approvers: [
       {
         name: "Mia van Zyl",
@@ -105,6 +109,7 @@ export const BreakEven: Story = {
     cogs_zar: 300000,
     expenses_zar: 300000,
     net_zar: 0,
+    cost_state: "final",
     approvers: [
       {
         name: "Mia van Zyl",

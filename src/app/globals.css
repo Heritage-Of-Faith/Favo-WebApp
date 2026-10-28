@@ -49,6 +49,15 @@
   --color-error:   #c0392b;
   --color-info:    #1a5fa8;
 
+  /* AT-191 / AT-192 — PRD §17.6.1 semantic status tokens for cost figures.
+     --status-warn: PROVISIONAL (an estimated input, L39) — never success/green
+     and distinct from error. --status-unavailable: UNAVAILABLE (an absent
+     input, §7.0.2) — distinct from --status-warn. Deliberately NOT remapped
+     under [data-admin-portal], where warning and error share one hue.
+     Values provisional pending design sign-off; both ≥ 4.5:1 on --color-paper. */
+  --status-warn:        #8A5A00;
+  --status-unavailable: #5A6268;
+
   /* ── Type families ── */
   --font-display: 'Barlow Condensed', 'Oswald', 'Arial Narrow', sans-serif;
   --font-sans:    'DM Sans', 'Helvetica Neue', Arial, sans-serif;
