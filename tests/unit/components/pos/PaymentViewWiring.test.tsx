@@ -1,5 +1,5 @@
 // M4/AT-13 — payment view wiring through POSWorkspace:
-//  - a paid order (total > 0, checkout id present) renders the Yoco card form
+//  - a paid order (total > 0, checkout id present) renders NO card form (REQ-071)
 //  - a free order (staff-discount zeroes total) skips the form
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -49,8 +49,6 @@ import POSWorkspace from "@/components/pos/POSWorkspace";
 beforeEach(() => {
   vi.clearAllMocks();
   TOTAL = 6000;
-  process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY = "pk_test_123";
-  (globalThis as unknown as { YocoSDK?: unknown }).YocoSDK = function () { return { showPopup: vi.fn() }; } as unknown;
   Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
 });
 
@@ -61,10 +59,19 @@ async function placeOrder() {
 }
 
 describe("M4 payment view wiring", () => {
-  it("renders the Yoco card form for a paid order with a checkout id", async () => {
+  it("REQ-071: a paid order with a checkout id gets no in-browser card form — payment is taken in the queue", async () => {
     mockCreateOrder.mockResolvedValue({ ok: true, data: { orderId: "ord_1", yocoClientSecret: "chk_abc" } });
     await placeOrder();
-    expect(await screen.findByRole("button", { name: /charge card/i })).toBeDefined();
+    expect(await screen.findByText(/open take payment on its card and tap mark as paid/i)).toBeDefined();
+    expect(screen.getByText(/take payment on the card machine, cash or eft/i)).toBeDefined();
+    expect(screen.queryByRole("button", { name: /charge card/i })).toBeNull();
+  });
+
+  it("a paid order with NO checkout (Yoco unreachable) opens the same payment screen — no blocking error", async () => {
+    mockCreateOrder.mockResolvedValue({ ok: true, data: { orderId: "ord_3", yocoClientSecret: "", totalZar: 6000 } });
+    await placeOrder();
+    expect(await screen.findByText(/open take payment on its card and tap mark as paid/i)).toBeDefined();
+    expect(screen.queryByText(/could not be reached/i)).toBeNull();
   });
 
   it("falls back to manual confirm when there is no checkout id", async () => {
