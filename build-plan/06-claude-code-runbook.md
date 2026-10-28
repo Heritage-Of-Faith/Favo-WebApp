@@ -86,7 +86,7 @@ Claude writes everything. You do not review 4,700 deleted lines — the gates do
 
 **Let the gates handle:** every deletion, every screen, every doc, the test count, the grep conformance, and all 33 invariants in `verify-v7.ts`.
 
-**Nikao reviews with you on Tier A only** — money, auth, migrations touching `payments` or `orders`. One in review at a time, so neither of you is rubber-stamping a queue.
+**Tier A** — money, auth, migrations touching `payments` or `orders` — is reviewed by Mia plus an independent adversarial agent. Nikao's review is not required (Mia, 28 Oct 2026). One in review at a time, so nobody is rubber-stamping a queue; draft PRs stacked behind it are uncapped.
 
 ---
 

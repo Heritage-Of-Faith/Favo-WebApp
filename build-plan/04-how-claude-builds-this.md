@@ -70,10 +70,10 @@ On any money story:
 
 Reviewing everything equally means reviewing the important things badly. Three tiers.
 
-### Tier A — two humans, before merge
+### Tier A — Mia plus an adversarial agent, before merge
 **Payments, tenders, discounts, the blessing fund, write-downs, the Yoco integration, the payment adapter, secrets.**
 
-- Both of you read it. Not a glance — the four questions above, answered out loud.
+- Mia reads the plain-English summary and answers the four questions above. An independent adversarial agent (it sees the diff and the REQ text, never the builder's reasoning) checks the code. **Nikao's review is not required** (Mia, 28 Oct 2026); he may still comment and Claude answers him on the PR.
 - **Cap: at most one Tier-A story in review at a time.** If a second is ready, the next thing either of you does is finish reviewing the first. Two money PRs open at once on a two-person team is how a bad approval gets clicked.
 - Four items are **paired, not reviewed**: the R1.00 Khumo test, the three-condition re-charge rule, the fund's balance-locking test, and the synthetic money fixture. On those, watch it being built.
 
@@ -144,7 +144,7 @@ Build time out, drills and review in. Same 182 tickets, same order, different ar
 
 1. **Matt's answer.** It gates Phase 0's completion and nothing in this plan can route around it.
 2. **Getting the Khumo tested.** Two hours of someone's time, outside trading hours, and the whole payment chapter is written on documentation until it happens.
-3. **Your review capacity on Tier A.** With the one-at-a-time cap, the payment work is paced by how quickly you two can read it properly. That cap is deliberate and should not be raised to go faster.
+3. **Mia's review capacity on Tier A.** With the one-at-a-time cap, the payment work is paced by how quickly Mia can read it properly. Draft PRs stacked behind the one in review do not count toward the cap, so building does not wait for review.
 4. **The Sunday calendar.** If the supervised-Sunday test fails, the retry is a week later. Build slack for one failed attempt.
 
 ---

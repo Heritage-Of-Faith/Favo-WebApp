@@ -132,7 +132,7 @@ Do not build these even if a ticket, an old document or a branch name asks for t
 
 | Tier | Scope | Reviewer | Concurrency |
 |---|---|---|---|
-| **A** | Money, entitlement, auth, secrets, migrations touching `payments`/`orders` | Both Mia and Nikao, named on the PR, plus an adversarial agent pass | **1 in review at a time** |
+| **A** | Money, entitlement, auth, secrets, migrations touching `payments`/`orders` | Mia, named on the PR, plus an adversarial agent pass. Nikao's review is not required (Mia, 28 Oct 2026); he may still comment | **1 in review at a time** (draft PRs stacked behind it are uncapped) |
 | **B** | Other migrations, deduction, jobs, deploy config | One named reviewer + agent | 2 |
 | **C** | Screens, copy, docs, deletions | `bun check` + `verify-v7.ts` are the gate | no cap |
 
