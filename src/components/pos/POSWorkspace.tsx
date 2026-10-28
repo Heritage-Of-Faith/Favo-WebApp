@@ -135,6 +135,16 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [searchOpen, setSearchOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { customer, items, totalZar, setCustomer, addItem, removeItem, updateQuantity, reset } = useDraftOrder();
+  // L28 / REQ-046: every order binds a notification target before it is placed —
+  // the attached customer, or an explicit "No notification" tap. Never defaulted.
+  const [noNotification, setNoNotification] = useState(false);
+  const notificationTarget: "customer" | "none" | null = customer ? "customer" : noNotification ? "none" : null;
+  // Attaching a customer replaces an earlier "none" — so detaching them later
+  // needs a fresh tap rather than silently falling back to `none` (L28).
+  const attachedCustomerId = customer?.id ?? null;
+  useEffect(() => {
+    if (attachedCustomerId) setNoNotification(false);
+  }, [attachedCustomerId]);
 
   // AT-144 — the attached customer's Favo (saved usual order) + the Manage
   // Favo blocking modal (wireframe screens 6 + 2a).
@@ -304,7 +314,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   // ── Order building ─────────────────────────────────────────────────────────
 
   async function handlePlaceOrder() {
-    if (items.length === 0 || submitting) return;
+    if (items.length === 0 || submitting || !notificationTarget) return;
     setSubmitting(true);
     setOrderError(null);
 
@@ -320,10 +330,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     }
     const r = await createOrder({
       customerId: customer?.id,
+      notificationTarget,
       items: items.map(i => ({ menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id) })),
     }).catch(() => ({ ok: false as const, code: "ERR", message: "Failed to place order." }));
     setSubmitting(false);
     if (r.ok) {
+      // L28: the next order binds its own target.
+      setNoNotification(false);
       // Auto-expand the new order in the queue so barista sees it immediately
       setExpandedId(r.data.orderId);
       setYocoCheckoutId(r.data.yocoClientSecret);
@@ -376,6 +389,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
         });
       }
       reset();
+      setNoNotification(false);
       setShowPayment(false);
       setPaymentOrderId(null);
       setYocoCheckoutId("");
@@ -497,6 +511,21 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                   );
                 })}
               </ul>
+            )}
+            {/* L28 / REQ-046: "none" is one explicit tap, never a default. */}
+            {noNotification ? (
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <p className="favo-small text-coffee-bean font-semibold">No notification</p>
+                <button type="button" onClick={() => setNoNotification(false)}
+                  className="favo-caption text-cool-steel hover:text-coffee-bean underline underline-offset-2 min-h-[44px]">
+                  Undo
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setNoNotification(true)}
+                className="mt-2 w-full rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-coffee-bean hover:bg-coffee-bean/8 min-h-[44px]">
+                No notification
+              </button>
             )}
           </div>
         ) : (
@@ -670,12 +699,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               <Trash2 size={12} strokeWidth={2} aria-hidden />
               <span>Waste</span>
             </button>
-            <button type="button" onClick={() => reset()} disabled={items.length === 0}
+            <button type="button" onClick={() => { reset(); setNoNotification(false); }} disabled={items.length === 0}
               className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel hover:bg-coffee-bean/8 min-h-[44px] disabled:opacity-40">
               Clear
             </button>
-            <button type="button" onClick={handlePlaceOrder} disabled={submitting || items.length === 0}
-              className="flex items-center gap-2 rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
+            <button type="button" onClick={handlePlaceOrder} disabled={submitting || items.length === 0 || !notificationTarget}              className="flex items-center gap-2 rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
               style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
               {submitting
                 ? <Loader2 size={14} strokeWidth={2} className="animate-spin" />

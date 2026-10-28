@@ -41,6 +41,8 @@ test("barista can take an order and drive it through the full queue lifecycle", 
   await expect(page.getByText(/R\s*\d+[,.]\d{2}/).first()).toBeVisible();
 
   // ── 2. Place the order ───────────────────────────────────────────────────────
+  // L28 / REQ-046: a walk-in binds target `none` with one explicit tap.
+  await page.getByRole("button", { name: "No notification" }).click();
   await page.getByRole("button", { name: /^charge r/i }).click();
 
   // ── 3. The order appears in the live queue as "Waiting" ─────────────────────

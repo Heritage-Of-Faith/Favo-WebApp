@@ -110,7 +110,7 @@ describe("self-registered office staff → automatic free cup (AT-211, L03, §10
     expect(rows.get(customers)?.[0]).toMatchObject({ status: "office_staff", surname: "Mokoena" });
 
     const res = await createOrder({
-      customerId, items: [{ menuItemId: AMERICANO.id, quantity: 1, modifications: [] }],
+      notificationTarget: "customer", customerId, items: [{ menuItemId: AMERICANO.id, quantity: 1, modifications: [] }],
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -120,7 +120,7 @@ describe("self-registered office staff → automatic free cup (AT-211, L03, §10
   it("registered as church_member: no free cup", async () => {
     const customerId = await registerAs("church_member");
     const res = await createOrder({
-      customerId, items: [{ menuItemId: AMERICANO.id, quantity: 1, modifications: [] }],
+      notificationTarget: "customer", customerId, items: [{ menuItemId: AMERICANO.id, quantity: 1, modifications: [] }],
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
