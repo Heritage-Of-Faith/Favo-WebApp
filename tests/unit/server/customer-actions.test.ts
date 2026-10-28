@@ -275,3 +275,118 @@ describe("getCustomerProfile", () => {
     }
   });
 });
+
+// ─── updateCustomerProfile — surname (AT-211, §6.4 drift rule) ────────────────
+// Status is NOT editable here: PRD §10.3 sets it at self-registration only.
+
+describe("updateCustomerProfile — surname (AT-211)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function mockUpdate(db: { update: unknown }) {
+    const returningMock = vi.fn().mockResolvedValue([{ id: CUSTOMER_ID }]);
+    const whereMock = vi.fn().mockReturnValue({ returning: returningMock });
+    const setMock = vi.fn().mockReturnValue({ where: whereMock });
+    vi.mocked(db.update as () => unknown).mockReturnValue({ set: setMock });
+    return setMock;
+  }
+
+  it("writes the surname from the account page and audits it", async () => {
+    const { getCustomerSession } = await import("@/server/auth/customer-session");
+    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
+    const { db } = await import("@db/index");
+    const { writeAudit } = await import("@/server/audit");
+    const setMock = mockUpdate(db);
+
+    const { updateCustomerProfile } = await import("@/server/actions/customer");
+    const res = await updateCustomerProfile({ surname: "Mokoena" });
+
+    expect(res.ok).toBe(true);
+    expect(setMock).toHaveBeenCalledWith({ surname: "Mokoena" });
+    expect(vi.mocked(writeAudit)).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "customer.profile_update", after: { surname: "Mokoena" } })
+    );
+  });
+
+  it("a blank surname clears it (null)", async () => {
+    const { getCustomerSession } = await import("@/server/auth/customer-session");
+    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
+    const { db } = await import("@db/index");
+    const setMock = mockUpdate(db);
+
+    const { updateCustomerProfile } = await import("@/server/actions/customer");
+    const res = await updateCustomerProfile({ name: "Thandeka", surname: "   " });
+
+    expect(res.ok).toBe(true);
+    expect(setMock).toHaveBeenCalledWith({ name: "Thandeka", surname: null });
+  });
+
+  it("never writes status — §10.3 sets it at self-registration only", async () => {
+    const { getCustomerSession } = await import("@/server/auth/customer-session");
+    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
+    const { db } = await import("@db/index");
+    const setMock = mockUpdate(db);
+
+    const { updateCustomerProfile } = await import("@/server/actions/customer");
+    const res = await updateCustomerProfile({ surname: "Mokoena", status: "office_staff" } as never);
+
+    expect(res.ok).toBe(true);
+    expect(setMock).toHaveBeenCalledWith({ surname: "Mokoena" });
+    expect(setMock.mock.calls[0]?.[0]).not.toHaveProperty("status");
+  });
+
+  it("a status-only call is not an update at all", async () => {
+    const { getCustomerSession } = await import("@/server/auth/customer-session");
+    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
+    const { db } = await import("@db/index");
+    const { updateCustomerProfile } = await import("@/server/actions/customer");
+    const res = await updateCustomerProfile({ status: "office_staff" } as never);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("VALIDATION");
+    expect(vi.mocked(db.update)).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a zero-width space", "Mo​koena"],
+    ["a zero-width joiner", "Mokoena‍"],
+    // A leading/trailing BOM is whitespace to String.trim() and is stripped; inside the name it is refused.
+    ["an embedded byte-order mark", "Mo﻿koena"],
+    ["a control character", "Mo\u0007koena"],
+    ["a bidi override", "‮Mokoena"],
+  ])("refuses a surname containing %s", async (_label, surname) => {
+    const { getCustomerSession } = await import("@/server/auth/customer-session");
+    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
+    const { db } = await import("@db/index");
+    const { updateCustomerProfile } = await import("@/server/actions/customer");
+    const res = await updateCustomerProfile({ surname });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("VALIDATION");
+    expect(vi.mocked(db.update)).not.toHaveBeenCalled();
+  });
+
+  it("accepts accented and hyphenated surnames", async () => {
+    const { surnameSchema } = await import("@/lib/customer/identity");
+    for (const s of ["Botha-Mokoena", "Müller", "du Plessis", "O'Brien"]) {
+      expect(surnameSchema.safeParse(s)).toEqual({ success: true, data: s });
+    }
+  });
+
+  it("validates against the SAME surname schema registration uses — one rule, not two (§6.4)", async () => {
+    const { getCustomerSession } = await import("@/server/auth/customer-session");
+    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
+    const { customerIdentitySchema, surnameSchema } = await import("@/lib/customer/identity");
+    expect(customerIdentitySchema.shape.surname).toBe(surnameSchema);
+    const expected = surnameSchema.safeParse("Mo​koena");
+    expect(expected.success).toBe(false);
+
+    const { updateCustomerProfile } = await import("@/server/actions/customer");
+    const res = await updateCustomerProfile({ surname: "Mo​koena" });
+    expect(res.ok).toBe(false);
+    if (!res.ok && !expected.success) expect(res.message).toBe(expected.error.issues[0]?.message);
+  });
+
+  it("the identity schema's statuses are exactly the customer_status enum", async () => {
+    const { CUSTOMER_STATUSES } = await import("@/lib/customer/identity");
+    const { customerStatus } = await import("@db/enums");
+    expect([...CUSTOMER_STATUSES]).toEqual([...customerStatus.enumValues]);
+  });
+});
