@@ -16,8 +16,8 @@ vi.mock("@/server/auth/guard", () => ({
 vi.mock("@/server/audit", () => ({ writeAudit: vi.fn(async () => {}) }));
 vi.mock("@/server/queue/notify", () => ({ notifyOrderChange: vi.fn(async () => {}) }));
 vi.mock("@/server/inventory/lot-picker", () => ({ checkRecipeStock: vi.fn(async () => ({ ok: true })) }));
-vi.mock("@/server/yoco/client", () => ({
-  createPaymentIntent: vi.fn(async () => ({ id: "ch_1", clientSecret: "cs_1" })),
+vi.mock("@/server/tender/service", () => ({
+  startTender: vi.fn(async () => ({ ok: true, paymentId: "pmt_1", attempt: 1, clientReference: "cu:1", amountZar: 3000 })),
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({

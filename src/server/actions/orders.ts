@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, desc, eq, gte, inArray, notInArray } from "drizzle-orm";
+import { and, eq, gte, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   orders,
@@ -32,8 +32,9 @@ import {
   type FreeCupDecision,
   type FreeCupRefusalCode,
 } from "@/server/orders/free-coffee";
-import { createPaymentIntent } from "@/server/yoco/client";
-import { LEGACY_ONLINE_CHECKOUT_DEVICE, legacyClientReference } from "@/server/yoco/webpos-port";
+import { startTender, TENDER_NOT_BEGUN } from "@/server/tender/service";
+import { isAttemptOpen, isUnresolvedNeedingAttention } from "@/server/tender/tender";
+import { summarisePayments } from "@/server/tender/summary";
 import { notifyOrderChange } from "@/server/queue/notify";
 import { sendOrderReadyPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
@@ -73,10 +74,6 @@ const createOrderSchema = z.object({
   { message: "notificationTarget must be 'customer' with a customer, or 'none' without one." }
 );
 
-/**
- * Create an order in `ordered` state and return its id + a Yoco payment intent.
- * No stock is deducted at creation (rule L01 — that happens on in_progress, P2).
- */
 /** What happened to the L03 free cup on this order — shown to the barista once. */
 export type FreeCupResult = {
   applied: boolean;
@@ -86,15 +83,31 @@ export type FreeCupResult = {
   discountZar: number;
 };
 
+/**
+ * The tender attempt createOrder began (T2 step 3, "automatic on Place"), or
+ * why none was. `null` for a net-R0 order: no tender, no payments row (REQ-153).
+ * Nothing has been sent yet — the screen sends it (sendToTerminal).
+ */
+export type CreateOrderTender =
+  | { ok: true; attempt: number; amountZar: number }
+  | { ok: false; code: string; message: string; retryOffered?: boolean }
+  | null;
+
+/**
+ * Create an order in `ordered` state (T2 step 2). The order and its items
+ * commit first; only then does beginTender write the `pending` payments row,
+ * and only after that can anything be sent (REQ-026, P1 — never the reverse).
+ * No stock is deducted at creation (rule L01 — that happens on in_progress, P2).
+ */
 export async function createOrder(
   input: CreateOrderInput
 ): Promise<ActionResult<{
   orderId: string;
-  yocoClientSecret: string;
-  /** A Yoco card checkout was set up — from now on the free cup cannot change. */
+  /** P4: an attempt is open — from now on the free cup cannot change. */
   cardCheckout: boolean;
   totalZar: number;
   freeCup: FreeCupResult;
+  tender: CreateOrderTender;
 }>> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
@@ -197,8 +210,8 @@ export async function createOrder(
 
   // The transaction runs FIRST and settles the order's final total — the free
   // cup decided and its UNIQUE(customer_id, day) row inserted (or refused) —
-  // and only then is anything priced for the card. So the payments row and
-  // any Yoco checkout always carry exactly the committed total.
+  // and only then is a tender begun. So the payments row and whatever is
+  // sent to the machine always carry exactly the committed total.
   const outcome = await db.transaction(
     async (tx): Promise<{ totalZar: number; freeCup: FreeCupResult }> => {
       const txDb = tx as unknown as DB;
@@ -309,39 +322,26 @@ export async function createOrder(
     }
   );
 
-  // REQ-153: a net-R0 order writes no payments row and sends nothing to Yoco.
-  let yocoClientSecret = "";
-  let cardCheckout = false;
+  // REQ-026 / P1: the order and its items are committed above; ONLY NOW does
+  // beginTender write the `pending` payments row (under the order's row lock,
+  // at the order's committed total), and nothing is sent from here — the
+  // screen sends it with sendToTerminal. REQ-153: a net-R0 order begins no
+  // tender at all — no payments row, nothing sent (it is payment_mode 'free').
+  let tender: CreateOrderTender = null;
   if (outcome.totalZar > 0) {
-    // NEVER throw on Yoco failure: the order is committed, so throwing would
-    // show a generic error AND leave an order the barista can't see. Degrade —
-    // the POS falls back to taking payment from the queue.
-    const yocoResult = await createPaymentIntent({
-      amountZar: outcome.totalZar,
-      metadata: { orderId },
-    }).catch((err: unknown) => {
-      const reason = !process.env.YOCO_SECRET_KEY ? "YOCO_SECRET_KEY not set" : String(err);
-      console.error(`[createOrder] Yoco intent failed — falling back to manual payment (${reason})`);
-      return null;
-    });
-    yocoClientSecret = yocoResult?.clientSecret ?? "";
-    cardCheckout = Boolean(yocoResult?.id);
-
-    // The payments row carries the same committed total as the checkout.
-    // (REQ-026's full ordering — row before the send — is not in this story.)
-    // A concurrent decline/apply cannot have written a row first: while this
-    // chargeable order has no row they refuse with STALE_STATE.
-    await db.insert(payments).values({
-      orderId,
-      // AT-201 part 1: the legacy one-row-per-order flow is attempt 1. Part 2
-      // replaces this insert with beginTender.
-      attempt: 1,
-      clientReference: legacyClientReference(orderId, 1),
-      webposDeviceId: LEGACY_ONLINE_CHECKOUT_DEVICE,
-      amountZar: outcome.totalZar,
-      status: "pending",
-      yocoCheckoutId: yocoResult?.id ?? null,
-    });
+    // The order is committed: a refusal (NO_SESSION, TERMINAL_UNREACHABLE when
+    // no machine is configured, …) is returned beside it, never thrown.
+    // An exception inside beginTender (e.g. a database outage) comes back as
+    // TENDER_NOT_BEGUN with a retry — nothing was written or sent.
+    try {
+      const begun = await startTender({ kind: "staff", staffId: session.id, role: session.role }, orderId);
+      tender = begun.ok
+        ? { ok: true, attempt: begun.attempt, amountZar: begun.amountZar }
+        : { ok: false, code: begun.code, message: begun.message, ...("retryOffered" in begun ? { retryOffered: begun.retryOffered } : {}) };
+    } catch (err) {
+      console.error("[createOrder] beginTender failed", err);
+      tender = { ...TENDER_NOT_BEGUN };
+    }
   }
 
   // Look up customer name for the queue display (walk-in orders have no customer).
@@ -365,7 +365,13 @@ export async function createOrder(
 
   return {
     ok: true,
-    data: { orderId, yocoClientSecret, cardCheckout, totalZar: outcome.totalZar, freeCup: outcome.freeCup },
+    data: {
+      orderId,
+      cardCheckout: tender?.ok === true,
+      totalZar: outcome.totalZar,
+      freeCup: outcome.freeCup,
+      tender,
+    },
   };
 }
 
@@ -388,16 +394,6 @@ class CancelError extends Error {
   ) {
     super(message);
     this.name = "CancelError";
-  }
-}
-
-class ManualPaymentError extends Error {
-  constructor(
-    public readonly code: "NOT_FOUND" | "CONFLICT",
-    message: string
-  ) {
-    super(message);
-    this.name = "ManualPaymentError";
   }
 }
 
@@ -458,15 +454,20 @@ export async function transitionOrder(
       }
 
       // ── Cash-remove guard (AT-122): ordered → in_progress requires a
-      // confirmed Yoco payment for non-free orders. Free orders (totalZar === 0
-      // after a staff discount) need no payment row.
+      // successful payment for non-free orders — or, REQ-008 / S4, an attempt
+      // that was SENT and ended `unresolved`: "the order enters the queue and
+      // the drink is made" while recovery asks Yoco. A declined, a pending or a
+      // never-sent closed-out attempt does not open it. Free orders (totalZar
+      // === 0) need no payment row. Every attempt is read (ORDER BY attempt).
       // Bypass when YOCO_SECRET_KEY is absent (dev/simulation mode — no real Yoco). ──
       if (toState === "in_progress" && current.totalZar > 0 && process.env.YOCO_SECRET_KEY) {
-        const [pmt] = await tx
-          .select({ status: payments.status })
+        const attempts = await tx
+          .select({ status: payments.status, sentAt: payments.sentAt })
           .from(payments)
-          .where(eq(payments.orderId, orderId));
-        if (pmt?.status !== "successful") {
+          .where(eq(payments.orderId, orderId))
+          .orderBy(payments.attempt);
+        const mayMake = attempts.some((p) => p.status === "successful" || isUnresolvedNeedingAttention(p));
+        if (!mayMake) {
           throw new TransitionError(
             "PAYMENT_REQUIRED",
             "Order cannot start — card payment not yet confirmed."
@@ -598,7 +599,7 @@ export async function cancelOrder(
   }
 
   try {
-    await db.transaction(async (tx) => {
+    const refused = await db.transaction(async (tx): Promise<ActionResult | null> => {
       const txDb = tx as unknown as DB;
 
       // SELECT FOR UPDATE serializes concurrent cancel attempts on the same order.
@@ -618,6 +619,27 @@ export async function cancelOrder(
         );
       }
 
+      // REQ-028 / P4: no cancel while a tender attempt is open (pending, or
+      // sent and unresolved). Returned, not thrown, so the reject audit commits.
+      const attempts = await tx
+        .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId, attempt: payments.attempt })
+        .from(payments)
+        .where(eq(payments.orderId, orderId))
+        .orderBy(payments.attempt);
+      const open = attempts.find(isAttemptOpen);
+      if (open) {
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: { attempted: "cancel", code: "TENDER_IN_PROGRESS", openAttempt: open.attempt, openStatus: open.status },
+            reason: "TENDER_IN_PROGRESS",
+          },
+          txDb
+        );
+        return TENDER_IN_PROGRESS;
+      }
+
       await tx.update(orders).set({ state: "cancelled" }).where(eq(orders.id, orderId));
       await writeAudit(
         {
@@ -632,7 +654,9 @@ export async function cancelOrder(
         },
         txDb
       );
+      return null;
     });
+    if (refused) return refused;
   } catch (err) {
     if (err instanceof CancelError) {
       return { ok: false, code: err.code, message: err.message };
@@ -642,6 +666,13 @@ export async function cancelOrder(
 
   return { ok: true, data: undefined };
 }
+
+/** PRD §6.0.1 copy for TENDER_IN_PROGRESS (P4). */
+const TENDER_IN_PROGRESS = {
+  ok: false as const,
+  code: "TENDER_IN_PROGRESS",
+  message: "This order is at the card machine — finish or cancel the payment first",
+};
 
 // ─── L03 free weekday cup (AT-183 / AT-184) ──────────────────────────────────
 // createOrder applies it automatically; applyFreeCoffee is the PRD-named action
@@ -717,60 +748,41 @@ const ORDER_MOVED_ON = {
 };
 
 // Owner rule (Mia, 12 Oct 2026): a free-cup change is allowed ONLY while no
-// card checkout has been set up for the order. Once one exists the total is
-// frozen (PRD P4) — the remedy is to cancel and re-ring. Owner-approved copy.
+// tender attempt is open for the order. Once one is, the total is frozen
+// (PRD P4, REQ-028) — the remedy is to cancel and re-ring. Owner-approved copy.
 const CHECKOUT_EXISTS = {
   ok: false as const,
   code: "TENDER_IN_PROGRESS",
   message: "Cancel and re-ring the order to change the free cup.",
 };
 
-// PRD S1 STALE_STATE: createOrder has committed the order but not yet written
-// its payments row. Refusing here means createOrder's later insert can never
-// meet a row written by a concurrent decline.
-const ROW_NOT_WRITTEN_YET = {
-  ok: false as const,
-  code: "STALE_STATE",
-  message: "This order just changed — reloading",
-};
-
-type LockedPayment = { id: string } | null;
-
 /**
- * Lock the order's payments row (SELECT … FOR UPDATE, as the webhook does) and
- * say whether the order's total may still change. Never deletes anything.
- *  - no row: allowed only for a `free` order (REQ-153 — it never gets one
- *    from createOrder); a chargeable order with no row yet is mid-createOrder.
- *  - a row carrying a Yoco checkout or payment id: a checkout exists → refused.
- *  - a `successful` row: already paid. Any other non-pending row: refused.
- *  - a `pending` row with no checkout (Yoco was unavailable at ring-up): allowed.
+ * Read every payment attempt on the order (ORDER BY attempt, FOR UPDATE) and
+ * say whether the order's total may still change. Called with the order row
+ * already locked, which is the lock beginTender takes too. Never writes a
+ * payments row — an attempt's amount is frozen once begun (P4), and a later
+ * attempt is begun at the order's new total.
+ *  - any `successful` attempt: already paid → refused.
+ *  - any open attempt (`pending`, or sent and `unresolved`) → TENDER_IN_PROGRESS.
+ *  - none, or only declined / closed-out never-sent attempts: allowed.
  */
 async function lockPaymentForTotalChange(
   tx: Pick<DB, "select">,
-  order: { id: string; totalZar: number; paymentMode: string | null }
+  order: { id: string }
 ): Promise<{
-  payment: LockedPayment;
-  refusal: typeof ORDER_MOVED_ON | typeof CHECKOUT_EXISTS | typeof ROW_NOT_WRITTEN_YET | null;
+  hasPayments: boolean;
+  refusal: typeof ORDER_MOVED_ON | typeof CHECKOUT_EXISTS | null;
 }> {
-  const [payment] = await tx
-    .select({
-      id: payments.id,
-      status: payments.status,
-      yocoCheckoutId: payments.yocoCheckoutId,
-      yocoPaymentId: payments.yocoPaymentId,
-    })
+  const attempts = await tx
+    .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId })
     .from(payments)
     .where(eq(payments.orderId, order.id))
+    .orderBy(payments.attempt)
     .for("update");
-  if (!payment) {
-    const free = order.paymentMode === "free" || order.totalZar === 0;
-    return { payment: null, refusal: free ? null : ROW_NOT_WRITTEN_YET };
-  }
-  if (payment.status === "successful") return { payment, refusal: ORDER_MOVED_ON };
-  if (payment.yocoCheckoutId || payment.yocoPaymentId || payment.status !== "pending") {
-    return { payment, refusal: CHECKOUT_EXISTS };
-  }
-  return { payment: { id: payment.id }, refusal: null };
+  const hasPayments = attempts.length > 0;
+  if (attempts.some((p) => p.status === "successful")) return { hasPayments, refusal: ORDER_MOVED_ON };
+  if (attempts.some(isAttemptOpen)) return { hasPayments, refusal: CHECKOUT_EXISTS };
+  return { hasPayments, refusal: null };
 }
 
 /**
@@ -795,7 +807,7 @@ export async function applyFreeCoffee(
     const [current] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
     if (!current) return { ok: false, code: "NOT_FOUND", message: "Order not found." };
     if (current.state !== "ordered") return ORDER_MOVED_ON;
-    const { payment, refusal } = await lockPaymentForTotalChange(tx, current);
+    const { hasPayments, refusal } = await lockPaymentForTotalChange(tx, current);
     if (refusal) return refusal;
     if (current.isStaffDiscount) {
       return { ok: false, code: "NOT_ELIGIBLE", message: "This order already has a free cup." };
@@ -836,7 +848,7 @@ export async function applyFreeCoffee(
     const totalZar = current.totalZar - decision.discountZar;
     // REQ-153 wants an R0 order to have no payments row, and no payments row
     // is ever deleted — so a row-carrying order cannot be taken to R0 here.
-    if (payment && totalZar === 0) return CHECKOUT_EXISTS;
+    if (hasPayments && totalZar === 0) return CHECKOUT_EXISTS;
 
     if (!(await insertEntitlement(tx, beneficiaryCustomerId, session.id, orderId, day))) {
       await writeFreeCupReject(txDb, orderId, session, beneficiaryCustomerId, day, "ENTITLEMENT_USED", "already_claimed");
@@ -849,10 +861,6 @@ export async function applyFreeCoffee(
       .update(orders)
       .set({ totalZar, isStaffDiscount: true, paymentMode: totalZar === 0 ? "free" : current.paymentMode })
       .where(eq(orders.id, orderId));
-    if (payment) {
-      // A pending row with no checkout: keep its amount equal to the order's.
-      await tx.update(payments).set({ amountZar: totalZar }).where(eq(payments.id, payment.id));
-    }
     await writeAudit(
       {
         entityKind: "order", entityId: orderId, action: "free_cup",
@@ -871,25 +879,25 @@ export async function applyFreeCoffee(
  * (REQ-024). Removes the beneficiary's entitlement row for this order — so the
  * cup is still available to that person later today — clears the discount on
  * the line it paid for, restores the order total, and audits it. Only while
- * the order is `ordered` and no card checkout exists (owner rule). If the
- * order was free (no payments row, REQ-153) it becomes chargeable: a pending
- * payments row at the new total is written first, then a checkout is created
- * from that committed total.
+ * the order is `ordered` and no tender attempt is open (owner rule, P4). If the
+ * order was free (no payments row, REQ-153) it becomes chargeable; this writes
+ * no payments row itself — the screen then begins a tender (beginTender) at
+ * the committed new total, before anything is sent (REQ-026).
  */
 export async function declineFreeCoffee(
   orderId: string
-): Promise<ActionResult<{ totalZar: number; yocoClientSecret: string }>> {
+): Promise<ActionResult<{ totalZar: number }>> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
   const session = auth.session;
 
-  const result = await db.transaction(
-    async (tx): Promise<ActionResult<{ totalZar: number; rowCreated: boolean }>> => {
+  return db.transaction(
+    async (tx): Promise<ActionResult<{ totalZar: number }>> => {
       const txDb = tx as unknown as DB;
       const [current] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
       if (!current) return { ok: false, code: "NOT_FOUND", message: "Order not found." };
       if (current.state !== "ordered") return ORDER_MOVED_ON;
-      const { payment, refusal } = await lockPaymentForTotalChange(tx, current);
+      const { refusal } = await lockPaymentForTotalChange(tx, current);
       if (refusal) return refusal;
 
       // Pair the cup with its line: the order carries at most one free cup
@@ -921,25 +929,6 @@ export async function declineFreeCoffee(
         .update(orders)
         .set({ totalZar, isStaffDiscount: false, paymentMode: totalZar === 0 ? "free" : null })
         .where(eq(orders.id, orderId));
-      let rowCreated = false;
-      if (totalZar > 0) {
-        if (payment) {
-          // A pending row with no checkout: keep its amount equal to the order's.
-          await tx.update(payments).set({ amountZar: totalZar }).where(eq(payments.id, payment.id));
-        } else {
-          // Was free (no row). The row is written BEFORE anything is sent.
-          // AT-201 part 1: no row existed, so this is attempt 1 (legacy flow).
-          await tx.insert(payments).values({
-            orderId,
-            attempt: 1,
-            clientReference: legacyClientReference(orderId, 1),
-            webposDeviceId: LEGACY_ONLINE_CHECKOUT_DEVICE,
-            amountZar: totalZar,
-            status: "pending",
-          });
-          rowCreated = true;
-        }
-      }
       await writeAudit(
         {
           entityKind: "order", entityId: orderId, action: "decline_free_cup",
@@ -948,123 +937,22 @@ export async function declineFreeCoffee(
             totalZar: current.totalZar, beneficiaryCustomerId: entitlement.customerId,
             day: entitlement.day, orderItemId: line.id, discountZar: line.discountZar,
           },
-          after: { totalZar, paymentRow: payment ? "repriced" : rowCreated ? "created" : "none" },
+          after: { totalZar },
         },
         txDb
       );
-      return { ok: true, data: { totalZar, rowCreated } };
+      return { ok: true, data: { totalZar } };
     }
   );
-
-  if (!result.ok) return result;
-  let yocoClientSecret = "";
-  if (result.data.rowCreated) {
-    // The pending row exists and is committed; now price the checkout from it.
-    const intent = await createPaymentIntent({
-      amountZar: result.data.totalZar,
-      metadata: { orderId },
-    }).catch(() => null);
-    if (intent?.id) {
-      await db
-        .update(payments)
-        .set({ yocoCheckoutId: intent.id })
-        .where(and(eq(payments.orderId, orderId), eq(payments.status, "pending")));
-    }
-    yocoClientSecret = intent?.clientSecret ?? "";
-  }
-  return { ok: true, data: { totalZar: result.data.totalZar, yocoClientSecret } };
 }
 
-/**
- * Confirm a manually-tendered payment (cash / card machine / EFT) — the path
- * the café actually uses for the large majority of orders (the Yoco online
- * checkout + webhook is the exception). The barista taps "paid in person" and
- * this marks the order's payment `successful` (so the AT-122 start-gate opens).
- *
- * Idempotent: confirming an already-successful payment is a no-op success.
- * Reads the order's latest attempt. A declined or unresolved payment cannot
- * be confirmed (CONFLICT).
- */
-export async function confirmManualPayment(
-  orderId: string
-): Promise<ActionResult<{ alreadyConfirmed: boolean }>> {
-  const auth = await authorize(...POS_ROLES);
-  if (!auth.ok) return auth;
-  const session = auth.session;
-
-  if (!orderId) {
-    return { ok: false, code: "VALIDATION_ERROR", message: "orderId is required." };
-  }
-
-  let alreadyConfirmed = false;
-
-  try {
-    await db.transaction(async (tx) => {
-      const txDb = tx as unknown as DB;
-
-      // Lock the payment row so two concurrent confirmations (or a confirmation
-      // racing the Yoco webhook) cannot both apply — matches the webhook's
-      // SELECT FOR UPDATE discipline.
-      // AT-201: one row per attempt now, so read the LATEST attempt.
-      const [pmt] = await tx
-        .select({ id: payments.id, status: payments.status })
-        .from(payments)
-        .where(eq(payments.orderId, orderId))
-        .orderBy(desc(payments.attempt))
-        .for("update")
-        .limit(1);
-
-      if (!pmt) {
-        throw new ManualPaymentError("NOT_FOUND", "No payment record for this order.");
-      }
-      if (pmt.status === "successful") {
-        alreadyConfirmed = true; // idempotent no-op
-        return;
-      }
-      if (pmt.status === "declined") {
-        throw new ManualPaymentError(
-          "CONFLICT",
-          `Payment cannot be confirmed — it is already ${pmt.status}.`
-        );
-      }
-      // REQ-008: an unresolved payment is recovered by a server-side fetch of
-      // Yoco's record, never by a barista's tap.
-      if (pmt.status === "unresolved") {
-        throw new ManualPaymentError(
-          "CONFLICT",
-          "Payment cannot be confirmed — it is unresolved and is settled by looking it up with Yoco."
-        );
-      }
-
-      // pending → confirm it. webhookReceivedAt doubles as the
-      // "confirmed at" timestamp; there is no Yoco webhook on the manual path.
-      await tx
-        .update(payments)
-        .set({ status: "successful", webhookReceivedAt: new Date() })
-        .where(eq(payments.id, pmt.id));
-
-      await writeAudit(
-        {
-          entityKind: "payment",
-          entityId: pmt.id,
-          action: "payment.manual_confirmed",
-          actorId: session.id,
-          actorRole: session.role,
-          before: { status: pmt.status },
-          after: { orderId, status: "successful" },
-        },
-        txDb
-      );
-    });
-  } catch (err) {
-    if (err instanceof ManualPaymentError) {
-      return { ok: false, code: err.code, message: err.message };
-    }
-    throw err;
-  }
-
-  return { ok: true, data: { alreadyConfirmed } };
-}
+// confirmManualPayment ("Mark as paid") is gone (AT-201 part 2b). It let a
+// barista's tap set payments.status='successful' — a human assertion creating
+// revenue, which PRD v7.0 §10.2.1 removes ("Exactly two paths may write
+// status='successful' … and no others"; confirmExternalTender, §11.1). The
+// PRD's manual path is deferred mode (§6.0.4 T3: setDeferredMode, then
+// settleDeferredOrder — a lookup, a fresh send, or the standalone machine's
+// reference), which is not built yet.
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -1073,7 +961,7 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
   const [o] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!o) return { ok: false, code: "NOT_FOUND", message: "Order not found." };
 
-  const [itemRows, paymentRow, customerRow] = await Promise.all([
+  const [itemRows, attemptRows, customerRow] = await Promise.all([
     db
       .select({
         id: orderItems.id,
@@ -1088,10 +976,10 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
       .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
       .where(eq(orderItems.orderId, orderId)),
     db
-      .select({ status: payments.status, yocoCheckoutId: payments.yocoCheckoutId, yocoPaymentId: payments.yocoPaymentId })
+      .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId })
       .from(payments)
       .where(eq(payments.orderId, orderId))
-      .limit(1),
+      .orderBy(payments.attempt),
     o.customerId
       ? db
           .select({ name: customers.name })
@@ -1100,6 +988,7 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
           .limit(1)
       : Promise.resolve([]),
   ]);
+  const payState = summarisePayments(attemptRows);
 
   const order: Order = {
     id: o.id,
@@ -1111,8 +1000,9 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
     completedAt: o.completedAt ? o.completedAt.toISOString() : null,
     totalZar: o.totalZar,
     isStaffDiscount: o.isStaffDiscount,
-    paymentStatus: paymentRow[0]?.status ?? null,
-    cardCheckout: !!(paymentRow[0]?.yocoCheckoutId || paymentRow[0]?.yocoPaymentId),
+    paymentStatus: payState.paymentStatus,
+    cardCheckout: payState.totalFrozen,
+    paymentAwaitingLookup: payState.awaitingLookup,
     items: itemRows.map((it) => ({
       id: it.id,
       menuItemId: it.menuItemId,

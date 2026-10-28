@@ -23,8 +23,8 @@ vi.mock("@/server/orders/deduction", () => ({
   deductForOrder: vi.fn(async () => {}),
   DeductionError: class extends Error {},
 }));
-vi.mock("@/server/yoco/client", () => ({
-  createPaymentIntent: vi.fn(async () => ({ id: "ch_1", clientSecret: "cs_1" })),
+vi.mock("@/server/tender/service", () => ({
+  startTender: vi.fn(async () => ({ ok: true, paymentId: "pmt_1", attempt: 1, clientReference: "cu:1", amountZar: 3000 })),
 }));
 const mockSendOrderReadyPush = vi.fn(async (..._a: unknown[]) => true);
 vi.mock("@/server/push/send", () => ({

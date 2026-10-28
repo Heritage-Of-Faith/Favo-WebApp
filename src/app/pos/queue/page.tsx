@@ -16,7 +16,10 @@ export default async function POSWorkspacePage() {
       {/* AT-134 — opening-time prompt, every login. Sibling of the workspace so
           opening/dismissing it can never touch the cart or attached customer. */}
       <OpeningTimePrompt />
-      <POSWorkspace staffName={session.name} staffId={session.id} role={session.role} initialOrders={ordersRes.data} />
+      {/* REQ-071: only a boolean crosses to the client — never a Yoco key. It
+          mirrors the server's own payment gate in transitionOrder. */}
+      <POSWorkspace staffName={session.name} staffId={session.id} role={session.role} initialOrders={ordersRes.data}
+        yocoConfigured={!!process.env.YOCO_SECRET_KEY} />
     </>
   );
 }

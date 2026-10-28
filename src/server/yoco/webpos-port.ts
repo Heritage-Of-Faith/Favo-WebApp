@@ -22,17 +22,6 @@
 //   - The payment carries only the fields §10.3.3 stores. No PAN, masked or
 //     otherwise, no cardholder name, no raw response body (REQ-031, §9.10.2).
 
-/**
- * AT-201 transition only: the payments.webpos_device_id and client_reference
- * written for rows made by the legacy Yoco Online checkout flow, which has no
- * Web POS device and no orders.client_uuid. Migration 0034's backfill uses the
- * same shapes. Part 2 deletes both with that flow.
- */
-export const LEGACY_ONLINE_CHECKOUT_DEVICE = "legacy:yoco-online-checkout";
-export function legacyClientReference(orderId: string, attempt: number): string {
-  return `legacy:${orderId}:${attempt}`;
-}
-
 /** What Yoco's Web POS payment resource reports. */
 export type WebPosPaymentStatus = "pending" | "successful" | "failed";
 

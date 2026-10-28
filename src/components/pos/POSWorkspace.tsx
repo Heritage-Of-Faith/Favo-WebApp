@@ -13,6 +13,7 @@ import { searchCustomer } from "@/server/actions/customers";
 import { getMenu } from "@/server/actions/menu";
 import { getActiveBeanLot } from "@/server/actions/inventory";
 import { createOrder, transitionOrder, cancelOrder, declineFreeCoffee } from "@/server/actions/orders";
+import type { CreateOrderTender } from "@/server/actions/orders";
 import { getFavo } from "@/server/actions/favo";
 import type { FavoView } from "@/server/favo/schema";
 import FavoPicker from "@/components/favo/FavoPicker";
@@ -36,8 +37,8 @@ import ConnectivityPill from "@/components/pos/ConnectivityPill";
 import SyncDrawer from "@/components/pos/SyncDrawer";
 import OfflineBanner from "@/components/pos/OfflineBanner";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
-import YocoOrderForm from "@/components/pos/YocoOrderForm";
 import ChargeOrderDialog from "@/components/pos/ChargeOrderDialog";
+import TenderPanel from "@/components/pos/TenderPanel";
 import FreeCupRow from "@/components/pos/FreeCupRow";
 import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
@@ -102,10 +103,12 @@ type Props = {
   staffId: string;
   role: import("@/lib/types").StaffRole;
   initialOrders?: { orderId: string; state: import("@/lib/types").OrderState; lastUpdatedAt: string; customerName: string | null }[];
+  /** Whether the server has Yoco configured — computed server-side by the page
+   *  (REQ-071: no Yoco key of any kind reaches the client, only this boolean). */
+  yocoConfigured?: boolean;
 };
 
-export default function POSWorkspace({ staffName, staffId, role, initialOrders }: Props) {
-  const yocoConfigured = !!process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
+export default function POSWorkspace({ staffName, staffId, role, initialOrders, yocoConfigured = false }: Props) {
   const router = useRouter();
 
   // ── Left panel ─────────────────────────────────────────────────────────────
@@ -116,14 +119,14 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [submitting, setSubmitting] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [showPayment, setShowPayment] = useState(false);
-  // Yoco checkout id from createOrder (created server-side, keyed to the pending
-  // payments row). Presence of an id means the card form can be shown.
-  const [yocoCheckoutId, setYocoCheckoutId] = useState("");
+  // The tender attempt createOrder began (or why it could not) — the card
+  // tender sends and polls it server-side (AT-201; no card form in the browser).
+  const [placedTender, setPlacedTender] = useState<CreateOrderTender>(null);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   // The order already in `ordered` state that the payment step is settling.
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
   // Connectivity — drives the offline banner gate and the payment-screen swap
-  // between the Yoco card form (online) and the deferred-payment notice (offline).
+  // between the card tender (online) and the deferred-payment notice (offline).
   const [online, setOnline] = useState(true);
   const deferredGuard = useRef(false);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -203,18 +206,14 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   // offer the one-tap Decline.
   const [placedTotalZar, setPlacedTotalZar] = useState<number | null>(null);
   const [placedFreeCup, setPlacedFreeCup] = useState(false);
-  // Whether a Yoco card checkout was set up for the order just placed.
+  // Whether a tender attempt was begun for the order just placed (P4: frozen).
   const [placedCardCheckout, setPlacedCardCheckout] = useState(false);
   const [declining, setDeclining] = useState<string | null>(null);
   // The server guarantee (owner rule, 12 Oct 2026): declineFreeCoffee and
-  // applyFreeCoffee refuse with TENDER_IN_PROGRESS — under the payments-row
-  // lock — once a card checkout exists for the order. So Decline is shown only
-  // for orders with no checkout (server state: Order.cardCheckout / the
-  // createOrder result). cardStepStarted is extra, device-local hiding once the
-  // card popup or the Take-payment dialog opens; it is not the guarantee.
-  const [cardStepStarted, setCardStepStarted] = useState<Set<string>>(() => new Set());
-  const markCardStep = (orderId: string) =>
-    setCardStepStarted(prev => { const n = new Set(prev); n.add(orderId); return n; });
+  // applyFreeCoffee refuse with TENDER_IN_PROGRESS — under the order lock —
+  // once a tender attempt is open for the order. So Decline is shown only for
+  // orders with none (server state: Order.cardCheckout / the createOrder
+  // result). It is also hidden while the Take-payment dialog is open.
   const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
   const [wasteOpen, setWasteOpen] = useState(false);
   const [wasteCategory, setWasteCategory] = useState<LogWasteInput["category"]>("spilled");
@@ -324,7 +323,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     if (!navigator.onLine) {
       setSubmitting(false);
       setPaymentOrderId(null);
-      setYocoCheckoutId("");
+      setPlacedTender(null);
       setShowPayment(true);
       return;
     }
@@ -339,7 +338,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       setNoNotification(false);
       // Auto-expand the new order in the queue so barista sees it immediately
       setExpandedId(r.data.orderId);
-      setYocoCheckoutId(r.data.yocoClientSecret);
+      setPlacedTender(r.data.tender ?? null);
       setPaymentOrderId(r.data.orderId);
       // L03 free cup: the server decided it — show the net total, and tell the
       // barista once (applied, already claimed, not eligible, pick a customer).
@@ -351,14 +350,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
         if (r.data.freeCup.applied) toast.success(r.data.freeCup.message);
         else toast.message(r.data.freeCup.message);
       }
-      if (r.data.yocoClientSecret || net === 0) {
-        setShowPayment(true);
-      } else {
-        // Yoco unavailable — order is in the queue; barista must collect payment via card reader when online.
-        setOrderError("Card payment unavailable — Yoco could not be reached. The order is in the queue; take payment via the queue when online.");
-        setPaymentOrderId(null);
-        reset();
-      }
+      // The server accepted the order: open the payment screen. A net-R0 order
+      // confirms straight to the queue; otherwise the card tender takes over
+      // (it shows why if createOrder could not begin one).
+      setShowPayment(true);
     } else {
       setOrderError(r.message);
     }
@@ -392,7 +387,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       setNoNotification(false);
       setShowPayment(false);
       setPaymentOrderId(null);
-      setYocoCheckoutId("");
+      setPlacedTender(null);
       toast.success("Paid in person — order confirmed");
     } catch {
       setOrderError("Failed to save order offline. Please retry.");
@@ -459,10 +454,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     if (orderId === paymentOrderId) {
       setPlacedTotalZar(r.data.totalZar);
       setPlacedFreeCup(false);
-      // A free order became chargeable: the server wrote its payments row and
-      // then created the checkout at the new total ("" if Yoco is unavailable).
-      setYocoCheckoutId(r.data.yocoClientSecret ?? "");
-      setPlacedCardCheckout(Boolean(r.data.yocoClientSecret));
+      // A free order became chargeable: no attempt exists yet, so the card
+      // tender begins one at the committed new total (REQ-026).
+      setPlacedTender(null);
+      setPlacedCardCheckout(false);
     }
     setFullOrders(prev => {
       const o = prev[orderId];
@@ -831,19 +826,31 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             // The server's net total once the order exists (L03 free cup taken
             // off); the draft total only while offline with no order yet.
             const amountDueZar = paymentOrderId && placedTotalZar !== null ? placedTotalZar : totalZar;
-            // Free only when nothing is owed — skip the Yoco form and confirm directly.
+            // Free only when nothing is owed — no tender, confirm directly (REQ-153).
             const isFree = amountDueZar === 0;
 
-            // After the order is paid (or free-confirmed): clear everything.
-            const finishPayment = () => {
+            const clearPayment = () => {
               reset();
               setShowPayment(false);
-              setYocoCheckoutId("");
+              setPlacedTender(null);
               setPaymentOrderId(null);
               setPlacedTotalZar(null);
               setPlacedFreeCup(false);
+            };
+            // After the order is paid (or free-confirmed): clear everything.
+            const finishPayment = () => {
+              if (paymentOrderId && !isFree) handleOrderPaid(paymentOrderId);
+              clearPayment();
               setOrderSuccess("Order paid — sent to the queue.");
               setTimeout(() => setOrderSuccess(null), 4000);
+            };
+            // S4: no determinate answer — the order goes to the queue and the
+            // drink is made; the money is settled by asking Yoco, never by a
+            // second send. Drop the cached copy so the queue refetches it.
+            const finishUnresolved = () => {
+              const id = paymentOrderId;
+              if (id) setFullOrders(prev => { const n = { ...prev }; delete n[id]; return n; });
+              clearPayment();
             };
 
             // Offline on the payment screen (R2 — Yoco outage): take payment on
@@ -854,7 +861,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 <DeferredPaymentNotice
                   totalZar={amountDueZar}
                   onConfirmDeferred={handleDeferredConfirm}
-                  onBack={() => { setShowPayment(false); setPaymentOrderId(null); setYocoCheckoutId(""); }}
+                  onBack={() => { setShowPayment(false); setPaymentOrderId(null); setPlacedTender(null); }}
                 />
               );
             }
@@ -868,7 +875,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                   <p className="favo-small text-cool-steel mt-1">
                     Tap or insert the customer's card
                   </p>
-                  {placedFreeCup && paymentOrderId && !placedCardCheckout && !cardStepStarted.has(paymentOrderId) && (
+                  {placedFreeCup && paymentOrderId && !placedCardCheckout && (
                     <FreeCupRow
                       busy={declining === paymentOrderId}
                       onDecline={() => handleDeclineFreeCup(paymentOrderId)}
@@ -885,31 +892,22 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                       <CheckCircle size={16} strokeWidth={2} className="mr-1" />
                       Confirm — send to queue
                     </button>
-                  ) : paymentOrderId && yocoCheckoutId ? (
-                    /* Real card capture via Yoco; backend webhook + poll confirm. */
-                    <YocoOrderForm
-                      orderId={paymentOrderId}
-                      amountZar={amountDueZar}
-                      onPaid={finishPayment}
-                      onCardStepStart={() => markCardStep(paymentOrderId)}
-                    />
                   ) : paymentOrderId ? (
-                    /* The order exists but has no online card checkout (Yoco
-                       unreachable or not configured, or the checkout could not
-                       be re-priced after a decline). It is in the queue. */
+                    /* The card tender: the amount is pushed to the machine and the
+                       outcome fetched server-side (T2 steps 3–5). The order is in
+                       the queue either way; Done leaves it there unpaid. */
                     <div className="flex flex-col gap-2">
-                      <p className="favo-small text-center text-cool-steel py-2">
-                        No online card checkout for this order. It&apos;s in the queue — take payment there with Take payment.
-                      </p>
+                      <TenderPanel
+                        key={paymentOrderId}
+                        orderId={paymentOrderId}
+                        amountZar={amountDueZar}
+                        attempt={placedTender?.ok ? placedTender.attempt : undefined}
+                        initialFailure={placedTender && !placedTender.ok ? placedTender : undefined}
+                        onPaid={finishPayment}
+                        onUnresolved={finishUnresolved}
+                      />
                       <button type="button"
-                        onClick={() => {
-                          reset();
-                          setShowPayment(false);
-                          setYocoCheckoutId("");
-                          setPaymentOrderId(null);
-                          setPlacedTotalZar(null);
-                          setPlacedFreeCup(false);
-                        }}
+                        onClick={clearPayment}
                         className="favo-small rounded-[4px] border border-cool-steel/30 px-3 py-2 min-h-[44px] text-coffee-bean hover:bg-coffee-bean/8">
                         Done — back to the till
                       </button>
@@ -974,6 +972,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               // L03: a free cup discounts one unit only — whatever is left is still owed.
               && full.totalZar > 0
               && full.paymentStatus !== "successful"
+              // REQ-008 / S4: a SENT attempt that ended unresolved does not hold
+              // the drink back. A closed-out never-sent one does: still owed.
+              && full.paymentAwaitingLookup !== true
               && !paidLocally.has(o.orderId);
 
             return (
@@ -1078,7 +1079,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
 
                     {/* L03 free cup — applied automatically at ring-up; one tap to decline */}
                     {full && o.state === "ordered" && full.isStaffDiscount && full.paymentStatus !== "successful" && !full.cardCheckout
-                      && !cardStepStarted.has(o.orderId) && chargeOrder?.id !== o.orderId && (
+                      && chargeOrder?.id !== o.orderId && (
                       <FreeCupRow busy={declining === o.orderId} onDecline={() => handleDeclineFreeCup(o.orderId)} />
                     )}
 
@@ -1214,7 +1215,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           order={chargeOrder}
           onPaid={handleOrderPaid}
           onClose={() => setChargeOrder(null)}
-          onCardStepStart={markCardStep}
         />
       )}
     </main>
