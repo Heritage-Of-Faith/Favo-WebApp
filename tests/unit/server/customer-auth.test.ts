@@ -84,35 +84,35 @@ describe("registerCustomer — validation", () => {
 
   it("rejects name shorter than 2 characters", async () => {
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "L", email: "louis@favo.co.za", password: "password1" });
+    const result = await registerCustomer({ name: "L", email: "louis@favo.co.za", password: "password1", status: "church_member" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("VALIDATION");
   });
 
   it("rejects name that is only whitespace", async () => {
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "  ", email: "louis@favo.co.za", password: "password1" });
+    const result = await registerCustomer({ name: "  ", email: "louis@favo.co.za", password: "password1", status: "church_member" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("VALIDATION");
   });
 
   it("rejects invalid email (no @)", async () => {
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "Louis", email: "notanemail", password: "password1" });
+    const result = await registerCustomer({ name: "Louis", email: "notanemail", password: "password1", status: "church_member" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("VALIDATION");
   });
 
   it("rejects invalid email (missing domain)", async () => {
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "Louis", email: "louis@", password: "password1" });
+    const result = await registerCustomer({ name: "Louis", email: "louis@", password: "password1", status: "church_member" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("VALIDATION");
   });
 
   it("rejects password shorter than 8 characters", async () => {
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "short" });
+    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "short", status: "church_member" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("VALIDATION");
   });
@@ -120,7 +120,7 @@ describe("registerCustomer — validation", () => {
   it("accepts 8-character password as minimum", async () => {
     mockSignUp.mockResolvedValueOnce(signedInResponse);
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "12345678" });
+    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "12345678", status: "church_member" });
     expect(result.ok).toBe(true);
   });
 });
@@ -136,7 +136,7 @@ describe("registerCustomer — EMAIL_TAKEN", () => {
       error: { message: "User already registered" },
     });
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1" });
+    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1", status: "church_member" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("EMAIL_TAKEN");
   });
@@ -150,7 +150,7 @@ describe("registerCustomer — email normalisation", () => {
   it("lowercases the email before registration", async () => {
     mockSignUp.mockResolvedValueOnce(signedInResponse);
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "Louis", email: "Louis@FAVO.co.za", password: "password1" });
+    const result = await registerCustomer({ name: "Louis", email: "Louis@FAVO.co.za", password: "password1", status: "church_member" });
     expect(result.ok).toBe(true);
     expect(mockSignUp).toHaveBeenCalledWith(
       expect.objectContaining({ email: "louis@favo.co.za" })
@@ -166,7 +166,7 @@ describe("registerCustomer — phone", () => {
   it("rejects a malformed phone number when one is supplied", async () => {
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     const result = await registerCustomer({
-      name: "Louis", email: "louis@favo.co.za", password: "password1", phone: "123",
+      name: "Louis", email: "louis@favo.co.za", password: "password1", phone: "123", status: "church_member",
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("VALIDATION");
@@ -177,7 +177,7 @@ describe("registerCustomer — phone", () => {
     const { db } = await import("@db/index");
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     const result = await registerCustomer({
-      name: "Louis", email: "louis@favo.co.za", password: "password1", phone: "082 123 4567",
+      name: "Louis", email: "louis@favo.co.za", password: "password1", phone: "082 123 4567", status: "church_member",
     });
     expect(result.ok).toBe(true);
     const insertResult = vi.mocked(db.insert).mock.results.at(-1)?.value as {
@@ -200,7 +200,7 @@ describe("registerCustomer — PHONE_TAKEN", () => {
     vi.mocked(db.select).mockImplementationOnce(() => chain([{ id: "cust_existing" }]) as never);
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     const result = await registerCustomer({
-      name: "Gian", email: "gian@work.co.za", password: "password1", phone: "082 999 0000",
+      name: "Gian", email: "gian@work.co.za", password: "password1", phone: "082 999 0000", status: "church_member",
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("PHONE_TAKEN");
@@ -211,7 +211,7 @@ describe("registerCustomer — PHONE_TAKEN", () => {
     vi.mocked(db.select).mockImplementationOnce(() => chain([{ id: "cust_existing" }]) as never);
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     await registerCustomer({
-      name: "Gian", email: "gian@work.co.za", password: "password1", phone: "082 999 0000",
+      name: "Gian", email: "gian@work.co.za", password: "password1", phone: "082 999 0000", status: "church_member",
     });
     expect(mockSignUp).not.toHaveBeenCalled();
   });
@@ -229,7 +229,7 @@ describe("registerCustomer — PHONE_TAKEN", () => {
     );
     const { registerCustomer } = await import("@/server/actions/customer-auth");
     const result = await registerCustomer({
-      name: "Gian", email: "gian@favo.co.za", password: "password1", phone: "082 999 0000",
+      name: "Gian", email: "gian@favo.co.za", password: "password1", phone: "082 999 0000", status: "church_member",
     });
     expect(result.ok).toBe(true);
     expect(vi.mocked(db.update)).toHaveBeenCalled();
@@ -250,7 +250,7 @@ describe("registerCustomer — legacy customer re-link", () => {
       () => chain([{ id: "cust_legacy", name: "Gian", authId: null }]) as never
     );
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "Gian", email: "gian@favo.co.za", password: "password1" });
+    const result = await registerCustomer({ name: "Gian", email: "gian@favo.co.za", password: "password1", status: "church_member" });
     expect(result.ok).toBe(true);
     expect(vi.mocked(db.update)).toHaveBeenCalled();
     expect(vi.mocked(db.insert)).not.toHaveBeenCalled();
@@ -263,7 +263,7 @@ describe("registerCustomer — legacy customer re-link", () => {
       () => chain([{ id: "cust_legacy", name: "Gian", authId: null }]) as never
     );
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "Gian", email: "gian@favo.co.za", password: "password1" });
+    const result = await registerCustomer({ name: "Gian", email: "gian@favo.co.za", password: "password1", status: "church_member" });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data.customerId).toBe("cust_migrated");
   });
@@ -277,7 +277,7 @@ describe("registerCustomer — email verification", () => {
   it("returns verificationSent: false when Supabase issues a session immediately", async () => {
     mockSignUp.mockResolvedValueOnce(signedInResponse);
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1" });
+    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1", status: "church_member" });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data.verificationSent).toBe(false);
   });
@@ -285,7 +285,7 @@ describe("registerCustomer — email verification", () => {
   it("returns verificationSent: true when email confirmation is required (no session)", async () => {
     mockSignUp.mockResolvedValueOnce(pendingResponse);
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1" });
+    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1", status: "church_member" });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data.verificationSent).toBe(true);
   });
@@ -340,7 +340,7 @@ describe("registerCustomer — RATE_LIMITED (SEC-4)", () => {
   it("returns RATE_LIMITED when the IP limit is exceeded", async () => {
     mockCheckRateLimit.mockReturnValueOnce({ allowed: false, retryAfterSecs: 30 });
     const { registerCustomer } = await import("@/server/actions/customer-auth");
-    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1" });
+    const result = await registerCustomer({ name: "Louis", email: "louis@favo.co.za", password: "password1", status: "church_member" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("RATE_LIMITED");
   });
@@ -593,5 +593,153 @@ describe("resetPassword — success", () => {
     const result = await resetPassword("newpassword1");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("AUTH_ERROR");
+  });
+});
+
+// ─── registerCustomer — status + surname (AT-211, PRD §10.3 "Set at self-registration") ──
+
+describe("registerCustomer — status + surname (AT-211)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("stores status='office_staff' and the surname on the new customer row", async () => {
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
+    const { db } = await import("@db/index");
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({
+      name: "Thandeka", surname: "Mokoena", status: "office_staff",
+      email: "thandeka@hofmi.net", password: "password1",
+    });
+    expect(result.ok).toBe(true);
+    const insertResult = vi.mocked(db.insert).mock.results.at(-1)?.value as {
+      values: ReturnType<typeof vi.fn>;
+    };
+    expect(insertResult.values).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Thandeka", surname: "Mokoena", status: "office_staff" })
+    );
+  });
+
+  it("stores status='church_member' when the person picks church member", async () => {
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
+    const { db } = await import("@db/index");
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    await registerCustomer({
+      name: "Naledi", surname: "Dlamini", status: "church_member",
+      email: "naledi@example.com", password: "password1",
+    });
+    const insertResult = vi.mocked(db.insert).mock.results.at(-1)?.value as {
+      values: ReturnType<typeof vi.fn>;
+    };
+    expect(insertResult.values).toHaveBeenCalledWith(
+      expect.objectContaining({ surname: "Dlamini", status: "church_member" })
+    );
+  });
+
+  it("refuses a status outside office_staff | church_member (e.g. the bare word 'staff')", async () => {
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({
+      name: "Louis", surname: "V", status: "staff" as never,
+      email: "louis@favo.co.za", password: "password1",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("VALIDATION");
+      expect(result.message).toBe("Please choose office staff or church member.");
+    }
+    expect(mockSignUp).not.toHaveBeenCalled();
+  });
+
+  it("refuses a MISSING status — it is never silently defaulted to church_member", async () => {
+    const { db } = await import("@db/index");
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({
+      name: "Louis", surname: "V", email: "louis@favo.co.za", password: "password1",
+    } as never);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("VALIDATION");
+      expect(result.message).toBe("Please choose office staff or church member.");
+    }
+    expect(mockSignUp).not.toHaveBeenCalled();
+    expect(vi.mocked(db.insert)).not.toHaveBeenCalled();
+  });
+
+  it("writes status + surname on the legacy re-link path too", async () => {
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockImplementationOnce(
+      () => chain([{ id: "cust_legacy", name: "Gian", authId: null }]) as never
+    );
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    await registerCustomer({
+      name: "Gian", surname: "Botha", status: "office_staff",
+      email: "gian@favo.co.za", password: "password1",
+    });
+    const updateResult = vi.mocked(db.update).mock.results.at(-1)?.value as {
+      set: ReturnType<typeof vi.fn>;
+    };
+    expect(updateResult.set).toHaveBeenCalledWith(
+      expect.objectContaining({ surname: "Botha", status: "office_staff" })
+    );
+  });
+
+  it("audits the chosen status on customer.register", async () => {
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
+    const { writeAudit } = await import("@/server/audit");
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    await registerCustomer({
+      name: "Thandeka", surname: "Mokoena", status: "office_staff",
+      email: "thandeka@hofmi.net", password: "password1",
+    });
+    expect(vi.mocked(writeAudit)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "customer.register",
+        after: expect.objectContaining({ status: "office_staff", surname: "Mokoena" }),
+      })
+    );
+  });
+
+  it("refuses a surname with a zero-width character, before any Supabase call", async () => {
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({
+      name: "Thandeka", surname: "Mo​koena", status: "office_staff",
+      email: "thandeka@hofmi.net", password: "password1",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("VALIDATION");
+      expect(result.message).toBe("Surname contains characters that aren't allowed.");
+    }
+    expect(mockSignUp).not.toHaveBeenCalled();
+  });
+
+  it("a blank surname at sign-up is 'not given' — it never clears a re-linked row", async () => {
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockImplementationOnce(
+      () => chain([{ id: "cust_legacy", name: "Gian", authId: null }]) as never
+    );
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    await registerCustomer({
+      name: "Gian", surname: "  ", status: "office_staff",
+      email: "gian@favo.co.za", password: "password1",
+    });
+    const updateResult = vi.mocked(db.update).mock.results.at(-1)?.value as {
+      set: ReturnType<typeof vi.fn>;
+    };
+    expect(updateResult.set.mock.calls[0]?.[0]?.surname).toBeUndefined();
+  });
+
+  it("the register response carries no email address and no phone number", async () => {
+    mockSignUp.mockResolvedValueOnce(signedInResponse);
+    const { registerCustomer } = await import("@/server/actions/customer-auth");
+    const result = await registerCustomer({
+      name: "Thandeka", surname: "Mokoena", status: "office_staff",
+      email: "thandeka@hofmi.net", password: "password1", phone: "082 123 4567",
+    });
+    expect(result.ok).toBe(true);
+    const payload = JSON.stringify(result);
+    expect(payload).not.toContain("thandeka@hofmi.net");
+    expect(payload).not.toContain("082 123 4567");
+    expect(payload).not.toContain("0821234567");
   });
 });

@@ -12,6 +12,7 @@ import NotificationToggle from "@/components/customer/NotificationToggle";
 export type Props = {
   customerId: string;
   initialName: string;
+  initialSurname: string | null;
   initialEmail: string | null;
   initialPhone: string | null;
   hasPushSubscription: boolean;
@@ -133,12 +134,14 @@ const S = {
 export default function SettingsForm({
   customerId,
   initialName,
+  initialSurname,
   initialEmail,
   initialPhone,
   hasPushSubscription,
 }: Props) {
   const router = useRouter();
   const [name, setName] = useState(initialName);
+  const [surname, setSurname] = useState(initialSurname ?? "");
   const [phone, setPhone] = useState(initialPhone ?? "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -151,9 +154,11 @@ export default function SettingsForm({
     setSaved(false);
     setSaveError(null);
     try {
-      const patch: { name?: string; phone?: string } = {};
+      const patch: { name?: string; phone?: string; surname?: string } = {};
       if (name.trim()) patch.name = name.trim();
       if (phone.trim()) patch.phone = phone.trim();
+      // Always sent: a blank surname clears it (the server turns "" into null).
+      patch.surname = surname.trim();
       const res = await updateCustomerProfile(patch);
       if (!res.ok) { setSaveError(res.message); return; }
       setSaved(true);
@@ -198,6 +203,20 @@ export default function SettingsForm({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoComplete="name"
+                style={S.input}
+                onFocus={(e) => { e.target.style.borderColor = "rgba(245,86,12,0.6)"; e.target.style.outline = "2px solid rgba(245,86,12,0.3)"; e.target.style.outlineOffset = "0px"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(28,5,1,0.15)"; e.target.style.outline = "none"; }}
+              />
+            </div>
+
+            <div style={S.fieldGroup}>
+              <label htmlFor="settings-surname" style={S.label}>Surname</label>
+              <input
+                id="settings-surname"
+                type="text"
+                value={surname}
+                onChange={(e) => setSurname(e.target.value)}
+                autoComplete="family-name"
                 style={S.input}
                 onFocus={(e) => { e.target.style.borderColor = "rgba(245,86,12,0.6)"; e.target.style.outline = "2px solid rgba(245,86,12,0.3)"; e.target.style.outlineOffset = "0px"; }}
                 onBlur={(e) => { e.target.style.borderColor = "rgba(28,5,1,0.15)"; e.target.style.outline = "none"; }}

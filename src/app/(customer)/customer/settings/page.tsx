@@ -90,6 +90,7 @@ export default async function SettingsPage() {
         <SettingsForm
           customerId={profile.id}
           initialName={profile.name}
+          initialSurname={profile.surname}
           initialEmail={profile.email}
           initialPhone={profile.phone}
           hasPushSubscription={hasPushSubscription}
