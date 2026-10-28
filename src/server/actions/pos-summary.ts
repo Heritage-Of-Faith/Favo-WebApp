@@ -39,10 +39,13 @@ export async function getPosToday(): Promise<ActionResult<PosTodaySummary>> {
   );
   const orderCount = parseInt(orderRow?.n ?? "0", 10) || 0;
 
-  // Waste events logged today (SAST).
+  // Waste events logged today (SAST). AT-209: an abandoned order (T6 step 2b)
+  // is a per-barista write-down (§7.3.1), not stock waste — it holds no lot
+  // and moves no stock — so it is not counted here.
   const [wasteRow] = await db.execute<{ n: string | null }>(
     sql`SELECT COUNT(*)::text AS n FROM waste_log
-        WHERE (at AT TIME ZONE 'Africa/Johannesburg')::date = ${date}::date`
+        WHERE (at AT TIME ZONE 'Africa/Johannesburg')::date = ${date}::date
+          AND category <> 'abandoned'`
   );
   const wasteCount = parseInt(wasteRow?.n ?? "0", 10) || 0;
 

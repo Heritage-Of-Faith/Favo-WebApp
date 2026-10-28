@@ -6,6 +6,7 @@
 import { and, gte, lt, sql, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, weeklyReports, expenses } from "@db/schema";
+import { revenueOrderScope } from "@/server/reports/revenue-scope";
 
 // Africa/Johannesburg = UTC+2 (no DST)
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
@@ -60,7 +61,7 @@ export async function generateWeeklyPnL(
     .from(orders)
     .where(
       and(
-        sql`${orders.state} IN ('in_progress', 'ready', 'collected')`,
+        revenueOrderScope, // AT-209: a cancelled order keeps its successful payment (L02)
         gte(orders.placedAt, start),
         lt(orders.placedAt, end)
       )

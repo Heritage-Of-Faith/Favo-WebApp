@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, gte, inArray, notInArray } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   orders,
@@ -12,9 +12,11 @@ import {
   staffEntitlementLog,
   payments,
   openingSessions,
+  stockMovements,
 } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { authorize } from "@/server/auth/guard";
+import { verifyAdminPin } from "@/server/auth/admin-pin";
 import { revenueDay } from "@/lib/format";
 import { canTransition } from "@/server/orders/state-machine";
 import { deductForOrder, DeductionError } from "@/server/orders/deduction";
@@ -580,10 +582,31 @@ export async function transitionOrder(
   return await loadOrder(orderId);
 }
 
-/** Cancel an order — valid only while still `ordered` (rule L01). */
+/** States from which a cancel reverses stock and needs an admin (T6, REQ-040). */
+const STARTED_STATES: readonly OrderState[] = ["in_progress", "ready", "collected"];
+
+/** PRD §6.0.7 T6: the admin PIN prompt "stating what it is for". */
+const CANCEL_NEEDS_ADMIN = {
+  ok: false as const,
+  code: "FORBIDDEN",
+  message: "Cancelling a started order reverses stock. Needs an admin.",
+};
+
+/**
+ * Cancel an order (PRD §11.3 cancelOrder, T6, DEC-10, REQ-040).
+ *  - `ordered`: a barista may cancel outright; nothing was deducted.
+ *  - `in_progress` onward: needs an admin — the caller is an Admin, or a
+ *    barista passes `adminPin` (a single-action override: no admin session is
+ *    created, REQ-063, and audit_log.on_behalf_of_staff_id names the admin).
+ *    Compensating stock_movements rows are written for every deduction the
+ *    order made; the originals are never edited. L02: no money moves.
+ *  - Never while a tender attempt is open (REQ-028, TENDER_IN_PROGRESS).
+ * Every refusal is returned with its reject audit committed.
+ */
 export async function cancelOrder(
   orderId: string,
-  reason: string
+  reason: string,
+  adminPin?: string
 ): Promise<ActionResult> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
@@ -591,11 +614,33 @@ export async function cancelOrder(
 
   // Fast existence check before opening a transaction.
   const [exists] = await db
-    .select({ id: orders.id })
+    .select({ id: orders.id, state: orders.state })
     .from(orders)
     .where(eq(orders.id, orderId));
   if (!exists) {
     return { ok: false, code: "NOT_FOUND", message: "Order not found." };
+  }
+
+  const rejectCancel = async (client: DB | undefined, code: string, message: string, detail: Record<string, unknown> = {}) => {
+    await writeAudit(
+      {
+        entityKind: "order", entityId: orderId, action: "reject",
+        actorId: session.id, actorRole: session.role,
+        after: { attempted: "cancel", code, ...detail },
+        reason: code,
+      },
+      client
+    );
+    return { ok: false as const, code, message };
+  };
+
+  // The admin PIN is checked before the row lock (bcrypt is slow), and only
+  // when a barista cancels a started order.
+  let overridingAdminId: string | null = null;
+  if (adminPin !== undefined && session.role === "barista" && STARTED_STATES.includes(exists.state)) {
+    const pin = await verifyAdminPin(adminPin, session);
+    if (!pin.ok) return rejectCancel(undefined, pin.code, pin.message, { state: exists.state, adminPin: "refused" });
+    overridingAdminId = pin.adminStaffId;
   }
 
   try {
@@ -612,11 +657,9 @@ export async function cancelOrder(
         .for("update");
 
       if (!current) throw new CancelError("NOT_FOUND", "Order not found.");
-      if (current.state !== "ordered") {
-        throw new CancelError(
-          "CONFLICT",
-          `Only unpaid (ordered) orders can be cancelled; this one is ${current.state}.`
-        );
+      const started = STARTED_STATES.includes(current.state);
+      if (current.state !== "ordered" && !started) {
+        return rejectCancel(txDb, "CONFLICT", `This order is already ${current.state}.`, { state: current.state });
       }
 
       // REQ-028 / P4: no cancel while a tender attempt is open (pending, or
@@ -640,6 +683,61 @@ export async function cancelOrder(
         return TENDER_IN_PROGRESS;
       }
 
+      // T6 / §10.7: from in_progress on, a barista needs an admin PIN.
+      const override = started && session.role !== "admin";
+      if (override && !overridingAdminId) {
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: { attempted: "cancel", code: CANCEL_NEEDS_ADMIN.code, state: current.state },
+            reason: "admin_pin_required",
+          },
+          txDb
+        );
+        return CANCEL_NEEDS_ADMIN;
+      }
+
+      // REQ-040: compensating stock_movements, originals never edited. One
+      // inverse row per deduction the order made: same lot, same drink, the
+      // delta negated, so every SUM(-delta) over kind='deduction' (COGS, cups
+      // made, cost per cup) nets this order to zero. Written only on the
+      // started path (S8a: nothing is deducted before in_progress).
+      let compensating: { inventoryLotId: string; delta: number; at: Date }[] = [];
+      if (started) {
+        const deducted = await tx
+          .select({
+            inventoryLotId: stockMovements.inventoryLotId,
+            delta: stockMovements.delta,
+            menuItemId: stockMovements.menuItemId,
+            at: stockMovements.at,
+          })
+          .from(stockMovements)
+          .where(and(
+            eq(stockMovements.relatedOrderId, orderId),
+            eq(stockMovements.kind, "deduction"),
+            lt(stockMovements.delta, 0),
+          ));
+        compensating = deducted.map((m) => ({ inventoryLotId: m.inventoryLotId, delta: -m.delta, at: m.at }));
+        if (deducted.length > 0) {
+          await tx.insert(stockMovements).values(
+            deducted.map((m) => ({
+              inventoryLotId: m.inventoryLotId,
+              delta: -m.delta,
+              kind: "deduction" as const,
+              relatedOrderId: orderId,
+              menuItemId: m.menuItemId,
+              byStaffId: session.id,
+              // Stamped with the ORIGINAL deduction's time, so the reversal
+              // lands in the same COGS day/week/month as the cost it cancels —
+              // a later-day cancel can never put negative COGS into another
+              // period. A new row; the original is untouched.
+              at: m.at,
+            }))
+          );
+        }
+      }
+
       await tx.update(orders).set({ state: "cancelled" }).where(eq(orders.id, orderId));
       await writeAudit(
         {
@@ -648,8 +746,9 @@ export async function cancelOrder(
           action: "cancel",
           actorId: session.id,
           actorRole: session.role,
+          ...(override && overridingAdminId ? { onBehalfOfStaffId: overridingAdminId } : {}),
           before: { state: current.state },
-          after: { state: "cancelled" },
+          after: started ? { state: "cancelled", compensatingMovements: compensating } : { state: "cancelled" },
           reason,
         },
         txDb
@@ -664,6 +763,8 @@ export async function cancelOrder(
     throw err;
   }
 
+  // T6: "The order leaves the queue immediately", on either path.
+  notifyOrderChange({ type: "state_change", orderId, state: "cancelled", at: new Date().toISOString() }).catch(() => {});
   return { ok: true, data: undefined };
 }
 
