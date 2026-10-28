@@ -29,6 +29,8 @@ const maybe = hasRealDb() ? describe : describe.skip;
 
 const UP = "0033_at181_day5_substrate.sql";
 const DOWN = "down/0033_at181_day5_substrate.down.sql";
+// AT-201: 0035 (payments) sits on top of 0034 (notification_target, PR #284).
+const DOWN_0035 = "down/0035_at201_tender_payments.down.sql";
 
 const TOUCHED = [
   "customers",
@@ -136,10 +138,15 @@ class Rollback extends Error {}
 maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () => {
   let sql: Sql;
 
-  /** Run `fn` in a transaction that is always rolled back. */
+  /**
+   * Run `fn` in a transaction that is always rolled back. AT-201: the CI DB is
+   * at 0035, so 0035's down runs first. MERGE NOTE: PR #284 adds 0034's down
+   * here; it must run AFTER 0035's (0035 down, then 0034 down → 0033).
+   */
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        await tx.unsafe(migrationSql(DOWN_0035));
         await fn(tx);
         throw new Rollback();
       });

@@ -60,12 +60,14 @@ export const stockMovementKind = pgEnum("stock_movement_kind", [
 
 export const stockTakeKind = pgEnum("stock_take_kind", ["full", "spot"]);
 
+// AT-201 / PRD §10.3.3: exactly these four. `failed` became `declined`;
+// `refunded` went with L02; `deferred` is an order payment_mode, not a payment
+// status; no void value is ever added — there is no void (§6.8.4).
 export const paymentStatus = pgEnum("payment_status", [
   "pending",
   "successful",
-  "failed",
-  "refunded",
-  "deferred",
+  "declined",
+  "unresolved",
 ]);
 
 export const refundStatus = pgEnum("refund_status", [

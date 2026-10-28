@@ -115,6 +115,13 @@ function given(opts: {
 
 const insertsInto = (t: unknown) => inserts.filter((i) => i.table === t).map((i) => i.values);
 const updatesOf = (t: unknown) => updates.filter((u) => u.table === t).map((u) => u.set);
+// AT-201 part 1: the legacy checkout flow writes attempt 1 with a legacy
+// client_reference and device until part 2 rewires createOrder to beginTender.
+const LEGACY_ROW = (orderId: string) => ({
+  attempt: 1,
+  clientReference: `legacy:${orderId}:1`,
+  webposDeviceId: "legacy:yoco-online-checkout",
+});
 const auditActions = () => mockWriteAudit.mock.calls.map((c) => (c[0] as { action: string }).action);
 const one = (id: string, quantity = 1) => ({ menuItemId: id, quantity, modifications: [] as string[] });
 
@@ -176,7 +183,7 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
     expect(updatesOf(orders)).toContainEqual({ totalZar: 3000, isStaffDiscount: false, paymentMode: null });
     // The three amounts agree: the order's final total, the payments row, the checkout.
     expect(insertsInto(payments)).toEqual([
-      { orderId: res.data.orderId, amountZar: 3000, status: "pending", yocoCheckoutId: "ch_1" },
+      { orderId: res.data.orderId, amountZar: 3000, status: "pending", yocoCheckoutId: "ch_1", ...LEGACY_ROW(res.data.orderId) },
     ]);
     expect(mockCreatePaymentIntent).toHaveBeenCalledTimes(1);
     expect(mockCreatePaymentIntent).toHaveBeenCalledWith({ amountZar: 3000, metadata: { orderId: res.data.orderId } });
@@ -297,7 +304,7 @@ describe("REQ-153: a net-R0 order writes no payments row and sends nothing (roun
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(insertsInto(payments)).toEqual([
-      { orderId: res.data.orderId, amountZar: 3000, status: "pending", yocoCheckoutId: "ch_1" },
+      { orderId: res.data.orderId, amountZar: 3000, status: "pending", yocoCheckoutId: "ch_1", ...LEGACY_ROW(res.data.orderId) },
     ]);
     expect(mockCreatePaymentIntent).toHaveBeenCalledTimes(1);
     expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: null });
@@ -400,7 +407,7 @@ describe("8. declineFreeCoffee — one tap to decline (REQ-024)", () => {
     expect(deletes.map((d) => d.table)).toEqual([staffEntitlementLog]);
     expect(updatesOf(orderItems)).toContainEqual({ discountZar: 0 });
     expect(updatesOf(orders)).toContainEqual({ totalZar: 3000, isStaffDiscount: false, paymentMode: null });
-    expect(insertsInto(payments)).toEqual([{ orderId: "ord_1", amountZar: 3000, status: "pending" }]);
+    expect(insertsInto(payments)).toEqual([{ orderId: "ord_1", amountZar: 3000, status: "pending", ...LEGACY_ROW("ord_1") }]);
     expect(mockCreatePaymentIntent).toHaveBeenCalledWith({ amountZar: 3000, metadata: { orderId: "ord_1" } });
     expect(updatesOf(payments)).toEqual([{ yocoCheckoutId: "ch_1" }]); // checkout id recorded on that row
     expect(auditActions()).toEqual(["decline_free_cup"]);

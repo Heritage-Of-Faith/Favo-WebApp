@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, gte, inArray, notInArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   orders,
@@ -33,6 +33,7 @@ import {
   type FreeCupRefusalCode,
 } from "@/server/orders/free-coffee";
 import { createPaymentIntent } from "@/server/yoco/client";
+import { LEGACY_ONLINE_CHECKOUT_DEVICE, legacyClientReference } from "@/server/yoco/webpos-port";
 import { notifyOrderChange } from "@/server/queue/notify";
 import { sendOrderReadyPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
@@ -320,6 +321,11 @@ export async function createOrder(
     // chargeable order has no row they refuse with STALE_STATE.
     await db.insert(payments).values({
       orderId,
+      // AT-201 part 1: the legacy one-row-per-order flow is attempt 1. Part 2
+      // replaces this insert with beginTender.
+      attempt: 1,
+      clientReference: legacyClientReference(orderId, 1),
+      webposDeviceId: LEGACY_ONLINE_CHECKOUT_DEVICE,
       amountZar: outcome.totalZar,
       status: "pending",
       yocoCheckoutId: yocoResult?.id ?? null,
@@ -908,7 +914,15 @@ export async function declineFreeCoffee(
           await tx.update(payments).set({ amountZar: totalZar }).where(eq(payments.id, payment.id));
         } else {
           // Was free (no row). The row is written BEFORE anything is sent.
-          await tx.insert(payments).values({ orderId, amountZar: totalZar, status: "pending" });
+          // AT-201 part 1: no row existed, so this is attempt 1 (legacy flow).
+          await tx.insert(payments).values({
+            orderId,
+            attempt: 1,
+            clientReference: legacyClientReference(orderId, 1),
+            webposDeviceId: LEGACY_ONLINE_CHECKOUT_DEVICE,
+            amountZar: totalZar,
+            status: "pending",
+          });
           rowCreated = true;
         }
       }
@@ -954,7 +968,8 @@ export async function declineFreeCoffee(
  * this marks the order's payment `successful` (so the AT-122 start-gate opens).
  *
  * Idempotent: confirming an already-successful payment is a no-op success.
- * A failed/refunded payment cannot be confirmed (CONFLICT).
+ * Reads the order's latest attempt. A declined or unresolved payment cannot
+ * be confirmed (CONFLICT).
  */
 export async function confirmManualPayment(
   orderId: string
@@ -976,10 +991,12 @@ export async function confirmManualPayment(
       // Lock the payment row so two concurrent confirmations (or a confirmation
       // racing the Yoco webhook) cannot both apply — matches the webhook's
       // SELECT FOR UPDATE discipline.
+      // AT-201: one row per attempt now, so read the LATEST attempt.
       const [pmt] = await tx
         .select({ id: payments.id, status: payments.status })
         .from(payments)
         .where(eq(payments.orderId, orderId))
+        .orderBy(desc(payments.attempt))
         .for("update")
         .limit(1);
 
@@ -990,14 +1007,22 @@ export async function confirmManualPayment(
         alreadyConfirmed = true; // idempotent no-op
         return;
       }
-      if (pmt.status === "failed" || pmt.status === "refunded") {
+      if (pmt.status === "declined") {
         throw new ManualPaymentError(
           "CONFLICT",
           `Payment cannot be confirmed — it is already ${pmt.status}.`
         );
       }
+      // REQ-008: an unresolved payment is recovered by a server-side fetch of
+      // Yoco's record, never by a barista's tap.
+      if (pmt.status === "unresolved") {
+        throw new ManualPaymentError(
+          "CONFLICT",
+          "Payment cannot be confirmed — it is unresolved and is settled by looking it up with Yoco."
+        );
+      }
 
-      // pending / deferred → confirm it. webhookReceivedAt doubles as the
+      // pending → confirm it. webhookReceivedAt doubles as the
       // "confirmed at" timestamp; there is no Yoco webhook on the manual path.
       await tx
         .update(payments)

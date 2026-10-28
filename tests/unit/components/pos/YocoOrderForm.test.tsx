@@ -62,9 +62,10 @@ describe("YocoOrderForm", () => {
     );
   });
 
-  it("does NOT call onPaid when the backend reports a failed payment", async () => {
+  it("does NOT call onPaid when the backend reports a declined payment", async () => {
     const onPaid = vi.fn();
-    global.fetch = vi.fn().mockResolvedValue(orderResponse("failed")) as unknown as typeof fetch;
+    // AT-201: payment_status `failed` became `declined` (PRD §10.3.3).
+    global.fetch = vi.fn().mockResolvedValue(orderResponse("declined")) as unknown as typeof fetch;
     render(<YocoOrderForm orderId="ord_1" amountZar={6000} onPaid={onPaid} />);
     fireEvent.click(await screen.findByRole("button", { name: /charge card/i }));
     await act(async () => { lastPopup!.callback({ id: "ch_1" }); });

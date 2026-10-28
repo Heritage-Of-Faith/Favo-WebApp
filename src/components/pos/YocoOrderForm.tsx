@@ -11,7 +11,7 @@
  *      charge back to the order (the webhook backfills `yoco_payment_id` via the
  *      orderId fallback and flips `payments.status` → 'successful').
  *   3. The webhook is the SOURCE OF TRUTH. After the card is tapped we poll
- *      GET /api/pos/order/:id until `paymentStatus === 'successful'` (or 'failed'),
+ *      GET /api/pos/order/:id until `paymentStatus === 'successful'` (or 'declined'),
  *      then advance. We never trust the client callback alone for revenue state.
  *
  * Rule L01: card data is never stored, logged, or echoed — the Yoco SDK owns the
@@ -105,7 +105,7 @@ export default function YocoOrderForm({ orderId, amountZar, onPaid, onCardStepSt
           const d = (await r.json()) as { order?: { paymentStatus?: string | null } };
           const status = d.order?.paymentStatus ?? null;
           if (status === "successful") { setState("success"); onPaid(); return; }
-          if (status === "failed") {
+          if (status === "declined") {
             setState("failed");
             setErrorMsg("Payment was declined. Ask the customer to try another card.");
             return;

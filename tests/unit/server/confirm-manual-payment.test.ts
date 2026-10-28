@@ -25,18 +25,36 @@ vi.mock("@/server/orders/deduction", () => ({
   DeductionError: class extends Error {},
 }));
 
-const state = { payment: null as Record<string, unknown> | null };
+// `payment` is the single-row case; `payments` (AT-201) is several attempts on
+// one order, in insertion order. orderBy(...) sorts them by attempt DESC, as
+// the real query does; without orderBy the mock returns insertion order, so a
+// missing ORDER BY would pick the wrong row.
+const state = {
+  payment: null as Record<string, unknown> | null,
+  payments: null as Record<string, unknown>[] | null,
+};
 const paymentUpdate = vi.fn();
+const updatedIds: unknown[] = [];
 
 vi.mock("@/lib/db", () => {
+  function rows(sorted: boolean) {
+    const all = state.payments ?? (state.payment ? [state.payment] : []);
+    return sorted ? [...all].sort((a, b) => Number(b.attempt) - Number(a.attempt)) : all;
+  }
   function makeTx() {
+    let lastSelected: Record<string, unknown> | undefined;
+    const pick = (sorted: boolean) => ({
+      limit: () => {
+        lastSelected = rows(sorted)[0];
+        return Promise.resolve(lastSelected ? [lastSelected] : []);
+      },
+    });
     return {
       select: () => ({
         from: () => ({
           where: () => ({
-            for: () => ({
-              limit: () => Promise.resolve(state.payment ? [state.payment] : []),
-            }),
+            orderBy: () => ({ for: () => pick(true) }),
+            for: () => pick(false),
           }),
         }),
       }),
@@ -44,6 +62,7 @@ vi.mock("@/lib/db", () => {
         set: (s: Record<string, unknown>) => ({
           where: () => {
             paymentUpdate(s);
+            updatedIds.push(lastSelected?.id);
             return Promise.resolve();
           },
         }),
@@ -61,6 +80,8 @@ import { confirmManualPayment } from "@/server/actions/orders";
 beforeEach(() => {
   vi.clearAllMocks();
   state.payment = { id: "pmt-1", status: "pending" };
+  state.payments = null;
+  updatedIds.length = 0;
   isValidPushSubscription.mockReturnValue(true);
 });
 
@@ -99,13 +120,48 @@ describe("confirmManualPayment (Blocker 1 — manual cash/card-machine/EFT tende
     expect(paymentUpdate).not.toHaveBeenCalled();
   });
 
-  it("CONFLICT when the payment is already failed or refunded", async () => {
-    for (const status of ["failed", "refunded"]) {
+  // AT-201: payment_status is pending | successful | declined | unresolved
+  // (PRD §10.3.3) — `failed` became `declined`, `refunded` is gone (L02).
+  it("CONFLICT when the payment is already declined", async () => {
+    for (const status of ["declined"]) {
       vi.clearAllMocks();
       state.payment = { id: "pmt-1", status };
       const res = await confirmManualPayment("ord-1");
       expect(res.ok).toBe(false);
       if (!res.ok) expect(res.code).toBe("CONFLICT");
     }
+  });
+
+  // AT-201 / REQ-008: an unresolved payment is recovered by a server-side
+  // fetch of Yoco's record, never by a barista's tap.
+  it("CONFLICT when the payment is unresolved — and nothing is written", async () => {
+    state.payment = { id: "pmt-1", status: "unresolved" };
+    const res = await confirmManualPayment("ord-1");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("CONFLICT");
+    expect(paymentUpdate).not.toHaveBeenCalled();
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  // AT-201: one row per attempt — the latest attempt decides.
+  it("reads the latest attempt: attempt 1 declined, attempt 2 pending → confirms attempt 2", async () => {
+    state.payments = [
+      { id: "pmt-a1", status: "declined", attempt: 1 },
+      { id: "pmt-a2", status: "pending", attempt: 2 },
+    ];
+    const res = await confirmManualPayment("ord-1");
+    expect(res.ok).toBe(true);
+    expect(updatedIds).toEqual(["pmt-a2"]);
+  });
+
+  it("reads the latest attempt: attempt 1 pending, attempt 2 unresolved → CONFLICT, nothing written", async () => {
+    state.payments = [
+      { id: "pmt-b1", status: "pending", attempt: 1 },
+      { id: "pmt-b2", status: "unresolved", attempt: 2 },
+    ];
+    const res = await confirmManualPayment("ord-1");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("CONFLICT");
+    expect(paymentUpdate).not.toHaveBeenCalled();
   });
 });
