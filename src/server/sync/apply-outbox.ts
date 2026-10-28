@@ -117,6 +117,10 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     id: orderId,
     staffId: item.staffId,
     customerId: item.customerId ?? null,
+    // L28: the target was bound at ring-up by attaching (or not) a customer;
+    // the outbox payload carries that choice as customerId (PRD T1 step 2:
+    // offline, the target is `none`). Matches the §10.3 CHECK.
+    notificationTarget: item.customerId ? "customer" : "none",
     state: "ordered",
     totalZar: serverTotalZar,
     paymentMode: item.paymentMode,

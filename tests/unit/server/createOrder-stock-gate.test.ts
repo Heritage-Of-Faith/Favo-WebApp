@@ -44,7 +44,7 @@ beforeEach(() => {
   menuRows = [{ id: "mi-latte", name: "Latte", currentPriceZar: 4000, recipeId: "recipe_latte" }];
 });
 
-const LATTE_ORDER = { items: [{ menuItemId: "mi-latte", quantity: 1, modifications: [] }] };
+const LATTE_ORDER = { notificationTarget: "none" as const, items: [{ menuItemId: "mi-latte", quantity: 1, modifications: [] }] };
 
 describe("createOrder — pre-payment stock gate", () => {
   it("rejects with OUT_OF_STOCK before charging when a recipe ingredient is unavailable", async () => {
@@ -62,7 +62,7 @@ describe("createOrder — pre-payment stock gate", () => {
   it("checks stock for the ordered quantity, not a fixed 1", async () => {
     mockCheckRecipeStock.mockResolvedValue({ ok: true });
 
-    await createOrder({ items: [{ menuItemId: "mi-latte", quantity: 3, modifications: [] }] });
+    await createOrder({ notificationTarget: "none", items: [{ menuItemId: "mi-latte", quantity: 3, modifications: [] }] });
 
     expect(mockCheckRecipeStock).toHaveBeenCalledWith("recipe_latte", 3, expect.anything());
   });
@@ -80,6 +80,7 @@ describe("createOrder — pre-payment stock gate", () => {
     menuRows = [{ id: "mi-croissant", name: "Croissant", currentPriceZar: 3500, recipeId: null }];
 
     const res = await createOrder({
+      notificationTarget: "none",
       items: [{ menuItemId: "mi-croissant", quantity: 1, modifications: [] }],
     });
 

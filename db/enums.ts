@@ -124,3 +124,10 @@ export const compReason = pgEnum("comp_reason", [
   "goodwill",
   "donation",
 ]);
+
+// L28 / REQ-046 / PRD §10.3: who to tell when an order is ready, bound at
+// ring-up. `customer` = orders.customer_id; `none` is an explicit tap.
+export const notificationTarget = pgEnum("notification_target", [
+  "customer",
+  "none",
+]);

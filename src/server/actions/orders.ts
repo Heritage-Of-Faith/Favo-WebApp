@@ -45,6 +45,8 @@ const POS_ROLES = ["barista", "admin"] as const;
 
 export type CreateOrderInput = {
   customerId?: string;
+  /** L28 / REQ-046: required. `customer` needs customerId; `none` forbids it. */
+  notificationTarget: "customer" | "none";
   items: {
     menuItemId: string;
     quantity: number;
@@ -54,6 +56,8 @@ export type CreateOrderInput = {
 
 const createOrderSchema = z.object({
   customerId: z.string().min(1).optional(),
+  // L28: no default — an order without a bound target is refused.
+  notificationTarget: z.enum(["customer", "none"]),
   items: z
     .array(
       z.object({
@@ -63,7 +67,11 @@ const createOrderSchema = z.object({
       })
     )
     .min(1),
-});
+}).refine(
+  // PRD §10.3 CHECK: (notification_target = 'customer') = (customer_id IS NOT NULL).
+  (d) => (d.notificationTarget === "customer") === (d.customerId !== undefined),
+  { message: "notificationTarget must be 'customer' with a customer, or 'none' without one." }
+);
 
 /**
  * Create an order in `ordered` state and return its id + a Yoco payment intent.
@@ -220,6 +228,7 @@ export async function createOrder(
       await tx.insert(orders).values({
         id: orderId,
         customerId: data.customerId ?? null,
+        notificationTarget: data.notificationTarget,
         staffId: session.id,
         state: "ordered",
         totalZar,
@@ -245,7 +254,10 @@ export async function createOrder(
             action: "create",
             actorId: session.id,
             actorRole: session.role,
-            after: { state: "ordered", totalZar, customerId: data.customerId ?? null },
+            after: {
+              state: "ordered", totalZar, customerId: data.customerId ?? null,
+              notificationTarget: data.notificationTarget,
+            },
           },
           txDb
         ),
@@ -477,7 +489,9 @@ export async function transitionOrder(
       }
 
       // ── 3. Fetch subscription for order-ready push (in_progress → ready) ──
-      if (toState === "ready" && current.customerId) {
+      // §11: `ready` pushes to the registered customer and no-ops for target
+      // `none` (L28) — keyed off the bound target, never inferred.
+      if (toState === "ready" && current.notificationTarget === "customer" && current.customerId) {
         const [cust] = await tx
           .select({ name: customers.name, pushSubscription: customers.pushSubscription })
           .from(customers)
