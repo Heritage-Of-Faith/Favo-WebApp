@@ -24,6 +24,7 @@ const maybe = hasRealDb() ? describe : describe.skip;
 
 const UP = "0034_l28_notification_target.sql";
 const DOWN = "down/0034_l28_notification_target.down.sql";
+const DOWN_0036 = "down/0036_at201_orders_client_uuid.down.sql";
 
 type Shape = { columns: string[]; constraints: string[] };
 
@@ -76,6 +77,9 @@ maybe("0034 orders.notification_target: up → down → up, and the refusals (L2
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        // AT-201: the CI DB is at 0036 (orders.client_uuid, on top of 0035,
+        // which does not touch orders). Step 0036 down so orders is at 0034.
+        await tx.unsafe(migrationSql(DOWN_0036));
         await fn(tx);
         throw new Rollback();
       });

@@ -258,6 +258,11 @@ export const orders = pgTable("orders", {
   // L28 / REQ-046 / PRD §10.3: bound at ring-up, never null, no default —
   // `none` is chosen, never defaulted into. The target customer is customer_id.
   notificationTarget: notificationTarget("notification_target").notNull(),
+  // AT-201 / PRD §10.3, P3, REQ-027: the root of every tender reference —
+  // payments.client_reference = client_uuid || ':' || attempt. NOT NULL,
+  // UNIQUE. The DB default is provisional (migration 0036): createOrder does
+  // not pass the POS-minted uuid yet; AT-201 part 2b decides whether it does.
+  clientUuid: text("client_uuid").default(sql`gen_random_uuid()`).notNull().unique(),
 }, () => [
   // PRD §10.3: a row can never claim it will notify someone and carry no customer.
   check(
