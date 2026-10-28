@@ -92,7 +92,7 @@ export default function OpenContainersCard() {
                 className="text-cool-steel leading-tight"
                 style={{ fontSize: 11 }}
               >
-                {open ? `${row.openLabel ?? "Open"} open` : "None open"} · {row.sealedCount} sealed
+                {open ? "Open" : "None open"} · {row.sealedCount} sealed
               </p>
             </div>
             {isBusy ? (

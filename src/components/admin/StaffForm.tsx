@@ -71,7 +71,13 @@ export default function StaffForm({ staffId, staffName, reactivate, onClose, onS
         setError(res.message);
         return;
       }
-      toast.success(isEdit ? "PIN updated." : `${name.trim()} added.`);
+      toast.success(
+        reactivate
+          ? `${staffName ?? "Staff member"} reactivated.`
+          : isEdit
+            ? "PIN updated."
+            : `${name.trim()} added.`,
+      );
       onSaved();
       onClose();
     } catch {
@@ -87,10 +93,16 @@ export default function StaffForm({ staffId, staffName, reactivate, onClose, onS
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>
-              {isEdit ? `Reset PIN — ${staffName ?? "staff"}` : "Add staff member"}
+              {reactivate
+                ? `Reactivate — ${staffName ?? "staff"}`
+                : isEdit
+                  ? `Reset PIN — ${staffName ?? "staff"}`
+                  : "Add staff member"}
             </DialogTitle>
             <DialogDescription>
-              {isEdit
+              {reactivate
+                ? "Set a new 4–6 digit PIN to switch this staff member back on. Their old PIN can't be reused."
+                : isEdit
                 ? "Enter a new 4–6 digit PIN for this staff member."
                 : "Create a new staff member and set their initial PIN."}
             </DialogDescription>
@@ -112,7 +124,7 @@ export default function StaffForm({ staffId, staffName, reactivate, onClose, onS
                 <div className="grid gap-2">
                   <Label htmlFor="staff-role">Role</Label>
                   <Select value={role} onValueChange={(v) => setRole(v as StaffRole)}>
-                    <SelectTrigger id="staff-role" className="min-h-10">
+                    <SelectTrigger id="staff-role" className="min-h-11">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -132,7 +144,11 @@ export default function StaffForm({ staffId, staffName, reactivate, onClose, onS
               <Input
                 id="staff-pin"
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) => {
+                  // QA R6-7: any keystroke here clears a stale error.
+                  setError(null);
+                  setPin(e.target.value.replace(/\D/g, ""));
+                }}
                 inputMode="numeric"
                 maxLength={6}
                 placeholder="4–6 digits"
@@ -151,8 +167,8 @@ export default function StaffForm({ staffId, staffName, reactivate, onClose, onS
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting} className="min-h-10">
-              {submitting ? "Saving…" : isEdit ? "Update PIN" : "Add staff"}
+            <Button type="submit" disabled={submitting} className="min-h-11">
+              {submitting ? "Saving…" : reactivate ? "Reactivate" : isEdit ? "Update PIN" : "Add staff"}
             </Button>
           </DialogFooter>
         </form>

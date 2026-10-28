@@ -67,3 +67,9 @@ describe("Content-Security-Policy", () => {
     expect(csp).not.toContain("<from");
   });
 });
+
+describe("x-powered-by", () => {
+  it("is switched off so the framework is not advertised", () => {
+    expect(nextConfig.poweredByHeader).toBe(false);
+  });
+});

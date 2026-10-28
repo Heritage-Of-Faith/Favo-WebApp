@@ -54,6 +54,16 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
       .finally(() => setLoading(false));
   }, [item]);
 
+  // R2-15: Escape closes the drawer (an open cost edit handles its own Escape first).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && editingId === null) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, editingId, onClose]);
+
   async function saveCost(lotId: string) {
     setCostError(null);
     // Same rule as the server: no empty, no 0, nothing numeric(10,4) can't hold.
@@ -113,7 +123,7 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-btn)] text-xl"
+            className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-btn)] text-xl"
             style={{ color: "var(--color-text-muted)" }}
           >
             ✕
@@ -145,11 +155,11 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
                 style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-elevated)" }}
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="favo-small" style={{ color: "var(--color-text-strong)", fontWeight: 600 }}>
+                  <span className="favo-small min-w-0 break-words [overflow-wrap:anywhere]" style={{ color: "var(--color-text-strong)", fontWeight: 600 }}>
                     {lot.origin ?? lot.sourceName ?? "Lot"}
                     {lot.batchNumber ? ` · ${lot.batchNumber}` : ""}
                   </span>
-                  <StatusBadge variant={LOT_STATE_VARIANT[lot.state]}>{lot.state}</StatusBadge>
+                  <span className="shrink-0"><StatusBadge variant={LOT_STATE_VARIANT[lot.state]}>{lot.state}</StatusBadge></span>
                 </div>
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
@@ -205,7 +215,7 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
                           if (e.key === "Enter") void saveCost(lot.id);
                           if (e.key === "Escape") setEditingId(null);
                         }}
-                        className="h-9 w-28 rounded-[var(--radius-btn)] border px-2 favo-small focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]"
+                        className="h-11 w-28 rounded-[var(--radius-btn)] border px-2 text-base focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]"
                         style={{
                           background: "var(--color-surface)",
                           color: "var(--color-text-strong)",
@@ -216,7 +226,7 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
                         type="button"
                         onClick={() => void saveCost(lot.id)}
                         disabled={saving}
-                        className="min-h-9 px-2 favo-cta disabled:opacity-50"
+                        className="min-h-11 px-2 favo-cta disabled:opacity-50"
                         style={{ color: "var(--color-accent)" }}
                       >
                         {saving ? "…" : "Save"}
@@ -224,7 +234,7 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
                       <button
                         type="button"
                         onClick={() => setEditingId(null)}
-                        className="min-h-9 px-1 favo-small"
+                        className="min-h-11 px-1 favo-small"
                         style={{ color: "var(--color-text-muted)" }}
                       >
                         ✕
@@ -244,7 +254,7 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
                         setEditingId(lot.id);
                       }}
                       aria-label={`Edit cost per ${item.unit} for this lot`}
-                      className="inline-flex min-h-9 items-center gap-1.5 rounded-[var(--radius-btn)] px-2 favo-small hover:bg-[color:var(--color-porcelain-soft)]"
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-[var(--radius-btn)] px-2 favo-small hover:bg-[color:var(--color-porcelain-soft)]"
                       style={{ color: "var(--color-text-strong)" }}
                     >
                       <span style={{ fontVariantNumeric: "tabular-nums" }}>

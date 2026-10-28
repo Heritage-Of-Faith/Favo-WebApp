@@ -45,7 +45,7 @@ export default function RecipeEditor({ initialRecipe }: RecipeEditorProps) {
             }
           }}
           disabled={bumping}
-          className="min-h-10 rounded-[var(--radius-btn)] border px-3 favo-small disabled:opacity-50"
+          className="min-h-11 rounded-[var(--radius-btn)] border px-3 favo-small disabled:opacity-50"
           style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
         >
           {bumping ? "Creating…" : "New version"}
@@ -100,10 +100,11 @@ export default function RecipeEditor({ initialRecipe }: RecipeEditorProps) {
       tolerance !== String(ingredient.tolerancePct);
 
     async function save() {
-      const q = Number(quantity);
+      // Empty must not become 0 (QA R2-7); same bounds as the server.
+      const q = quantity.trim() === "" ? NaN : Number(quantity);
       const t = Number(tolerance);
-      if (!Number.isInteger(q) || q < 0) {
-        toast.error("Quantity must be a whole number ≥ 0.");
+      if (!Number.isInteger(q) || q < 1 || q > 1000) {
+        toast.error("Quantity must be a whole number from 1 to 1000.");
         return;
       }
       if (!Number.isInteger(t) || t < 0 || t > 100) {
@@ -149,7 +150,7 @@ export default function RecipeEditor({ initialRecipe }: RecipeEditorProps) {
             min={0}
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
-            className="h-10 w-24 rounded-[var(--radius-btn)] border px-2 favo-small"
+            className="h-11 w-24 rounded-[var(--radius-btn)] border px-2 text-base"
             style={inputStyle}
           />
         </label>
@@ -161,7 +162,7 @@ export default function RecipeEditor({ initialRecipe }: RecipeEditorProps) {
           <select
             value={unit}
             onChange={(e) => setUnit(e.target.value as InventoryUnit)}
-            className="h-10 rounded-[var(--radius-btn)] border px-2 favo-small"
+            className="h-11 rounded-[var(--radius-btn)] border px-2 text-base"
             style={inputStyle}
           >
             {UNITS.map((u) => (
@@ -182,7 +183,7 @@ export default function RecipeEditor({ initialRecipe }: RecipeEditorProps) {
             max={100}
             value={tolerance}
             onChange={(e) => setTolerance(e.target.value)}
-            className="h-10 w-20 rounded-[var(--radius-btn)] border px-2 favo-small"
+            className="h-11 w-20 rounded-[var(--radius-btn)] border px-2 text-base"
             style={inputStyle}
           />
         </label>
@@ -191,7 +192,7 @@ export default function RecipeEditor({ initialRecipe }: RecipeEditorProps) {
           type="button"
           onClick={save}
           disabled={!dirty || saving}
-          className="min-h-10 rounded-[var(--radius-btn)] px-3 favo-cta disabled:opacity-40"
+          className="min-h-11 rounded-[var(--radius-btn)] px-3 favo-cta disabled:opacity-40"
           style={{ background: "var(--color-accent)", color: "var(--color-text-inverse)" }}
         >
           {saving ? "…" : "Save"}

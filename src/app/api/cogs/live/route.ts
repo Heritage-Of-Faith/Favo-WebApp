@@ -28,7 +28,8 @@ export async function GET(req: NextRequest) {
 
   // SEC-5: a supplied date must be a real calendar day (1999-13-45 used to
   // pass the shape check and blow up as a bare 500). Absent → today.
-  if (dateParam && !isCalendarDate(dateParam)) {
+  // An empty `date=` is supplied-but-invalid, not absent (QA R2-SEC-2: was a 500).
+  if (dateParam !== null && !isCalendarDate(dateParam)) {
     return NextResponse.json(
       { error: "date must be a real calendar date in YYYY-MM-DD format." },
       { status: 400 }

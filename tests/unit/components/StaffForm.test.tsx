@@ -39,6 +39,20 @@ describe("StaffForm — add", () => {
   });
 });
 
+// QA R6-7: typing in the PIN box (even a non-digit that is stripped) clears a
+// stale PIN error.
+describe("StaffForm — stale PIN error", () => {
+  it("clears the server's PIN refusal as soon as the user types in the PIN box", async () => {
+    render(<StaffForm onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "QA Temp" } });
+    fireEvent.change(screen.getByLabelText("Initial PIN"), { target: { value: "1234" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add staff" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Initial PIN"), { target: { value: "1234a" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
 describe("StaffForm — reset PIN", () => {
   it("shows a message for a 2-digit PIN and does not call the server", async () => {
     const { setStaffPin } = await import("@/server/actions/staff");
@@ -47,5 +61,27 @@ describe("StaffForm — reset PIN", () => {
     fireEvent.click(screen.getByRole("button", { name: "Update PIN" }));
     expect(screen.getByRole("alert").textContent).toBe("PIN must be 4–6 digits.");
     expect(setStaffPin).not.toHaveBeenCalled();
+  });
+
+  it("plain reset never asks the server to reactivate", async () => {
+    const { setStaffPin } = await import("@/server/actions/staff");
+    render(<StaffForm staffId="s1" staffName="Sam" onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("New PIN"), { target: { value: "5555" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update PIN" }));
+    await waitFor(() => expect(setStaffPin).toHaveBeenCalled());
+    expect(setStaffPin).toHaveBeenCalledWith({ staffId: "s1", newPin: "5555", reactivate: undefined });
+  });
+});
+
+describe("StaffForm — reactivate (QA R2-5/R2-6)", () => {
+  it("is labelled as reactivation and sends reactivate: true", async () => {
+    const { setStaffPin } = await import("@/server/actions/staff");
+    render(<StaffForm staffId="s1" staffName="Sam" reactivate onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByText("Reactivate — Sam")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("New PIN"), { target: { value: "5555" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reactivate" }));
+    await waitFor(() =>
+      expect(setStaffPin).toHaveBeenCalledWith({ staffId: "s1", newPin: "5555", reactivate: true })
+    );
   });
 });

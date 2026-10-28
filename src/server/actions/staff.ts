@@ -5,8 +5,9 @@
 // Docs: docs/API.md · docs/DATA_MODEL.md → staff
 
 import { z } from "zod";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import type { DB } from "@/lib/db";
 import { staff } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
@@ -47,8 +48,20 @@ const PIN_TAKEN = {
   message: "That PIN can't be used. Choose a different PIN.",
 };
 
-async function pinHeldByOtherActiveStaff(pin: string, exceptStaffId?: string): Promise<boolean> {
-  const rows = await db
+/**
+ * Serialises every PIN write (create, reset, reactivate) for the rest of the
+ * transaction, so a uniqueness check and its write cannot interleave with another.
+ */
+async function lockPinWrites(client: DB): Promise<void> {
+  await client.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${"staff_pin_write"}))`);
+}
+
+async function pinHeldByOtherActiveStaff(
+  pin: string,
+  exceptStaffId?: string,
+  client: DB = db
+): Promise<boolean> {
+  const rows = await client
     .select({ id: staff.id, pinHash: staff.pinHash })
     .from(staff)
     .where(eq(staff.active, true));
@@ -102,34 +115,39 @@ export async function createStaff(input: {
     return { ok: false, code: "INVALID_PIN", message: "PIN must be 4–6 digits." };
   }
 
-  if (await pinHeldByOtherActiveStaff(parsed.data.pin)) return PIN_TAKEN;
+  const { name, role, pin } = parsed.data;
 
-  const pinHash = await hashPin(parsed.data.pin);
+  return db.transaction(async (tx): Promise<ActionResult<Staff>> => {
+    const txDb = tx as unknown as DB;
+    await lockPinWrites(txDb);
 
-  const [row] = await db
-    .insert(staff)
-    .values({
-      name: parsed.data.name,
-      role: parsed.data.role,
-      pinHash,
-      active: true,
-    })
-    .returning();
+    if (await pinHeldByOtherActiveStaff(pin, undefined, txDb)) return PIN_TAKEN;
 
-  if (!row) {
-    return { ok: false, code: "DB_ERROR", message: "Failed to create staff member." };
-  }
+    const pinHash = await hashPin(pin);
 
-  await writeAudit({
-    entityKind: "staff",
-    entityId: row.id,
-    action: "create",
-    actorId: auth.session.id,
-    actorRole: auth.session.role,
-    after: { name: row.name, role: row.role, active: true },
+    const [row] = await txDb
+      .insert(staff)
+      .values({ name, role, pinHash, active: true })
+      .returning();
+
+    if (!row) {
+      return { ok: false, code: "DB_ERROR", message: "Failed to create staff member." };
+    }
+
+    await writeAudit(
+      {
+        entityKind: "staff",
+        entityId: row.id,
+        action: "create",
+        actorId: auth.session.id,
+        actorRole: auth.session.role,
+        after: { name: row.name, role: row.role, active: true },
+      },
+      txDb
+    );
+
+    return { ok: true, data: toStaff(row) };
   });
-
-  return { ok: true, data: toStaff(row) };
 }
 
 /**
@@ -155,37 +173,77 @@ export async function setStaffPin(input: {
     };
   }
 
-  const [existing] = await db
-    .select({ id: staff.id, name: staff.name })
-    .from(staff)
-    .where(eq(staff.id, parsed.data.staffId));
+  const { staffId, newPin, reactivate } = parsed.data;
 
-  if (!existing) {
-    return { ok: false, code: "NOT_FOUND", message: "Staff member not found." };
-  }
+  // The uniqueness check and the write run in one transaction under one
+  // advisory lock, so two concurrent resets cannot both pass the check.
+  return db.transaction(async (tx) => {
+    const txDb = tx as unknown as DB;
+    await lockPinWrites(txDb);
 
-  if (await pinHeldByOtherActiveStaff(parsed.data.newPin, parsed.data.staffId)) {
-    return PIN_TAKEN;
-  }
+    const [existing] = await txDb
+      .select({ id: staff.id, name: staff.name, pinHash: staff.pinHash, active: staff.active })
+      .from(staff)
+      .where(eq(staff.id, staffId));
 
-  const pinHash = await hashPin(parsed.data.newPin);
+    if (!existing) {
+      return { ok: false, code: "NOT_FOUND", message: "Staff member not found." };
+    }
 
-  await db
-    .update(staff)
-    .set(parsed.data.reactivate ? { pinHash, active: true } : { pinHash })
-    .where(eq(staff.id, parsed.data.staffId));
+    if (reactivate && existing.active) {
+      return { ok: false, code: "ALREADY_ACTIVE", message: "Staff member is already active." };
+    }
 
-  await writeAudit({
-    entityKind: "staff",
-    entityId: parsed.data.staffId,
-    action: "reset_pin",
-    actorId: auth.session.id,
-    actorRole: auth.session.role,
-    // Never log the PIN itself — only that it was reset.
-    after: parsed.data.reactivate ? { pinReset: true, active: true } : { pinReset: true },
+    // A refusal is audited (it commits: nothing is thrown). Never any PIN material.
+    const refuse = async (result: { ok: false; code: string; message: string }) => {
+      await writeAudit(
+        {
+          entityKind: "staff",
+          entityId: staffId,
+          action: reactivate ? "reactivate_refused" : "set_pin_refused",
+          actorId: auth.session.id,
+          actorRole: auth.session.role,
+          after: { code: result.code },
+          reason: result.code,
+        },
+        txDb
+      );
+      return result;
+    };
+
+    // Switching back on needs a NEW PIN (QA R2-6): the old one may have been shared
+    // while they were away. Same generic wording as PIN_TAKEN.
+    if (reactivate && (await verifyPin(newPin, existing.pinHash))) {
+      return refuse({ ...PIN_TAKEN, code: "PIN_REUSED" });
+    }
+
+    if (await pinHeldByOtherActiveStaff(newPin, staffId, txDb)) {
+      return refuse(PIN_TAKEN);
+    }
+
+    const pinHash = await hashPin(newPin);
+
+    await txDb
+      .update(staff)
+      .set(reactivate ? { pinHash, active: true } : { pinHash })
+      .where(eq(staff.id, staffId));
+
+    await writeAudit(
+      {
+        entityKind: "staff",
+        entityId: staffId,
+        action: reactivate ? "reactivate" : "reset_pin",
+        actorId: auth.session.id,
+        actorRole: auth.session.role,
+        // Never log the PIN itself — only that it was reset.
+        ...(reactivate ? { before: { active: existing.active } } : {}),
+        after: reactivate ? { pinReset: true, active: true } : { pinReset: true },
+      },
+      txDb
+    );
+
+    return { ok: true as const, data: undefined };
   });
-
-  return { ok: true, data: undefined };
 }
 
 /**

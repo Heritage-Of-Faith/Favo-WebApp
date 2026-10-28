@@ -202,7 +202,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                     type="button"
                     onClick={() => setKind(k)}
                     aria-pressed={kind === k}
-                    className="min-h-10 flex-1 rounded-[var(--radius-btn)] border px-3 favo-small capitalize transition-all hover:opacity-85 active:scale-[0.97]"
+                    className="min-h-11 flex-1 rounded-[var(--radius-btn)] border px-3 favo-small capitalize transition-all hover:opacity-85 active:scale-[0.97]"
                     style={{
                       background: kind === k ? "var(--color-text-strong)" : "var(--color-surface)",
                       color: kind === k ? "var(--color-text-inverse)" : "var(--color-text-strong)",
@@ -238,13 +238,13 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                   // Live preview of the stored unit cost, so a slip is visible before saving.
                   const previewCents = parseZar(line.total);
                   const preview =
-                    !isContainerItem && previewCents !== null && line.quantity.trim() !== ""
+                    previewCents !== null && line.quantity.trim() !== ""
                       ? deriveUnitCostCents(previewCents, Number(line.quantity))
                       : null;
                   return (
                     <div key={i} className="grid gap-1">
-                    <div className="flex items-end gap-2">
-                      <div className="flex-1">
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="min-w-[10rem] flex-1 basis-40">
                         <select
                           aria-label={`Line ${i + 1} item`}
                           value={line.inventoryItemId}
@@ -255,7 +255,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                               sizeUnit: defaultSizeUnit(next?.kind),
                             });
                           }}
-                          className="h-10 w-full rounded-[var(--radius-btn)] border px-2 favo-small bg-[color:var(--color-surface)] transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
+                          className="h-11 w-full rounded-[var(--radius-btn)] border px-2 text-base bg-[color:var(--color-surface)] transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
                           style={{ color: "var(--color-text-strong)", borderColor: "var(--color-border-subtle)" }}
                         >
                           {items.map((it) => (
@@ -280,7 +280,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                             aria-label={`Line ${i + 1} size unit`}
                             value={line.sizeUnit}
                             onChange={(e) => updateLine(i, { sizeUnit: e.target.value as InventoryUnit })}
-                            className="h-10 w-full rounded-[var(--radius-btn)] border px-2 favo-small bg-[color:var(--color-surface)] transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
+                            className="h-11 w-full rounded-[var(--radius-btn)] border px-2 text-base bg-[color:var(--color-surface)] transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
                             style={{ color: "var(--color-text-strong)", borderColor: "var(--color-border-subtle)" }}
                           >
                             {SIZE_UNITS.map((u) => (
@@ -303,7 +303,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                         onClick={() => removeLine(i)}
                         disabled={lines.length === 1}
                         aria-label={`Remove line ${i + 1}`}
-                        className="flex h-10 w-9 items-center justify-center rounded-[var(--radius-btn)] transition-colors hover:bg-[color:var(--color-porcelain-soft)] active:scale-[0.94] disabled:opacity-30 disabled:hover:bg-transparent"
+                        className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-btn)] transition-colors hover:bg-[color:var(--color-porcelain-soft)] active:scale-[0.94] disabled:opacity-30 disabled:hover:bg-transparent"
                         style={{ color: "var(--color-text-muted)" }}
                       >
                         ✕
@@ -320,7 +320,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                         }}
                       >
                         {preview.ok
-                          ? `Cost per ${unit}: ${formatUnitCostRands(preview.value)} (${preview.value} c)`
+                          ? `Cost per ${isContainerItem ? line.sizeUnit : unit}: ${formatUnitCostRands(preview.value)} (${preview.value} c)${isContainerItem ? ". Cost per cup is worked out as cups are made." : ""}`
                           : preview.message}
                       </p>
                     )}
@@ -331,7 +331,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
               <button
                 type="button"
                 onClick={addLine}
-                className="self-start min-h-10 favo-small underline transition-opacity hover:opacity-70 active:opacity-50"
+                className="self-start min-h-11 favo-small underline transition-opacity hover:opacity-70 active:opacity-50"
                 style={{ color: "var(--color-accent)" }}
               >
                 + Add lot line
@@ -349,7 +349,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting} className="min-h-10">
+            <Button type="submit" disabled={submitting} className="min-h-11">
               {submitting ? "Saving…" : "Record purchase"}
             </Button>
           </DialogFooter>

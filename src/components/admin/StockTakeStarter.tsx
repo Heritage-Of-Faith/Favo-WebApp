@@ -36,7 +36,7 @@ export default function StockTakeStarter() {
           type="button"
           onClick={() => start("full")}
           disabled={starting !== null}
-          className="min-h-10 rounded-[var(--radius-btn)] px-4 favo-cta disabled:opacity-50"
+          className="min-h-11 rounded-[var(--radius-btn)] px-4 favo-cta disabled:opacity-50"
           style={{ background: "var(--color-accent)", color: "var(--color-text-inverse)" }}
         >
           {starting === "full" ? "Starting…" : "Start full take"}
@@ -45,7 +45,7 @@ export default function StockTakeStarter() {
           type="button"
           onClick={() => start("spot")}
           disabled={starting !== null}
-          className="min-h-10 rounded-[var(--radius-btn)] border px-4 favo-small disabled:opacity-50"
+          className="min-h-11 rounded-[var(--radius-btn)] border px-4 favo-small disabled:opacity-50"
           style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
         >
           {starting === "spot" ? "Starting…" : "Spot take"}

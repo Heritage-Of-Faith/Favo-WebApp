@@ -198,9 +198,9 @@ describe("recordPurchase — unit cost and bounds", () => {
     if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
   });
 
-  it("rejects an empty source and a source over 100 characters", async () => {
+  it("rejects an empty source and a source over 80 characters", async () => {
     const { recordPurchase } = await import("@/server/actions/purchases");
-    for (const sourceName of ["", "   ", "x".repeat(101)]) {
+    for (const sourceName of ["", "   ", "x".repeat(81)]) {
       const result = await recordPurchase({ sourceName, kind: "planned", items: [validItem] });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");

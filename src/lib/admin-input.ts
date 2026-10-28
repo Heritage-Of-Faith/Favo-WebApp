@@ -17,7 +17,7 @@ export const UNIT_COST_MAX = 999_999.9999;
 /** Largest value numeric(10,2) can hold (quantity_received, container_size). */
 export const QUANTITY_MAX = 99_999_999.99;
 /** Max length for a purchase source name (display + storage). */
-export const SOURCE_NAME_MAX = 100;
+export const SOURCE_NAME_MAX = 80;
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; message: string };
 

@@ -10,7 +10,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "FAVO",
     // SEC-7: same true description as the site metadata.
     description: SITE_DESCRIPTION,
-    start_url: "/customer",
+    start_url: "/customer", // one manifest serves both apps; staff add the icon from /staff/login
     display: "standalone",
     background_color: COFFEE_BEAN,
     theme_color: COFFEE_BEAN,

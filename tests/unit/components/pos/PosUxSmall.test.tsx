@@ -6,7 +6,12 @@ const mockLogWaste = vi.fn();
 vi.mock("@/server/actions/waste", () => ({ logWaste: (...a: unknown[]) => mockLogWaste(...a) }));
 vi.mock("@/server/actions/inventory", () => ({
   listInventory: vi.fn().mockResolvedValue({ ok: true, data: { items: [{ id: "inv1", name: "Whole Milk", unit: "ml" }] } }),
-  listLots: vi.fn().mockResolvedValue({ ok: true, data: { lots: [] } }),
+  // CHANGED (QA R5 barista #2): an item with no lots now disables Log Waste
+  // ("No stock to waste"), so the quantity checks need one sealed lot.
+  listLots: vi.fn().mockResolvedValue({
+    ok: true,
+    data: { lots: [{ id: "lot_m1", inventoryItemId: "inv1", batchNumber: "MLK-1", state: "active", quantityRemaining: 5000 }] },
+  }),
 }));
 const mockSubmit = vi.fn();
 vi.mock("@/server/actions/opening", () => ({

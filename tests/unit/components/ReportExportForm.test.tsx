@@ -90,19 +90,17 @@ describe("ReportExportForm", () => {
     });
   });
 
-  it("shows error toast when to < from is submitted", async () => {
-    const { toast } = await import("sonner");
+  it("shows an inline message and disables export when to < from", async () => {
     render(<ReportExportForm />);
 
     fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-06-15" } });
     fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-06-01" } });
-    fireEvent.click(screen.getByRole("button", { name: /export report/i }));
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        "'To' date must be on or after 'From' date."
-      );
-    });
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The 'To' date is before the 'From' date. Swap them to export."
+    );
+    expect(
+      (screen.getByRole("button", { name: /export report/i }) as HTMLButtonElement).disabled
+    ).toBe(true);
   });
 
   it("creates an object URL from the response blob", async () => {
