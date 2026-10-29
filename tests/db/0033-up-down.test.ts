@@ -31,7 +31,9 @@ const UP = "0033_at181_day5_substrate.sql";
 const DOWN = "down/0033_at181_day5_substrate.down.sql";
 // AT-201: 0036 (orders.client_uuid) sits on top of 0035 (payments), which sits
 // on top of 0034 (notification_target, PR #284), which sits on top of 0033.
-const DOWN_0036 = "down/0036_at201_orders_client_uuid.down.sql";
+// AT-203: 0045 (the blessing fund) sits on top of all of them; step it down first.
+const DOWN_0045 = "down/0045_at203_blessing_fund.down.sql";
+const DOWN_0036 ="down/0036_at201_orders_client_uuid.down.sql";
 const DOWN_0035 = "down/0035_at201_tender_payments.down.sql";
 const DOWN_0034 = "down/0034_l28_notification_target.down.sql";
 
@@ -149,6 +151,7 @@ maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () 
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        await tx.unsafe(migrationSql(DOWN_0045));
         await tx.unsafe(migrationSql(DOWN_0036));
         await tx.unsafe(migrationSql(DOWN_0035));
         await tx.unsafe(migrationSql(DOWN_0034));

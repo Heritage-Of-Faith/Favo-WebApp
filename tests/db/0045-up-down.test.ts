@@ -114,18 +114,18 @@ maybe("0045 blessing fund: up → down → up, and the database's own guarantees
   it("the ledger's CHECKs: signs by kind, a cash/EFT reference, a card top-up's own client_uuid, a spend's order", async () => {
     await inRolledBackTx(async (tx) => {
       const f = await fixture(tx);
-      const bad = [
-        tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, funding_method, reference, recorded_by_staff_id) VALUES (${f.fund}, 'top_up', -100, 'cash', 'r', ${f.staff})`),
-        tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, order_id, recorded_by_staff_id) VALUES (${f.fund}, 'spend', 2000, ${f.order}, ${f.staff})`),
-        tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, funding_method, reference, recorded_by_staff_id) VALUES (${f.fund}, 'top_up', 100, 'eft', '  ', ${f.staff})`),
-        tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, funding_method, recorded_by_staff_id) VALUES (${f.fund}, 'top_up', 100, 'card', ${f.staff})`),
-        tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, recorded_by_staff_id) VALUES (${f.fund}, 'spend', -2000, ${f.staff})`),
-        tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, recorded_by_staff_id) VALUES (${f.fund}, 'sweep', -100, ${f.staff})`),
+      const bad: Array<() => Promise<unknown>> = [
+        () => tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, funding_method, reference, recorded_by_staff_id) VALUES (${f.fund}, 'top_up', -100, 'cash', 'r', ${f.staff})`),
+        () => tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, order_id, recorded_by_staff_id) VALUES (${f.fund}, 'spend', 2000, ${f.order}, ${f.staff})`),
+        () => tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, funding_method, reference, recorded_by_staff_id) VALUES (${f.fund}, 'top_up', 100, 'eft', '  ', ${f.staff})`),
+        () => tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, funding_method, recorded_by_staff_id) VALUES (${f.fund}, 'top_up', 100, 'card', ${f.staff})`),
+        () => tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, recorded_by_staff_id) VALUES (${f.fund}, 'spend', -2000, ${f.staff})`),
+        () => tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, recorded_by_staff_id) VALUES (${f.fund}, 'sweep', -100, ${f.staff})`),
         // An adjustment only gives back a cancelled order's draw: > 0, and tied to an order.
-        tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, recorded_by_staff_id, reason) VALUES (${f.fund}, 'adjustment', 5000, ${f.staff}, 'typed money')`),
-        tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, order_id, recorded_by_staff_id) VALUES (${f.fund}, 'adjustment', -2000, ${f.order}, ${f.staff})`),
+        () => tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, recorded_by_staff_id, reason) VALUES (${f.fund}, 'adjustment', 5000, ${f.staff}, 'typed money')`),
+        () => tx.savepoint((sp) => sp`INSERT INTO donor_fund_entries (fund_id, kind, amount_zar, order_id, recorded_by_staff_id) VALUES (${f.fund}, 'adjustment', -2000, ${f.order}, ${f.staff})`),
       ];
-      for (const p of bad) await expect(p).rejects.toThrow(/donor_fund_entries_/);
+      for (const run of bad) await expect(run()).rejects.toThrow(/donor_fund_entries_/);
     });
   });
 

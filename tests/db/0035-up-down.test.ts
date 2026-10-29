@@ -34,6 +34,7 @@ const maybe = hasRealDb() ? describe : describe.skip;
 
 const UP = "0035_at201_tender_payments.sql";
 const DOWN = "down/0035_at201_tender_payments.down.sql";
+const DOWN_0045 = "down/0045_at203_blessing_fund.down.sql";
 const AT = "0035_snapshot.json";
 const BEFORE = "0034_snapshot.json";
 
@@ -97,6 +98,10 @@ maybe("0035 payments as the tender record: up → down → up, and the refusals 
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        // AT-203: the CI DB is at 0045, which adds payments' FK to
+        // donor_fund_entries and a unique on (fund_topup_id, attempt). Step it
+        // down so payments is at 0035 again.
+        await tx.unsafe(migrationSql(DOWN_0045));
         await fn(tx);
         throw new Rollback();
       });
