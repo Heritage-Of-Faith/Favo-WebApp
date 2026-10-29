@@ -82,6 +82,18 @@ vi.mock("@/server/push/payload", () => ({
   isValidPushSubscription: (x: unknown) => x != null,
 }));
 
+// AT-207: the write-off sweep and the daily_closes row live in their own module
+// (tested in close/write-offs.test.ts and close-daily-writeoffs.test.ts). Here
+// they are stubbed to "nothing to write off, no close row yet" so these tests
+// keep asserting the reconciliation and AT-193's idempotency unchanged.
+vi.mock("@/server/close/write-offs", () => ({
+  sweepWriteOffs: vi.fn().mockResolvedValue({ written: [], dayCount: 0, dayZar: 0 }),
+  hasDailyClose: vi.fn().mockResolvedValue(false),
+  recordDailyClose: vi.fn().mockResolvedValue(undefined),
+  buildWriteOffAlert: vi.fn(),
+}));
+vi.mock("@/server/push/admin-alert", () => ({ alertAdmins: vi.fn() }));
+
 const DAY = new Date("2026-06-08T10:00:00Z");
 const ADMIN = { id: "staff-admin-1", pushSubscription: { endpoint: "https://push.example/1", keys: { p256dh: "x", auth: "y" } } };
 

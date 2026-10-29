@@ -55,13 +55,14 @@ function makeTx(tx: DB): TenderTx {
           totalZar: orders.totalZar,
           clientUuid: orders.clientUuid,
           paymentMode: orders.paymentMode,
+          writtenOffAt: orders.writtenOffAt,
         })
         .from(orders)
         .where(eq(orders.id, orderId))
         .for("update");
       if (!o) return null;
-      const { paymentMode, ...order } = o;
-      return { ...order, fundSettled: paymentMode === "donor_fund" };
+      const { paymentMode, writtenOffAt, ...order } = o;
+      return { ...order, fundSettled: paymentMode === "donor_fund", writtenOff: writtenOffAt !== null };
     },
     async listPayments(orderId) {
       const rows = await tx.select().from(payments).where(eq(payments.orderId, orderId)).orderBy(payments.attempt);

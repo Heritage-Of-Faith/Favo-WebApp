@@ -154,6 +154,10 @@ export async function beginTender(
     if (order.state === "cancelled") return reject("VALIDATION", "This order is cancelled.", "order_cancelled");
     // AT-203 / §11.2: beginTender "rejects an order already settled from a fund".
     if (order.fundSettled === true) return reject("ALREADY_RESOLVED", COPY.ALREADY_RESOLVED, "settled_from_fund");
+    // AT-207 / §10.3.3: settled_at and written_off_at are mutually exclusive.
+    if (order.writtenOff === true) {
+      return reject("ORDER_WRITTEN_OFF", "This order was written off at the daily close and cannot be charged.", "order_written_off");
+    }
     if (!Number.isInteger(order.totalZar) || order.totalZar < 0) {
       return reject("VALIDATION", "The order total is not whole cents.", "total_not_integer_cents");
     }

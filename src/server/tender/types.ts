@@ -20,6 +20,8 @@ export type TenderOrder = {
   clientUuid: string;
   /** AT-203 / §11.2: settled from a blessing fund (payment_mode='donor_fund') — never tendered. */
   fundSettled?: boolean;
+  /** AT-207 / §10.3.3: written off by closeDaily() — never tendered again. */
+  writtenOff?: boolean;
 };
 
 export type TenderPayment = {
@@ -121,7 +123,9 @@ export type TenderErrorCode =
   | "TERMINAL_UNREACHABLE"
   | "GATEWAY_UNAVAILABLE"
   | "PAYMENT_UNKNOWN"
-  | "PAYMENT_DECLINED";
+  | "PAYMENT_DECLINED"
+  // AT-207: the close wrote this order off; it is not tendered again.
+  | "ORDER_WRITTEN_OFF";
 
 export type TenderFailure = {
   ok: false;
