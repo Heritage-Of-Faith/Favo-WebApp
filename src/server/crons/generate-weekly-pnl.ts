@@ -1,5 +1,5 @@
 // Weekly P&L cron — task G14
-// Fires Sunday 23:59 SAST. Aggregates revenue, COGS, expenses for
+// Scheduled Monday 06:00 SAST for the completed week (src/server/jobs/registry.ts). Aggregates revenue, COGS, expenses for
 // Mon 00:00 – Sun 23:59 SAST and inserts into weekly_reports.
 // Docs: API.md · BUSINESS_RULES.md T05 L09 · FAVO_PRD_v3.md §07 §09
 
@@ -37,6 +37,16 @@ export function weekBounds(referenceDate?: Date): { start: Date; end: Date; week
   const weekStarting = mondaySast.toISOString().slice(0, 10);
 
   return { start: mondayUtc, end: sundayUtcEnd, weekStarting };
+}
+
+/** Whether the report for the week starting `weekStarting` exists: the scheduler's "done" for this job. */
+export async function hasWeeklyReport(weekStarting: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: weeklyReports.id })
+    .from(weeklyReports)
+    .where(eq(weeklyReports.weekStarting, weekStarting))
+    .limit(1);
+  return Boolean(row);
 }
 
 export async function generateWeeklyPnL(

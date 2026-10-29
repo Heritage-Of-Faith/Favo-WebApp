@@ -26,8 +26,9 @@ Server Actions for mutations (`src/server/actions/*`). Route handlers for querie
 | `redeemLoyalty(customerId, orderId)` | Server action | barista | Require ≥ 100 pts. Full redemption only — `total_zar = 0`. |
 | `topUpWallet(customerId, amountZar)` | Server action | barista | Yoco intent; webhook credits wallet. |
 | `purchasePack(customerId, menuItemId, qty)` | Server action | barista | Yoco intent; on success insert `coffee_packs` (90 d expiry). |
-| `closeDaily()` | Cron 23:59 SAST | system | Reconcile payments vs stock. Web Push to admin staff on T01 breach (in-app admin alert not built yet). |
-| `generateWeeklyPnL()` | Cron Sun 23:59 | system | Archival report (stored in `weekly_reports`; nothing is sent). |
+| `closeDaily()` | Scheduler 00:05 SAST, for the completed day; catch-up on startup | system | Reconcile payments vs stock. Web Push to admin staff on T01 breach (in-app admin alert not built yet). One close per revenue day (the `daily_close` audit row); a re-run writes nothing. A day still unclosed at 06:00 pushes the admins, each morning until closed. |
+| `sweepCollected()` | Scheduler every 5 min | system | `ready` → `collected` 20 min after `completed_at` (PRD S7). Clears the queue board; touches nothing else. |
+| `generateWeeklyPnL()` | Scheduler Mon 06:00 SAST, for the completed week | system | Archival report (stored in `weekly_reports`; nothing is sent). |
 | `approveMonthlyPnL(id)` | Server action | admin | Set admin_sig. Report closed immediately. |
 | `GET /api/reports/export?format=csv\|pdf` | Route handler | admin | Sales, COGS, inventory variance. |
 | `POST /api/push/subscribe` | Route handler | barista (P1) → customer (P3) | Store `PushSubscription` on customer. |

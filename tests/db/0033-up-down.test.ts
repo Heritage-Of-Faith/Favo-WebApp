@@ -23,7 +23,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0047 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -32,6 +32,7 @@ const DOWN = "down/0033_at181_day5_substrate.down.sql";
 // AT-201: 0036 (orders.client_uuid) sits on top of 0035 (payments), which sits
 // on top of 0034 (notification_target, PR #284), which sits on top of 0033.
 // AT-203: 0045 (the blessing fund) sits on top of all of them; step it down first.
+// AT-207: 0047 (daily_closes + orders.written_off_at) sits on top of 0045; step it down first of all.
 const DOWN_0045 = "down/0045_at203_blessing_fund.down.sql";
 const DOWN_0036 ="down/0036_at201_orders_client_uuid.down.sql";
 const DOWN_0035 = "down/0035_at201_tender_payments.down.sql";
@@ -145,12 +146,14 @@ maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () 
 
   /**
    * Run `fn` in a transaction that is always rolled back. `bun db:migrate`
-   * brings the CI DB to 0036, so each case first steps 0036, 0035 and 0034
-   * down (inside the same rolled-back transaction) to start from 0033.
+   * brings the CI DB to 0047, so each case first steps 0047, 0045, 0036, 0035
+   * and 0034 down, newest first (inside the same rolled-back transaction), to
+   * start from 0033.
    */
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        await stepDown0047(tx);
         await tx.unsafe(migrationSql(DOWN_0045));
         await tx.unsafe(migrationSql(DOWN_0036));
         await tx.unsafe(migrationSql(DOWN_0035));

@@ -661,6 +661,25 @@ export async function cancelOrder(
         );
       }
 
+      // AT-207 / §10.3.3: the close wrote this order off; that is its outcome.
+      // Returned, not thrown, so the reject audit commits.
+      if (current.writtenOffAt) {
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: { attempted: "cancel", code: "ORDER_WRITTEN_OFF" },
+            reason: "ORDER_WRITTEN_OFF",
+          },
+          txDb
+        );
+        return {
+          ok: false,
+          code: "ORDER_WRITTEN_OFF",
+          message: "This order was written off at the daily close and cannot be cancelled.",
+        };
+      }
+
       // REQ-028 / P4: no cancel while a tender attempt is open (pending, or
       // sent and unresolved). Returned, not thrown, so the reject audit commits.
       const attempts = await tx

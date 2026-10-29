@@ -18,7 +18,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0047 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -69,6 +69,10 @@ maybe("0036 orders.client_uuid: up → down → up, and the refusals (AT-201, RE
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        // AT-207: the CI DB is at 0047 (orders.written_off_at, on top of 0036
+        // for orders; 0037 and 0045 do not touch it). Step it down so orders
+        // is at 0036 again.
+        await stepDown0047(tx);
         await fn(tx);
         throw new Rollback();
       });

@@ -10,6 +10,8 @@ import { getSession } from "@/lib/auth/session";
 import { canAccessAdmin } from "@/server/auth/rbac";
 import Sidebar from "@/components/admin/Sidebar";
 import PendingApprovalsBanner from "@/components/admin/PendingApprovalsBanner";
+import WriteOffApprovalsBanner from "@/components/admin/WriteOffApprovalsBanner";
+import BlockedClosesBanner from "@/components/admin/BlockedClosesBanner";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
@@ -37,6 +39,10 @@ export default async function AdminDashboardLayout({
       <main className="flex-1 min-h-0 overflow-y-auto p-6 pt-14 lg:pt-6">
         {/* L10: emergency purchases awaiting approval surface on every admin page. */}
         <PendingApprovalsBanner canApprove={canApprove} />
+        {/* AT-207 / §6.0.5: the close's write-offs, unapproved until an Admin PIN clears the day. */}
+        {/* AT-207 / REQ-036: a blocked daily close, until its row is no longer blocked. */}
+        {canApprove && <BlockedClosesBanner />}
+        {canApprove && <WriteOffApprovalsBanner />}
         {children}
       </main>
       <Toaster />
