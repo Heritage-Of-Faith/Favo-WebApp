@@ -328,6 +328,15 @@ mustBeAbsent("no cron writes payments (SQL)", "\\(UPDATE\\|INSERT INTO\\|DELETE 
 // The in-app scheduler (src/server/jobs) is the only caller (AT-169).
 mustBeAbsent("no live /api/crons/* endpoint (§10.7)", "api/crons", "src/");
 mustBeAbsent("no voided payment status", "voided", "db/enums.ts src/lib/types.ts");
+// L44 / REQ-160 / CLAUDE.md §7: no customer-reachable route increases (or reads)
+// a fund balance. The customer app and the customer actions never reach the
+// fund tables or the fund module. (tests/unit/server/funds/no-customer-topup.test.ts
+// holds the full allow-list and proves the actions refuse a non-staff session.)
+mustBeAbsent(
+  "REQ-160: no customer-reachable code reaches a blessing fund",
+  "donorFund\\|donor_fund\\|server/funds\\|actions/funds",
+  "\"src/app/(customer)/\" src/server/actions/customer.ts src/server/actions/customer-auth.ts src/server/actions/public.ts src/app/api/"
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 9. TEST-COUNT BAND — the cheapest regression check in the project

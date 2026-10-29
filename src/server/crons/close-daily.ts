@@ -137,7 +137,16 @@ export async function closeDaily(
     const [revRow] = await txDb
       .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
       .from(orders)
-      .where(and(ne(orders.state, "cancelled"), eq(orders.revenueDay, date)));
+      .where(
+        and(
+          ne(orders.state, "cancelled"),
+          eq(orders.revenueDay, date),
+          // AT-203 / L47: an order settled from a blessing fund is paid without a
+          // payments row, so it is not card revenue and is left out of this
+          // card-versus-payments reconciliation (it would read as a variance).
+          sql`${orders.paymentMode} IS DISTINCT FROM 'donor_fund'`
+        )
+      );
     const revenueZar = revRow?.total ?? 0;
 
     // Payments = sum of amountZar for successful payments on orders of the
