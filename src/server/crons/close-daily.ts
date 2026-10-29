@@ -81,6 +81,9 @@ export async function closeDaily(referenceDate?: Date): Promise<CloseDailyResult
   // in_progress and ready orders have been paid but not yet served — counting
   // them here inflates revenue vs. the payments query and creates a nightly
   // admin alert for variance that resolves itself only after collection.
+  // AT-203 / L47: an order settled from a blessing fund is paid without a
+  // payments row, so it is not card revenue and is left out of this
+  // card-versus-payments reconciliation (it would read as a variance).
   const [revRow] = await db
     .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
     .from(orders)
@@ -88,7 +91,8 @@ export async function closeDaily(referenceDate?: Date): Promise<CloseDailyResult
       and(
         eq(orders.state, "collected"),
         gte(orders.placedAt, start),
-        lt(orders.placedAt, end)
+        lt(orders.placedAt, end),
+        sql`${orders.paymentMode} IS DISTINCT FROM 'donor_fund'`
       )
     );
   const revenueZar = revRow?.total ?? 0;
