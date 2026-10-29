@@ -18,5 +18,6 @@ export const REVENUE_ORDER_SCOPE_SQL =
   " OR (orders.state = 'cancelled' AND EXISTS (" +
   "SELECT 1 FROM payments rp WHERE rp.order_id = orders.id AND rp.status = 'successful')))";
 
-/** The predicate as a drizzle SQL fragment. */
-export const revenueOrderScope = sql.raw(REVENUE_ORDER_SCOPE_SQL);
+/** The predicate as a drizzle SQL fragment (static template, no interpolation).
+ *  Its text must equal REVENUE_ORDER_SCOPE_SQL; a unit test pins that. */
+export const revenueOrderScope = sql`(orders.state IN ('in_progress', 'ready', 'collected') OR (orders.state = 'cancelled' AND EXISTS (SELECT 1 FROM payments rp WHERE rp.order_id = orders.id AND rp.status = 'successful')))`;

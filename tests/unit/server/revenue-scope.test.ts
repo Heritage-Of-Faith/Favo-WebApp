@@ -22,7 +22,7 @@ vi.mock("@/server/auth/guard", () => ({
 }));
 vi.mock("@/server/cogs/compute", () => ({ todaySast: vi.fn(() => "2026-10-25") }));
 
-import { REVENUE_ORDER_SCOPE_SQL } from "@/server/reports/revenue-scope";
+import { REVENUE_ORDER_SCOPE_SQL, revenueOrderScope } from "@/server/reports/revenue-scope";
 import { getPosToday } from "@/server/actions/pos-summary";
 import { buildReportRows } from "@/server/reports/export-csv";
 
@@ -37,6 +37,12 @@ describe("revenue scope (AT-209)", () => {
       " OR (orders.state = 'cancelled' AND EXISTS (" +
       "SELECT 1 FROM payments rp WHERE rp.order_id = orders.id AND rp.status = 'successful')))"
     );
+  });
+
+  it("the drizzle fragment carries exactly the same text as the string constant", () => {
+    const chunks = revenueOrderScope.queryChunks as unknown as { value: string[] }[];
+    const joined = chunks.map((c) => c.value.join("")).join("");
+    expect(joined.replace(/\s+/g, " ").trim()).toBe(REVENUE_ORDER_SCOPE_SQL);
   });
 
   it("migration 0043 rewrites v_daily_revenue with the same predicate; its down restores 0004's", () => {
