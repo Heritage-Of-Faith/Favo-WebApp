@@ -4,6 +4,7 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { revenueOrderScope } from "@/server/reports/revenue-scope";
 
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
 
@@ -37,7 +38,7 @@ export async function buildReportRows(from: string, to: string): Promise<ReportR
       TO_CHAR(placed_at AT TIME ZONE 'Africa/Johannesburg', 'YYYY-MM-DD') AS sast_date,
       COALESCE(SUM(total_zar), 0)::bigint AS revenue
     FROM orders
-    WHERE state IN ('in_progress', 'ready', 'collected')
+    WHERE ${revenueOrderScope}
       AND placed_at >= ${startUtc.toISOString()}::timestamptz
       AND placed_at < ${endUtc.toISOString()}::timestamptz
     GROUP BY sast_date

@@ -34,6 +34,7 @@ const maybe = hasRealDb() ? describe : describe.skip;
 
 const UP = "0035_at201_tender_payments.sql";
 const DOWN = "down/0035_at201_tender_payments.down.sql";
+const DOWN_0043 = "down/0043_at209_comps_cancel_abandon.down.sql";
 const AT = "0035_snapshot.json";
 const BEFORE = "0034_snapshot.json";
 
@@ -94,9 +95,14 @@ class Rollback extends Error {}
 maybe("0035 payments as the tender record: up → down → up, and the refusals (AT-201)", () => {
   let sql: Sql;
 
+  // AT-209: 0043's v_daily_revenue reads payments.status, and a view blocks
+  // ALTER COLUMN TYPE, so each case first steps 0043 down inside the
+  // always-rolled-back transaction (0043 is the only newer migration that
+  // touches payments or a view over it).
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        await tx.unsafe(migrationSql(DOWN_0043));
         await fn(tx);
         throw new Rollback();
       });

@@ -10,6 +10,7 @@
 import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { monthlyReports, orders } from "@db/schema";
+import { revenueOrderScope } from "@/server/reports/revenue-scope";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import type {
@@ -128,7 +129,7 @@ export async function generateMonthlyPnL(
     .from(orders)
     .where(
       and(
-        sql`${orders.state} IN ('in_progress', 'ready', 'collected')`,
+        revenueOrderScope, // AT-209: a cancelled order keeps its successful payment (L02)
         gte(orders.placedAt, start),
         lt(orders.placedAt, end)
       )

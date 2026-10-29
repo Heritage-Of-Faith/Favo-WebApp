@@ -13,6 +13,11 @@ export type AuditInput = {
   before?: unknown;
   after?: unknown;
   reason?: string;
+  /**
+   * PRD §10.3.2 / §6.0.7 (REQ-040, REQ-063): the overriding admin, where an
+   * admin PIN authorised a barista's action. The barista stays the actor.
+   */
+  onBehalfOfStaffId?: string;
 };
 
 /**
@@ -39,5 +44,6 @@ export async function writeAudit(input: AuditInput, tx?: DB): Promise<void> { //
     before: input.before ?? null,
     after: input.after ?? null,
     reason: input.reason,
+    ...(input.onBehalfOfStaffId ? { onBehalfOfStaffId: input.onBehalfOfStaffId } : {}),
   });
 }

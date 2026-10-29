@@ -82,6 +82,9 @@ export const wasteCategory = pgEnum("waste_category", [
   "spilled",
   "overproduction",
   "other",
+  // AT-209 / PRD §10.3, T6 step 2b, REQ-041: a drink made for a customer who
+  // left mid-make. Written with waste_log.order_id.
+  "abandoned",
 ]);
 
 export const purchaseKind = pgEnum("purchase_kind", [
