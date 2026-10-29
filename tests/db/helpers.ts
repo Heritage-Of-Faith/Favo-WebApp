@@ -57,3 +57,15 @@ export function migrationSql(file: string): string {
   const path = resolve(process.cwd(), "drizzle", file);
   return readFileSync(path, "utf8").replaceAll("--> statement-breakpoint", "");
 }
+
+/**
+ * Step 0047 (AT-207: daily_closes + orders.written_off_at) down inside the
+ * caller's always-rolled-back transaction. Its down refuses while a close
+ * record or a written-off order exists, and tests/db/scheduled-jobs.test.ts
+ * commits both (closeDaily on past days), so they are cleared first — inside
+ * the same transaction, so the rollback restores them.
+ */
+export async function stepDown0047(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
+  await tx.unsafe(`DELETE FROM daily_closes; UPDATE orders SET written_off_at = NULL WHERE written_off_at IS NOT NULL;`);
+  await tx.unsafe(migrationSql("down/0047_at207_daily_closes_writeoffs.down.sql"));
+}

@@ -60,8 +60,8 @@ maybe("the collected sweep (AT-194, §9.6.2 job 5)", () => {
     [{ id: staffId }] = await sql`INSERT INTO staff (name, role, pin_hash) VALUES ('Sweep Barista', 'barista', 'x') RETURNING id`;
     const order = async (state: string, completedAt: Date | null) => {
       const [{ id }] = await sql`
-        INSERT INTO orders (staff_id, total_zar, state, completed_at, revenue_day)
-        VALUES (${staffId}, 0, ${state}, ${completedAt}, ${revenueDay(now)})
+        INSERT INTO orders (staff_id, total_zar, state, completed_at, revenue_day, notification_target)
+        VALUES (${staffId}, 0, ${state}, ${completedAt}, ${revenueDay(now)}, 'none')
         RETURNING id`;
       return id as string;
     };
@@ -104,7 +104,12 @@ maybe("the collected sweep (AT-194, §9.6.2 job 5)", () => {
 maybe("closeDaily counts revenue by revenue_day (owner decision, Nikao 21 Oct, #260)", () => {
   let sql: Sql;
   // A fresh, long-past revenue day, so no other suite's orders share it.
-  const dayStart = Date.UTC(2011, 0, 1 + Math.floor(Math.random() * 3000)) - 2 * 3_600_000; // 00:00 SAST
+  // AT-207: always a Monday-Friday. These orders carry no payment, and closeDaily
+  // now writes off unpaid Saturday/Sunday orders (so they would leave revenue);
+  // weekday orders are never swept until S7a. A Saturday/Sunday draw moves to Monday.
+  const randomDay = Date.UTC(2011, 0, 1 + Math.floor(Math.random() * 3000));
+  const dow = new Date(randomDay).getUTCDay();
+  const dayStart = randomDay + (dow === 6 ? 2 : dow === 0 ? 1 : 0) * 86_400_000 - 2 * 3_600_000; // 00:00 SAST
   const at = (h: number, m: number) => new Date(dayStart + (h * 60 + m) * 60_000);
 
   beforeAll(() => {
@@ -121,8 +126,8 @@ maybe("closeDaily counts revenue by revenue_day (owner decision, Nikao 21 Oct, #
 
     const [{ id: staffId }] = await sql`INSERT INTO staff (name, role, pin_hash) VALUES ('Revenue Barista', 'barista', 'x') RETURNING id`;
     const order = (state: string, total: number, completedAt: Date | null) => sql`
-      INSERT INTO orders (staff_id, total_zar, state, placed_at, completed_at, revenue_day)
-      VALUES (${staffId}, ${total}, ${state}, ${at(23, 40)}, ${completedAt}, ${date})
+      INSERT INTO orders (staff_id, total_zar, state, placed_at, completed_at, revenue_day, notification_target)
+      VALUES (${staffId}, ${total}, ${state}, ${at(23, 40)}, ${completedAt}, ${date}, 'none')
       RETURNING id`;
     const [{ id: lateDone }] = await order("ready", 1000, at(23, 50));
     await order("in_progress", 300, null);

@@ -80,6 +80,10 @@ maybe("0047 daily_closes + write-off sweep: up → down → up, and the sweep on
     await inRolledBackTx(async (tx) => {
       expect(await dbColumns(tx, "daily_closes")).toEqual(snapshotColumns("daily_closes"));
       expect(await dbColumns(tx, "orders")).toEqual(snapshotColumns("orders"));
+      // scheduled-jobs.test.ts commits close records and written-off orders
+      // (closeDaily on past days); down refuses over them, so clear them here,
+      // inside this rolled-back transaction.
+      await tx.unsafe(`DELETE FROM daily_closes; UPDATE orders SET written_off_at = NULL WHERE written_off_at IS NOT NULL;`);
       await tx.unsafe(migrationSql(DOWN));
       expect(await dbColumns(tx, "daily_closes")).toBeNull();
       expect(await dbColumns(tx, "orders")).not.toContain("written_off_at");
@@ -107,14 +111,14 @@ maybe("0047 daily_closes + write-off sweep: up → down → up, and the sweep on
 
   it("daily_closes' CHECKs: a blocked close names its reason, a payments_matched one has none, no negative count or value", async () => {
     await inRolledBackTx(async (tx) => {
-      const bad = [
-        tx.savepoint((sp) => sp`INSERT INTO daily_closes (revenue_day, reconciliation_status) VALUES ('2026-10-01', 'blocked')`),
-        tx.savepoint((sp) => sp`INSERT INTO daily_closes (revenue_day, reconciliation_status, blocked_reason) VALUES ('2026-10-02', 'payments_matched', 'x')`),
-        tx.savepoint((sp) => sp`INSERT INTO daily_closes (revenue_day, reconciliation_status) VALUES ('2026-10-03', 'ok')`),
-        tx.savepoint((sp) => sp`INSERT INTO daily_closes (revenue_day, reconciliation_status, written_off_zar) VALUES ('2026-10-04', 'payments_matched', -1)`),
-        tx.savepoint((sp) => sp`INSERT INTO daily_closes (revenue_day, reconciliation_status, written_off_count) VALUES ('2026-10-05', 'payments_matched', -1)`),
+      const bad: Array<() => Promise<unknown>> = [
+        () => tx.savepoint((sp) => sp`INSERT INTO daily_closes (revenue_day, reconciliation_status) VALUES ('2026-10-01', 'blocked')`),
+        () => tx.savepoint((sp) => sp`INSERT INTO daily_closes (revenue_day, reconciliation_status, blocked_reason) VALUES ('2026-10-02', 'payments_matched', 'x')`),
+        () => tx.savepoint((sp) => sp`INSERT INTO daily_closes (revenue_day, reconciliation_status) VALUES ('2026-10-03', 'ok')`),
+        () => tx.savepoint((sp) => sp`INSERT INTO daily_closes (revenue_day, reconciliation_status, written_off_zar) VALUES ('2026-10-04', 'payments_matched', -1)`),
+        () => tx.savepoint((sp) => sp`INSERT INTO daily_closes (revenue_day, reconciliation_status, written_off_count) VALUES ('2026-10-05', 'payments_matched', -1)`),
       ];
-      for (const p of bad) await expect(p).rejects.toThrow(/daily_closes_/);
+      for (const run of bad) await expect(run()).rejects.toThrow(/daily_closes_/);
       await tx`INSERT INTO daily_closes (revenue_day, reconciliation_status, blocked_reason) VALUES (${DAY}, 'blocked', 'variance')`;
       await expect(
         tx.savepoint((sp) => sp`INSERT INTO daily_closes (revenue_day, reconciliation_status) VALUES (${DAY}, 'payments_matched')`)

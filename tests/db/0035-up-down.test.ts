@@ -28,7 +28,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0047 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -98,9 +98,11 @@ maybe("0035 payments as the tender record: up → down → up, and the refusals 
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
-        // AT-203: the CI DB is at 0045, which adds payments' FK to
-        // donor_fund_entries and a unique on (fund_topup_id, attempt). Step it
-        // down so payments is at 0035 again.
+        // AT-203/AT-207: the CI DB is at 0047 (daily_closes, orders.written_off_at;
+        // payments untouched), on top of 0045, which adds payments' FK to
+        // donor_fund_entries and a unique on (fund_topup_id, attempt). Step both
+        // down, newest first, so payments is at 0035 again.
+        await stepDown0047(tx);
         await tx.unsafe(migrationSql(DOWN_0045));
         await fn(tx);
         throw new Rollback();
