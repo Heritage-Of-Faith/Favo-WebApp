@@ -29,7 +29,15 @@ export type JobDefinition = {
   missedRun: MissedRunPolicy;
   /** The period a firing at `firedAt` covers, e.g. the revenue day or ISO week. */
   periodFor(firedAt: Date): string;
-  run(firedAt: Date): Promise<unknown>;
+  /** `late` is true for a startup catch-up, so a job can record that it ran late. */
+  run(firedAt: Date, late: boolean): Promise<unknown>;
+  /**
+   * For `catchUp` jobs: whether `period` is already done, judged by the job's
+   * own durable record rather than by a scheduler run row. A run that failed
+   * leaves no record, so the period is caught up at the next startup.
+   * Defaults to "a run of this job for this period was audited".
+   */
+  isDone?(period: string): Promise<boolean>;
 };
 
 export type RunAction = "job_run" | "job_catch_up" | "job_failed";
@@ -73,7 +81,8 @@ type Compiled = { job: JobDefinition; matches: CronMatcher };
 
 export class Scheduler {
   private readonly jobs: Compiled[];
-  private readonly running = new Set<string>();
+  /** The run in progress per job, so a firing never overlaps it. */
+  private readonly inFlight = new Map<string, Promise<void>>();
   private readonly now: () => Date;
   private readonly log: Pick<Console, "info" | "warn" | "error">;
   private lastTick: Date | null = null;
@@ -92,20 +101,28 @@ export class Scheduler {
 
   /**
    * Run one job for the firing at `firedAt`. Never throws: a failure is
-   * audited and alerted (rule 3). A job already running is skipped rather
-   * than overlapped.
+   * audited and alerted (rule 3). Never overlaps a run of the same job: a
+   * `skip` job's firing is skipped (its missed-run rule); a `catchUp` job's
+   * firing waits for the run in progress and then runs, so a 00:05 close that
+   * lands during a long startup catch-up is deferred, not lost (AT-193). The
+   * job is idempotent per period, so running after the catch-up is safe.
    */
   async runJob(job: JobDefinition, firedAt: Date, late = false): Promise<RunRecord | null> {
     const period = job.periodFor(firedAt);
-    if (this.running.has(job.name)) {
-      this.log.warn(`[scheduler] ${job.name}:${period} skipped — previous run still in progress`);
-      return null;
+    if (this.inFlight.has(job.name)) {
+      if (job.missedRun !== "catchUp") {
+        this.log.warn(`[scheduler] ${job.name}:${period} skipped — previous run still in progress`);
+        return null;
+      }
+      this.log.info(`[scheduler] ${job.name}:${period} deferred until the run in progress finishes`);
+      for (let p = this.inFlight.get(job.name); p; p = this.inFlight.get(job.name)) await p;
     }
-    this.running.add(job.name);
+    let release!: () => void;
+    this.inFlight.set(job.name, new Promise<void>((r) => { release = r; }));
     const startedAt = this.now();
     let record: RunRecord;
     try {
-      const result = await job.run(firedAt);
+      const result = await job.run(firedAt, late);
       record = {
         job: job.name, period, action: late ? "job_catch_up" : "job_run",
         scheduledFor: firedAt, startedAt, finishedAt: this.now(), late, result,
@@ -121,7 +138,8 @@ export class Scheduler {
         this.log.error(`[scheduler] failure alert for ${job.name}:${period} not sent:`, e),
       );
     } finally {
-      this.running.delete(job.name);
+      this.inFlight.delete(job.name);
+      release();
     }
     await this.deps.store.recordRun(record).catch((e) =>
       this.log.error(`[scheduler] audit row for ${job.name}:${period} not written:`, e),
@@ -132,9 +150,10 @@ export class Scheduler {
   /**
    * Startup catch-up (§9.6.2): for each `catchUp` job, every period whose
    * firing fell between the scheduler's first-ever start (bounded by
-   * CATCH_UP_WINDOW_MS) and now, with no recorded run, is run once, oldest
-   * first, marked late. `skip` jobs are never caught up. On the very first
-   * start there is nothing to catch up — the scheduler was not live before.
+   * CATCH_UP_WINDOW_MS) and now, that is not done (`isDone`, else no recorded
+   * run), is run once, oldest first, marked late. `skip` jobs are never
+   * caught up. On the very first start there is nothing to catch up — the
+   * scheduler was not live before.
    */
   async catchUp(): Promise<RunRecord[]> {
     const now = this.now();
@@ -151,9 +170,13 @@ export class Scheduler {
     return done;
   }
 
-  /** Whether a run for `period` already happened, so a catch-up must not repeat it. */
+  /**
+   * Whether `period` is already done, so a catch-up must not repeat it: the
+   * job's own `isDone` when it has one (e.g. the day's close record exists),
+   * else whether a run for `period` was audited.
+   */
   private isPeriodDone(job: JobDefinition, period: string): Promise<boolean> {
-    return this.deps.store.hasRun(job.name, period);
+    return job.isDone ? job.isDone(period) : this.deps.store.hasRun(job.name, period);
   }
 
   /**

@@ -6,10 +6,11 @@ Server Actions for mutations (`src/server/actions/*`). Route handlers for querie
 |---|---|---|---|
 | `loginWithPin(pin)` | Server action | public | Bcrypt-compare against `staff.pin_hash`. Emit session on success. Audit row in both branches. |
 | `searchCustomer(query)` | Server action | barista | ILIKE name + exact phone. Returns id, name, phoneLast4 only — never email or the full phone (REQ-142). |
-| `createOrder(input)` | Server action | barista | Insert order in `ordered`. Returns id + Yoco payment intent. **No stock deduction.** |
+| `createOrder(input)` | Server action | barista | Insert order in `ordered`. Returns id, net total, the free-cup outcome and (net > 0 only) a Yoco checkout priced at the committed total. A net-R0 order is `payment_mode='free'`: no payments row, no Yoco call (REQ-153). **No stock deduction.** |
 | `transitionOrder(id, toState)` | Server action | barista | State machine: ordered→in_progress→ready→collected. `in_progress` deducts stock: milk/beans = 1 cup per drink from the open container (auto-opens next sealed); other items = recipe quantity. `ready` fires Web Push + accrues loyalty + pg_notify. |
 | `cancelOrder(id, reason)` | Server action | barista/admin | Valid only when state == ordered; 409 otherwise. |
-| `applyStaffDiscount(orderId, beneficiaryStaffId)` | Server action | barista | Cappuccino + weekday only. 100% off. Inserts `staff_entitlement_log` (UNIQUE per day). |
+| `applyFreeCoffee(orderId, beneficiaryCustomerId)` | Server action | barista | L03 free weekday cup on an existing `ordered` order (replaces `applyStaffDiscount`); `createOrder` already applies it automatically, no tap. Beneficiary must be a `customers` row with `status='office_staff'`; the date must be Mon–Fri SAST, today must have an opening session (`NO_SESSION` otherwise) and its mode must be `weekday`; coffee category only; one free cup per order. Discounts **one unit** of the first eligible line (`order_items.discount_zar = unit_price_zar`), never the line or the order. Inserts `staff_entitlement_log` (`UNIQUE(customer_id, day)`). Locks the payments row and refuses with `TENDER_IN_PROGRESS` ("Cancel and re-ring the order to change the free cup.") once a card checkout exists, or if the change would take a row-carrying order to R0 — no payments row is ever deleted. Refusals `ENTITLEMENT_USED` / `NOT_ELIGIBLE` / `NO_SESSION` — office-staff refusals audited `action='reject'`. |
+| `declineFreeCoffee(orderId)` | Server action | barista | One tap to decline the auto-applied free cup while the order is `ordered` and no card checkout exists (`TENDER_IN_PROGRESS` "Cancel and re-ring the order to change the free cup." otherwise; `STALE_STATE` while createOrder is still writing a chargeable order's payments row): deletes the beneficiary's `staff_entitlement_log` row for the order, clears that line's `discount_zar`, restores the total, audits `decline_free_cup`. A free order becomes chargeable: a pending payments row at the new total is written first, then a checkout is created from it. Returns `{ totalZar, yocoClientSecret }`. |
 | `POST /api/payments/yoco/webhook` | Route handler | HMAC | Verify `YOCO_WEBHOOK_SECRET`. Idempotent on `yoco_payment_id`. |
 | `GET /api/queue/stream` | SSE | barista | `LISTEN order_changes`. Heartbeat every 30 s. Client auto-reconnects. |
 | `GET /api/cogs/live` | Route handler | admin | Live revenue, COGS, expenses, margin, profit flag. |
@@ -25,8 +26,9 @@ Server Actions for mutations (`src/server/actions/*`). Route handlers for querie
 | `redeemLoyalty(customerId, orderId)` | Server action | barista | Require ≥ 100 pts. Full redemption only — `total_zar = 0`. |
 | `topUpWallet(customerId, amountZar)` | Server action | barista | Yoco intent; webhook credits wallet. |
 | `purchasePack(customerId, menuItemId, qty)` | Server action | barista | Yoco intent; on success insert `coffee_packs` (90 d expiry). |
-| `closeDaily()` | Cron 23:59 SAST | system | Reconcile payments vs stock. Web Push to admin staff on T01 breach (in-app admin alert not built yet). |
-| `generateWeeklyPnL()` | Cron Sun 23:59 | system | Archival report (stored in `weekly_reports`; nothing is sent). |
+| `closeDaily()` | Scheduler 00:05 SAST, for the completed day; catch-up on startup | system | Reconcile payments vs stock. Web Push to admin staff on T01 breach (in-app admin alert not built yet). One close per revenue day (the `daily_close` audit row); a re-run writes nothing. A day still unclosed at 06:00 pushes the admins, each morning until closed. |
+| `sweepCollected()` | Scheduler every 5 min | system | `ready` → `collected` 20 min after `completed_at` (PRD S7). Clears the queue board; touches nothing else. |
+| `generateWeeklyPnL()` | Scheduler Mon 06:00 SAST, for the completed week | system | Archival report (stored in `weekly_reports`; nothing is sent). |
 | `approveMonthlyPnL(id)` | Server action | admin | Set admin_sig. Report closed immediately. |
 | `GET /api/reports/export?format=csv\|pdf` | Route handler | admin | Sales, COGS, inventory variance. |
 | `POST /api/push/subscribe` | Route handler | barista (P1) → customer (P3) | Store `PushSubscription` on customer. |

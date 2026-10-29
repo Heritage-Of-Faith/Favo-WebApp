@@ -1,10 +1,8 @@
-// Staff discount eligibility — task G5
-// Rules L03 + L14: staff free coffee is 1 per staff per weekday, 100% off,
-// on ANY menu item where category='coffee' (hot chocolate, teas and other
-// non-coffee items do NOT qualify). Weekday is evaluated in Africa/Johannesburg
-// (rule L07 tz). The once-per-day limit is enforced by the DB
-// UNIQUE(staff_id, day) constraint; this module covers the weekday + coffee
-// category eligibility gate.
+// L03 free weekday cup — the two date/category primitives (task G5).
+// Weekday is evaluated in Africa/Johannesburg (rule L07 tz); only
+// category='coffee' qualifies (T06). The rest of the decision lives in
+// src/server/orders/free-coffee.ts; the once-per-day limit is the DB's
+// UNIQUE(customer_id, day) on staff_entitlement_log.
 
 const SAST = "Africa/Johannesburg";
 
@@ -23,35 +21,4 @@ export function isWeekdayInSAST(date: Date): boolean {
  */
 export function isCoffeeCategory(category: string | null | undefined): boolean {
   return category === "coffee";
-}
-
-export type DiscountEligibility =
-  | { eligible: true }
-  | { eligible: false; code: "NOT_COFFEE" | "NOT_WEEKDAY"; message: string };
-
-/**
- * Whether the staff free-coffee discount may be applied to this order now.
- * `hasCoffeeItem` must be true iff the order contains at least one line whose
- * menu item has category='coffee'. Does NOT check the once-per-day limit
- * (DB UNIQUE handles that on insert).
- */
-export function checkStaffDiscountEligibility(
-  hasCoffeeItem: boolean,
-  now: Date
-): DiscountEligibility {
-  if (!hasCoffeeItem) {
-    return {
-      eligible: false,
-      code: "NOT_COFFEE",
-      message: "Staff discount applies to coffee items only (rule L03/L14).",
-    };
-  }
-  if (!isWeekdayInSAST(now)) {
-    return {
-      eligible: false,
-      code: "NOT_WEEKDAY",
-      message: "Staff discount applies on weekdays only (rule L03).",
-    };
-  }
-  return { eligible: true };
 }

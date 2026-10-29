@@ -354,11 +354,13 @@ test.describe("G5: order actions (smoke via POS UI)", () => {
     ).toBeVisible({ timeout: 3000 });
   });
 
-  test("applyStaffDiscount: discount UI is reachable from an order view", async ({
+  test("free cup (applyFreeCoffee / declineFreeCoffee): POS renders", async ({
     page,
   }) => {
-    // The staff discount button lives on the active-order view (M6).
-    // Without a live payment we can't reach it, so verify the page doesn't crash.
+    // AT-183: the free cup is applied automatically at ring-up; the barista only
+    // sees "Free cup applied" + Decline on an office-staff weekday order. That
+    // needs a seeded office_staff customer and a weekday session, so this only
+    // verifies the page doesn't crash.
     await expect(page.locator("main")).toBeVisible();
   });
 });

@@ -1,13 +1,17 @@
 // Daily close reconciliation — task G10
 // Scheduled 00:05 SAST for the completed day (src/server/jobs/registry.ts). Compares order revenue vs confirmed payments
-// for the day. Pushes an alert to admin staff devices on T01 variance band
+// for the day. Idempotent per revenue day (AT-193, PRD §9.6.2 job 2): the close
+// record is the `daily_close` audit row — there is no `daily_closes` table yet
+// (deferred, build-plan §5) — and a second close of a closed day writes nothing.
+// Pushes an alert to admin staff devices on T01 variance band
 // breach (L09) — this used to page Discord; deletion pass replaced it with
 // Web Push (see docs on the deletion PR) so the alert doesn't vanish.
 // Docs: API.md · BUSINESS_RULES.md L09 T01
 
-import { and, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders, staff } from "@db/schema";
+import type { DB } from "@/lib/db";
+import { auditLog, orders, staff } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { formatZarField } from "@/lib/format";
 import webpush from "web-push";
@@ -61,60 +65,119 @@ export function dayBounds(referenceDate?: Date): { start: Date; end: Date; date:
   return { start, end, date };
 }
 
-export type CloseDailyResult = {
-  date: string;
-  revenueZar: number;
-  paymentsZar: number;
-  variancePct: number;
-  band: VarianceBand;
-};
+export type CloseDailyResult =
+  | {
+      date: string;
+      alreadyClosed: false;
+      wasCatchUp: boolean;
+      revenueZar: number;
+      paymentsZar: number;
+      variancePct: number;
+      band: VarianceBand;
+    }
+  | { date: string; alreadyClosed: true };
+
+/** The audit action that is a revenue day's close record (entity_kind 'system', entity_id = the day). */
+export const DAILY_CLOSE_ACTION = "daily_close";
+
+/**
+ * Which of `dates` (YYYY-MM-DD, SAST) already have a close record. Only rows
+ * written since AT-193 count: they carry `revenueDay` and always cover a whole
+ * completed day. An older `daily_close` row may be a manual mid-day close of
+ * "today", a part-day figure, so it never marks a day as closed.
+ */
+export async function closedDays(dates: string[], client: DB = db): Promise<Set<string>> {
+  if (dates.length === 0) return new Set();
+  const rows = await client
+    .select({ day: auditLog.entityId })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.entityKind, "system"),
+        eq(auditLog.action, DAILY_CLOSE_ACTION),
+        inArray(auditLog.entityId, dates),
+        sql`(${auditLog.after} ->> 'revenueDay') IS NOT NULL`
+      )
+    );
+  return new Set(rows.map((r) => r.day));
+}
 
 /**
  * Reconcile collected order totals against confirmed payment amounts for the
  * given SAST day. Returns the reconciliation result and sends a Web Push to admin staff when
  * variance exceeds the T01 "ok" threshold (>= 5%).
+ *
+ * Only a completed day can be closed: closing today early would make the real
+ * 00:05 close a no-op. A day that is already closed returns `alreadyClosed`
+ * and writes nothing — no second audit row, no second alert.
  */
-export async function closeDaily(referenceDate?: Date): Promise<CloseDailyResult> {
-  const { start, end, date } = dayBounds(referenceDate);
+export async function closeDaily(
+  referenceDate?: Date,
+  opts: { wasCatchUp?: boolean; now?: Date } = {}
+): Promise<CloseDailyResult> {
+  const { end, date } = dayBounds(referenceDate);
+  const wasCatchUp = opts.wasCatchUp ?? false;
+  if (end.getTime() >= (opts.now ?? new Date()).getTime()) {
+    throw new Error(`Revenue day ${date} is not over yet; closeDaily only closes a completed day.`);
+  }
 
-  // Revenue = sum of totalZar for orders fully collected today.
-  // in_progress and ready orders have been paid but not yet served — counting
-  // them here inflates revenue vs. the payments query and creates a nightly
-  // admin alert for variance that resolves itself only after collection.
-  const [revRow] = await db
-    .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
-    .from(orders)
-    .where(
-      and(
-        eq(orders.state, "collected"),
-        gte(orders.placedAt, start),
-        lt(orders.placedAt, end)
-      )
+  const closed = await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DB;
+    // One close per revenue day: a second close of the same day (a catch-up
+    // overlapping the scheduled run, or a second instance) waits here, then
+    // finds the first one's close record.
+    await txDb.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`daily_close:${date}`}))`);
+    if ((await closedDays([date], txDb)).has(date)) return null;
+
+    // Revenue = sum of totalZar for every non-cancelled order of this
+    // revenue day, keyed on orders.revenue_day (minted at createOrder, L07 /
+    // REQ-039), whatever its state. Owner decision, Nikao 21 Oct (#260): the
+    // close no longer depends on an order having reached `collected`, so an
+    // order Done at 23:50 and swept at 00:10 is in its own day's close.
+    const [revRow] = await txDb
+      .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
+      .from(orders)
+      .where(and(ne(orders.state, "cancelled"), eq(orders.revenueDay, date)));
+    const revenueZar = revRow?.total ?? 0;
+
+    // Payments = sum of amountZar for successful payments on orders of the
+    // same revenue day, keyed the same way so the two figures line up.
+    const [payRow] = await txDb.execute<{ total: string | null }>(sql`
+      SELECT COALESCE(SUM(p.amount_zar), 0)::bigint AS total
+      FROM payments p
+      JOIN orders o ON p.order_id = o.id
+      WHERE p.status = 'successful'
+        AND o.revenue_day = ${date}::date
+    `);
+    const paymentsZar = parseInt(payRow?.total ?? "0", 10) || 0;
+
+    const diffZar = Math.abs(revenueZar - paymentsZar);
+    const variancePct = revenueZar > 0 ? (diffZar / revenueZar) * 100 : 0;
+    const band = varianceBand(variancePct);
+
+    await writeAudit(
+      {
+        entityKind: "system",
+        entityId: date,
+        action: DAILY_CLOSE_ACTION,
+        actorRole: "system",
+        after: {
+          revenueDay: date,
+          wasCatchUp,
+          revenueZar,
+          paymentsZar,
+          variancePct: Math.round(variancePct * 100) / 100,
+          band,
+        },
+        reason: wasCatchUp ? `catch-up on startup: closes revenue day ${date}` : undefined,
+      },
+      txDb
     );
-  const revenueZar = revRow?.total ?? 0;
 
-  // Payments = sum of amountZar for successful payments on those same orders
-  const [payRow] = await db.execute<{ total: string | null }>(sql`
-    SELECT COALESCE(SUM(p.amount_zar), 0)::bigint AS total
-    FROM payments p
-    JOIN orders o ON p.order_id = o.id
-    WHERE p.status = 'successful'
-      AND o.placed_at >= ${start.toISOString()}::timestamptz
-      AND o.placed_at < ${end.toISOString()}::timestamptz
-  `);
-  const paymentsZar = parseInt(payRow?.total ?? "0", 10) || 0;
-
-  const diffZar = Math.abs(revenueZar - paymentsZar);
-  const variancePct = revenueZar > 0 ? (diffZar / revenueZar) * 100 : 0;
-  const band = varianceBand(variancePct);
-
-  await writeAudit({
-    entityKind: "system",
-    entityId: date,
-    action: "daily_close",
-    actorRole: "system",
-    after: { revenueZar, paymentsZar, variancePct: Math.round(variancePct * 100) / 100, band },
+    return { revenueZar, paymentsZar, variancePct, band };
   });
+  if (!closed) return { date, alreadyClosed: true };
+  const { revenueZar, paymentsZar, variancePct, band } = closed;
 
   // Only alert on mismatch (L09: "blocks + pages ops on mismatch"). Recipients
   // are admin-tier staff with a saved push subscription — this is an
@@ -138,5 +201,5 @@ export async function closeDaily(referenceDate?: Date): Promise<CloseDailyResult
     }
   }
 
-  return { date, revenueZar, paymentsZar, variancePct, band };
+  return { date, alreadyClosed: false, wasCatchUp, revenueZar, paymentsZar, variancePct, band };
 }

@@ -96,3 +96,29 @@ export const expenseCategory = pgEnum("expense_category", [
   "other",
 ]);
 
+
+// AT-181 / PRD §10.3: free-coffee eligibility (L03) and audience targeting.
+// The value is `office_staff`, not `staff` — the bare word collides with the
+// `staff` table.
+export const customerStatus = pgEnum("customer_status", [
+  "office_staff",
+  "church_member",
+]);
+
+// AT-181 / PRD §10.3: the day's mode on an opening session.
+export const sessionMode = pgEnum("session_mode", [
+  "weekday",
+  "sunday",
+  "event",
+]);
+
+// AT-181 / PRD §10.3: why an order line was comped — "the definition of
+// record". NULL when the line carries no comp.
+export const compReason = pgEnum("comp_reason", [
+  "wrong_drink",
+  "wrong_charge",
+  "spillage",
+  "staff_error",
+  "goodwill",
+  "donation",
+]);

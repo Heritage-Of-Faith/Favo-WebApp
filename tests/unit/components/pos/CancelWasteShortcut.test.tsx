@@ -15,7 +15,6 @@ vi.mock("@/server/actions/orders", () => ({
   createOrder: vi.fn(),
   transitionOrder: vi.fn(),
   cancelOrder: (...a: unknown[]) => mockCancelOrder(...a),
-  applyStaffDiscount: vi.fn(),
 }));
 vi.mock("@/server/actions/auth", () => ({ signOut: vi.fn() }));
 vi.mock("@/server/actions/favo", () => ({ getFavo: vi.fn().mockResolvedValue({ ok: true, data: { favo: null } }), setFavo: vi.fn(), clearFavo: vi.fn() }));

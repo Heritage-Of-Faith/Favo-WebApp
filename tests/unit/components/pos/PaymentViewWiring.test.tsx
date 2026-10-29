@@ -12,7 +12,7 @@ vi.mock("next/script", () => ({ default: () => null }));
 const mockCreateOrder = vi.fn();
 vi.mock("@/server/actions/orders", () => ({
   createOrder: (...a: unknown[]) => mockCreateOrder(...a),
-  transitionOrder: vi.fn(), cancelOrder: vi.fn(), applyStaffDiscount: vi.fn(),
+  transitionOrder: vi.fn(), cancelOrder: vi.fn(),
 }));
 vi.mock("@/server/actions/auth", () => ({ signOut: vi.fn() }));
 vi.mock("@/server/actions/favo", () => ({ getFavo: vi.fn().mockResolvedValue({ ok: true, data: { favo: null } }), setFavo: vi.fn(), clearFavo: vi.fn() }));

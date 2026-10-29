@@ -133,6 +133,30 @@ describe("Scheduler.runJob — failure raises, never retries silently (rule 3)",
     await first;
     expect(j.run).toHaveBeenCalledTimes(1);
   });
+
+  it("a catchUp job's firing during a long run is deferred until it finishes, not lost (AT-193)", async () => {
+    // A startup catch-up is still closing an old day when 00:05 fires.
+    const { store, runs } = memoryStore();
+    let release!: () => void;
+    const order: string[] = [];
+    const j = job({
+      cron: "5 0 * * *",
+      missedRun: "catchUp",
+      run: vi.fn(async (t: Date) => {
+        order.push(t.toISOString());
+        if (order.length === 1) await new Promise<void>((r) => { release = r; });
+      }),
+    });
+    const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet });
+    const catchUp = s.runJob(j, T("2026-10-18T22:05:00Z"), true);
+    const scheduled = s.runJob(j, T("2026-10-19T22:05:00Z"));
+    await Promise.resolve();
+    expect(order).toEqual(["2026-10-18T22:05:00.000Z"]);
+    release();
+    await Promise.all([catchUp, scheduled]);
+    expect(order).toEqual(["2026-10-18T22:05:00.000Z", "2026-10-19T22:05:00.000Z"]);
+    expect(runs.map((r) => r.action)).toEqual(["job_catch_up", "job_run"]);
+  });
 });
 
 describe("Scheduler.catchUp — startup catch-up per §9.6.2", () => {
@@ -173,6 +197,48 @@ describe("Scheduler.catchUp — startup catch-up per §9.6.2", () => {
     const j = weekly();
     const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet, now: () => T("2026-10-13T08:00:00Z") });
     expect(await s.catchUp()).toEqual([]);
+  });
+
+  it("isDone overrides the run rows: an unclosed period is caught up even after a failed run (AT-193)", async () => {
+    // closeDaily's rule: done means the day has a close record, so a failed
+    // close leaves the day open and the next startup closes it, audited late.
+    const { store, runs } = memoryStore(T("2026-10-10T08:00:00Z"));
+    runs.push({ job: "weekly", period: "2026-10-12", action: "job_failed", scheduledFor: T("2026-10-12T04:00:00Z"), startedAt: T("2026-10-12T04:00:00Z"), finishedAt: T("2026-10-12T04:00:01Z"), late: false, error: "x" });
+    const isDone = vi.fn(async () => false);
+    const j = weekly({ isDone });
+    const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet, now: () => T("2026-10-13T08:00:00Z") });
+    const done = await s.catchUp();
+    expect(isDone).toHaveBeenCalledWith("2026-10-12");
+    expect(done.map((r) => [r.period, r.action])).toEqual([["2026-10-12", "job_catch_up"]]);
+  });
+
+  it("tick replay after a stall also honours isDone (AT-193)", async () => {
+    // Stalled from Sun 11 Oct to Tue 20 Oct: Mondays 12 and 19 Oct were missed;
+    // the 12th is already done by the job's own record, so only the 19th runs.
+    const { store } = memoryStore();
+    const j = weekly({ isDone: async (p) => p === "2026-10-12" });
+    const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet });
+    await s.tick(T("2026-10-11T08:00:00Z"));
+    await s.tick(T("2026-10-20T08:00:00Z"));
+    expect(vi.mocked(j.run).mock.calls.map(([t]) => t.toISOString())).toEqual(["2026-10-19T04:00:00.000Z"]);
+  });
+
+  it("isDone true skips a period with no run row at all", async () => {
+    const { store } = memoryStore(T("2026-10-10T08:00:00Z"));
+    const j = weekly({ isDone: async () => true });
+    const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet, now: () => T("2026-10-13T08:00:00Z") });
+    expect(await s.catchUp()).toEqual([]);
+    expect(j.run).not.toHaveBeenCalled();
+  });
+
+  it("tells the job it is running late, so it can record a catch-up", async () => {
+    const { store } = memoryStore(T("2026-10-10T08:00:00Z"));
+    const j = weekly();
+    const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet, now: () => T("2026-10-13T08:00:00Z") });
+    await s.catchUp();
+    expect(j.run).toHaveBeenCalledWith(T("2026-10-12T04:00:00Z"), true);
+    await s.tick(T("2026-10-19T04:00:00Z"));
+    expect(j.run).toHaveBeenLastCalledWith(T("2026-10-19T04:00:00Z"), false);
   });
 
   it("looks back no further than the catch-up window", async () => {
