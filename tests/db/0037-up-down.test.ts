@@ -22,6 +22,9 @@ const maybe = hasRealDb() ? describe : describe.skip;
 
 const UP = "0037_at201_app_config.sql";
 const DOWN = "down/0037_at201_app_config.down.sql";
+// AT-202: 0046 seeds three shot settings into app_config (and 0037's down
+// refuses while any setting is stored), so each case first steps 0046 down.
+const DOWN_0046 = "down/0046_at202_order_item_surcharge.down.sql";
 
 function snapshotColumns(): string[] {
   const path = resolve(process.cwd(), "drizzle", "meta", "0037_snapshot.json");
@@ -50,6 +53,7 @@ maybe("0037 app_config: up → down → up, and the refusals (AT-201, §10.4)", 
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        await tx.unsafe(migrationSql(DOWN_0046));
         await fn(tx);
         throw new Rollback();
       });

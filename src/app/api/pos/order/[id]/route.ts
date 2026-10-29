@@ -33,6 +33,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         unitPriceZar: orderItems.unitPriceZar,
         discountZar: orderItems.discountZar,
         modifications: orderItems.modifications,
+        shots: orderItems.shots,
+        surchargeZar: orderItems.surchargeZar,
       })
       .from(orderItems)
       .innerJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
@@ -73,6 +75,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       discountZar: i.discountZar,
       modifications:
         (i.modifications as { id: string; name: string; priceDeltaZar: number }[]) ?? [],
+      shots: i.shots,
+      surchargeZar: i.surchargeZar,
     })),
   };
 

@@ -32,6 +32,10 @@ import {
   type FreeCupDecision,
   type FreeCupRefusalCode,
 } from "@/server/orders/free-coffee";
+import {
+  shotSurchargeZar, shotsAboveCeilingMessage, shotsNotAllowedMessage, type ShotPolicy,
+} from "@/server/orders/shot-surcharge";
+import { readShotPolicy, readCoffeeRecipeIds } from "@/server/orders/shot-policy";
 import { startTender, TENDER_NOT_BEGUN } from "@/server/tender/service";
 import { isAttemptOpen, isUnresolvedNeedingAttention } from "@/server/tender/tender";
 import { summarisePayments } from "@/server/tender/summary";
@@ -52,6 +56,8 @@ export type CreateOrderInput = {
     menuItemId: string;
     quantity: number;
     modifications: string[];
+    /** AT-202 / L31: the line's shot count, set by the §6.2.3c picker. Default 1. */
+    shots?: number;
   }[];
 };
 
@@ -65,6 +71,8 @@ const createOrderSchema = z.object({
         menuItemId: z.string().min(1),
         quantity: z.number().int().positive(),
         modifications: z.array(z.string()),
+        // The ceiling for the mode (T15) is checked below, with its own code.
+        shots: z.number().int().min(1).default(1),
       })
     )
     .min(1),
@@ -119,6 +127,27 @@ export async function createOrder(
   }
   const data = parsed.data;
 
+  // One server timestamp for placed_at, revenue_day and the free-cup day, so
+  // they can never straddle midnight SAST (L07, REQ-039).
+  const receivedAt = new Date();
+  const day = revenueDay(receivedAt);
+
+  // ── AT-202: the shot ceiling (T15, REQ-138, REQ-144) and the extra-shot
+  // surcharge (T09, REQ-104, REQ-136). Only a line above one shot can be
+  // affected, so the policy is read only then. A line above the ceiling for
+  // today's mode is refused here, before anything is written.
+  let shotPolicy: ShotPolicy | null = null;
+  if (data.items.some((i) => i.shots > 1)) {
+    shotPolicy = await readShotPolicy(db, day);
+    const policy = shotPolicy;
+    if (data.items.some((i) => i.shots > policy.maxShots)) {
+      return { ok: false, code: "SHOTS_ABOVE_CEILING", message: shotsAboveCeilingMessage(policy) };
+    }
+  }
+  /** §7.0.2 surcharge_zar for one unit of a line. */
+  const surchargeFor = (shots: number) =>
+    shotPolicy ? shotSurchargeZar(shots, shotPolicy.extraShotZar, shotPolicy.surchargeInForce) : 0;
+
   // Resolve current prices from the DB (never trust client-supplied prices).
   // The item and modifier lookups are independent — run them in parallel so
   // creation costs one round trip here, not two sequential ones.
@@ -137,6 +166,22 @@ export async function createOrder(
   ]);
   const menuById = new Map(menuRows.map((m) => [m.id, m]));
   const modById = new Map(modRows.map((m) => [m.id, m]));
+
+  // AT-202 / L48: shots above 1 only on a drink whose recipe holds coffee —
+  // never a surcharge on a hot chocolate. Refused before anything is written.
+  const multiShot = data.items.filter((i) => i.shots > 1);
+  if (multiShot.length > 0) {
+    const recipeIds = multiShot
+      .map((i) => menuById.get(i.menuItemId)?.recipeId)
+      .filter((r): r is string => typeof r === "string");
+    const coffee = await readCoffeeRecipeIds(db, recipeIds);
+    for (const i of multiShot) {
+      const mi = menuById.get(i.menuItemId);
+      if (mi && !(mi.recipeId && coffee.has(mi.recipeId))) {
+        return { ok: false, code: "SHOTS_NOT_ALLOWED", message: shotsNotAllowedMessage(mi.name) };
+      }
+    }
+  }
 
   const lines: PricedLine[] = [];
   for (const item of data.items) {
@@ -169,18 +214,17 @@ export async function createOrder(
       unitPriceZar: mi.currentPriceZar,
       quantity: item.quantity,
       modifications: mods,
+      surchargeZar: surchargeFor(item.shots),
     });
   }
+  // §7.0.2 order_gross: quantity × (unit + mods + surcharge), summed.
   const grossZar = computeOrderTotalZar(lines);
   // AT-181 B1: per-unit priced mods, from the same deltas that priced the line.
   const modsZarByLine = lines.map((l) => l.modifications.reduce((sum, m) => sum + m.priceDeltaZar, 0));
 
-  // One server timestamp for placed_at, revenue_day and the free-cup day, so
-  // they can never straddle midnight SAST (L07, REQ-039).
-  const receivedAt = new Date();
-  const day = revenueDay(receivedAt);
-
   // ── L03 free weekday cup — applied automatically, no tap (REQ-024) ─────────
+  // It only applies on a weekday, where the surcharge is 0 (T09), so its one
+  // unit is unit_price_zar + mods_zar and never includes a surcharge.
   const freeCupLines = data.items.map((item, i) => ({
     category: menuById.get(item.menuItemId)!.category,
     unitPriceZar: menuById.get(item.menuItemId)!.currentPriceZar,
@@ -205,6 +249,10 @@ export async function createOrder(
       unitPriceZar: mi.currentPriceZar,
       modsZar: modsZarByLine[i],
       modifications: mods,
+      // AT-202: one row per input line — a different shot count is a
+      // different line (L37), never merged by menu item.
+      shots: item.shots,
+      surchargeZar: lines[i].surchargeZar ?? 0,
     };
   });
 
@@ -971,6 +1019,8 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
         unitPriceZar: orderItems.unitPriceZar,
         discountZar: orderItems.discountZar,
         modifications: orderItems.modifications,
+        shots: orderItems.shots,
+        surchargeZar: orderItems.surchargeZar,
       })
       .from(orderItems)
       .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
@@ -1013,6 +1063,8 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
       modifications:
         (it.modifications as { id: string; name: string; priceDeltaZar: number }[]) ??
         [],
+      shots: it.shots,
+      surchargeZar: it.surchargeZar,
     })),
   };
   return { ok: true, data: order };

@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getTodaySessions, submitOpeningTime, type OpeningSession } from "@/server/actions/opening";
@@ -23,6 +24,7 @@ function snoozeKey(date: string) {
 }
 
 export default function OpeningTimePrompt() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState("");
   const [sessions, setSessions] = useState<OpeningSession[]>([]);
@@ -67,6 +69,10 @@ export default function OpeningTimePrompt() {
     if (res.data.notified) toast.success(`Opening time set — customers notified (${time}).`);
     else toast.message("Opening time confirmed — already set for today.");
     setOpen(false);
+    // AT-202: the session sets today's mode, which decides the shot picker's
+    // segments. Re-render the page's server data; client state (cart,
+    // customer) is kept.
+    router.refresh();
   }
 
   return (

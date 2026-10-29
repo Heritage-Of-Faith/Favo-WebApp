@@ -69,6 +69,8 @@ export type MenuItem = {
   currentPriceZar: number;
   active: boolean;
   customisations: MenuCustomisation[];
+  /** AT-202 / L48: the recipe holds coffee (an ingredient of kind 'bean'), so the shot picker applies. */
+  takesShots?: boolean;
 };
 
 export type OrderItem = {
@@ -80,6 +82,10 @@ export type OrderItem = {
   modifications: MenuCustomisation[];
   /** Integer cents taken off this line (L03 free cup = one unit). 0 when none. */
   discountZar?: number;
+  /** AT-202: the line's shot count (order_items.shots). Absent = 1. */
+  shots?: number;
+  /** AT-202: the extra-shot surcharge for ONE unit, integer cents. Absent = 0. */
+  surchargeZar?: number;
 };
 
 export type Order = {
