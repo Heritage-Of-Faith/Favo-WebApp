@@ -35,6 +35,9 @@ import {
 import { startTender, TENDER_NOT_BEGUN } from "@/server/tender/service";
 import { isAttemptOpen, isUnresolvedNeedingAttention } from "@/server/tender/tender";
 import { summarisePayments } from "@/server/tender/summary";
+import { compensateFundDraw, drawFromDonorFund } from "@/server/funds/funds";
+import { getFundDeps } from "@/server/funds/runtime";
+import { fundTxOn } from "@/server/funds/drizzle-store";
 import { notifyOrderChange } from "@/server/queue/notify";
 import { sendOrderReadyPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
@@ -53,10 +56,17 @@ export type CreateOrderInput = {
     quantity: number;
     modifications: string[];
   }[];
+  /**
+   * AT-203 / §6.10.6: the blessing fund chosen on the footer. When set, the
+   * order is settled from the fund (drawFromDonorFund) instead of beginning a
+   * card tender — never both (no split tender, §6.10.5).
+   */
+  donorFundId?: string;
 };
 
 const createOrderSchema = z.object({
   customerId: z.string().min(1).optional(),
+  donorFundId: z.string().min(1).optional(),
   // L28: no default — an order without a bound target is refused.
   notificationTarget: z.enum(["customer", "none"]),
   items: z
@@ -93,6 +103,11 @@ export type CreateOrderTender =
   | { ok: false; code: string; message: string; retryOffered?: boolean }
   | null;
 
+/** AT-203: the blessing-fund draw createOrder made instead of a card tender. */
+export type CreateOrderFundDraw =
+  | { ok: true; fundId: string; amountZar: number; balanceAfterZar: number }
+  | { ok: false; code: string; message: string };
+
 /**
  * Create an order in `ordered` state (T2 step 2). The order and its items
  * commit first; only then does beginTender write the `pending` payments row,
@@ -108,6 +123,8 @@ export async function createOrder(
   totalZar: number;
   freeCup: FreeCupResult;
   tender: CreateOrderTender;
+  /** Present only when a donorFundId was given. */
+  fundDraw?: CreateOrderFundDraw;
 }>> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
@@ -328,7 +345,24 @@ export async function createOrder(
   // screen sends it with sendToTerminal. REQ-153: a net-R0 order begins no
   // tender at all — no payments row, nothing sent (it is payment_mode 'free').
   let tender: CreateOrderTender = null;
-  if (outcome.totalZar > 0) {
+  let fundDraw: CreateOrderFundDraw | undefined;
+  if (data.donorFundId !== undefined) {
+    // AT-203 / L47: the fund is the tender — no payments row, nothing sent. A
+    // refusal (FUND_INSUFFICIENT, FUND_NOT_LINKED, FUND_UNAVAILABLE for an R0
+    // order, …) is returned beside the committed order, which stays unpaid and
+    // can still go to the card (beginTender).
+    const actor = { kind: "staff" as const, staffId: session.id, role: session.role };
+    try {
+      const drawn = await drawFromDonorFund(getFundDeps(), actor, orderId, data.donorFundId);
+      fundDraw = drawn.ok
+        ? { ok: true, fundId: drawn.fundId, amountZar: drawn.amountZar, balanceAfterZar: drawn.balanceAfterZar }
+        : { ok: false, code: drawn.code, message: drawn.message };
+    } catch (err) {
+      // The draw's transaction rolled back: nothing was drawn.
+      console.error("[createOrder] drawFromDonorFund failed", err);
+      fundDraw = { ok: false, code: "FUND_UNAVAILABLE", message: "Couldn't pay from the fund — nothing was drawn. Try again." };
+    }
+  } else if (outcome.totalZar > 0) {
     // The order is committed: a refusal (NO_SESSION, TERMINAL_UNREACHABLE when
     // no machine is configured, …) is returned beside it, never thrown.
     // An exception inside beginTender (e.g. a database outage) comes back as
@@ -367,10 +401,11 @@ export async function createOrder(
     ok: true,
     data: {
       orderId,
-      cardCheckout: tender?.ok === true,
+      cardCheckout: tender?.ok === true || fundDraw?.ok === true,
       totalZar: outcome.totalZar,
       freeCup: outcome.freeCup,
       tender,
+      ...(fundDraw !== undefined ? { fundDraw } : {}),
     },
   };
 }
@@ -460,7 +495,14 @@ export async function transitionOrder(
       // never-sent closed-out attempt does not open it. Free orders (totalZar
       // === 0) need no payment row. Every attempt is read (ORDER BY attempt).
       // Bypass when YOCO_SECRET_KEY is absent (dev/simulation mode — no real Yoco). ──
-      if (toState === "in_progress" && current.totalZar > 0 && process.env.YOCO_SECRET_KEY) {
+      // AT-203 / L47: an order settled from a blessing fund is paid — it holds
+      // a spend entry and, by design, no payments row.
+      if (
+        toState === "in_progress" &&
+        current.totalZar > 0 &&
+        current.paymentMode !== "donor_fund" &&
+        process.env.YOCO_SECRET_KEY
+      ) {
         const attempts = await tx
           .select({ status: payments.status, sentAt: payments.sentAt })
           .from(payments)
@@ -640,6 +682,19 @@ export async function cancelOrder(
         return TENDER_IN_PROGRESS;
       }
 
+      // AT-203 / REQ-168: a fund-paid order gives its draw back to the fund as
+      // a compensating `adjustment`; the spend entry is never edited. Not a
+      // refund — no money leaves FAVO (§6.10.5). Same transaction, same audit trail.
+      if (current.paymentMode === "donor_fund") {
+        await compensateFundDraw(
+          fundTxOn(txDb),
+          { kind: "staff", staffId: session.id, role: session.role },
+          orderId,
+          reason,
+          new Date()
+        );
+      }
+
       await tx.update(orders).set({ state: "cancelled" }).where(eq(orders.id, orderId));
       await writeAudit(
         {
@@ -768,11 +823,14 @@ const CHECKOUT_EXISTS = {
  */
 async function lockPaymentForTotalChange(
   tx: Pick<DB, "select">,
-  order: { id: string }
+  order: { id: string; paymentMode?: string | null }
 ): Promise<{
   hasPayments: boolean;
   refusal: typeof ORDER_MOVED_ON | typeof CHECKOUT_EXISTS | null;
 }> {
+  // AT-203 / REQ-167: a fund-settled order's total is frozen exactly as P4
+  // freezes it during a card tender — TENDER_IN_PROGRESS.
+  if (order.paymentMode === "donor_fund") return { hasPayments: false, refusal: CHECKOUT_EXISTS };
   const attempts = await tx
     .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId })
     .from(payments)
@@ -1001,7 +1059,8 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
     totalZar: o.totalZar,
     isStaffDiscount: o.isStaffDiscount,
     paymentStatus: payState.paymentStatus,
-    cardCheckout: payState.totalFrozen,
+    // AT-203 / REQ-167: a fund-settled order is frozen too.
+    cardCheckout: payState.totalFrozen || o.paymentMode === "donor_fund",
     paymentAwaitingLookup: payState.awaitingLookup,
     items: itemRows.map((it) => ({
       id: it.id,
