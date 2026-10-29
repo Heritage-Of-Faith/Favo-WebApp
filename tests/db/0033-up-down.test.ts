@@ -34,6 +34,8 @@ const DOWN = "down/0033_at181_day5_substrate.down.sql";
 const DOWN_0036 = "down/0036_at201_orders_client_uuid.down.sql";
 const DOWN_0035 = "down/0035_at201_tender_payments.down.sql";
 const DOWN_0034 = "down/0034_l28_notification_target.down.sql";
+// AT-202: 0046 adds order_items.surcharge_zar on top of 0037.
+const DOWN_0046 = "down/0046_at202_order_item_surcharge.down.sql";
 
 const TOUCHED = [
   "customers",
@@ -143,12 +145,13 @@ maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () 
 
   /**
    * Run `fn` in a transaction that is always rolled back. `bun db:migrate`
-   * brings the CI DB to 0036, so each case first steps 0036, 0035 and 0034
-   * down (inside the same rolled-back transaction) to start from 0033.
+   * brings the CI DB to 0046, so each case first steps 0046, 0036, 0035 and
+   * 0034 down (inside the same rolled-back transaction) to start from 0033.
    */
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        await tx.unsafe(migrationSql(DOWN_0046));
         await tx.unsafe(migrationSql(DOWN_0036));
         await tx.unsafe(migrationSql(DOWN_0035));
         await tx.unsafe(migrationSql(DOWN_0034));

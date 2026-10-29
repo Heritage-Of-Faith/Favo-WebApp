@@ -20,6 +20,8 @@ import FavoPicker from "@/components/favo/FavoPicker";
 import { useOrderStream } from "@/hooks/useOrderStream";
 import { useDraftOrder, lineKey } from "@/store/draftOrder";
 import { formatZar, formatDate } from "@/lib/format";
+import { computeLineTotalZar } from "@/server/orders/pricing";
+import { FAIL_CLOSED_POLICY, shotSurchargeZar, shotsLabel, type ShotPolicy } from "@/server/orders/shot-surcharge";
 import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, Plus, Minus, Trash2, ChevronDown, ChevronUp,
@@ -106,9 +108,12 @@ type Props = {
   /** Whether the server has Yoco configured — computed server-side by the page
    *  (REQ-071: no Yoco key of any kind reaches the client, only this boolean). */
   yocoConfigured?: boolean;
+  /** AT-202: today's shot ceiling and surcharge, read by the page (T09, T15).
+   *  Absent = fail closed: weekday ceiling, no surcharge. The server re-checks. */
+  shotPolicy?: ShotPolicy;
 };
 
-export default function POSWorkspace({ staffName, staffId, role, initialOrders, yocoConfigured = false }: Props) {
+export default function POSWorkspace({ staffName, staffId, role, initialOrders, yocoConfigured = false, shotPolicy = FAIL_CLOSED_POLICY }: Props) {
   const router = useRouter();
 
   // ── Left panel ─────────────────────────────────────────────────────────────
@@ -116,6 +121,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   const [menuLoading, setMenuLoading] = useState(true);
   const [modTarget, setModTarget] = useState<MenuItem | null>(null);
   const [selectedMods, setSelectedMods] = useState<MenuCustomisation[]>([]);
+  // AT-202 / §6.2.3c: the shot count picked for the drink being customised. Default 1.
+  const [selectedShots, setSelectedShots] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [showPayment, setShowPayment] = useState(false);
@@ -330,7 +337,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
     const r = await createOrder({
       customerId: customer?.id,
       notificationTarget,
-      items: items.map(i => ({ menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id) })),
+      items: items.map(i => ({ menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id), shots: i.shots ?? 1 })),
     }).catch(() => ({ ok: false as const, code: "ERR", message: "Failed to place order." }));
     setSubmitting(false);
     if (r.ok) {
@@ -377,6 +384,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
             menuItemId: i.menuItemId,
             quantity: i.quantity,
             modifications: i.modifications.map(m => m.id),
+            shots: i.shots ?? 1,
           })),
           paymentMode: "yoco_deferred",
           clientTotalZar: totalZar,
@@ -563,6 +571,29 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
     return (
       <div className="zone flex-1 flex flex-col gap-2 p-3 min-h-0 overflow-y-auto">
         <span className="favo-label text-cool-steel">{modTarget.name} · {formatZar(modTarget.currentPriceZar)}</span>
+        {/* AT-202 / §6.2.3c: a segmented picker, one tap to any value — never a
+            −/+ stepper. Only the segments the mode allows are drawn (weekday
+            `1 2`, Sunday `1 2 3 4`, T15), and none on a drink with no coffee
+            (L48). 44 px targets, 8 px apart (gap-2), under one "Shots" label. */}
+        {modTarget.takesShots && (
+          <div role="group" aria-label="Shots" className="flex flex-col gap-1">
+            <span className="favo-label text-cool-steel">Shots</span>
+            <div className="flex gap-2">
+              {Array.from({ length: shotPolicy.maxShots }, (_, i) => i + 1).map(n => {
+                const on = selectedShots === n;
+                return (
+                  <button key={n} type="button" aria-pressed={on} aria-label={shotsLabel(n)}
+                    onClick={() => setSelectedShots(n)}
+                    className={["flex h-11 w-11 items-center justify-center rounded-[2px] border favo-small font-semibold transition-colors",
+                      on ? "border-crimson-carrot bg-crimson-carrot/10 text-coffee-bean" : "border-cool-steel/30 bg-coffee-bean/5 text-coffee-bean hover:bg-coffee-bean/8",
+                    ].join(" ")}>
+                    {n}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {modTarget.customisations.length === 0 ? (
           <p className="favo-small text-cool-steel">No customisations.</p>
         ) : (
@@ -621,7 +652,16 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
         )}
         <button type="button"
           onClick={() => {
-            addItem({ menuItemId: modTarget.id, menuItemName: modTarget.name, unitPriceZar: modTarget.currentPriceZar, modifications: selectedMods });
+            // AT-202: a coffee drink carries its shot count and the per-unit
+            // surcharge it shows on the draft line; the server re-prices both.
+            const shots = modTarget.takesShots ? Math.min(selectedShots, shotPolicy.maxShots) : undefined;
+            addItem({
+              menuItemId: modTarget.id, menuItemName: modTarget.name, unitPriceZar: modTarget.currentPriceZar, modifications: selectedMods,
+              ...(shots !== undefined && {
+                shots,
+                surchargeZar: shotSurchargeZar(shots, shotPolicy.extraShotZar, shotPolicy.surchargeInForce),
+              }),
+            });
             setModTarget(null);
           }}
           className="mt-auto flex w-full items-center justify-center rounded-[4px] py-2.5 min-h-[44px]"
@@ -657,12 +697,16 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="favo-small text-coffee-bean truncate">{item.menuItemName}</p>
-                  {item.modifications.length > 0 && (
-                    <p className="favo-caption text-cool-steel truncate">{formatModifications(item.modifications)}</p>
+                  {(item.shots !== undefined || item.modifications.length > 0) && (
+                    <p className="favo-caption text-cool-steel truncate">
+                      {[item.shots !== undefined ? shotsLabel(item.shots) : null, item.modifications.length > 0 ? formatModifications(item.modifications) : null]
+                        .filter(Boolean).join(" · ")}
+                    </p>
                   )}
                 </div>
                 <span className="favo-small text-coffee-bean shrink-0">
-                  {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
+                  {/* AT-202: surcharge-inclusive (§7.0.2), per unit × quantity. */}
+                  {formatZar(computeLineTotalZar(item))}
                 </span>
                 <button type="button" onClick={() => removeItem(lineKey(item))}
                   className="flex h-11 w-11 items-center justify-center text-cool-steel hover:text-[var(--color-error)]">
@@ -803,7 +847,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                   return (
                     <button key={item.id} type="button"
                       disabled={oos}
-                      onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); } }}
+                      onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); setSelectedShots(1); } }}
                       className="relative flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-porcelain/5">
                       <span className="favo-small text-coffee-bean font-semibold leading-tight">{item.name}</span>
                       <span className="favo-caption text-coffee-bean/70 mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
@@ -1032,6 +1076,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                                   {item.quantity > 1 && <span className="text-crimson-carrot mr-1">{item.quantity}×</span>}
                                   {item.menuItemName || `Item #${item.id.slice(-4)}`}
                                 </p>
+                                {(item.shots ?? 1) > 1 && (
+                                  <p className="favo-caption text-cool-steel">{shotsLabel(item.shots ?? 1)}</p>
+                                )}
                                 {item.modifications.length > 0 && (
                                   <p className="favo-caption text-cool-steel">{formatModifications(item.modifications)}</p>
                                 )}
@@ -1040,7 +1087,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                                 )}
                               </div>
                               <span className="favo-small text-coffee-bean shrink-0 ml-3">
-                                {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
+                                {formatZar(computeLineTotalZar(item))}
                               </span>
                             </div>
                           ))}

@@ -10,7 +10,10 @@ import { eq, asc, desc, and, isNull } from "drizzle-orm";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
 import type { DB } from "@/lib/db";
-import { menuItems, menuCustomisations, priceHistory, operatingHours } from "@db/schema";
+import {
+  menuItems, menuCustomisations, priceHistory, operatingHours, recipeIngredients, inventoryItems,
+} from "@db/schema";
+import { COFFEE_KIND } from "@/server/orders/shot-surcharge";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import type { ActionResult, MenuItem, MenuCustomisation, MenuCategory } from "@/lib/types";
@@ -62,7 +65,7 @@ const createItemSchema = z.object({
  */
 const loadMenu = unstable_cache(
   async (): Promise<MenuItem[]> => {
-    const [items, customisations] = await Promise.all([
+    const [items, customisations, coffeeRecipes] = await Promise.all([
       db
         .select()
         .from(menuItems)
@@ -72,7 +75,15 @@ const loadMenu = unstable_cache(
         .select()
         .from(menuCustomisations)
         .orderBy(asc(menuCustomisations.name)),
+      // AT-202 / L48: recipes holding coffee (an ingredient of kind 'bean') —
+      // only their menu items get the shot picker.
+      db
+        .selectDistinct({ recipeId: recipeIngredients.recipeId })
+        .from(recipeIngredients)
+        .innerJoin(inventoryItems, eq(recipeIngredients.inventoryItemId, inventoryItems.id))
+        .where(eq(inventoryItems.kind, COFFEE_KIND)),
     ]);
+    const coffeeRecipeIds = new Set(coffeeRecipes.map((r) => r.recipeId));
 
     const custByItem = new Map<string, MenuCustomisation[]>();
     for (const c of customisations) {
@@ -95,6 +106,7 @@ const loadMenu = unstable_cache(
       currentPriceZar: item.currentPriceZar,
       active: item.active,
       customisations: custByItem.get(item.id) ?? [],
+      takesShots: item.recipeId !== null && coffeeRecipeIds.has(item.recipeId),
     }));
   },
   ["get-menu"],

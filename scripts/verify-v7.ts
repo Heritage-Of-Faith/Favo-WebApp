@@ -232,6 +232,16 @@ mustBePresent("REQ-106: an order_cogs column/field exists", "order_cogs\\|orderC
   );
 }
 
+// REQ-104 / REQ-136 (DEC-16, T09): the surcharge is extra_shot_zar × MAX(0, shots − 2).
+// T09 renames config.double_shot_surcharge_zar → extra_shot_zar because "the old
+// name is what would keep the old rule alive in the code". This gate checks only
+// that the old name is gone; the arithmetic is asserted by the shot-pricing
+// fixture in tests/unit/server/shot-surcharge.test.ts, never by a grep.
+mustBeAbsent(
+  "REQ-136: the superseded double-shot surcharge name is gone (DEC-16)",
+  "double_shot_surcharge\\|doubleShotSurcharge"
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. THE THREE RENDER STATES — REQ-110, REQ-129, REQ-131
 // ─────────────────────────────────────────────────────────────────────────────

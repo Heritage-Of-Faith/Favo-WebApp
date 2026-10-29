@@ -33,6 +33,8 @@ export default async function ActiveOrderPage({ params }: Props) {
         unitPriceZar: orderItems.unitPriceZar,
         discountZar: orderItems.discountZar,
         modifications: orderItems.modifications,
+        shots: orderItems.shots,
+        surchargeZar: orderItems.surchargeZar,
       })
       .from(orderItems)
       .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
@@ -67,6 +69,8 @@ export default async function ActiveOrderPage({ params }: Props) {
       discountZar: i.discountZar,
       modifications:
         (i.modifications as { id: string; name: string; priceDeltaZar: number }[]) ?? [],
+      shots: i.shots,
+      surchargeZar: i.surchargeZar,
     })),
   };
 
