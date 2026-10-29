@@ -31,6 +31,9 @@ const UP = "0033_at181_day5_substrate.sql";
 const DOWN = "down/0033_at181_day5_substrate.down.sql";
 // AT-201: 0036 (orders.client_uuid) sits on top of 0035 (payments), which sits
 // on top of 0034 (notification_target, PR #284), which sits on top of 0033.
+// AT-209: 0043 re-creates v_daily_revenue over orders.state and payments.status;
+// a view blocks ALTER COLUMN TYPE, so 0043 is stepped down first (newest first).
+const DOWN_0043 = "down/0043_at209_comps_cancel_abandon.down.sql";
 const DOWN_0036 = "down/0036_at201_orders_client_uuid.down.sql";
 const DOWN_0035 = "down/0035_at201_tender_payments.down.sql";
 const DOWN_0034 = "down/0034_l28_notification_target.down.sql";
@@ -143,12 +146,13 @@ maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () 
 
   /**
    * Run `fn` in a transaction that is always rolled back. `bun db:migrate`
-   * brings the CI DB to 0036, so each case first steps 0036, 0035 and 0034
-   * down (inside the same rolled-back transaction) to start from 0033.
+   * brings the CI DB to 0043, so each case first steps 0043, 0036, 0035 and
+   * 0034 down (inside the same rolled-back transaction) to start from 0033.
    */
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        await tx.unsafe(migrationSql(DOWN_0043));
         await tx.unsafe(migrationSql(DOWN_0036));
         await tx.unsafe(migrationSql(DOWN_0035));
         await tx.unsafe(migrationSql(DOWN_0034));
