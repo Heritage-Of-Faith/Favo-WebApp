@@ -15,6 +15,8 @@ import {
   inventoryItems,
 } from "@db/schema";
 import type { DB } from "@/lib/db";
+import { revenueDay } from "@/lib/format";
+import { isCupOrLid, dayConsumesCupAndLid } from "@/server/orders/cup-lid";
 
 // ─── Exported pure helpers ────────────────────────────────────────────────────
 
@@ -237,11 +239,16 @@ export type StockCheckResult = { ok: true } | { ok: false; itemName: string };
  * between this check and the transactional deduction on `in_progress`. That
  * deduction (with SELECT … FOR UPDATE) remains the authoritative guard; this is
  * purely an early UX gate to avoid charging for an unfulfillable order.
+ *
+ * AT-187 · REQ-125 · L24: like deductForOrder, cups and lids are not checked
+ * when `day` (default: today, SAST) is in weekday mode — people bring their
+ * own mugs, so an empty cup or lid lot must not block a weekday order.
  */
 export async function checkRecipeStock(
   recipeId: string,
   orderQty: number,
-  executor: DB
+  executor: DB,
+  day: string = revenueDay()
 ): Promise<StockCheckResult> {
   const ingredients = await executor
     .select({
@@ -249,6 +256,7 @@ export async function checkRecipeStock(
       itemName: inventoryItems.name,
       quantity: recipeIngredients.quantity,
       itemUnit: inventoryItems.unit,
+      itemKind: inventoryItems.kind,
     })
     .from(recipeIngredients)
     .innerJoin(
@@ -257,7 +265,12 @@ export async function checkRecipeStock(
     )
     .where(eq(recipeIngredients.recipeId, recipeId));
 
+  let cupLid: boolean | undefined; // resolved lazily, only if a cup or lid is met
   for (const ing of ingredients) {
+    if (isCupOrLid(ing.itemKind)) {
+      cupLid ??= await dayConsumesCupAndLid(day, executor);
+      if (!cupLid) continue;
+    }
     if (ing.itemUnit === "cup") {
       // Container lots (no predicted quantity) have no countable "remaining"
       // to sum against orderQty — the only meaningful early check is whether

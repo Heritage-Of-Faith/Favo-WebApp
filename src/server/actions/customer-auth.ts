@@ -11,6 +11,7 @@ import { customers } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { createClient } from "@/lib/supabase/server";
 import { checkRateLimit } from "@/server/rate-limit";
+import { customerIdentitySchema, type CustomerStatus } from "@/lib/customer/identity";
 import type { ActionResult } from "@/lib/types";
 
 const TENANT_ID = "hofmi-favo";
@@ -56,6 +57,9 @@ export async function registerCustomer(input: {
   email: string;
   password: string;
   phone?: string;
+  surname?: string;
+  /** AT-211 / PRD §10.3: set at self-registration, and required — never defaulted. */
+  status: CustomerStatus;
 }): Promise<ActionResult<{ customerId: string; name: string; verificationSent: boolean }>> {
   const ip = await clientIp();
   const rl = checkRateLimit(`register:${ip}`, AUTH_LIMIT, AUTH_WINDOW_MS);
@@ -68,7 +72,7 @@ export async function registerCustomer(input: {
   const password = validatePassword(input.password);
 
   if (name.length < 2) {
-    return { ok: false, code: "VALIDATION", message: "Please enter your full name." };
+    return { ok: false, code: "VALIDATION", message: "Please enter your first name." };
   }
   if (!email) {
     return { ok: false, code: "VALIDATION", message: "Please enter a valid email address." };
@@ -85,6 +89,16 @@ export async function registerCustomer(input: {
     }
     phone = validated;
   }
+
+  // Surname: same schema as the account page (updateCustomerProfile) — §6.4.
+  // Status: set here and only here (§10.3 "Set at self-registration").
+  const identity = customerIdentitySchema.safeParse({ surname: input.surname, status: input.status });
+  if (!identity.success) {
+    return { ok: false, code: "VALIDATION", message: identity.error.issues[0]?.message ?? "Invalid input." };
+  }
+  // A blank surname at sign-up is simply "not given" — never clears a re-linked row.
+  const surname = identity.data.surname ?? undefined;
+  const { status } = identity.data;
 
   // Phone uniqueness — same number already belongs to another customer.
   // Exception: legacy row with same email + null auth_id is allowed through (re-link path below).
@@ -142,14 +156,14 @@ export async function registerCustomer(input: {
     // Migrate legacy row — link the new Supabase user without creating a duplicate
     const [updated] = await db
       .update(customers)
-      .set({ authId: user.id, name, phone })
+      .set({ authId: user.id, name, phone, surname, status })
       .where(eq(customers.id, existingRow.id))
       .returning({ id: customers.id, name: customers.name });
     customer = updated;
   } else {
     const [inserted] = await db
       .insert(customers)
-      .values({ tenantId: TENANT_ID, name, email, phone, authId: user.id })
+      .values({ tenantId: TENANT_ID, name, email, phone, authId: user.id, surname, status })
       .returning({ id: customers.id, name: customers.name });
     customer = inserted;
   }
@@ -165,7 +179,7 @@ export async function registerCustomer(input: {
     action: "customer.register",
     entityKind: "customers",
     entityId: customer.id,
-    after: { email },
+    after: { email, surname: surname ?? null, status },
   });
 
   // data.session is null when Supabase email confirmation is enabled
