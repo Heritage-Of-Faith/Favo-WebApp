@@ -157,7 +157,8 @@ export default function PrivacyPage() {
           <tbody>
             {[
               ["Email address", "Account creation and sign-in", "Contractual necessity"],
-              ["Full name", "Personalising your account; barista lookup at the counter", "Contractual necessity"],
+              ["First name and surname", "Personalising your account; barista lookup at the counter", "Contractual necessity"],
+              ["Office staff or church member", "Free weekday coffee for office staff; which notifications you get", "Contractual necessity"],
               ["Phone number", "Counter lookup; order support", "Legitimate interest"],
               ["Purchase history", "Order history and support", "Contractual necessity"],
               ["Push notification subscription", "Order-ready alerts when you opt in", "Consent (withdrawable)"],
