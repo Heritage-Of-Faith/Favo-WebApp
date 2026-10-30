@@ -4,6 +4,7 @@ import { or, and, ilike, eq, desc, asc, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customers, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
+import { stripControlChars } from "@/server/http/request-guards";
 import { phoneLast4 as maskPhoneLast4 } from "@/lib/mask-phone";
 import type { ActionResult, CustomerSearchResult } from "@/lib/types";
 
@@ -33,7 +34,8 @@ export async function searchCustomer(
   const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
 
-  const q = query.trim();
+  // SEC-5: drop control characters — a NUL reaching Postgres is a bare 500.
+  const q = stripControlChars(query).trim();
   if (q.length < 2) {
     return { ok: false, code: "QUERY_TOO_SHORT", message: "Enter at least 2 characters." };
   }
@@ -106,7 +108,7 @@ export async function listCustomers(opts?: {
   if (!auth.ok) return auth;
 
   const limit = Math.min(opts?.limit ?? 100, 500);
-  const q = opts?.query?.trim();
+  const q = opts?.query === undefined ? undefined : stripControlChars(opts.query).trim();
 
   const rows = await db
     .select({
