@@ -117,10 +117,13 @@ async function sell(lines: Line[], modes: string[], costs?: Record<string, strin
 describe("AT-188 — the order_cogs row written after deduction", () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  it("FIXTURE-A #2649 · Sunday 1 × Cappuccino (double) → 1352, estimated NULL", async () => {
+  // CHANGED (AT-191): `estimated` was always NULL until cost_source existed; it
+  // is now true when any drawn lot is not invoice-backed. These fake lots carry
+  // no cost_source, which counts as an estimate (green needs proof, §7.0.1b).
+  it("FIXTURE-A #2649 · Sunday 1 × Cappuccino (double) → 1352, estimated (every lot an estimate)", async () => {
     await spyLots();
     const { cogsRows } = await sell([{ recipeId: "recipe_cappuccino", orderQty: 1, shots: 2 }], ["sunday"]);
-    expect(cogsRows).toEqual([{ orderId: "order_001", cogsZar: 1352, absentItemIds: [], estimated: null }]);
+    expect(cogsRows).toEqual([{ orderId: "order_001", cogsZar: 1352, absentItemIds: [], estimated: true }]);
   });
 
   it("FIXTURE-A #2648 · two Cappuccino lines, double + single → 2382 (one rounding for the order)", async () => {

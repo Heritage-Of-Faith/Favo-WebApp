@@ -5,6 +5,7 @@
 
 import { formatZar, formatDate } from "@/lib/format";
 import { formatGrossMargin, formatNetMargin } from "@/lib/report/format";
+import { NET_TONE_COLOR, netTone, PROVISIONAL, unavailableText, type CostState, type NetTone } from "@/lib/cost-state";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,12 +14,20 @@ export interface MonthlyReportTemplateProps {
   period: string;
   /** Total revenue in integer cents */
   revenue_zar: number;
-  /** Cost of goods sold in integer cents */
-  cogs_zar: number;
+  /** Cost of goods sold in integer cents. NULL = UNAVAILABLE (REQ-109). */
+  cogs_zar: number | null;
   /** Operating expenses in integer cents */
   expenses_zar: number;
-  /** Net profit/loss in integer cents */
-  net_zar: number;
+  /** Net profit/loss in integer cents. NULL = UNAVAILABLE. */
+  net_zar: number | null;
+  /**
+   * AT-191/AT-192 (PRD §7.0.1b, REQ-110, REQ-129): the net's colour follows
+   * this, never the sign alone — green only on "final" (invoice-backed) costs.
+   */
+  cost_state: CostState;
+  /** Named absent items, for the UNAVAILABLE text. */
+  cogs_absent_items?: string[];
+  orders_without_cost?: number;
   /** Approver sign-off rows */
   approvers: Array<{ name: string; role: string; at: string }>;
 }
@@ -45,17 +54,21 @@ const PRINT_STYLES = `
 
 interface FinancialRowProps {
   label: string;
-  amount: number;
+  /** NULL = UNAVAILABLE: renders `refusal`, never R0,00. */
+  amount: number | null;
+  refusal?: string;
   margin: string | null;
   bold?: boolean;
   indent?: boolean;
   separator?: boolean;
-  highlight?: "positive" | "negative";
+  /** From netTone(cost_state, net) — "warn" (provisional) is never the profit colour. */
+  highlight?: NetTone;
 }
 
 function FinancialRow({
   label,
   amount,
+  refusal,
   margin,
   bold = false,
   indent = false,
@@ -63,11 +76,15 @@ function FinancialRow({
   highlight,
 }: FinancialRowProps) {
   const amountColor =
-    highlight === "positive"
-      ? "var(--color-dark-teal)"
-      : highlight === "negative"
-        ? "var(--color-crimson-carrot)"
-        : "var(--color-coffee-bean)";
+    amount === null
+      ? NET_TONE_COLOR.unavailable
+      : highlight === "positive"
+        ? "var(--color-dark-teal)"
+        : highlight === "negative"
+          ? "var(--color-crimson-carrot)"
+          : highlight === "warn"
+            ? NET_TONE_COLOR.warn
+            : "var(--color-coffee-bean)";
 
   return (
     <tr
@@ -99,7 +116,8 @@ function FinancialRow({
           fontVariantNumeric: "tabular-nums",
         }}
       >
-        {formatZar(amount)}
+        {amount === null ? refusal : formatZar(amount)}
+        {highlight === "warn" && ` · ${PROVISIONAL}`}
       </td>
       <td
         style={{
@@ -179,10 +197,14 @@ export default function MonthlyReportTemplate({
   cogs_zar,
   expenses_zar,
   net_zar,
+  cost_state,
+  cogs_absent_items = [],
+  orders_without_cost = 0,
   approvers,
 }: MonthlyReportTemplateProps) {
-  const grossProfit = revenue_zar - cogs_zar;
-  const isNetPositive = net_zar >= 0;
+  const grossProfit = cogs_zar === null ? null : revenue_zar - cogs_zar;
+  const netHighlight = netTone(cost_state, net_zar);
+  const refusal = unavailableText(cogs_absent_items, orders_without_cost);
 
   return (
     <>
@@ -350,21 +372,23 @@ export default function MonthlyReportTemplate({
             </thead>
             <tbody>
               <FinancialRow label="Revenue" amount={revenue_zar} margin={null} bold />
-              <FinancialRow label="Cost of Goods Sold (COGS)" amount={cogs_zar} margin={null} indent />
+              <FinancialRow label="Cost of Goods Sold (COGS)" amount={cogs_zar} refusal={refusal} margin={null} indent />
               <FinancialRow
                 label="Gross Profit"
                 amount={grossProfit}
-                margin={formatGrossMargin(revenue_zar, cogs_zar)}
+                refusal={refusal}
+                margin={cogs_zar === null ? null : formatGrossMargin(revenue_zar, cogs_zar)}
                 separator
               />
               <FinancialRow label="Operating Expenses" amount={expenses_zar} margin={null} indent />
               <FinancialRow
                 label="Net Profit / (Loss)"
                 amount={net_zar}
-                margin={formatNetMargin(revenue_zar, net_zar)}
+                refusal={refusal}
+                margin={net_zar === null ? null : formatNetMargin(revenue_zar, net_zar)}
                 bold
                 separator
-                highlight={isNetPositive ? "positive" : "negative"}
+                highlight={netHighlight}
               />
             </tbody>
           </table>

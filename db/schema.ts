@@ -22,6 +22,8 @@ import {
   inventoryKind,
   inventoryUnit,
   lotState,
+  reportCostState,
+  costSource,
   stockMovementKind,
   stockTakeKind,
   paymentStatus,
@@ -164,6 +166,9 @@ export const inventoryLots = pgTable("inventory_lots", {
   // G13 COGS sums (delta × unit_cost_zar) → cast to integer cents at
   // the order level. Admin recosts via A8 after launch (R10 mitigation).
   unitCostZar: numeric("unit_cost_zar", { precision: 10, scale: 4 }),
+  // AT-191 / PRD §7.0.1b: estimate | invoice. Any drink costed from an
+  // 'estimate' lot renders provisional, never green (REQ-110).
+  costSource: costSource("cost_source").default("estimate").notNull(),
   // Quantity received when this lot was booked in (in the item's unit).
   // Legacy path only (non-cup items: cups, lids, syrup, powder). Cup-unit
   // container lots (milk & beans) no longer predict a cup yield up front —
@@ -497,10 +502,17 @@ export const monthlyReports = pgTable(
     /** First day of the month (YYYY-MM-DD). UNIQUE — one report per month. */
     month: text("month").notNull().unique(),
     revenueZar: integer("revenue_zar").notNull(),
-    cogsZar: integer("cogs_zar").notNull(),
+    // AT-189/AT-190 (REQ-106, REQ-109): cogs = Σ order_cogs; NULL = UNAVAILABLE
+    // (an absent cost input, named in cogs_absent_items) — never a smaller number.
+    cogsZar: integer("cogs_zar"),
     expensesZar: integer("expenses_zar").notNull(),
-    grossMarginZar: integer("gross_margin_zar").notNull(),
-    netZar: integer("net_zar").notNull(),
+    grossMarginZar: integer("gross_margin_zar"),
+    netZar: integer("net_zar"),
+    // AT-192 (REQ-129): empty | unavailable | provisional | final — see src/lib/cost-state.ts.
+    costState: reportCostState("cost_state").default("provisional").notNull(),
+    cogsAbsentItems: text("cogs_absent_items").array().default(sql`'{}'::text[]`).notNull(),
+    /** Orders in the month with no order_cogs row — part of the named refusal. */
+    ordersWithoutCost: integer("orders_without_cost").default(0).notNull(),
     /** draft → awaiting_signatures → closed */
     status: text("status", {
       enum: ["draft", "awaiting_signatures", "closed"],
@@ -522,6 +534,7 @@ export const monthlyReports = pgTable(
       "monthly_report_closed_requires_admin_sig",
       sql`status != 'closed' OR admin_sig IS NOT NULL`
     ),
+    check("monthly_report_cogs_or_unavailable", sql`(cogs_zar IS NULL) = (cost_state = 'unavailable')`),
   ]
 );
 
@@ -545,12 +558,18 @@ export const weeklyReports = pgTable("weekly_reports", {
   /** ISO date of Monday that starts the week (SAST). */
   weekStarting: text("week_starting").notNull().unique(),
   revenueZar: integer("revenue_zar").notNull(),
-  cogsZar: integer("cogs_zar").notNull(),
+  // AT-189/AT-190/AT-192: as monthly_reports — NULL cogs = UNAVAILABLE.
+  cogsZar: integer("cogs_zar"),
   expensesZar: integer("expenses_zar").notNull(),
-  grossMarginZar: integer("gross_margin_zar").notNull(),
-  netZar: integer("net_zar").notNull(),
+  grossMarginZar: integer("gross_margin_zar"),
+  netZar: integer("net_zar"),
+  costState: reportCostState("cost_state").default("provisional").notNull(),
+  cogsAbsentItems: text("cogs_absent_items").array().default(sql`'{}'::text[]`).notNull(),
+  ordersWithoutCost: integer("orders_without_cost").default(0).notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, () => [
+  check("weekly_report_cogs_or_unavailable", sql`(cogs_zar IS NULL) = (cost_state = 'unavailable')`),
+]);
 
 // ─── The Favo (AT-142 — one saved order template per customer) ────────────────
 // `items` holds FavoItem[] — the exact shape of CreateOrderInput["items"]
