@@ -22,7 +22,7 @@ identifier_schemes:
   - "T1–T10 — worked sequences (§6.0) and, separately, T10 the reconciliation control (§12.2)"
   - "D1–D10 — UI requirements (§17.2)"
   - "R1–R25 — risk register (§14)"
-  - "DEC-01…DEC-18 — dated owner decisions (§16.1)"
+  - "DEC-01…DEC-19 — dated owner decisions (§16.1)"
   - "DEF-A…DEF-G — defects found in v6.0 and fixed in v7.0 (§00)"
   - "COL-1…COL-31 — collisions between amendment pack A and v6.0, each resolved in place"
   - "OPEN-08, FACT-1, FACT-2, FEE-1 — what is still open (§16.2)"
@@ -3293,6 +3293,7 @@ Dated owner decisions, with the reasoning that produced them. **Where a decision
 | **The group tab** [new in v7.0] | **Recommended against, and adopted as a non-goal.** Nikao, 14 Sep 2026. Settling many orders on one card tap needs a payment pointing at more than one order — **the one schema change FAVO cannot afford**. *A group fund with linked names does the same job with the cash moving one day earlier* | §8.11 · §6.10.2 |
 | **DEC-17 · Tips** [amended 22 Oct 2026] | **No tips, and no tip column.** Owner decision, Nikao, 22 Oct 2026, *reversing v7.0's `payments.tip_zar` guard column.* Tipping was already a non-goal with the machine's prompt suppressed; the column existed only so a stray tip would reconcile. It is dropped: `net_settled` loses its tip term, FIXTURE-B carries no tip, and **a tip that slips through is a T10 variance for an Admin, never booked revenue** | §7.0.2 · §10.3.3 · §11.2 · §15.1 · REQ-118 · REQ-120 |
 | **DEC-18 · Weekday drinks** [amended 22 Oct, revised 29 Oct 2026] | **A second weekday drink is never charged.** Owner decision, Nikao, 22 Oct 2026; revised 29 Oct to adopt Mia's version. L19 stands: no weekday order has a payment step. **`ENTITLEMENT_USED` refuses the drink by default**, reversing v7.0's "continues as paid" (S1 codes, T-sequence step 4, REQ-025), and **a barista can override the refusal in one step, for anyone** — no leader or pastor marker. The extra cup is logged separately from the entitlement cup and counted on its own in the weekly numbers — *mechanism: DEC-19.* Free weekday orders keep the menu price, and `discount_zar` zeroes each line (total R0) | L03 · L19 · §6.0.1 · §7.3 · REQ-025 · DEC-19 |
+| **DEC-19 · The extra-cup override** [new] | **A barista can give a refused second drink in one tap, and it is logged.** Owner decision, Mia, 24 Oct 2026. After `ENTITLEMENT_USED` the till offers **one control — "Give another free cup"** — and nothing else: no PIN, no reason field, no second screen. Anyone who is refused a second drink, a pastor or team leader included, must never wait on a manager. **The extra cup is not a second entitlement:** no `staff_entitlement_log` row is written, so `UNIQUE(customer_id, day)` still holds for the real cup. It is written as **one audit row, `action='extra_free_cup'`**, carrying the barista, the beneficiary, the order, the day and the drink's gross value, and it is read at `/admin/audit`, so R14's anomaly detection on entitlement claims sees extra cups as well as refusals. Offered **only in weekday mode and only with a customer attached**; never offered elsewhere, never an order-total change (the order is R0 as always). It is a deliberate, easily reversible choice, not a loophole: the cost of one extra cup is small, a refused pastor is not | L03 · DEC-18 · REQ-025 · R14 |
 | Timeline | **No fixed date.** Gate zero first, then priority order | §13 |
 
 ### 16.2 Open
@@ -3592,6 +3593,7 @@ mm = css_px × 25.4 / device_logical_ppi
 | Date | Change |
 | --- | --- |
 | 22 Oct 2026 | **DEC-17:** no tips and no `payments.tip_zar` column; `net_settled`, FIXTURE-B, REQ-118 and REQ-120 lose their tip terms, and a stray tip is a T10 variance. **DEC-18:** a second weekday drink is never charged; `ENTITLEMENT_USED` refuses it (REQ-025); free weekday lines are zeroed by `discount_zar` (§16.1) |
+| 24 Oct 2026 | **DEC-19:** the extra-cup override — after a refused second drink the barista can give it in one tap, logged as an `extra_free_cup` audit row and never as a second entitlement row (REQ-025, §16.1) |
 | 29 Oct 2026 | **DEC-18 revised:** the refusal is a default a barista can override in one step, for anyone; the extra cup is logged separately and counted on its own in the weekly numbers (mechanism: DEC-19) |
 
 ### B.0 — v6.0 → v7.0: amendment pack A, merged [new in v7.0]
@@ -3709,7 +3711,7 @@ mm = css_px × 25.4 / device_logical_ppi
 | REQ-022 | S8b | **Given** a paid order · **When** the `in_progress` deduction fails · **Then** `STOCK_EXHAUSTED_AT_MAKE` is returned with the resolution path, **the money is not reversed** (L02), and **the Admin is pushed immediately** |
 | REQ-023 | S9 | **Given** an order in any state · **When** a backwards or repeated transition is attempted · **Then** it is rejected with `STALE_STATE` and the audit records the rejection |
 | REQ-024 | T1, L03 | **Given** weekday mode and a matched `office_staff` customer with no entitlement today · **When** an eligible item is selected · **Then** the entitlement applies **without a tap**, discounting **one unit** — and the barista taps only to **decline** it |
-| REQ-025 | L03, §05 | **Given** a customer with an entitlement row today · **When** a second is attempted · **Then** `ENTITLEMENT_USED` is returned, **the second drink is refused by default and never charged** (DEC-18; the barista's one-step override is DEC-19), and **the refusal is audited with `action='reject'`** |
+| REQ-025 | L03, §05 | **Given** a customer with an entitlement row today · **When** a second is attempted · **Then** `ENTITLEMENT_USED` is returned, **the second drink is refused by default and never charged** (DEC-18; the barista's one-step override is DEC-19), and **the refusal is audited with `action='reject'`**. **When** the barista then taps "Give another free cup" (DEC-19) **Then** an R0 order is created, **no second entitlement row is written**, and **one audit row `action='extra_free_cup'`** records barista, beneficiary, order, day and gross; the control is offered only in weekday mode with a customer attached |
 | REQ-026 | T2, P1 | **Given** a Sunday sale · **When** tender begins · **Then** `orders` → `order_items` → `payments` (`pending`, carrying `client_reference`) are **all written before anything is sent to the machine.** Never the reverse order |
 | REQ-027 | P3, §11.2 | **Given** attempt *n* on an order · **When** `beginTender` runs · **Then** `client_reference = client_uuid:n`, **NOT NULL and UNIQUE**, written **before** the send — and **never reused on a retry** |
 | REQ-028 | P4, §11.2 | **Given** an open tender attempt · **When** anything attempts to change the order's total — a comp, a free cup, a new line, a quantity step, a cancel · **Then** it is refused with `TENDER_IN_PROGRESS` |
