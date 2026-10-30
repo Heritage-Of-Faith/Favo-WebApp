@@ -27,7 +27,9 @@ Coolify resolves them at container start. Do not store values in this file.
 | Variable | Source | Owner | Required | Rotation cadence | Notes |
 |---|---|---|---|---|---|
 | `DATABASE_URL` | Supabase dashboard → Project settings → Database → Connection string (Transaction pooler port 6543) | Gian | ✅ | On team member departure | `postgres://...@aws-0-eu-west-1.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true` |
-| `DATABASE_URL_SESSION` | Supabase dashboard → Session pooler port 5432 | Gian | ✅ | On team member departure | Used by SSE queue (LISTEN/NOTIFY requires non-pooled connection) |
+| `DATABASE_URL_SESSION` | Supabase dashboard → Session pooler port 5432 | Gian | ✅ | On team member departure | Used by SSE queue (LISTEN/NOTIFY requires non-pooled connection) and by the release migration step (its advisory lock needs a session). Unset → the container exits before starting and `/api/healthz` reports `sse_config` failing (AT-170). `sse_config` only checks the variable is set, not that LISTEN connected. |
+| `SKIP_MIGRATIONS` | The image's commit SHA | — | ❌ emergency only | — | Skips the release migration step for an emergency boot against a hand-repaired DB. **One-shot:** it only takes effect when it equals the running image's SHA (`IMAGE_SHA`); any other value, including `1`, is ignored with a warning, so a leftover value expires on the next deploy. Not needed for a rollback (AT-170). |
+| `FAVO_APPROVE_MIGRATION` | Exact migration tag(s), comma-separated, e.g. `0034_drop_legacy_note` | Nikao | ❌ per deploy only | — | Approves a **risky** migration (marked `-- favo:requires-approval`) for this deploy. Without it the container refuses to start while that migration is pending. Only exact tags count, so one approval cannot cover a later risky migration. Set it only after a verified backup; remove it once applied. See "Risky migrations" below (AT-170, owner decision 21 Oct 2026). |
 | `AUTH_SECRET` | `openssl rand -hex 32` | Gian | ✅ | Annually | Auth.js signing secret — rotate requires re-login for all staff |
 | `AUTH_URL` | Manual | Gian | ✅ | On domain change | Must be `https://favo.hofmi.net` (no trailing slash) |
 | `YOCO_SECRET_KEY` | Yoco dashboard → Developers → API Keys | Gian | ✅ | On Yoco key compromise | Server-side only. NEVER commit or log. |
@@ -82,13 +84,25 @@ done
 ## Database
 
 ```bash
-# Verify migration is up to date (run from local with DATABASE_URL set)
-bun db:migrate  # should print "No migrations to run"
+# Migrations run automatically on every container start (docker-entrypoint.sh → migrate.js, AT-170).
+# Check the container log for "[migrate] ... 0 pending" / "[migrate] done". To run it by hand:
+#   docker run --rm --env-file <env> <image> bun migrate.js
 
 # Verify seed data
 psql $DATABASE_URL -c "SELECT COUNT(*) FROM staff WHERE active = true;"
 # Expected: ≥ 2 (Sam Barista + Mia Manager)
 ```
+
+### Risky migrations — explicit opt-in (owner decision, Nikao, 21 Oct 2026)
+
+Ordinary migrations auto-apply on start. A migration is **risky** if it is destructive (any `DROP` except `DROP DEFAULT` / `DROP NOT NULL`, a column type change, `DELETE` / `TRUNCATE` / `UPDATE … SET`) or touches `payments`, `orders` or `order_items` (CLAUDE.md §2.2).
+
+- **Author:** put `-- favo:requires-approval <one-line reason>` in the migration's leading comment block. CI (`bun scripts/check-migration-approval.ts`, also a `verify-v7` gate) fails any risky migration from 0034 on that lacks it. 0000–0033 predate the rule.
+- **Deploy:** the container refuses to start while a marked migration is pending. Nothing is applied, and the log names each tag. Then:
+  1. Take a full backup **and verify it restores** (PRD §13.3 step 1).
+  2. Set `FAVO_APPROVE_MIGRATION=<tag>` in Infisical, naming exactly the refused tag(s).
+  3. Restart. The log shows `applying risky migration <tag>, approved via FAVO_APPROVE_MIGRATION`.
+  4. Remove `FAVO_APPROVE_MIGRATION`. Left set, it does nothing once applied (it names a tag no longer pending) and the log warns.
 
 ---
 
