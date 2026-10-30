@@ -49,7 +49,8 @@ beforeEach(() => {
 
 async function search(query: string) {
   render(<POSWorkspace staffName="Louis" staffId="staff_louis" role="barista" />);
-  const input = screen.getByRole("searchbox");
+  // #279 gives the search input role="combobox" (keyboard-navigable results list).
+  const input = screen.getByRole("combobox");
   await act(async () => { fireEvent.change(input, { target: { value: query } }); });
 }
 

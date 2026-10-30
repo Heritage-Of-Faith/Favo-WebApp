@@ -1,6 +1,7 @@
 "use server";
 
 import { or, and, ilike, eq, desc, asc, sql, type SQL } from "drizzle-orm";
+import { checkRateLimit } from "@/server/rate-limit";
 import { db } from "@/lib/db";
 import { customers, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -16,6 +17,26 @@ import type { ActionResult, CustomerSearchResult } from "@/lib/types";
 // leave the server.
 
 const MAX_RESULTS = 10;
+const SEARCH_LIMIT = 60;
+const SEARCH_WINDOW_MS = 60_000;
+
+/**
+ * Cheap read for the POS: does this customer id still exist? Returns id + name only
+ * (REQ-142: no email, no phone). Used to drop a stale customer from a restored draft.
+ */
+export async function resolveCustomer(
+  id: string
+): Promise<ActionResult<{ id: string; name: string }>> {
+  const auth = await authorize("barista", "admin");
+  if (!auth.ok) return auth;
+  const [row] = await db
+    .select({ id: customers.id, name: customers.name })
+    .from(customers)
+    .where(eq(customers.id, id))
+    .limit(1);
+  if (!row) return { ok: false, code: "NOT_FOUND", message: "Customer not found." };
+  return { ok: true, data: { id: row.id, name: row.name } };
+}
 
 /** Escape LIKE wildcards so user input is matched literally (backslash is Postgres' default escape). */
 function escapeLike(s: string): string {
@@ -33,6 +54,12 @@ export async function searchCustomer(
 ): Promise<ActionResult<CustomerSearchResult[]>> {
   const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
+
+  // Per-staff throttle: stops a barista scripting lookups to harvest numbers.
+  const rl = checkRateLimit(`customer-search:${auth.session.id}`, SEARCH_LIMIT, SEARCH_WINDOW_MS);
+  if (!rl.allowed) {
+    return { ok: false, code: "RATE_LIMITED", message: `Searching too fast. Wait ${rl.retryAfterSecs}s and try again.` };
+  }
 
   // SEC-5: drop control characters — a NUL reaching Postgres is a bare 500.
   const q = stripControlChars(query).trim();

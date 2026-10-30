@@ -10,6 +10,7 @@ import { Wifi, WifiOff, Loader2, RefreshCw, Coffee, LogOut } from "lucide-react"
 import { useOrderStream } from "@/hooks/useOrderStream";
 import { formatDate } from "@/lib/format";
 import { signOut } from "@/server/actions/auth";
+import { clearDraftOnSignOut } from "@/store/draftOrder";
 import type { OrderState } from "@/lib/types";
 
 const STATE_LABEL: Record<OrderState, string> = {
@@ -43,6 +44,7 @@ export default function QueueBoard() {
 
   const handleSignOut = useCallback(async () => {
     setSigningOut(true);
+    clearDraftOnSignOut();
     await signOut();
     router.push("/pos");
   }, [router]);

@@ -33,6 +33,7 @@ function buildDbMock(result: unknown[]) {
 import { db } from "@/lib/db";
 import { authorize } from "@/server/auth/guard";
 import { searchCustomer } from "@/server/actions/customers";
+import { _resetStoreForTest } from "@/server/rate-limit";
 
 // The row as the database holds it (post-AT-211: `name` is the given name,
 // `surname` its own column). The mock deliberately returns email, the full
@@ -56,6 +57,9 @@ function renderWhere(mock: ReturnType<typeof buildDbMock>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Each test starts with a fresh per-staff search budget, so the matching
+  // tests never trip the rate limit.
+  _resetStoreForTest();
 });
 
 describe("searchCustomer — REQ-142 payload privacy", () => {
@@ -225,5 +229,22 @@ describe("searchCustomer — DEF-F matching (§6.9.4a)", () => {
   it("is gated to barista and admin", async () => {
     await run("Lou");
     expect(authorize).toHaveBeenCalledWith("barista", "admin");
+  });
+});
+
+describe("searchCustomer — per-staff rate limit (review round)", () => {
+  it("allows 60 searches a minute, then refuses with a friendly message", async () => {
+    _resetStoreForTest();
+    vi.mocked(db.select).mockReturnValue(buildDbMock([]) as unknown as ReturnType<typeof db.select>);
+    for (let i = 0; i < 60; i++) {
+      expect((await searchCustomer("Lou")).ok).toBe(true);
+    }
+    const blocked = await searchCustomer("Lou");
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) {
+      expect(blocked.code).toBe("RATE_LIMITED");
+      expect(blocked.message).toMatch(/too fast/i);
+    }
+    _resetStoreForTest();
   });
 });
