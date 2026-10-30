@@ -280,6 +280,32 @@ export const orderItems = pgTable("order_items", {
   check("order_items_quantity_positive", sql`quantity >= 1`),
 ]);
 
+// AT-188 · REQ-106 · PRD §7.0.2 L1770 — each order's COGS, frozen at the sale.
+// Written once, in the same transaction as the stock deduction at in_progress
+// (src/server/orders/order-cogs.ts), and never rewritten: a later recost of a
+// lot does not restate the past (owner decision, Nikao 22 Oct 2026). `orders`
+// itself is untouched.
+//   cogs_zar        — round_half_up(Σ line_cogs), integer cents: THE ONE
+//                     ROUNDING POINT. NULL when a consumed ingredient's cost
+//                     was absent (NULL or 0.0000) at the sale — never a
+//                     smaller number (§7.0.2 L1791–1795).
+//   absent_item_ids — the inventory items whose cost was absent; empty when
+//                     cogs_zar is a number. The CHECK keeps the two in step.
+//   estimated       — NULL = unknown. The lot's cost-source field does not
+//                     exist yet (AT-191 adds it), so nothing can say yet
+//                     whether the cost was an estimate; never defaulted (§10.6).
+export const orderCogs = pgTable("order_cogs", {
+  orderId: text("order_id").primaryKey().references(() => orders.id),
+  tenantId: tenantId(),
+  cogsZar: integer("cogs_zar"),
+  absentItemIds: text("absent_item_ids").array().default(sql`'{}'::text[]`).notNull(),
+  estimated: boolean("estimated"),
+  computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+}, () => [
+  check("order_cogs_amount_or_absent", sql`(cogs_zar IS NULL) = (cardinality(absent_item_ids) > 0)`),
+  check("order_cogs_nonnegative", sql`cogs_zar >= 0`),
+]);
+
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
 export const payments = pgTable("payments", {
