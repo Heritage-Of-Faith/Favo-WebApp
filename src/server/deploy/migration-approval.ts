@@ -27,8 +27,9 @@ export const APPROVAL_ENV = "FAVO_APPROVE_MIGRATION";
 export const GATED_FROM_IDX = 34;
 
 const RISKY_PATTERNS: { reason: string; re: RegExp }[] = [
-  // DROP anything, except the two relaxations that lose nothing.
-  { reason: "DROP", re: /\bDROP\b(?!\s+(DEFAULT|NOT\s+NULL)\b)/i },
+  // DROP anything, except what loses no data: the two relaxations, and a view
+  // (a stored query, no rows; owner decision, Nikao, 30 Oct 2026 — 0038).
+  { reason: "DROP", re: /\bDROP\b(?!\s+(DEFAULT|NOT\s+NULL|VIEW)\b)/i },
   { reason: "column type change", re: /\bALTER\s+COLUMN\s+\S+\s+(SET\s+DATA\s+)?TYPE\b/i },
   { reason: "data delete (DELETE)", re: /\bDELETE\s+FROM\b/i },
   { reason: "data delete (TRUNCATE)", re: /\bTRUNCATE\b/i },
