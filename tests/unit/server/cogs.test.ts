@@ -30,21 +30,9 @@ describe("todaySast", () => {
 
 // ─── CogsLive shape ───────────────────────────────────────────────────────────
 
+// CHANGED (AT-189..192): CogsLive drops `profit` / `costEstimatedWarning` for
+// `costState` + `absentItems`; cost figures are NULL when UNAVAILABLE.
 describe("CogsLive type contract", () => {
-  it("profit = netZar > 0 must hold", () => {
-    const cogs: CogsLive = {
-      date: "2026-05-30",
-      revenueZar: 100000,
-      cogsZar: 40000,
-      expensesZar: 0,
-      grossMarginZar: 60000,
-      netZar: 60000,
-      profit: true,
-      costEstimatedWarning: false,
-    };
-    expect(cogs.profit).toBe(cogs.netZar > 0);
-  });
-
   it("grossMarginZar = revenueZar - cogsZar, netZar = grossMarginZar", () => {
     const cogs: CogsLive = {
       date: "2026-05-30",
@@ -53,10 +41,11 @@ describe("CogsLive type contract", () => {
       expensesZar: 0,
       grossMarginZar: 82800,
       netZar: 82800,
-      profit: true,
-      costEstimatedWarning: true,
+      costState: "provisional",
+      absentItems: [],
+      ordersWithoutCost: 0,
     };
-    expect(cogs.grossMarginZar).toBe(cogs.revenueZar - cogs.cogsZar);
+    expect(cogs.grossMarginZar).toBe(cogs.revenueZar - (cogs.cogsZar as number));
     expect(cogs.netZar).toBe(cogs.grossMarginZar);
   });
 
@@ -68,11 +57,27 @@ describe("CogsLive type contract", () => {
       expensesZar: 0,
       grossMarginZar: -5000,
       netZar: -5000,
-      profit: false,
-      costEstimatedWarning: false,
+      costState: "final",
+      absentItems: [],
+      ordersWithoutCost: 0,
     };
-    expect(cogs.profit).toBe(false);
     expect(cogs.netZar).toBeLessThan(0);
+  });
+
+  it("an UNAVAILABLE day carries no cost number, and names the item", () => {
+    const cogs: CogsLive = {
+      date: "2026-05-30",
+      revenueZar: 10000,
+      cogsZar: null,
+      expensesZar: 0,
+      grossMarginZar: null,
+      netZar: null,
+      costState: "unavailable",
+      absentItems: ["Oat Milk"],
+      ordersWithoutCost: 0,
+    };
+    expect(cogs.cogsZar).toBeNull();
+    expect(cogs.absentItems).toEqual(["Oat Milk"]);
   });
 });
 
@@ -91,8 +96,8 @@ vi.mock("@/server/cogs/compute", async (importOriginal) => {
     getCogsLive: vi.fn().mockResolvedValue({
       date: "2026-05-30",
       revenueZar: 0, cogsZar: 0, expensesZar: 0,
-      grossMarginZar: 0, netZar: 0, profit: false,
-      costEstimatedWarning: false,
+      grossMarginZar: 0, netZar: 0,
+      costState: "empty", absentItems: [], ordersWithoutCost: 0,
     }),
   };
 });

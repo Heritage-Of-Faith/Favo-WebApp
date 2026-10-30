@@ -16,6 +16,7 @@ import {
 } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
+import { INT4_MAX, parseLotUnitCost } from "@/lib/admin-input";
 import type {
   ActionResult,
   ContainerYield,
@@ -283,6 +284,9 @@ export async function setItemThreshold(
       message: "threshold must be a non-negative integer.",
     };
   }
+  if (threshold > INT4_MAX) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "Threshold is too large." };
+  }
 
   const [item] = await db
     .select({ id: inventoryItems.id, lowStockThreshold: inventoryItems.lowStockThreshold })
@@ -330,14 +334,13 @@ export async function updateLotCost(
   if (!auth.ok) return auth;
   const session = auth.session;
 
-  const costNum = parseFloat(newCostZar);
-  if (!Number.isFinite(costNum) || costNum < 0) {
-    return {
-      ok: false,
-      code: "VALIDATION_ERROR",
-      message: "newCostZar must be a non-negative numeric string.",
-    };
+  // Refuses empty, 0 / rounds-to-0 (an ingredient must never silently become
+  // free) and anything numeric(10,4) cannot hold. Stores the 4 dp form.
+  const parsedCost = parseLotUnitCost(newCostZar);
+  if (!parsedCost.ok) {
+    return { ok: false, code: "VALIDATION_ERROR", message: parsedCost.message };
   }
+  newCostZar = parsedCost.value;
 
   const [lot] = await db
     .select({ id: inventoryLots.id, unitCostZar: inventoryLots.unitCostZar })

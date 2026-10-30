@@ -17,6 +17,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+const { mockInArray } = vi.hoisted(() => ({ mockInArray: vi.fn() }));
+vi.mock("drizzle-orm", async (orig) => {
+  const actual = await orig<typeof import("drizzle-orm")>();
+  mockInArray.mockImplementation(actual.inArray as (...a: unknown[]) => unknown);
+  return { ...actual, inArray: (...a: unknown[]) => mockInArray(...a) };
+});
+
 const mockAuthorize = vi.fn();
 vi.mock("@/server/auth/guard", () => ({
   authorize: (...a: unknown[]) => mockAuthorize(...a),
@@ -909,5 +916,75 @@ describe("review 5: the admin planner never moves, deletes or stacks on an open 
     const res = await updateTodaySession("os_1", { opensAt: "07:45" });
     expect(res.ok).toBe(true);
     expect(mockUpdateSet).toHaveBeenCalled();
+  });
+});
+
+// REQ-056 / §6.3: the audience is DERIVED from the mode — the recipient query
+// is filtered by customers.status; no caller-supplied list exists.
+// CHANGED (merge of main into AT-204): every open now starts with the three
+// opening reads (queueOpeningReads); the update fixtures are closed sessions,
+// because an open one is refused (review 5); one event case added for the
+// window's audience switch.
+describe("REQ-056: derived opening-push audience", () => {
+  beforeEach(() => {
+    mockInArray.mockClear();
+    mockToday.mockReturnValue("2026-07-09");
+  });
+  afterEach(() => mockToday.mockReturnValue("2026-07-09"));
+
+  const CLOSED_AT = new Date("2026-07-09T05:00:00Z");
+
+  it("weekday: only office_staff are queried", async () => {
+    mockAuthorize.mockResolvedValue(BARISTA);
+    queueOpeningReads();
+    selectQueue.push([]); selectQueue.push(SUBS); selectQueue.push([SESSION_ROW]);
+    await submitOpeningTime("07:30");
+    await flush();
+    expect(mockInArray).toHaveBeenCalledTimes(1);
+    expect(mockInArray.mock.calls[0]![1]).toEqual(["office_staff"]);
+    expect(mockSendOpeningPush).toHaveBeenCalledTimes(1);
+  });
+
+  it("Sunday: office_staff and church_member are queried", async () => {
+    mockToday.mockReturnValue("2026-07-12"); // a Sunday
+    mockAuthorize.mockResolvedValue(BARISTA);
+    queueOpeningReads();
+    selectQueue.push([]); selectQueue.push(SUBS); selectQueue.push([SESSION_ROW]);
+    await submitOpeningTime("07:30");
+    await flush();
+    expect([...(mockInArray.mock.calls[0]![1] as string[])].sort()).toEqual(["church_member", "office_staff"]);
+  });
+
+  it("admin notify on update derives the audience from the stored session's mode", async () => {
+    mockAuthorize.mockResolvedValue(ADMIN);
+    selectQueue.push([{ opensAt: "07:30", closesAt: null, closedAt: CLOSED_AT, mode: "weekday", windowAudience: null }]); // before-lookup
+    selectQueue.push(SUBS);          // fan-out
+    selectQueue.push([SESSION_ROW]); // sessions list
+    await updateTodaySession("os_1", { opensAt: "08:00", notify: true });
+    await flush();
+    expect(mockInArray.mock.calls[0]![1]).toEqual(["office_staff"]);
+  });
+
+  it("an event session with no profile audience pushes to nobody", async () => {
+    mockAuthorize.mockResolvedValue(ADMIN);
+    selectQueue.push([{ opensAt: "07:30", closesAt: null, closedAt: CLOSED_AT, mode: "event", windowAudience: null }]);
+    selectQueue.push([SESSION_ROW]);
+    await updateTodaySession("os_1", { opensAt: "08:00", notify: true });
+    await flush();
+    expect(mockInArray).not.toHaveBeenCalled();
+    expect(mockSendOpeningPush).not.toHaveBeenCalled();
+  });
+
+  it("an event session reaches its window's audience switch (§6.6), never a hand-picked list", async () => {
+    mockAuthorize.mockResolvedValue(BARISTA);
+    mockToday.mockReturnValue(SAT);
+    vi.setSystemTime(new Date("2026-10-10T08:00:00Z"));
+    queueOpeningReads([], [SAT_WINDOW], []); // audience "both"
+    selectQueue.push([]); selectQueue.push(SUBS); selectQueue.push([SESSION_ROW]);
+    const res = await openSession({ opensAt: "10:00", confirm: { mode: "event", eventWindowId: "evw_sat" } });
+    await flush();
+    expect(res.ok).toBe(true);
+    expect([...(mockInArray.mock.calls[0]![1] as string[])].sort()).toEqual(["church_member", "office_staff"]);
+    expect(mockSendOpeningPush).toHaveBeenCalledTimes(1);
   });
 });

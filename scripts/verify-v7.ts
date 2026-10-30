@@ -290,8 +290,8 @@ mustBePresent(
 // ─────────────────────────────────────────────────────────────────────────────
 fileMustContain("staff sessions have an explicit maxAge", "auth.ts", "maxAge");
 mustBePresent(
-  "loginWithPin is rate limited",
-  "checkRateLimit",
+  "loginWithPin throttles failed PINs (till: delay only, admin: cooldown; PRD L36 / §9.5.3)",
+  "cooldownSecsLeft",
   "src/server/actions/auth.ts"
 );
 {

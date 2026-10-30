@@ -22,15 +22,19 @@ export interface KpiTileProps {
     upIsGood?: boolean;
   };
   /** Accent the value colour (e.g. profit green / loss red). */
-  tone?: "default" | "positive" | "negative";
+  tone?: "default" | "positive" | "negative" | "warn" | "unavailable";
   className?: string;
 }
 
 // FAVO brand palette only — positive=dark teal, negative=crimson carrot.
+// AT-191/AT-192 (§17.6.1): warn = provisional (estimated costs), unavailable =
+// an absent cost input; neither is the profit or the loss colour.
 const TONE_COLOR: Record<NonNullable<KpiTileProps["tone"]>, string> = {
   default: "var(--color-text-strong)",
   positive: "var(--color-dark-teal)",
   negative: "var(--color-crimson-carrot)",
+  warn: "var(--status-warn)",
+  unavailable: "var(--status-unavailable)",
 };
 
 function trendColor(direction: TrendDirection, upIsGood: boolean): string {

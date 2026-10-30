@@ -58,6 +58,7 @@ export default function OpeningTimePrompt() {
   const [endTime, setEndTime] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [timeError, setTimeError] = useState<string | null>(null);
 
   const load = useCallback(async (opts: { initial: boolean; time?: string; isStale?: () => boolean }) => {
     const r = await getOpeningStep();
@@ -70,6 +71,7 @@ export default function OpeningTimePrompt() {
     setSundayOk(false);
     setStarting(false);
     setError(null);
+    setTimeError(null);
     setOpen(true);
     return true;
   }, []);
@@ -96,7 +98,11 @@ export default function OpeningTimePrompt() {
   }
 
   async function confirm() {
-    if (!resolution || resolution.kind === "closed" || busy) return;
+    if (busy) return;
+    // QA round 1 (#279): an empty time shows a message instead of doing nothing.
+    if (!TIME_RE.test(time)) { setTimeError("Enter the time you are opening, for example 07:30."); return; }
+    setTimeError(null);
+    if (!resolution || resolution.kind === "closed") return;
     const c = resolution.kind === "date"
       ? { mode: resolution.mode }
       : resolution.source === "window"
@@ -168,7 +174,9 @@ export default function OpeningTimePrompt() {
             <h2 className="favo-h3 text-coffee-bean">Open the session first</h2>
             <label className="favo-small text-cool-steel" htmlFor="opening-time">What time are you opening?</label>
             <input id="opening-time" type="time" value={time} aria-label="Opening time"
-              onChange={(e) => { setTime(e.target.value); setSundayOk(false); }} className={inputClass} />
+              aria-invalid={timeError ? true : undefined}
+              onChange={(e) => { setTime(e.target.value); setSundayOk(false); setTimeError(null); }} className={inputClass} />
+            {timeError && <p className="favo-small text-[var(--color-error)]" role="alert">{timeError}</p>}
             <p className="favo-small text-cool-steel">Submitting notifies every subscribed customer.</p>
 
             {resolution?.kind === "date" && (
@@ -221,7 +229,8 @@ export default function OpeningTimePrompt() {
                   Start an event
                 </button>
               )}
-              {resolution && resolution.kind !== "closed" && (
+              {/* Shown for an empty/invalid time too, so Confirm explains itself (#279). */}
+              {resolution?.kind !== "closed" && (
                 <button type="button" onClick={confirm}
                   disabled={busy || (needsSundayOk && !sundayOk)} className={ctaClass} style={ctaStyle}>
                   {busy && <Loader2 size={14} strokeWidth={2.25} className="animate-spin" />}

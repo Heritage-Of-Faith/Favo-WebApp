@@ -56,9 +56,9 @@ export default function StaffPushOptIn() {
   if (!visible) return null;
 
   return (
-    // AT-138: anchored bottom-right rather than bottom-center — centered would
-    // sit directly over Zone B's Charge button and overlap its hit area.
-    <div className="fixed bottom-4 right-4 z-40 w-[calc(100%-2rem)] max-w-[420px] rounded-[2px] border border-cool-steel/25 bg-dark-teal-deep p-4 shadow-[var(--shadow-2)]">
+    // In-flow banner under the header (was fixed bottom-right, which covered
+    // primary buttons on a portrait iPad). It pushes content down instead.
+    <div data-pos-push-banner className="shrink-0 border-b border-cool-steel/25 bg-dark-teal-deep p-3">
       <div className="flex items-start gap-3">
         <Bell size={18} strokeWidth={2} className="text-crimson-carrot shrink-0 mt-0.5" />
         <div className="flex-1">

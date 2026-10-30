@@ -42,9 +42,12 @@ export interface HoursEditorProps {
 export default function HoursEditor({ initialHours }: HoursEditorProps) {
   const [rows, setRows] = useState<HoursRow[]>(() => buildRows(initialHours));
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const updateRow = useCallback(
     (dayOfWeek: number, patch: Partial<Omit<HoursRow, "dayOfWeek">>) => {
+      setSaved(false);
       setRows((prev) =>
         prev.map((r) => (r.dayOfWeek === dayOfWeek ? { ...r, ...patch } : r))
       );
@@ -53,6 +56,13 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
   );
 
   const handleSave = useCallback(() => {
+    setError(null);
+    setSaved(false);
+    const bad = rows.find((r) => !r.isClosed && r.closeTime <= r.openTime);
+    if (bad) {
+      setError(`${DAY_NAMES[bad.dayOfWeek]}: closing time must be after opening time.`);
+      return;
+    }
     startTransition(async () => {
       const results = await Promise.all(
         rows.map((r) =>
@@ -67,13 +77,12 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
 
       const failed = results.filter((r) => !r.ok);
       if (failed.length > 0) {
-        toast.error(
-          failed[0] && !failed[0].ok
-            ? failed[0].message
-            : "Failed to save hours."
-        );
+        const msg = failed[0] && !failed[0].ok ? failed[0].message : "Failed to save hours.";
+        toast.error(msg);
+        setError(msg);
       } else {
         toast.success("Operating hours saved.");
+        setSaved(true);
       }
     });
   }, [rows]);
@@ -171,9 +180,22 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
         </table>
       </div>
 
-      <Button onClick={handleSave} disabled={isPending}>
-        {isPending ? "Saving…" : "Save hours"}
-      </Button>
+      {error && (
+        <p role="alert" className="text-sm" style={{ color: "var(--color-error)" }}>
+          {error}
+        </p>
+      )}
+
+      <div className="flex items-center gap-3">
+        <Button onClick={handleSave} disabled={isPending}>
+          {isPending ? "Saving…" : "Save hours"}
+        </Button>
+        {saved && !isPending && (
+          <span role="status" className="text-sm text-text-muted">
+            Saved
+          </span>
+        )}
+      </div>
     </div>
   );
 }

@@ -26,7 +26,7 @@
 //    opened. Reads treat it as no current session. No scheduled job is involved.
 
 import { z } from "zod";
-import { and, asc, eq, gt, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { DB } from "@/lib/db";
 import { openingSessions, customers, eventWindows, eventProfiles } from "@db/schema";
@@ -36,9 +36,10 @@ import { todaySast } from "@/server/cogs/compute";
 import {
   SATURDAY_CLOSED, resolveSessionMode, forcedCloseAt, forcedClose, sastInstant, validateWindowSpan,
   postureIsInTill, eventSwitchesInTill, EVENT_WEEKDAY_NOT_SUPPORTED, isWeekdayDate, windowTouchesWeekday,
-  type DateMode, type EventProfileView, type EventSwitches, type EventWindowView,
+  type Audience, type DateMode, type EventProfileView, type EventSwitches, type EventWindowView,
   type SessionMode,
 } from "@/lib/session-mode";
+import { audienceForMode, type CustomerStatus } from "@/lib/push/audience";
 import { sendOpeningPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
 import type { ActionResult } from "@/lib/types";
@@ -349,9 +350,16 @@ async function openSessionCore(input: CoreInput): Promise<CoreResult> {
     );
   }
 
-  // Fan out to every subscribed customer — fire-and-forget so a push failure
-  // never fails the open.
-  if (input.notify) fanOutOpeningPush(input.opensAt, isReopening);
+  // Fan out to the DERIVED audience (REQ-056) — fire-and-forget so a push
+  // failure never fails the open. An event reaches its window's or profile's
+  // audience switch (§6.6), snapshotted at open.
+  if (input.notify) {
+    const mode: SessionMode = resolved.kind === "event" ? "event" : resolved.mode;
+    const eventAudience =
+      resolved.kind !== "event" ? null
+        : resolved.source === "window" ? resolved.window.audience : resolved.profile.audience;
+    fanOutOpeningPush(input.opensAt, isReopening, mode, eventAudience);
+  }
 
   const sessions = await listToday();
   return { ok: true, data: { session: toView(inserted), notified: input.notify, sessions } };
@@ -703,8 +711,8 @@ export async function openEventWindow(
  * Barista prompt submit (AT-134), now routed through openSessionCore:
  * - The open session's own time → no-op confirm, `notified: false`.
  * - A session open at another time → STALE_STATE (close it first, §6.11.1).
- * - Otherwise a new session in the resolved mode, and every subscribed
- *   customer is pushed ("opening" first, "reopening" for later ones).
+ * - Otherwise a new session in the resolved mode, and the derived audience
+ *   (REQ-056) is pushed ("opening" first, "reopening" for later ones).
  */
 export async function submitOpeningTime(
   opensAt: string
@@ -722,15 +730,32 @@ export async function submitOpeningTime(
   });
 }
 
+/** §6.6 broadcast-audience switch → customer statuses. Anything else reaches nobody. */
+function statusesForEventAudience(a: Audience | null | undefined): CustomerStatus[] {
+  switch (a) {
+    case "both": return ["office_staff", "church_member"];
+    case "office_staff": return ["office_staff"];
+    case "church_member": return ["church_member"];
+    default: return [];
+  }
+}
+
 /**
- * Push an opening/reopening notification to every subscribed customer.
+ * Push an opening/reopening notification to the DERIVED audience (REQ-056):
+ * the recipients are the subscribed customers whose `status` is in
+ * audienceForMode(mode). There is no way to pass a recipient list in — an
+ * event's audience is its window's (or profile's) stored switch, never a list.
  * Fire-and-forget (mirrors the operating-hours notify path) — a push failure
  * must never fail the action that triggered it.
  */
-function fanOutOpeningPush(opensAt: string, isReopening: boolean): void {
+function fanOutOpeningPush(
+  opensAt: string, isReopening: boolean, mode: SessionMode, eventAudience: Audience | null = null
+): void {
+  const audience = audienceForMode(mode, statusesForEventAudience(eventAudience));
+  if (audience.length === 0) return; // an event with no profile audience reaches nobody
   db.select({ id: customers.id, pushSubscription: customers.pushSubscription })
     .from(customers)
-    .where(isNotNull(customers.pushSubscription))
+    .where(and(isNotNull(customers.pushSubscription), inArray(customers.status, audience)))
     .then((subs) => {
       for (const sub of subs) {
         if (!isValidPushSubscription(sub.pushSubscription)) continue;
@@ -796,14 +821,18 @@ export async function updateTodaySession(
   const updated = await db.transaction(async (tx) => {
     const txDb = tx as unknown as DB;
     const [row] = await tx
-      .select({ opensAt: openingSessions.opensAt, closesAt: openingSessions.closesAt, closedAt: openingSessions.closedAt })
+      .select({
+        opensAt: openingSessions.opensAt, closesAt: openingSessions.closesAt, closedAt: openingSessions.closedAt,
+        mode: openingSessions.mode, windowAudience: eventWindows.audience,
+      })
       .from(openingSessions)
+      .leftJoin(eventWindows, eq(openingSessions.eventWindowId, eventWindows.id))
       .where(and(eq(openingSessions.id, id), eq(openingSessions.sessionDate, todaySast())));
-    if (!row) return false;
+    if (!row) return null;
     // Moving an open session's times would leave its mode and event binding
     // stale (both are resolved at open), so it is refused, not recomputed.
     if (row.closedAt === null) return "open" as const;
-    const before = { opensAt: row.opensAt, closesAt: row.closesAt };
+    const beforeAudit = { opensAt: row.opensAt, closesAt: row.closesAt };
 
     await tx
       .update(openingSessions)
@@ -817,11 +846,11 @@ export async function updateTodaySession(
       {
         entityKind: "opening_session", entityId: id, action: "update",
         actorId: auth.session.id, actorRole: auth.session.role,
-        before, after: parsed.data,
+        before: beforeAudit, after: parsed.data,
       },
       txDb
     );
-    return true;
+    return { mode: row.mode, eventAudience: row.windowAudience ?? null };
   });
 
   if (!updated) return { ok: false, code: "NOT_FOUND", message: "Session not found for today." };
@@ -835,7 +864,7 @@ export async function updateTodaySession(
     );
   }
   // Opt-in notify: push the (possibly changed) opening time when the admin asked.
-  if (parsed.data.notify) fanOutOpeningPush(parsed.data.opensAt, false);
+  if (parsed.data.notify) fanOutOpeningPush(parsed.data.opensAt, false, updated.mode, updated.eventAudience);
   return { ok: true, data: { sessions: await listToday() } };
 }
 

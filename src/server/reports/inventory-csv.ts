@@ -3,14 +3,7 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-
-function csvCell(value: string | number | null | undefined): string {
-  const s = value == null ? "" : String(value);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
+import { csvCell } from "@/server/reports/csv";
 
 export async function buildInventoryCsv(): Promise<string> {
   const rows = await db.execute<{

@@ -22,6 +22,8 @@ import {
   inventoryKind,
   inventoryUnit,
   lotState,
+  reportCostState,
+  costSource,
   stockMovementKind,
   stockTakeKind,
   paymentStatus,
@@ -167,6 +169,9 @@ export const inventoryLots = pgTable("inventory_lots", {
   // G13 COGS sums (delta × unit_cost_zar) → cast to integer cents at
   // the order level. Admin recosts via A8 after launch (R10 mitigation).
   unitCostZar: numeric("unit_cost_zar", { precision: 10, scale: 4 }),
+  // AT-191 / PRD §7.0.1b: estimate | invoice. Any drink costed from an
+  // 'estimate' lot renders provisional, never green (REQ-110).
+  costSource: costSource("cost_source").default("estimate").notNull(),
   // Quantity received when this lot was booked in (in the item's unit).
   // Legacy path only (non-cup items: cups, lids, syrup, powder). Cup-unit
   // container lots (milk & beans) no longer predict a cup yield up front —
@@ -283,6 +288,32 @@ export const orderItems = pgTable("order_items", {
   check("order_items_quantity_positive", sql`quantity >= 1`),
 ]);
 
+// AT-188 · REQ-106 · PRD §7.0.2 L1770 — each order's COGS, frozen at the sale.
+// Written once, in the same transaction as the stock deduction at in_progress
+// (src/server/orders/order-cogs.ts), and never rewritten: a later recost of a
+// lot does not restate the past (owner decision, Nikao 22 Oct 2026). `orders`
+// itself is untouched.
+//   cogs_zar        — round_half_up(Σ line_cogs), integer cents: THE ONE
+//                     ROUNDING POINT. NULL when a consumed ingredient's cost
+//                     was absent (NULL or 0.0000) at the sale — never a
+//                     smaller number (§7.0.2 L1791–1795).
+//   absent_item_ids — the inventory items whose cost was absent; empty when
+//                     cogs_zar is a number. The CHECK keeps the two in step.
+//   estimated       — NULL = unknown. The lot's cost-source field does not
+//                     exist yet (AT-191 adds it), so nothing can say yet
+//                     whether the cost was an estimate; never defaulted (§10.6).
+export const orderCogs = pgTable("order_cogs", {
+  orderId: text("order_id").primaryKey().references(() => orders.id),
+  tenantId: tenantId(),
+  cogsZar: integer("cogs_zar"),
+  absentItemIds: text("absent_item_ids").array().default(sql`'{}'::text[]`).notNull(),
+  estimated: boolean("estimated"),
+  computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+}, () => [
+  check("order_cogs_amount_or_absent", sql`(cogs_zar IS NULL) = (cardinality(absent_item_ids) > 0)`),
+  check("order_cogs_nonnegative", sql`cogs_zar >= 0`),
+]);
+
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
 export const payments = pgTable("payments", {
@@ -331,6 +362,28 @@ export const staffEntitlementLog = pgTable(
     day: text("day").notNull(), // YYYY-MM-DD in Africa/Johannesburg
   },
   (t) => [unique().on(t.customerId, t.day)]
+);
+
+// ─── Walk-ins ─────────────────────────────────────────────────────────────────
+
+// AT-209 / PRD §6.5, §10.2, L20, REQ-058: a weekday non-staff visitor's cup,
+// logged for consumption reporting. NO IDENTITY OF ANY KIND — no customer
+// reference, name, email or phone column, ever. One row per order LINE, so
+// §7.0.2's walk_in_cups = Σ quantity counts walk-in cups, not the order's
+// (REQ-116). Never charged, never counted against staff_entitlement_log.
+export const walkIns = pgTable(
+  "walk_ins",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    orderId: text("order_id").notNull().references(() => orders.id),
+    menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
+    quantity: integer("quantity").default(1).notNull(),
+    category: menuCategory("category").notNull(),
+    loggedByStaffId: text("logged_by_staff_id").notNull().references(() => staff.id),
+    at: now(),
+  },
+  () => [check("walk_ins_quantity_positive", sql`quantity >= 1`)]
 );
 
 // ─── Waste + Purchases ────────────────────────────────────────────────────────
@@ -520,10 +573,17 @@ export const monthlyReports = pgTable(
     /** First day of the month (YYYY-MM-DD). UNIQUE — one report per month. */
     month: text("month").notNull().unique(),
     revenueZar: integer("revenue_zar").notNull(),
-    cogsZar: integer("cogs_zar").notNull(),
+    // AT-189/AT-190 (REQ-106, REQ-109): cogs = Σ order_cogs; NULL = UNAVAILABLE
+    // (an absent cost input, named in cogs_absent_items) — never a smaller number.
+    cogsZar: integer("cogs_zar"),
     expensesZar: integer("expenses_zar").notNull(),
-    grossMarginZar: integer("gross_margin_zar").notNull(),
-    netZar: integer("net_zar").notNull(),
+    grossMarginZar: integer("gross_margin_zar"),
+    netZar: integer("net_zar"),
+    // AT-192 (REQ-129): empty | unavailable | provisional | final — see src/lib/cost-state.ts.
+    costState: reportCostState("cost_state").default("provisional").notNull(),
+    cogsAbsentItems: text("cogs_absent_items").array().default(sql`'{}'::text[]`).notNull(),
+    /** Orders in the month with no order_cogs row — part of the named refusal. */
+    ordersWithoutCost: integer("orders_without_cost").default(0).notNull(),
     /** draft → awaiting_signatures → closed */
     status: text("status", {
       enum: ["draft", "awaiting_signatures", "closed"],
@@ -545,6 +605,7 @@ export const monthlyReports = pgTable(
       "monthly_report_closed_requires_admin_sig",
       sql`status != 'closed' OR admin_sig IS NOT NULL`
     ),
+    check("monthly_report_cogs_or_unavailable", sql`(cogs_zar IS NULL) = (cost_state = 'unavailable')`),
   ]
 );
 
@@ -568,12 +629,18 @@ export const weeklyReports = pgTable("weekly_reports", {
   /** ISO date of Monday that starts the week (SAST). */
   weekStarting: text("week_starting").notNull().unique(),
   revenueZar: integer("revenue_zar").notNull(),
-  cogsZar: integer("cogs_zar").notNull(),
+  // AT-189/AT-190/AT-192: as monthly_reports — NULL cogs = UNAVAILABLE.
+  cogsZar: integer("cogs_zar"),
   expensesZar: integer("expenses_zar").notNull(),
-  grossMarginZar: integer("gross_margin_zar").notNull(),
-  netZar: integer("net_zar").notNull(),
+  grossMarginZar: integer("gross_margin_zar"),
+  netZar: integer("net_zar"),
+  costState: reportCostState("cost_state").default("provisional").notNull(),
+  cogsAbsentItems: text("cogs_absent_items").array().default(sql`'{}'::text[]`).notNull(),
+  ordersWithoutCost: integer("orders_without_cost").default(0).notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, () => [
+  check("weekly_report_cogs_or_unavailable", sql`(cogs_zar IS NULL) = (cost_state = 'unavailable')`),
+]);
 
 // ─── The Favo (AT-142 — one saved order template per customer) ────────────────
 // `items` holds FavoItem[] — the exact shape of CreateOrderInput["items"]
