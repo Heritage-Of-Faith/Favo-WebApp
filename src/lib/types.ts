@@ -41,13 +41,15 @@ export type Customer = {
 };
 
 /**
- * POS customer search result (REQ-142 / AT-185). Carries no email and no full
- * phone number — only the last four phone digits, to tell apart two people
- * whose names read alike.
+ * POS customer search result (REQ-142 / AT-185 / AT-213). Carries no email and
+ * no full phone number — the surname, and the last four phone digits, tell
+ * apart two people whose given names read alike.
  */
 export type CustomerSearchResult = {
   id: string;
+  /** Given name only (AT-211). */
   name: string;
+  surname: string | null;
   phoneLast4: string | null;
 };
 

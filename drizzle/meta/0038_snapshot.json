@@ -2523,6 +2523,117 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.walk_ins": {
+      "name": "walk_ins",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'hofmi'"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "menu_item_id": {
+          "name": "menu_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "category": {
+          "name": "category",
+          "type": "menu_category",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "logged_by_staff_id": {
+          "name": "logged_by_staff_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "walk_ins_order_id_orders_id_fk": {
+          "name": "walk_ins_order_id_orders_id_fk",
+          "tableFrom": "walk_ins",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "walk_ins_menu_item_id_menu_items_id_fk": {
+          "name": "walk_ins_menu_item_id_menu_items_id_fk",
+          "tableFrom": "walk_ins",
+          "tableTo": "menu_items",
+          "columnsFrom": [
+            "menu_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "walk_ins_logged_by_staff_id_staff_id_fk": {
+          "name": "walk_ins_logged_by_staff_id_staff_id_fk",
+          "tableFrom": "walk_ins",
+          "tableTo": "staff",
+          "columnsFrom": [
+            "logged_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "walk_ins_quantity_positive": {
+          "name": "walk_ins_quantity_positive",
+          "value": "quantity >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.waste_log": {
       "name": "waste_log",
       "schema": "",

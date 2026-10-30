@@ -5,6 +5,13 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const { mockInArray } = vi.hoisted(() => ({ mockInArray: vi.fn() }));
+vi.mock("drizzle-orm", async (orig) => {
+  const actual = await orig<typeof import("drizzle-orm")>();
+  mockInArray.mockImplementation(actual.inArray as (...a: unknown[]) => unknown);
+  return { ...actual, inArray: (...a: unknown[]) => mockInArray(...a) };
+});
+
 const mockAuthorize = vi.fn();
 vi.mock("@/server/auth/guard", () => ({
   authorize: (...a: unknown[]) => mockAuthorize(...a),
@@ -230,6 +237,54 @@ describe("AT-181: session mode and the Saturday refusal", () => {
     await flush();
     expect(res).toEqual({ ok: false, code: "SATURDAY_CLOSED", message: SATURDAY_MESSAGE });
     expect(tx.insert).not.toHaveBeenCalled();
+    expect(mockSendOpeningPush).not.toHaveBeenCalled();
+  });
+});
+
+// REQ-056 / §6.3: the audience is DERIVED from the mode — the recipient query
+// is filtered by customers.status; no caller-supplied list exists.
+describe("REQ-056: derived opening-push audience", () => {
+  beforeEach(() => {
+    mockInArray.mockClear();
+    mockToday.mockReturnValue("2026-07-09");
+  });
+
+  it("weekday: only office_staff are queried", async () => {
+    mockAuthorize.mockResolvedValue(BARISTA);
+    selectQueue.push([]); selectQueue.push(SUBS); selectQueue.push([SESSION_ROW]);
+    await submitOpeningTime("07:30");
+    await flush();
+    expect(mockInArray).toHaveBeenCalledTimes(1);
+    expect(mockInArray.mock.calls[0]![1]).toEqual(["office_staff"]);
+    expect(mockSendOpeningPush).toHaveBeenCalledTimes(1);
+  });
+
+  it("Sunday: office_staff and church_member are queried", async () => {
+    mockToday.mockReturnValue("2026-07-12"); // a Sunday
+    mockAuthorize.mockResolvedValue(BARISTA);
+    selectQueue.push([]); selectQueue.push(SUBS); selectQueue.push([SESSION_ROW]);
+    await submitOpeningTime("07:30");
+    await flush();
+    expect([...(mockInArray.mock.calls[0]![1] as string[])].sort()).toEqual(["church_member", "office_staff"]);
+  });
+
+  it("admin notify on update derives the audience from the stored session's mode", async () => {
+    mockAuthorize.mockResolvedValue(ADMIN);
+    selectQueue.push([{ opensAt: "07:30", closesAt: null, mode: "weekday" }]); // before-lookup
+    selectQueue.push(SUBS);          // fan-out
+    selectQueue.push([SESSION_ROW]); // sessions list
+    await updateTodaySession("os_1", { opensAt: "08:00", notify: true });
+    await flush();
+    expect(mockInArray.mock.calls[0]![1]).toEqual(["office_staff"]);
+  });
+
+  it("an event session with no profile audience pushes to nobody", async () => {
+    mockAuthorize.mockResolvedValue(ADMIN);
+    selectQueue.push([{ opensAt: "07:30", closesAt: null, mode: "event" }]);
+    selectQueue.push([SESSION_ROW]);
+    await updateTodaySession("os_1", { opensAt: "08:00", notify: true });
+    await flush();
+    expect(mockInArray).not.toHaveBeenCalled();
     expect(mockSendOpeningPush).not.toHaveBeenCalled();
   });
 });

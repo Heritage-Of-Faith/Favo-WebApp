@@ -15,14 +15,15 @@
 //  - The barista never records a closing time; closes_at is admin-only.
 
 import { z } from "zod";
-import { and, asc, eq, isNotNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { DB } from "@/lib/db";
 import { openingSessions, customers } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import { todaySast } from "@/server/cogs/compute";
-import { defaultSessionMode, SATURDAY_CLOSED } from "@/lib/session-mode";
+import { defaultSessionMode, SATURDAY_CLOSED, type SessionMode } from "@/lib/session-mode";
+import { audienceForMode } from "@/lib/push/audience";
 import { sendOpeningPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
 import type { ActionResult } from "@/lib/types";
@@ -140,21 +141,25 @@ export async function submitOpeningTime(
 
   // Fan out to every subscribed customer — fire-and-forget so a push failure
   // never fails the submit.
-  fanOutOpeningPush(time, isReopening);
+  fanOutOpeningPush(time, isReopening, mode);
 
   const sessions = await listToday();
   return { ok: true, data: { session: toView(inserted), notified: true, sessions } };
 }
 
 /**
- * Push an opening/reopening notification to every subscribed customer.
+ * Push an opening/reopening notification to the DERIVED audience (REQ-056):
+ * the recipients are the subscribed customers whose `status` is in
+ * audienceForMode(mode). There is no way to pass a recipient list in.
  * Fire-and-forget (mirrors the operating-hours notify path) — a push failure
  * must never fail the action that triggered it.
  */
-function fanOutOpeningPush(opensAt: string, isReopening: boolean): void {
+function fanOutOpeningPush(opensAt: string, isReopening: boolean, mode: SessionMode): void {
+  const audience = audienceForMode(mode);
+  if (audience.length === 0) return; // an event with no profile audience reaches nobody
   db.select({ id: customers.id, pushSubscription: customers.pushSubscription })
     .from(customers)
-    .where(isNotNull(customers.pushSubscription))
+    .where(and(isNotNull(customers.pushSubscription), inArray(customers.status, audience)))
     .then((subs) => {
       for (const sub of subs) {
         if (!isValidPushSubscription(sub.pushSubscription)) continue;
@@ -222,7 +227,7 @@ export async function addTodaySession(
   // Opt-in notify: only push when the admin asked AND a new row was created
   // (a duplicate time hits onConflictDoNothing → no row → no push).
   if (inserted && parsed.data.notify) {
-    fanOutOpeningPush(parsed.data.opensAt, isReopening);
+    fanOutOpeningPush(parsed.data.opensAt, isReopening, mode);
   }
   return { ok: true, data: { sessions: await listToday() } };
 }
@@ -243,10 +248,11 @@ export async function updateTodaySession(
   const updated = await db.transaction(async (tx) => {
     const txDb = tx as unknown as DB;
     const [before] = await tx
-      .select({ opensAt: openingSessions.opensAt, closesAt: openingSessions.closesAt })
+      .select({ opensAt: openingSessions.opensAt, closesAt: openingSessions.closesAt, mode: openingSessions.mode })
       .from(openingSessions)
       .where(and(eq(openingSessions.id, id), eq(openingSessions.sessionDate, todaySast())));
-    if (!before) return false;
+    if (!before) return null;
+    const { mode: sessionModeValue, ...beforeAudit } = before;
 
     await tx
       .update(openingSessions)
@@ -260,16 +266,16 @@ export async function updateTodaySession(
       {
         entityKind: "opening_session", entityId: id, action: "update",
         actorId: auth.session.id, actorRole: auth.session.role,
-        before, after: parsed.data,
+        before: beforeAudit, after: parsed.data,
       },
       txDb
     );
-    return true;
+    return sessionModeValue;
   });
 
   if (!updated) return { ok: false, code: "NOT_FOUND", message: "Session not found for today." };
   // Opt-in notify: push the (possibly changed) opening time when the admin asked.
-  if (parsed.data.notify) fanOutOpeningPush(parsed.data.opensAt, false);
+  if (parsed.data.notify) fanOutOpeningPush(parsed.data.opensAt, false, updated);
   return { ok: true, data: { sessions: await listToday() } };
 }
 
