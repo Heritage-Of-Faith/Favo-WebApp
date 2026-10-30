@@ -61,7 +61,7 @@ describe("every CSV writer uses the guard", () => {
     const csv = rowsToCsv([
       { date: "=cmd", revenueZar: 100, cogsZar: 50, grossMarginZar: -50, grossMarginPct: -50 },
     ] as unknown as Parameters<typeof rowsToCsv>[0]);
-    expect(csv.split("\r\n")[1]).toBe("'=cmd,100,50,-50,-50");
+    expect(csv.split("\r\n")[1]!.startsWith("'=cmd,100,50,-50,-50")).toBe(true);
   });
 
   it("sales CSV — customer name", async () => {
@@ -82,7 +82,7 @@ describe("every CSV writer uses the guard", () => {
 
   it("monthly P&L CSV — signer name", async () => {
     selectWhere.mockResolvedValueOnce([
-      { month: "2026-09", revenueZar: 0, cogsZar: 0, grossMarginZar: 0, netZar: 0, status: "draft", adminSig: { signerName: "-1+1", at: "x" } },
+      { month: "2026-09", revenueZar: 0, cogsZar: 0, grossMarginZar: 0, netZar: 0, costState: "final", cogsAbsentItems: [], ordersWithoutCost: 0, status: "draft", adminSig: { signerName: "-1+1", at: "x" } },
     ]);
     const csv = await buildMonthlyPnlCsv("2026-09-01", "2026-09-30");
     expect(csv.split("\r\n")[1]!.endsWith(",'-1+1 (x)")).toBe(true);

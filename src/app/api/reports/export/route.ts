@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { canAccessAdmin } from "@/server/auth/rbac";
-import { buildReportRows, rowsToCsv } from "@/server/reports/export-csv";
+import { buildReportRows, reportFigure, reportPct, rowsToCsv } from "@/server/reports/export-csv";
 import { buildSalesCsv } from "@/server/reports/sales-csv";
 import { buildInventoryCsv } from "@/server/reports/inventory-csv";
 import { buildMonthlyPnlCsv } from "@/server/reports/monthly-pnl-csv";
@@ -120,9 +120,13 @@ export async function GET(req: NextRequest) {
       rows = reportRows.map((r) => ({
         Date: r.date,
         "Revenue (ZAR)": r.revenueZar,
-        "COGS (ZAR)": r.cogsZar,
-        "Gross Margin (ZAR)": r.grossMarginZar,
-        "Gross Margin %": r.grossMarginPct,
+        // NULL = UNAVAILABLE — the word, never a blank or 0 (REQ-109).
+        "COGS (ZAR)": reportFigure(r.cogsZar, r),
+        "Gross Margin (ZAR)": reportFigure(r.grossMarginZar, r),
+        "Gross Margin %": reportPct(r),
+        "Expenses (ZAR)": r.expensesZar,
+        "Net (ZAR)": reportFigure(r.netZar, r),
+        "Cost status": r.costStatus,
       }));
       break;
     }

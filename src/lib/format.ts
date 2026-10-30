@@ -2,6 +2,8 @@
 // Rule: money is always integer cents in _zar columns. Never numeric.
 // Rule: wall-clock is always Africa/Johannesburg.
 
+import { netTone, type CostState } from "@/lib/cost-state";
+
 const ZAR_LOCALE = "en-ZA";
 const FAVO_TZ = "Africa/Johannesburg";
 
@@ -127,10 +129,25 @@ export function formatZarField(cents: number): string {
 }
 
 /**
- * Returns a semantic colour int for a net P&L figure (green if >= 0, red if
- * negative). Rehomed from the former Discord webhook helper (task G14) —
- * kept for reuse by report/dashboard surfaces that colour-code net P&L.
+ * Returns a semantic colour int for a net P&L figure. Rehomed from the former
+ * Discord webhook helper (task G14) — kept for reuse by report/dashboard
+ * surfaces that colour-code net P&L.
+ *
+ * AT-191/AT-192 (PRD §7.0.1b, REQ-110, REQ-129): the colour follows the cost
+ * state, not the sign alone — green only when every lot is invoice-backed;
+ * provisional is the warn colour at any sign; UNAVAILABLE has its own.
  */
-export function pnlColor(netZar: number): number {
-  return netZar >= 0 ? 0x2ecc71 : 0xe74c3c; // green / red
+export function pnlColor(netZar: number | null, costState: CostState): number {
+  switch (netTone(costState, netZar)) {
+    case "positive":
+      return 0x2ecc71; // green
+    case "negative":
+      return 0xe74c3c; // red
+    case "warn":
+      return 0x8a5a00; // --status-warn
+    case "unavailable":
+      return 0x5a6268; // --status-unavailable
+    case "neutral":
+      return 0x95a5a6; // grey — an empty period
+  }
 }

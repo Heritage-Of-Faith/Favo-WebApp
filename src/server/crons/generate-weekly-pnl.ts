@@ -3,9 +3,17 @@
 // Mon 00:00 – Sun 23:59 SAST and inserts into weekly_reports.
 // Docs: API.md · BUSINESS_RULES.md T05 L09 · FAVO_PRD_v3.md §07 §09
 
-import { and, gte, lt, sql, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders, weeklyReports, expenses } from "@db/schema";
+import { weeklyReports } from "@db/schema";
+import { readPeriodFigures } from "@/server/cogs/period-cogs";
+
+/** "2026-08-10" + 6 → "2026-08-16" (calendar arithmetic on a YYYY-MM-DD). */
+function addDays(yyyymmdd: string, days: number): string {
+  const d = new Date(`${yyyymmdd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 // Africa/Johannesburg = UTC+2 (no DST)
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
@@ -42,7 +50,7 @@ export function weekBounds(referenceDate?: Date): { start: Date; end: Date; week
 export async function generateWeeklyPnL(
   referenceDate?: Date
 ): Promise<{ weekStarting: string; reportId: string; alreadyExists: boolean }> {
-  const { start, end, weekStarting } = weekBounds(referenceDate);
+  const { weekStarting } = weekBounds(referenceDate);
 
   // Idempotent: skip if already generated
   const [existing] = await db
@@ -54,48 +62,29 @@ export async function generateWeeklyPnL(
     return { weekStarting, reportId: existing.id, alreadyExists: true };
   }
 
-  // ── Revenue ────────────────────────────────────────────────────────────────
-  const [revRow] = await db
-    .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
-    .from(orders)
-    .where(
-      and(
-        sql`${orders.state} IN ('in_progress', 'ready', 'collected')`,
-        gte(orders.placedAt, start),
-        lt(orders.placedAt, end)
-      )
-    );
-  const revenueZar = revRow?.total ?? 0;
+  const weekEnding = addDays(weekStarting, 6);
 
-  // ── COGS ───────────────────────────────────────────────────────────────────
-  const [cogsRow] = await db.execute<{ total: string | null }>(sql`
-    SELECT ROUND(COALESCE(SUM(-sm.delta::numeric * il.unit_cost_zar), 0))::bigint AS total
-    FROM stock_movements sm
-    JOIN inventory_lots il ON sm.inventory_lot_id = il.id
-    WHERE sm.kind = 'deduction'
-      AND il.unit_cost_zar IS NOT NULL
-      AND sm.at >= ${start.toISOString()}::timestamptz
-      AND sm.at < ${end.toISOString()}::timestamptz
-  `);
-  const cogsZar = parseInt(cogsRow?.total ?? "0", 10) || 0;
-
-  // ── Expenses ─────────────────────────────────────────────────────────────
-  // Operating expenses (rent, utilities, staff, …) incurred within the week.
-  // Net P&L must subtract these, not just COGS — a report that ignores them
-  // overstates profit and disagrees with the live COGS/expenses figures (SC01).
-  const [expRow] = await db
-    .select({ total: sql<number>`COALESCE(SUM(${expenses.amountZar}), 0)::int` })
-    .from(expenses)
-    .where(and(gte(expenses.incurredAt, start), lt(expenses.incurredAt, end)));
-  const expensesZar = expRow?.total ?? 0;
-
-  const grossMarginZar = revenueZar - cogsZar;
-  const netZar = grossMarginZar - expensesZar;
+  // Revenue (orders.revenue_day), COGS (Σ order_cogs — never re-rounded, never
+  // filtered: AT-189/AT-190, REQ-106/REQ-109) and expenses over the week's
+  // seven revenue days, through the same reads and periodFigures arithmetic
+  // as the dashboard, the CSV and the monthly report.
+  const f = await readPeriodFigures(weekStarting, weekEnding);
+  const { cogs, revenueZar, cogsZar, expensesZar, grossMarginZar, netZar } = f;
 
   // ── Insert report ──────────────────────────────────────────────────────────
   const [report] = await db
     .insert(weeklyReports)
-    .values({ weekStarting, revenueZar, cogsZar, expensesZar, grossMarginZar, netZar })
+    .values({
+      weekStarting,
+      revenueZar,
+      cogsZar,
+      expensesZar,
+      grossMarginZar,
+      netZar,
+      costState: cogs.state,
+      cogsAbsentItems: cogs.absentItemNames,
+      ordersWithoutCost: cogs.ordersWithoutCost,
+    })
     .returning({ id: weeklyReports.id });
 
   return { weekStarting, reportId: report.id, alreadyExists: false };
