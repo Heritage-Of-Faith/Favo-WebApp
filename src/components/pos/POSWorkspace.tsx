@@ -35,6 +35,9 @@ import WasteDialog from "@/components/pos/WasteDialog";
 import ConnectivityPill from "@/components/pos/ConnectivityPill";
 import SyncDrawer from "@/components/pos/SyncDrawer";
 import OfflineBanner from "@/components/pos/OfflineBanner";
+import PaymentBadge, { paymentBadgeKind } from "@/components/pos/PaymentBadge";
+import DraftLineButton from "@/components/pos/DraftLineButton";
+import { useDraftNotice } from "@/components/pos/useDraftNotice";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import YocoOrderForm from "@/components/pos/YocoOrderForm";
 import ChargeOrderDialog from "@/components/pos/ChargeOrderDialog";
@@ -119,7 +122,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   // Yoco checkout id from createOrder (created server-side, keyed to the pending
   // payments row). Presence of an id means the card form can be shown.
   const [yocoCheckoutId, setYocoCheckoutId] = useState("");
-  const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
+  const { notice: orderSuccess, setNotice: setOrderSuccess, clearOnDraft } = useDraftNotice();
   // The order already in `ordered` state that the payment step is settling.
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
   // Connectivity — drives the offline banner gate and the payment-screen swap
@@ -134,7 +137,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [searchResults, setSearchResults] = useState<CustomerSearchResult[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { customer, items, totalZar, setCustomer, addItem, removeItem, updateQuantity, reset } = useDraftOrder();
+  const draft = useDraftOrder();
+  const { customer, items, totalZar, reset } = draft;
+  // Starting a new draft drops the previous order's "sent to the queue" message.
+  const setCustomer = clearOnDraft(draft.setCustomer);
+  const addItem = clearOnDraft(draft.addItem);
+  const removeItem = clearOnDraft(draft.removeItem);
+  const updateQuantity = clearOnDraft(draft.updateQuantity);
 
   // AT-144 — the attached customer's Favo (saved usual order) + the Manage
   // Favo blocking modal (wireframe screens 6 + 2a).
@@ -472,7 +481,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           <div className="relative">
             <Search size={13} strokeWidth={2} className="absolute left-2 top-1/2 -translate-y-1/2 text-cool-steel pointer-events-none" />
             <input type="search" inputMode="text" autoComplete="off"
-              placeholder="Search name, email, or phone…"
+              placeholder="Search name or phone"
               value={query}
               onChange={e => { setQuery(e.target.value); if (!e.target.value) setCustomer(null); }}
               onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
@@ -533,7 +542,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   function renderCustomisationPanel() {
     if (!modTarget) {
       return (
-        <div className="zone flex-1 flex items-center justify-center p-3 min-h-0">
+        <div className="zone hidden lg:flex flex-1 items-center justify-center p-3 min-h-0">
           <p className="favo-small text-cool-steel/60 text-center">Tap an item to customise</p>
         </div>
       );
@@ -623,15 +632,15 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             {items.map(item => (
               <div key={lineKey(item)} className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
-                  <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity - 1)}
-                    className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
+                  <DraftLineButton onClick={() => updateQuantity(lineKey(item), item.quantity - 1)} aria-label={`Decrease ${item.menuItemName} quantity`}
+                    className="rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
                     <Minus size={12} strokeWidth={2} />
-                  </button>
+                  </DraftLineButton>
                   <span className="favo-small text-coffee-bean w-5 text-center">{item.quantity}</span>
-                  <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity + 1)}
-                    className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
+                  <DraftLineButton onClick={() => updateQuantity(lineKey(item), item.quantity + 1)} aria-label={`Increase ${item.menuItemName} quantity`}
+                    className="rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
                     <Plus size={12} strokeWidth={2} />
-                  </button>
+                  </DraftLineButton>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="favo-small text-coffee-bean truncate">{item.menuItemName}</p>
@@ -642,10 +651,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 <span className="favo-small text-coffee-bean shrink-0">
                   {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
                 </span>
-                <button type="button" onClick={() => removeItem(lineKey(item))}
-                  className="flex h-11 w-11 items-center justify-center text-cool-steel hover:text-[var(--color-error)]">
+                <DraftLineButton onClick={() => removeItem(lineKey(item))} aria-label={`Remove ${item.menuItemName}`}
+                  className="text-cool-steel hover:text-[var(--color-error)]">
                   <Trash2 size={12} strokeWidth={2} />
-                </button>
+                </DraftLineButton>
               </div>
             ))}
           </div>
@@ -698,12 +707,18 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       {/* ════════ OUT-OF-STOCK BANNER (M9) ════════ */}
       <StockBanner outOfStockItems={outOfStockItems} />
 
+      {/* ════════ STAFF PUSH OPT-IN (M10) — in-flow, never overlays a button ════════ */}
+      <StaffPushOptIn />
+
       {/* ════════ TOP BAR ════════ */}
-      <div className="flex items-center gap-3 px-3 py-2 border-b border-cool-steel/20 shrink-0">
+      <div data-pos-header className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 border-b border-cool-steel/20 shrink-0">
         <Image src="/brand/logos/logo-monogram.svg" alt="FAVO" width={24} height={24} className="opacity-80 shrink-0" />
-        <span className="favo-h3 text-coffee-bean mr-auto">FAVO · POS</span>
-        <div className="shrink-0 hidden lg:block"><ActiveBeanCard /></div>
-        <div className="shrink-0 hidden lg:block"><OpenContainersCard /></div>
+        <span className="favo-h3 text-coffee-bean mr-auto whitespace-nowrap shrink-0">FAVO · POS</span>
+        {/* Own row (scrolls sideways inside itself) until 2xl, so it can never push Sign out off-screen. */}
+        <div data-pos-strip className="hidden lg:flex order-last basis-full min-w-0 max-w-full items-center gap-3 overflow-x-auto 2xl:order-none 2xl:basis-auto">
+          <div className="shrink-0"><ActiveBeanCard /></div>
+          <div className="shrink-0"><OpenContainersCard /></div>
+        </div>
         <span className="favo-small text-cool-steel shrink-0 hidden lg:block">{staffName}</span>
         {/* M15 — connectivity pill; tap opens the sync drawer */}
         <ConnectivityPill
@@ -761,13 +776,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       {!showPayment ? (
         <>
         {/* ════════ ZONE A — CUSTOMER + CUSTOMISATION ════════ */}
-        <div className="flex flex-col border-r border-cool-steel/20 min-h-0" style={{ width: "24%" }}>
+        <div className="flex flex-col border-r border-cool-steel/20 min-h-0 min-w-0 w-[28%] lg:w-[24%]">
           {renderCustomerPanel()}
           {renderCustomisationPanel()}
         </div>
 
         {/* ════════ ZONE B — ORDER BUILDER + RUNNING ORDER ════════ */}
-        <div className="flex flex-col border-r border-cool-steel/20 min-h-0" style={{ width: "44%" }}>
+        <div className="flex flex-col border-r border-cool-steel/20 min-h-0 min-w-0 w-[40%] lg:w-[44%]">
           <div className="flex-1 overflow-y-auto px-3 pt-2 pb-2 min-h-0">
             {menuLoading ? (
               <div className="flex items-center justify-center h-32 text-cool-steel gap-2">
@@ -775,7 +790,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 <span className="favo-small">Loading…</span>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                 {menu.map(item => {
                   const stock = menuItemStock(item.id);
                   const oos = stock === "out";
@@ -907,7 +922,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       )}
 
       {/* ════════ ZONE C — OPEN ORDERS BOARD ════════ */}
-      <div className="flex flex-col" style={{ width: "32%" }}>
+      <div className="flex flex-col min-w-0 w-[32%]">
 
         {/* Queue header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-cool-steel/20 shrink-0">
@@ -957,10 +972,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 {/* Card header — always visible, tap to expand */}
                 <button type="button" onClick={() => toggleExpand(o.orderId)}
                   className="w-full flex items-center justify-between px-3 py-3 min-h-[60px] hover:bg-coffee-bean/5 transition-colors text-left">
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <span className={["block h-2 w-2 rounded-full shrink-0", STATE_DOT[o.state]].join(" ")} />
-                    <div>
-                      <p className="favo-small text-coffee-bean font-semibold leading-tight">
+                    <div className="min-w-0">
+                      <p className="favo-small text-coffee-bean font-semibold leading-tight truncate">
                         {o.customerName ?? "Walk-in"}
                         <span className="favo-caption text-cool-steel font-normal ml-1.5">
                           #{o.orderId.slice(-6).toUpperCase()}
@@ -969,8 +984,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                       <p className="favo-caption text-cool-steel">{formatDate(new Date(o.lastUpdatedAt))}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={["favo-caption rounded-[999px] px-2 py-0.5", STATE_BADGE[o.state]].join(" ")}>
+                  <div className="flex shrink-0 items-center gap-2 pl-2">
+                    <span className={["favo-caption whitespace-nowrap rounded-[999px] px-2 py-0.5", STATE_BADGE[o.state]].join(" ")}>
                       {STATE_LABEL[o.state]}
                     </span>
                     {isExpanded
@@ -1028,15 +1043,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                         {!isDone && (
                           <div className="flex justify-between items-center">
                             <span className="favo-caption text-cool-steel">PAYMENT</span>
-                            {needsPayment ? (
-                              <span className="favo-caption rounded-[999px] px-2 py-0.5" style={{ background: "color-mix(in srgb, var(--color-warning) 16%, transparent)", color: "var(--color-warning)" }}>
-                                Unpaid
-                              </span>
-                            ) : (
-                              <span className="favo-caption rounded-[999px] px-2 py-0.5 flex items-center gap-1" style={{ background: "color-mix(in srgb, var(--color-success) 16%, transparent)", color: "var(--color-success)" }}>
-                                <CheckCircle size={10} strokeWidth={2.5} /> Paid
-                              </span>
-                            )}
+                            <PaymentBadge kind={paymentBadgeKind(full.totalZar, full.paymentStatus, paidLocally.has(o.orderId))} />
                           </div>
                         )}
                       </>
@@ -1143,9 +1150,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           onClose={() => { setWasteOpen(false); setWasteCategory("spilled"); }}
         />
       )}
-
-      {/* ════════ STAFF PUSH OPT-IN (M10) ════════ */}
-      <StaffPushOptIn />
 
       {/* ════════ MANAGE FAVO (AT-144, wireframe 2a) — full blocking modal ════════
           The scrim is deliberately inert: tapping it does nothing, so mid-edit
