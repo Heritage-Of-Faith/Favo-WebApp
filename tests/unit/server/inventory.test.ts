@@ -165,6 +165,51 @@ describe("updateLotCost — validation", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
   });
+
+  // QA r1-admin P2b/P1-1: a lot set to 0 silently made the ingredient free;
+  // 99999999 overflowed numeric(10,4) and returned a server 500.
+  it.each(["0", "", "0.0000", "0.00001", "99999999", "1e9"])(
+    "rejects %j with a message, before touching the DB",
+    async (v) => {
+      const { db } = await import("@db/index");
+      const { updateLotCost } = await import("@/server/actions/inventory");
+      const result = await updateLotCost("lot_1", v);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
+      expect(db.select).not.toHaveBeenCalled();
+    }
+  );
+
+  it("stores the normalised 4 dp value (0.45 → 0.4500)", async () => {
+    const { db } = await import("@db/index");
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: "lot_1", unitCostZar: "0.2000" }]),
+      }),
+    } as never);
+    const set = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
+    vi.mocked(db.transaction).mockImplementationOnce(async (cb) =>
+      (cb as (tx: unknown) => Promise<unknown>)({
+        update: vi.fn().mockReturnValue({ set }),
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),
+      })
+    );
+    const { updateLotCost } = await import("@/server/actions/inventory");
+    const result = await updateLotCost("lot_1", "0.45");
+    expect(result.ok).toBe(true);
+    expect(set).toHaveBeenCalledWith({ unitCostZar: "0.4500" });
+  });
+});
+
+describe("setItemThreshold — bounds", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("rejects 99999999999999 (above the integer column) with a message, not a 500", async () => {
+    const { setItemThreshold } = await import("@/server/actions/inventory");
+    const result = await setItemThreshold("item_1", 99999999999999);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
+  });
 });
 
 // ─── updateLotCost — RBAC ────────────────────────────────────────────────────

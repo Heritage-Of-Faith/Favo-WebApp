@@ -24,6 +24,12 @@ import type {
   RecordPurchaseInput,
 } from "@/lib/types";
 import type { DB } from "@/lib/db";
+import {
+  deriveUnitCostCents,
+  INT4_MAX,
+  QUANTITY_MAX,
+  SOURCE_NAME_MAX,
+} from "@/lib/admin-input";
 
 const READER_ROLES = ["admin"] as const;
 const ADMIN_ROLES = ["admin"] as const;
@@ -151,6 +157,18 @@ export async function recordPurchase(
     return { ok: false, code: "VALIDATION_ERROR", message: "items must not be empty." };
   }
 
+  const sourceName = (input.sourceName ?? "").trim();
+  if (sourceName === "") {
+    return { ok: false, code: "VALIDATION_ERROR", message: "Enter a source name." };
+  }
+  if (sourceName.length > SOURCE_NAME_MAX) {
+    return {
+      ok: false,
+      code: "VALIDATION_ERROR",
+      message: `Source name must be ${SOURCE_NAME_MAX} characters or fewer.`,
+    };
+  }
+
   for (const item of input.items) {
     if (!Number.isInteger(item.totalZar) || item.totalZar <= 0) {
       return {
@@ -158,6 +176,15 @@ export async function recordPurchase(
         code: "VALIDATION_ERROR",
         message: `totalZar for item ${item.inventoryItemId} must be a positive integer.`,
       };
+    }
+    if (item.totalZar > INT4_MAX) {
+      return { ok: false, code: "VALIDATION_ERROR", message: "Total paid is too large." };
+    }
+    if (item.quantity !== undefined && (!Number.isFinite(item.quantity) || item.quantity > QUANTITY_MAX)) {
+      return { ok: false, code: "VALIDATION_ERROR", message: "Quantity is too large." };
+    }
+    if (item.containerSize !== undefined && (!Number.isFinite(item.containerSize) || item.containerSize > QUANTITY_MAX)) {
+      return { ok: false, code: "VALIDATION_ERROR", message: "Container size is too large." };
     }
     // Container items (unit='cup') send containerSize instead of quantity —
     // which shape applies is decided below, per-item, from the item's own
@@ -203,6 +230,29 @@ export async function recordPurchase(
         message: `${item.inventoryItemId} — provide quantity and unitCostZar.`,
       };
     }
+    if (!isContainerItem) {
+      // The restock movement's delta is an integer column: whole base units only.
+      if (!Number.isInteger(item.quantity)) {
+        return {
+          ok: false,
+          code: "VALIDATION_ERROR",
+          message: "Quantity must be a whole number of the item's unit (e.g. 500 g, not 0.5 kg).",
+        };
+      }
+      // PRD §7.0.2: unit_cost = cost ÷ units, in cents to 4 dp. The server is
+      // the authority — a client value that disagrees (e.g. a 100x slip) is refused.
+      const derived = deriveUnitCostCents(item.totalZar, item.quantity!);
+      if (!derived.ok) {
+        return { ok: false, code: "VALIDATION_ERROR", message: derived.message };
+      }
+      if (Number(item.unitCostZar).toFixed(4) !== derived.value) {
+        return {
+          ok: false,
+          code: "VALIDATION_ERROR",
+          message: `Unit cost must equal total ÷ quantity (${derived.value} c per unit).`,
+        };
+      }
+    }
   }
 
   const isAdmin = session.role === "admin";
@@ -229,7 +279,7 @@ export async function recordPurchase(
           isContainerItem
             ? {
                 inventoryItemId: item.inventoryItemId,
-                sourceName: input.sourceName,
+                sourceName,
                 containerSize: String(item.containerSize),
                 containerSizeUnit: item.containerSizeUnit,
                 containerCostZar: item.totalZar,
@@ -238,8 +288,12 @@ export async function recordPurchase(
               }
             : {
                 inventoryItemId: item.inventoryItemId,
-                sourceName: input.sourceName,
-                unitCostZar: item.unitCostZar,
+                sourceName,
+                // Server is the single source: store the derived value, not the client string.
+                unitCostZar: (() => {
+                  const d = deriveUnitCostCents(item.totalZar, item.quantity!);
+                  return d.ok ? d.value : item.unitCostZar;
+                })(),
                 quantityReceived: String(item.quantity),
                 state: lotState,
               }
@@ -263,7 +317,7 @@ export async function recordPurchase(
       const [purchase] = await tx
         .insert(purchases)
         .values({
-          sourceName: input.sourceName,
+          sourceName,
           inventoryLotId: lot.id,
           totalZar: item.totalZar,
           kind: input.kind,

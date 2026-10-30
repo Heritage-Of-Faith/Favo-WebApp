@@ -66,6 +66,7 @@ export default function StaffPage() {
         <StaffForm
           staffId={form.member.id}
           staffName={form.member.name}
+          reactivate={!form.member.active}
           onClose={() => setForm({ mode: "closed" })}
           onSaved={refresh}
         />

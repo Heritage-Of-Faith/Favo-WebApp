@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { listInventory } from "@/server/actions/inventory";
 import { listLots } from "@/server/actions/inventory";
 import { logWaste, type LogWasteInput } from "@/server/actions/waste";
+import { wasteQuantityError, WASTE_MAX_QTY } from "@/lib/pos/waste-validation";
 import type { InventoryItemStatus, InventoryLot } from "@/lib/types";
 
 const CATEGORIES: { value: LogWasteInput["category"]; label: string }[] = [
@@ -55,6 +56,7 @@ export default function WasteDialog({
   const [quantity, setQuantity] = useState<string>("1");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [qtyError, setQtyError] = useState<string | null>(null);
 
   const selectedItem = items.find((i) => i.id === itemId);
 
@@ -89,11 +91,11 @@ export default function WasteDialog({
   }, [itemId]);
 
   const handleSubmit = useCallback(async () => {
-    const qty = Number(quantity);
-    if (!Number.isInteger(qty) || qty <= 0) {
-      toast.warning("Quantity must be a whole number greater than 0.");
-      return;
-    }
+    const problem = wasteQuantityError(quantity);
+    if (problem) { setQtyError(problem); return; }
+    if (!itemId) { setQtyError("Choose the item that was wasted."); return; }
+    setQtyError(null);
+    const qty = Number(quantity.trim());
     setSubmitting(true);
     try {
       const r = await logWaste({
@@ -206,11 +208,14 @@ export default function WasteDialog({
                 id="waste-qty"
                 type="number"
                 min={1}
+                max={WASTE_MAX_QTY}
                 step={1}
                 value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
+                onChange={(e) => { setQuantity(e.target.value); setQtyError(null); }}
+                aria-invalid={qtyError ? true : undefined}
                 className="min-h-[44px] rounded-[4px] border border-cool-steel/30 bg-porcelain/10 px-3 text-porcelain favo-small focus:border-crimson-carrot focus:outline-none"
               />
+              {qtyError && <p className="favo-small text-[var(--color-error)]" role="alert">{qtyError}</p>}
 
               {/* Reason */}
               <label className="favo-label text-cool-steel" htmlFor="waste-reason">Reason (optional)</label>

@@ -11,7 +11,10 @@ import { toast } from "sonner";
 import { updateRecipeIngredient, bumpRecipeVersion } from "@/server/actions/recipes";
 import type { RecipeDetail, RecipeIngredientDetail, InventoryUnit } from "@/lib/types";
 
-const UNITS: InventoryUnit[] = ["g", "kg", "ml", "l", "unit", "bag"];
+// Every value of the inventory_unit enum (db/enums.ts), including "cup" for
+// the container model — a unit missing here made the select show "g" for
+// cup-stocked beans/milk.
+const UNITS: InventoryUnit[] = ["g", "kg", "ml", "l", "unit", "bag", "cup"];
 
 export interface RecipeEditorProps {
   initialRecipe: RecipeDetail;
