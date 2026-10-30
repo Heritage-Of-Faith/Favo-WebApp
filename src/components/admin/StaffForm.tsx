@@ -30,35 +30,52 @@ export type Props = {
   // When set, the dialog is in "reset PIN" mode for this existing staff member.
   staffId?: string;
   staffName?: string;
+  /** Reset-PIN mode that also switches an inactive member back on. */
+  reactivate?: boolean;
   onClose: () => void;
   onSaved: () => void;
 };
 
 const ROLES: StaffRole[] = ["barista", "admin"];
 
-export default function StaffForm({ staffId, staffName, onClose, onSaved }: Props) {
+export default function StaffForm({ staffId, staffName, reactivate, onClose, onSaved }: Props) {
   const isEdit = Boolean(staffId);
   const [name, setName] = useState("");
   const [role, setRole] = useState<StaffRole>("barista");
   const [pin, setPin] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
+    // Same rules as the server schema, shown in the dialog (QA: failures were silent).
+    if (!isEdit && name.trim().length < 2) {
+      setError("Enter a name of at least 2 characters.");
+      return;
+    }
+    if (!isEdit && name.trim().length > 100) {
+      setError("Name must be 100 characters or fewer.");
+      return;
+    }
+    if (!/^\d{4,6}$/.test(pin)) {
+      setError("PIN must be 4–6 digits.");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = isEdit
-        ? await setStaffPin({ staffId: staffId!, newPin: pin })
-        : await createStaff({ name, role, pin });
+        ? await setStaffPin({ staffId: staffId!, newPin: pin, reactivate })
+        : await createStaff({ name: name.trim(), role, pin });
       if (!res.ok) {
-        toast.error(res.message);
+        setError(res.message);
         return;
       }
-      toast.success(isEdit ? "PIN updated." : `${name} added.`);
+      toast.success(isEdit ? "PIN updated." : `${name.trim()} added.`);
       onSaved();
       onClose();
     } catch {
-      toast.error("Could not save staff changes. Please try again.");
+      setError("Could not save staff changes. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -123,6 +140,12 @@ export default function StaffForm({ staffId, staffName, onClose, onSaved }: Prop
               />
             </div>
           </div>
+
+          {error && (
+            <p role="alert" className="pb-3 favo-small" style={{ color: "var(--color-error)" }}>
+              {error}
+            </p>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

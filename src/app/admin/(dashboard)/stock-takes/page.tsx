@@ -30,7 +30,8 @@ export default async function StockTakesPage() {
             >
               lot
             </abbr>
-            , then close the take to auto-correct the records.
+            , then close the take. On close, any lot more than 5% off is set to your
+            count; smaller differences are recorded but the stock figure is not changed.
           </p>
         </div>
         <StockTakeStarter />

@@ -5,7 +5,7 @@
 // Docs: docs/API.md · docs/DATA_MODEL.md → audit_log
 
 import { z } from "zod";
-import { and, desc, gte, lte, eq, count } from "drizzle-orm";
+import { and, asc, desc, gte, lte, eq, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auditLog } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
@@ -29,6 +29,20 @@ export type ListAuditResult = {
   page: number;
   pageSize: number;
 };
+
+/**
+ * Distinct entity kinds present in audit_log, A–Z — the audit filter's
+ * options, so every kind that is written can be filtered on.
+ */
+export async function listAuditEntityKinds(): Promise<ActionResult<string[]>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+  const rows = await db
+    .selectDistinct({ entityKind: auditLog.entityKind })
+    .from(auditLog)
+    .orderBy(asc(auditLog.entityKind));
+  return { ok: true, data: rows.map((r) => r.entityKind) };
+}
 
 /**
  * List audit log entries, newest-first.

@@ -138,7 +138,8 @@ export default function StockTakeRunner({ initialTake }: StockTakeRunnerProps) {
       {allCounted && (
         <div className="mx-auto max-w-md space-y-3">
           <p className="favo-small" style={{ color: "var(--color-success)" }}>
-            All lots counted. Review and close to apply corrective adjustments (T01).
+            All lots counted. Closing sets any lot more than 5% off to your count (T01);
+            smaller differences are recorded only.
           </p>
           <button
             type="button"

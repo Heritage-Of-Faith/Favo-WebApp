@@ -145,3 +145,30 @@ describe("ReportExportForm", () => {
     }
   });
 });
+
+// QA r1-admin P2i: the "PDF" download was an HTML page saved as .pdf.
+describe("ReportExportForm — printable format is named for what it is", () => {
+  it("labels the printable option as HTML, not PDF", () => {
+    render(<ReportExportForm />);
+    const fmt = screen.getByLabelText("Format") as HTMLSelectElement;
+    const label = Array.from(fmt.options).find((o) => o.value === "pdf")?.textContent;
+    expect(label).toBe("Printable page (HTML, print to PDF)");
+  });
+
+  it("saves the printable export with a .html extension", async () => {
+    const realCreate = document.createElement.bind(document);
+    const anchors: HTMLAnchorElement[] = [];
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      const el = realCreate(tag);
+      if (tag === "a") anchors.push(el as HTMLAnchorElement);
+      return el;
+    });
+    render(<ReportExportForm />);
+    fireEvent.change(screen.getByLabelText("Format"), { target: { value: "pdf" } });
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-10-01" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-10-26" } });
+    fireEvent.click(screen.getByRole("button", { name: /export report/i }));
+    await waitFor(() => expect(anchors.length).toBeGreaterThan(0));
+    expect(anchors[0]!.download).toBe("favo-sales-2026-10-01-2026-10-26.html");
+  });
+});

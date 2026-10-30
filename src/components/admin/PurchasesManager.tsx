@@ -96,7 +96,14 @@ export default function PurchasesManager({ initialPurchases, items, canApprove }
                 return (
                   <TableRow key={p.id}>
                     <TableCell>{formatDate(p.receivedAt)}</TableCell>
-                    <TableCell style={{ color: "var(--color-text-strong)", fontWeight: 600 }}>{p.sourceName}</TableCell>
+                    {/* Long names (older rows predate the 100-char cap) are cut with "…"; full text on hover. */}
+                    <TableCell
+                      title={p.sourceName}
+                      className="max-w-[16rem] truncate"
+                      style={{ color: "var(--color-text-strong)", fontWeight: 600 }}
+                    >
+                      {p.sourceName}
+                    </TableCell>
                     <TableCell style={{ textTransform: "capitalize" }}>
                       {p.kind === "emergency" ? <StatusBadge variant="warning" dot={false}>emergency</StatusBadge> : "planned"}
                     </TableCell>

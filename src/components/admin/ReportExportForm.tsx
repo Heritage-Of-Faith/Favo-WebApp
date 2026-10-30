@@ -67,13 +67,15 @@ export default function ReportExportForm() {
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `favo-${kind}-${from}-${to}.${format}`;
+      // format=pdf returns a print-ready HTML page (no PDF is produced), so
+      // name the file for what it is.
+      a.download = `favo-${kind}-${from}-${to}.${format === "pdf" ? "html" : "csv"}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(blobUrl);
 
-      setLastExport({ kind: KIND_LABELS[kind], format: format.toUpperCase() });
+      setLastExport({ kind: KIND_LABELS[kind], format: format === "pdf" ? "HTML" : "CSV" });
     } catch {
       toast.error("Export failed — check your connection and try again.");
     } finally {
@@ -111,7 +113,7 @@ export default function ReportExportForm() {
             className={selectClass}
           >
             <option value="csv">CSV</option>
-            <option value="pdf">PDF</option>
+            <option value="pdf">Printable page (HTML, print to PDF)</option>
           </select>
         </div>
 

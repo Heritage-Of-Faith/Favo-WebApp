@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { deactivateStaff, reactivateStaff } from "@/server/actions/staff";
+import { deactivateStaff } from "@/server/actions/staff";
 import type { Staff } from "@/lib/types";
 
 export type Props = {
@@ -50,21 +50,10 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
     }
   }
 
-  async function handleReactivate(member: Staff) {
-    markBusy(member.id);
-    try {
-      const res = await reactivateStaff(member.id);
-      if (!res.ok) {
-        toast.error(res.message);
-        return;
-      }
-      toast.success(`${member.name} reactivated.`);
-      onChanged();
-    } catch {
-      toast.error("Failed to reactivate staff member. Please try again.");
-    } finally {
-      clearBusy(member.id);
-    }
+  // Switching back on always sets a new PIN (opens the PIN dialog), so a PIN given to
+  // someone else meanwhile can never end up shared.
+  function handleReactivate(member: Staff) {
+    onResetPin(member);
   }
 
   if (staff.length === 0) {

@@ -193,3 +193,30 @@ describe("getOperatingHours", () => {
     if (res.ok) expect(res.data).toHaveLength(0);
   });
 });
+
+// QA r1-admin P2d: Wed opens 10:00, closes 09:00 was saved with no message.
+describe("setOperatingHours — closing before opening", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("refuses closes 09:00 before opens 10:00", async () => {
+    const { setOperatingHours } = await import("@/server/actions/hours");
+    const res = await setOperatingHours({ dayOfWeek: 3, openTime: "10:00", closeTime: "09:00" });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe("VALIDATION");
+      expect(res.message).toMatch(/after/i);
+    }
+  });
+
+  it("refuses closes equal to opens", async () => {
+    const { setOperatingHours } = await import("@/server/actions/hours");
+    const res = await setOperatingHours({ dayOfWeek: 3, openTime: "10:00", closeTime: "10:00" });
+    expect(res.ok).toBe(false);
+  });
+
+  it("ignores the times on a day marked closed all day", async () => {
+    const { setOperatingHours } = await import("@/server/actions/hours");
+    const res = await setOperatingHours({ dayOfWeek: 0, openTime: "10:00", closeTime: "09:00", isClosed: true });
+    expect(res.ok).toBe(true);
+  });
+});

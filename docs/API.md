@@ -5,7 +5,7 @@ Server Actions for mutations (`src/server/actions/*`). Route handlers for querie
 | Endpoint / Action | Kind | Auth | Behaviour |
 |---|---|---|---|
 | `loginWithPin(pin)` | Server action | public | Bcrypt-compare against `staff.pin_hash`. Emit session on success. Audit row in both branches. |
-| `searchCustomer(query)` | Server action | barista | ILIKE name + exact phone. Returns id, name, phoneLast4 only — never email or the full phone (REQ-142). |
+| `searchCustomer(query)` | Server action | barista | PRD §6.9.4a (DEF-F): prefix match on given name or surname ("Given Surname" matches both), exact phone, or 2–4 digits prefixing the phone's last four. Returns id, name, surname, phoneLast4 only — never email, the full phone or status (REQ-142). |
 | `createOrder(input)` | Server action | barista | Insert order in `ordered`. Returns id, net total, the free-cup outcome and (net > 0 only) a Yoco checkout priced at the committed total. A net-R0 order is `payment_mode='free'`: no payments row, no Yoco call (REQ-153). **No stock deduction.** |
 | `transitionOrder(id, toState)` | Server action | barista | State machine: ordered→in_progress→ready→collected. `in_progress` deducts stock: milk/beans = 1 cup per drink from the open container (auto-opens next sealed); other items = recipe quantity. `ready` fires Web Push + accrues loyalty + pg_notify. |
 | `cancelOrder(id, reason)` | Server action | barista/admin | Valid only when state == ordered; 409 otherwise. |
