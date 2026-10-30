@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { setItemThreshold } from "@/server/actions/inventory";
+import { INT4_MAX } from "@/lib/admin-input";
 import type { InventoryUnit } from "@/lib/types";
 
 export interface ThresholdEditorProps {
@@ -23,19 +24,29 @@ export default function ThresholdEditor({ itemId, value, unit, onSaved }: Thresh
 
   async function save() {
     const n = Number(draft);
-    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+    if (draft.trim() === "" || !Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
       toast.error("Threshold must be a whole number ≥ 0.");
       return;
     }
+    if (n > INT4_MAX) {
+      toast.error("Threshold is too large.");
+      return;
+    }
     setSaving(true);
-    const res = await setItemThreshold(itemId, n);
-    setSaving(false);
-    if (res.ok) {
-      toast.success("Threshold updated.");
-      setEditing(false);
-      onSaved(n);
-    } else {
-      toast.error(res.message);
+    try {
+      const res = await setItemThreshold(itemId, n);
+      if (res.ok) {
+        toast.success("Threshold updated.");
+        setEditing(false);
+        onSaved(n);
+      } else {
+        toast.error(res.message);
+      }
+    } catch {
+      toast.error("Could not save the threshold. Please try again.");
+    } finally {
+      // Never leave the row stuck on "…" if the server throws.
+      setSaving(false);
     }
   }
 

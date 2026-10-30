@@ -10,14 +10,6 @@ import { listAudit } from "@/server/actions/audit";
 const PAGE_SIZE = 50;
 import type { AuditLog } from "@/lib/types";
 
-const ENTITY_KINDS = [
-  "order",
-  "staff",
-  "customer",
-  "menu_item",
-  "inventory",
-] as const;
-
 const ACTOR_ROLES = [
   "barista",
   "admin",
@@ -26,9 +18,11 @@ const ACTOR_ROLES = [
 type Props = {
   initialRows: AuditLog[];
   total: number;
+  /** Distinct audit_log.entity_kind values (listAuditEntityKinds) — never a hard-coded list. */
+  entityKinds: string[];
 };
 
-export default function AuditViewer({ initialRows, total: initialTotal }: Props) {
+export default function AuditViewer({ initialRows, total: initialTotal, entityKinds }: Props) {
   const [rows, setRows] = useState<AuditLog[]>(initialRows);
   const [total, setTotal] = useState(initialTotal);
   const [page, setPage] = useState(0);
@@ -108,14 +102,15 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
       {/* ── Filter bar ──────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-3 items-end p-4 bg-elevated border border-border-subtle rounded-[var(--radius-card)]">
         <div className="flex flex-col gap-1">
-          <label className="favo-caption">Entity</label>
+          <label htmlFor="audit-entity" className="favo-caption">Entity</label>
           <select
+            id="audit-entity"
             value={entityKind}
             onChange={(e) => setEntityKind(e.target.value)}
             className="h-9 px-2 text-sm bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
           >
             <option value="">All entities</option>
-            {ENTITY_KINDS.map((k) => (
+            {entityKinds.map((k) => (
               <option key={k} value={k}>{k}</option>
             ))}
           </select>
