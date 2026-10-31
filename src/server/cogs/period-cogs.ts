@@ -13,6 +13,7 @@
 import { sql } from "drizzle-orm";
 import { db as defaultDb, type DB } from "@/lib/db";
 import { periodFigures, rollupOrderCogs, type CostRollup, type PeriodFigures } from "@/lib/cost-state";
+import { dayMode, marginByShot, type ShotMargin } from "@/lib/margin-by-shot";
 
 export type PeriodCogs = CostRollup & {
   /** Display names of absentItemIds, same order. Unknown ids fall back to the id. */
@@ -173,6 +174,78 @@ export async function readPeriodFigures(
     cogs,
     ...periodFigures({ revenueZar: sum(revenue), cogsZar: cogs.cogsZar, expensesZar: sum(expenses), costState: cogs.state }),
   };
+}
+
+export type ShotMarginRow = ShotMargin & { absentItemNames: string[] };
+
+/**
+ * AT-208 · REQ-139: margin by shot count over revenue days from..to inclusive.
+ * The same orders, states and day bucket as readPeriodCogs / readDailyRevenue,
+ * the same frozen order_cogs integers, and periodFigures per bucket — so the
+ * buckets sum to the period's revenue and cogs_zar. Buckets are per mode
+ * (§7.1), the mode read from the revenue day's opening_sessions exactly as
+ * cup-lid.ts does (orders carry no session link). A coffee line is one whose
+ * menu item's recipe draws a 'bean' ingredient (the shot_factor rule, §7.0.2).
+ */
+export async function readMarginByShot(from: string, to: string, db: DB = defaultDb): Promise<ShotMarginRow[]> {
+  const rows = await db.execute<{
+    total_zar: number | string;
+    cogs_zar: number | null;
+    absent_item_ids: string[] | null;
+    estimated: boolean | null;
+    missing: boolean;
+    coffee_shots: (number | string)[] | null;
+    day_mode: string | null;
+  }>(sql`
+    SELECT
+      o.total_zar,
+      (
+        SELECT CASE
+          WHEN COUNT(*) = 0 THEN 'no_session'
+          WHEN COUNT(DISTINCT s.mode) = 1 THEN MIN(s.mode::text)
+          ELSE 'mixed_day'
+        END
+        FROM opening_sessions s
+        WHERE s.session_date = TO_CHAR(o.revenue_day, 'YYYY-MM-DD')
+      ) AS day_mode,
+      oc.cogs_zar,
+      oc.absent_item_ids,
+      oc.estimated,
+      (oc.order_id IS NULL) AS missing,
+      ARRAY(
+        SELECT oi.shots
+        FROM order_items oi
+        JOIN menu_items mi ON mi.id = oi.menu_item_id
+        WHERE oi.order_id = o.id
+          AND EXISTS (
+            SELECT 1
+            FROM recipe_ingredients ri
+            JOIN inventory_items ii ON ii.id = ri.inventory_item_id
+            WHERE ri.recipe_id = mi.recipe_id
+              AND ii.kind = 'bean'
+          )
+      ) AS coffee_shots
+    FROM orders o
+    LEFT JOIN order_cogs oc ON oc.order_id = o.id
+    WHERE o.state IN ('in_progress', 'ready', 'collected')
+      AND o.revenue_day >= ${from}::date
+      AND o.revenue_day <= ${to}::date
+  `);
+  const margins = marginByShot(
+    [...rows].map((r) => ({
+      mode: dayMode(r.day_mode),
+      netChargedZar: Number(r.total_zar) || 0,
+      coffeeShots: (r.coffee_shots ?? []).map(Number),
+      cogs: {
+        cogsZar: r.cogs_zar === null ? null : Number(r.cogs_zar),
+        absentItemIds: r.absent_item_ids ?? [],
+        estimated: r.estimated,
+        missing: r.missing === true,
+      },
+    }))
+  );
+  const names = await namesFor([...new Set(margins.flatMap((m) => m.absentItemIds))], db);
+  return margins.map((m) => ({ ...m, absentItemNames: m.absentItemIds.map((id) => names.get(id) ?? id) }));
 }
 
 function nextDay(yyyymmdd: string): string {
