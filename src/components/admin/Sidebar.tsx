@@ -12,6 +12,7 @@ import type { StaffRole } from "@/lib/types";
 import { adminLayout } from "@/lib/admin-tokens";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/server/actions/auth";
+import { clearDraftOnSignOut } from "@/store/draftOrder";
 
 export type Props = { role: StaffRole };
 
@@ -47,6 +48,7 @@ export default function Sidebar({ role }: Props) {
 
   const handleSignOut = useCallback(async () => {
     setSigningOut(true);
+    clearDraftOnSignOut();
     await signOut();
     router.push("/staff/login" as Route);
   }, [router]);
@@ -66,7 +68,7 @@ export default function Sidebar({ role }: Props) {
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? "Close navigation" : "Open navigation"}
         aria-expanded={open}
-        className="fixed left-4 top-4 z-50 flex h-10 w-10 items-center justify-center rounded-md border border-border-subtle bg-elevated text-text-strong lg:hidden"
+        className="fixed left-4 top-4 z-50 flex h-11 w-11 items-center justify-center rounded-md border border-border-subtle bg-elevated text-text-strong lg:hidden"
       >
         <span aria-hidden className="text-xl leading-none">
           {open ? "×" : "☰"}
@@ -108,7 +110,7 @@ export default function Sidebar({ role }: Props) {
                 onClick={() => setOpen(false)}
                 aria-current={isActive(item.href) ? "page" : undefined}
                 className={cn(
-                  "flex min-h-10 items-center rounded-md px-3 text-sm font-medium transition-colors",
+                  "flex min-h-11 items-center rounded-md px-3 text-sm font-medium transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   isActive(item.href)
                     ? "bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)] font-semibold border-l-2 border-[color:var(--color-accent)]"
@@ -129,7 +131,7 @@ export default function Sidebar({ role }: Props) {
             disabled={signingOut}
             aria-label="Sign out"
             className={cn(
-              "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text-muted transition-colors",
+              "flex items-center gap-1.5 min-h-11 rounded-md px-3 py-1 text-sm text-text-muted transition-colors",
               "hover:bg-[color:var(--color-surface)] hover:text-text-strong",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               "disabled:opacity-40 disabled:cursor-not-allowed"

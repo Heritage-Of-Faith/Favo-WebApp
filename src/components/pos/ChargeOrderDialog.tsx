@@ -6,9 +6,10 @@
  * The place-order flow charges immediately, but if the customer steps away or
  * the barista backs out, the order sits in `ordered` unpaid. This dialog
  * reopens payment for a specific queued order:
- *   • online  → the Yoco card form (YocoOrderForm), OR a manual confirmation
- *               for payments tendered another way (cash / card machine / EFT) —
- *               confirmManualPayment persists the payment as successful.
+ *   • online  → a manual confirmation for payments tendered on the card
+ *               machine (or cash / EFT) — confirmManualPayment persists the
+ *               payment as successful. There is no in-browser card capture:
+ *               REQ-071 allows no Yoco key of any kind client-side.
  *   • offline → the deferred notice (take payment on the card machine in
  *               person; reconciled manually by an admin once connectivity
  *               returns).
@@ -19,7 +20,6 @@
 
 import { useEffect, useState } from "react";
 import { X, HandCoins } from "lucide-react";
-import YocoOrderForm from "@/components/pos/YocoOrderForm";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import { confirmManualPayment } from "@/server/actions/orders";
 import { formatZar } from "@/lib/format";
@@ -29,11 +29,9 @@ export type Props = {
   order: Order;
   onPaid: (orderId: string) => void;
   onClose: () => void;
-  /** P4: the card step began — the order's total is now frozen. */
-  onCardStepStart?: (orderId: string) => void;
 };
 
-export default function ChargeOrderDialog({ order, onPaid, onClose, onCardStepStart }: Props) {
+export default function ChargeOrderDialog({ order, onPaid, onClose }: Props) {
   const [online, setOnline] = useState(true);
   const [manualBusy, setManualBusy] = useState(false);
   const [manualErr, setManualErr] = useState<string | null>(null);
@@ -90,16 +88,7 @@ export default function ChargeOrderDialog({ order, onPaid, onClose, onCardStepSt
         <div className="flex flex-col gap-4 px-5 py-5">
           {online ? (
             <>
-              <YocoOrderForm orderId={order.id} amountZar={order.totalZar} onPaid={settle}
-                onCardStepStart={() => onCardStepStart?.(order.id)} />
-
-              {/* Manual tender — cash / card machine / EFT. */}
-              <div className="flex items-center gap-3">
-                <span className="h-px flex-1 bg-cool-steel/20" />
-                <span className="favo-caption text-cool-steel">or paid another way</span>
-                <span className="h-px flex-1 bg-cool-steel/20" />
-              </div>
-
+              {/* Manual tender — card machine / cash / EFT. */}
               <button
                 type="button"
                 onClick={confirmManual}

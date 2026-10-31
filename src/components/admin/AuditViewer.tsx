@@ -10,14 +10,6 @@ import { listAudit } from "@/server/actions/audit";
 const PAGE_SIZE = 50;
 import type { AuditLog } from "@/lib/types";
 
-const ENTITY_KINDS = [
-  "order",
-  "staff",
-  "customer",
-  "menu_item",
-  "inventory",
-] as const;
-
 const ACTOR_ROLES = [
   "barista",
   "admin",
@@ -26,9 +18,11 @@ const ACTOR_ROLES = [
 type Props = {
   initialRows: AuditLog[];
   total: number;
+  /** Distinct audit_log.entity_kind values (listAuditEntityKinds) — never a hard-coded list. */
+  entityKinds: string[];
 };
 
-export default function AuditViewer({ initialRows, total: initialTotal }: Props) {
+export default function AuditViewer({ initialRows, total: initialTotal, entityKinds }: Props) {
   const [rows, setRows] = useState<AuditLog[]>(initialRows);
   const [total, setTotal] = useState(initialTotal);
   const [page, setPage] = useState(0);
@@ -73,6 +67,10 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
   }
 
   function handleApply() {
+    if (dateFrom && dateTo && dateTo < dateFrom) {
+      setError("The 'To' date is before the 'From' date. Swap them to see entries.");
+      return;
+    }
     startTransition(() => {
       void fetchPage(0);
     });
@@ -101,6 +99,7 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const to = Math.min((page + 1) * PAGE_SIZE, total);
   const hasDiff = (row: AuditLog) => row.before !== null || row.after !== null;
+  const reversed = Boolean(dateFrom && dateTo && dateTo < dateFrom);
   const hasActiveFilter = entityKind || actorRole || dateFrom || dateTo;
 
   return (
@@ -108,14 +107,15 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
       {/* ── Filter bar ──────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-3 items-end p-4 bg-elevated border border-border-subtle rounded-[var(--radius-card)]">
         <div className="flex flex-col gap-1">
-          <label className="favo-caption">Entity</label>
+          <label htmlFor="audit-entity" className="favo-caption">Entity</label>
           <select
+            id="audit-entity"
             value={entityKind}
             onChange={(e) => setEntityKind(e.target.value)}
-            className="h-9 px-2 text-sm bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
+            className="min-h-11 px-2 text-base bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
           >
             <option value="">All entities</option>
-            {ENTITY_KINDS.map((k) => (
+            {entityKinds.map((k) => (
               <option key={k} value={k}>{k}</option>
             ))}
           </select>
@@ -126,7 +126,7 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
           <select
             value={actorRole}
             onChange={(e) => setActorRole(e.target.value)}
-            className="h-9 px-2 text-sm bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
+            className="min-h-11 px-2 text-base bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
           >
             <option value="">All roles</option>
             {ACTOR_ROLES.map((r) => (
@@ -141,7 +141,7 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            className="h-9 px-2 text-sm bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
+            className="min-h-11 px-2 text-base bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
 
@@ -151,14 +151,14 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            className="h-9 px-2 text-sm bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
+            className="min-h-11 px-2 text-base bg-surface border border-border-subtle rounded-[var(--radius-btn)] text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
 
         <button
           onClick={handleApply}
           disabled={isPending}
-          className="h-9 px-4 text-sm font-semibold bg-accent text-text-inverse rounded-[var(--radius-btn)] hover:opacity-90 disabled:opacity-50 transition-opacity"
+          className="min-h-11 px-4 text-sm font-semibold bg-accent text-text-inverse rounded-[var(--radius-btn)] hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
           {isPending ? "Loading…" : "Apply"}
         </button>
@@ -167,7 +167,7 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
           <button
             onClick={handleClear}
             disabled={isPending}
-            className="h-9 px-3 text-sm text-text-muted hover:text-text-strong disabled:opacity-50 transition-colors"
+            className="min-h-11 px-3 text-sm text-text-muted hover:text-text-strong disabled:opacity-50 transition-colors"
           >
             Clear
           </button>
@@ -175,12 +175,16 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
       </div>
 
       {/* ── Error state ─────────────────────────────────────────────────── */}
-      {error && (
-        <p className="text-sm text-error px-1">{error}</p>
+      {reversed ? (
+        <p role="alert" className="text-sm text-error px-1">
+          The &apos;To&apos; date is before the &apos;From&apos; date. Swap them to see entries.
+        </p>
+      ) : (
+        error && <p className="text-sm text-error px-1">{error}</p>
       )}
 
       {/* ── Table ───────────────────────────────────────────────────────── */}
-      <div className="border border-border-subtle rounded-[var(--radius-card)] overflow-hidden">
+      <div className={`border border-border-subtle rounded-[var(--radius-card)] overflow-hidden${reversed ? " hidden" : ""}`}>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border-subtle bg-elevated">
@@ -212,10 +216,12 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
                 <td className="px-3 py-2.5 text-text-muted whitespace-nowrap tabular-nums">
                   {formatDate(row.at)}
                 </td>
-                <td className="px-3 py-2.5">
+                {/* QA R5-4: a visible separator, so kind and id never read as one word. */}
+                <td className="px-3 py-2.5" title={`${row.entityKind} · ${row.entityId}`}>
                   <span className="font-medium text-text-strong">{row.entityKind}</span>
-                  <span className="text-text-muted ml-1.5 font-mono text-xs">
-                    {row.entityId.slice(0, 8)}…
+                  <span className="text-text-muted">{" · "}</span>
+                  <span className="text-text-muted font-mono text-xs">
+                    {row.entityId.length > 8 ? `${row.entityId.slice(0, 8)}…` : row.entityId}
                   </span>
                 </td>
                 <td className="px-3 py-2.5">
@@ -231,7 +237,7 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
                   {hasDiff(row) ? (
                     <button
                       onClick={() => setDiffRow(row)}
-                      className="min-h-9 min-w-[44px] text-xs px-2 py-1 border border-border-subtle rounded-[var(--radius-btn)] text-text-muted hover:text-text-strong hover:border-accent transition-colors"
+                      className="min-h-11 min-w-[44px] text-xs px-2 py-1 border border-border-subtle rounded-[var(--radius-btn)] text-text-muted hover:text-text-strong hover:border-accent transition-colors"
                     >
                       View
                     </button>
@@ -246,7 +252,7 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
       </div>
 
       {/* ── Pagination ──────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between text-sm text-text-muted px-1">
+      <div className={`flex items-center justify-between text-sm text-text-muted px-1${reversed ? " hidden" : ""}`}>
         <span className="favo-small">
           {total === 0
             ? "No entries"
@@ -256,14 +262,14 @@ export default function AuditViewer({ initialRows, total: initialTotal }: Props)
           <button
             onClick={handlePrev}
             disabled={page === 0 || isPending}
-            className="h-8 px-3 border border-border-subtle rounded-[var(--radius-btn)] text-sm hover:bg-elevated disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="min-h-11 px-3 border border-border-subtle rounded-[var(--radius-btn)] text-sm hover:bg-elevated disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             ← Prev
           </button>
           <button
             onClick={handleNext}
             disabled={(page + 1) * PAGE_SIZE >= total || isPending}
-            className="h-8 px-3 border border-border-subtle rounded-[var(--radius-btn)] text-sm hover:bg-elevated disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="min-h-11 px-3 border border-border-subtle rounded-[var(--radius-btn)] text-sm hover:bg-elevated disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             Next →
           </button>

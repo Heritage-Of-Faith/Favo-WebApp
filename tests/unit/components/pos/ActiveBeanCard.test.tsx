@@ -32,11 +32,12 @@ function lot(roastDaysAgo: number) {
 beforeEach(() => vi.clearAllMocks());
 
 describe("ActiveBeanCard", () => {
-  it("renders origin and batch for the active lot", async () => {
+  it("renders the product name and origin, not the lot code", async () => {
     mockGetActiveBeanLot.mockResolvedValue({ ok: true, data: { lot: lot(3) } });
     render(<ActiveBeanCard />);
     expect(await screen.findByText("Yirgacheffe · Konga")).toBeDefined();
-    expect(screen.getByText(/YRG-014/)).toBeDefined();
+    expect(screen.getByText("Espresso beans")).toBeDefined();
+    expect(screen.queryByText(/YRG-014/)).toBeNull();
   });
 
   it("shows a freshness warning for a lot 15 days post-roast (T02 stale)", async () => {

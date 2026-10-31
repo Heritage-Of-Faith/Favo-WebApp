@@ -25,7 +25,7 @@
 /**
  * AT-201 transition only: the payments.webpos_device_id and client_reference
  * written for rows made by the legacy Yoco Online checkout flow, which has no
- * Web POS device and no orders.client_uuid. Migration 0034's backfill uses the
+ * Web POS device and no orders.client_uuid. Migration 0043's backfill uses the
  * same shapes. Part 2 deletes both with that flow.
  */
 export const LEGACY_ONLINE_CHECKOUT_DEVICE = "legacy:yoco-online-checkout";
@@ -57,8 +57,7 @@ export type WebPosPayment = {
   status: WebPosPaymentStatus;
   /** What the machine actually charged, integer cents. NULL until known. */
   chargedAmountZar: number | null;
-  /** Integer cents. FAVO suppresses tips; a non-zero value is a variance. */
-  tipZar: number;
+  // No tip field: DEC-17, there is no tip column and a stray tip is not stored.
 };
 
 export type WebPosFetchResult =

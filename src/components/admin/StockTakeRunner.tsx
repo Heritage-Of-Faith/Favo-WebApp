@@ -15,6 +15,8 @@ import VarianceSummary from "@/components/admin/VarianceSummary";
 import { formatDate } from "@/lib/format";
 import type { StockTake } from "@/lib/types";
 
+const LINE_ERROR_TOAST = "stock-take-line-error";
+
 export interface StockTakeRunnerProps {
   initialTake: StockTake;
 }
@@ -49,9 +51,11 @@ export default function StockTakeRunner({ initialTake }: StockTakeRunnerProps) {
     const res = await recordStockTakeLine(take.id, line.inventoryLotId, counted);
     setSaving(false);
     if (!res.ok) {
-      toast.error(res.message);
+      toast.error(res.message, { id: LINE_ERROR_TOAST });
       return;
     }
+    // A refusal for an earlier count (e.g. "too large") no longer applies.
+    toast.dismiss(LINE_ERROR_TOAST);
     setTake((prev) => ({
       ...prev,
       lines: prev.lines.map((l, i) => (i === currentIdx ? { ...l, counted } : l)),
@@ -87,7 +91,7 @@ export default function StockTakeRunner({ initialTake }: StockTakeRunnerProps) {
         <VarianceSummary take={take} />
         <Link
           href={"/admin/stock-takes" as Route}
-          className="inline-flex min-h-10 items-center rounded-[var(--radius-btn)] border px-4 favo-small"
+          className="inline-flex min-h-11 items-center rounded-[var(--radius-btn)] border px-4 favo-small"
           style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
         >
           ← Back to stock takes
@@ -138,7 +142,8 @@ export default function StockTakeRunner({ initialTake }: StockTakeRunnerProps) {
       {allCounted && (
         <div className="mx-auto max-w-md space-y-3">
           <p className="favo-small" style={{ color: "var(--color-success)" }}>
-            All lots counted. Review and close to apply corrective adjustments (T01).
+            All lots counted. Closing sets any lot more than 5% off to your count (T01);
+            smaller differences are recorded only.
           </p>
           <button
             type="button"
