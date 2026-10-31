@@ -255,6 +255,13 @@
       "breakpoints": true
     },
     {
+      "idx": 36,
+      "version": "7",
+      "when": 1793002925317,
+      "tag": "0036_at204_event_sessions",
+      "breakpoints": true
+    },
+    {
       "idx": 38,
       "version": "7",
       "when": 1793040427567,

@@ -8,10 +8,15 @@ vi.mock("@/server/actions/inventory", () => ({
   listInventory: vi.fn().mockResolvedValue({ ok: true, data: { items: [{ id: "inv1", name: "Whole Milk", unit: "ml" }] } }),
   listLots: vi.fn().mockResolvedValue({ ok: true, data: { lots: [] } }),
 }));
+// CHANGED (merge of AT-204): the prompt now loads getOpeningStep and opens via openSession.
 const mockSubmit = vi.fn();
 vi.mock("@/server/actions/opening", () => ({
-  getTodaySessions: vi.fn().mockResolvedValue({ ok: true, data: { date: "2026-10-26", sessions: [] } }),
-  submitOpeningTime: (...a: unknown[]) => mockSubmit(...a),
+  getOpeningStep: vi.fn().mockResolvedValue({
+    ok: true, data: { date: "2026-10-26", current: null, sessions: [], windows: [], profiles: [] },
+  }),
+  openSession: (...a: unknown[]) => mockSubmit(...a),
+  closeSession: vi.fn(),
+  openEventWindow: vi.fn(),
 }));
 const mockOpen = vi.fn();
 const mockClose = vi.fn();
