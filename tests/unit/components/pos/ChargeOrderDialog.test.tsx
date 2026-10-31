@@ -1,15 +1,14 @@
 // Charge an order that's already in the queue.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 
 vi.mock("next/script", () => ({ default: () => null }));
-// Stub the payment children so the dialog logic is what's under test.
-vi.mock("@/components/pos/YocoOrderForm", () => ({
-  default: ({ orderId, amountZar, onPaid }: { orderId: string; amountZar: number; onPaid: () => void }) => (
-    <button onClick={onPaid}>yoco-pay {orderId} {amountZar}</button>
-  ),
+const mockConfirmManual = vi.fn();
+vi.mock("@/server/actions/orders", () => ({
+  confirmManualPayment: (...a: unknown[]) => mockConfirmManual(...a),
 }));
+// Stub the payment children so the dialog logic is what's under test.
 vi.mock("@/components/pos/DeferredPaymentNotice", () => ({
   default: ({ onConfirmDeferred }: { onConfirmDeferred: () => void }) => (
     <button onClick={onConfirmDeferred}>deferred-confirm</button>
@@ -37,10 +36,13 @@ describe("ChargeOrderDialog", () => {
     expect(screen.getByText(/ABC123/)).toBeDefined();
   });
 
-  it("online: card payment settles the order (onPaid + onClose)", () => {
+  it("online: no in-browser card form (REQ-071); card-machine confirmation settles the order", async () => {
+    mockConfirmManual.mockResolvedValue({ ok: true, data: {} });
     const onPaid = vi.fn(); const onClose = vi.fn();
     render(<ChargeOrderDialog order={ORDER} onPaid={onPaid} onClose={onClose} />);
-    fireEvent.click(screen.getByText(/yoco-pay ord_abc123 4500/));
+    expect(screen.queryByRole("button", { name: /charge card/i })).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /mark as paid/i })); });
+    expect(mockConfirmManual).toHaveBeenCalledWith("ord_abc123");
     expect(onPaid).toHaveBeenCalledWith("ord_abc123");
     expect(onClose).toHaveBeenCalledOnce();
   });

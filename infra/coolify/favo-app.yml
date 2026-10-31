@@ -39,7 +39,6 @@ services:
       # Yoco payments
       - YOCO_SECRET_KEY
       - YOCO_WEBHOOK_SECRET
-      - NEXT_PUBLIC_YOCO_PUBLIC_KEY
       # Web Push / VAPID
       - VAPID_PUBLIC_KEY
       - VAPID_PRIVATE_KEY

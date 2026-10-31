@@ -73,7 +73,7 @@ DATABASE_URL              # Supabase Transaction pooler (port 6543)
 DATABASE_URL_SESSION      # Supabase Session pooler (port 5432) — SSE/LISTEN only
 AUTH_SECRET               # Auth.js signing secret
 AUTH_URL                  # https://favo.hofmi.net (production)
-YOCO_SECRET_KEY · YOCO_WEBHOOK_SECRET · NEXT_PUBLIC_YOCO_PUBLIC_KEY
+YOCO_SECRET_KEY · YOCO_WEBHOOK_SECRET
 VAPID_PUBLIC_KEY · VAPID_PRIVATE_KEY · NEXT_PUBLIC_VAPID_PUBLIC_KEY
 PUBLIC_BASE_URL · TZ=Africa/Johannesburg
 SCHEDULER_ENABLED         # in-app job scheduler on/off (default: on in production)
