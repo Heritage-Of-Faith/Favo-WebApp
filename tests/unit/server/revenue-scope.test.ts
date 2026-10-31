@@ -80,6 +80,12 @@ describe("revenue scope (AT-209)", () => {
     expect(text(executed[0])).toContain(`WHERE ${REVENUE_ORDER_SCOPE_SQL}`);
   });
 
+  it("the ministry rollup's settled-orders read uses the predicate, so a day of only cancelled paid orders is not a silent R0 fee", async () => {
+    const s = src("src/server/cogs/ministry-rollup.ts");
+    expect(s).toContain("WHERE ${revenueOrderScope}");
+    expect(s).not.toMatch(/o\.state IN \('in_progress', 'ready', 'collected'\)/);
+  });
+
   it("the report export's revenue query uses the predicate", async () => {
     executed.length = 0;
     await buildReportRows("2026-10-25", "2026-10-25");
