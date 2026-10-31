@@ -25,6 +25,8 @@ export default function OpenContainersCard() {
   const [rows, setRows] = useState<OpenContainerView[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  // Open/Close are easy to mistap and hard to undo: ask first, naming the product.
+  const [confirming, setConfirming] = useState<{ itemId: string; kind: "open" | "close" } | null>(null);
 
   const load = useCallback(async () => {
     const r = await listOpenContainers();
@@ -81,24 +83,51 @@ export default function OpenContainersCard() {
             <Icon size={16} strokeWidth={2.25} className="text-cool-steel shrink-0" />
             <div className="min-w-0">
               <p
-                className="text-coffee-bean font-semibold leading-tight truncate"
+                className="text-coffee-bean font-semibold leading-tight"
                 style={{ fontSize: 12 }}
               >
-                {open ? row.openLabel ?? "Open" : "None open"}
+                {row.inventoryItemName}
               </p>
               <p
-                className="text-cool-steel leading-tight truncate"
-                style={{ fontSize: 10 }}
+                className="text-cool-steel leading-tight"
+                style={{ fontSize: 11 }}
               >
-                {row.sealedCount} sealed
+                {open ? "Open" : "None open"} · {row.sealedCount} sealed
               </p>
             </div>
             {isBusy ? (
               <Loader2 size={14} className="animate-spin text-cool-steel" />
+            ) : confirming?.itemId === row.inventoryItemId ? (
+              <span className="flex items-center gap-1" role="group" aria-label={`${confirming.kind === "close" ? "Close" : "Open"} ${row.inventoryItemName}?`}>
+                <span className="text-coffee-bean" style={{ fontSize: 11 }}>
+                  {confirming.kind === "close" ? "Close" : "Open"} {row.inventoryItemName}?
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const c = confirming;
+                    setConfirming(null);
+                    if (c.kind === "close") handleClose(row.inventoryItemId, row.openLotId!);
+                    else handleOpen(row.inventoryItemId);
+                  }}
+                  className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[var(--radius-btn)] border border-crimson-carrot px-2 text-coffee-bean"
+                  style={{ fontSize: 11 }}
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirming(null)}
+                  className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 text-cool-steel"
+                  style={{ fontSize: 11 }}
+                >
+                  No
+                </button>
+              </span>
             ) : open ? (
               <button
                 type="button"
-                onClick={() => handleClose(row.inventoryItemId, row.openLotId!)}
+                onClick={() => setConfirming({ itemId: row.inventoryItemId, kind: "close" })}
                 className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 text-cool-steel hover:bg-porcelain/10 hover:text-porcelain focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
                 style={{ fontSize: 10 }}
               >
@@ -108,7 +137,7 @@ export default function OpenContainersCard() {
               <button
                 type="button"
                 disabled={row.sealedCount === 0}
-                onClick={() => handleOpen(row.inventoryItemId)}
+                onClick={() => setConfirming({ itemId: row.inventoryItemId, kind: "open" })}
                 className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[var(--radius-btn)] border border-cool-steel/30 px-2 text-cool-steel hover:bg-porcelain/10 hover:text-porcelain disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot"
                 style={{ fontSize: 10 }}
               >

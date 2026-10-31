@@ -65,6 +65,89 @@ describe("WasteDialog", () => {
     expect(onLogged).toHaveBeenCalled();
   });
 
+  // QA R4 barista P2-1: open and closed lots always refuse waste, so the picker
+  // must not offer them; an open container is retired via Close instead.
+  it("offers only sealed lots, never open or closed ones", async () => {
+    mockListLots.mockResolvedValue({
+      ok: true,
+      data: {
+        lots: [
+          { ...LOTS[0], id: "lot_open", batchNumber: "OPEN-1", state: "open" },
+          { ...LOTS[0], id: "lot_closed", batchNumber: "CLOSED-1", state: "closed" },
+          { ...LOTS[0], id: "lot_sealed", batchNumber: "SEALED-1", state: "active" },
+        ],
+      },
+    });
+    render(<WasteDialog onClose={vi.fn()} />);
+    const lot = (await screen.findByLabelText("Lot")) as HTMLSelectElement;
+    const values = Array.from(lot.options).map((o) => o.value);
+    expect(values).toEqual(["lot_sealed"]);
+  });
+
+  it("with only an open container, points to Close and does not log", async () => {
+    mockListLots.mockResolvedValue({
+      ok: true,
+      data: { lots: [{ ...LOTS[0], id: "lot_open", state: "open" }] },
+    });
+    render(<WasteDialog onClose={vi.fn()} />);
+    expect(
+      await screen.findByText("This bag or carton is open. To bin what is left, tap Close on its stock tile.")
+    ).toBeDefined();
+    expect(screen.queryByLabelText("Lot")).toBeNull();
+    expect(screen.getByRole("button", { name: /log waste/i })).toBeDisabled();
+  });
+
+  // QA R5 barista #2: Almond Milk (only closed lots) said "closed lot"; an item
+  // with no lots at all said nothing and would log a lot-less row.
+  it.each([
+    ["only closed lots", [{ ...LOTS[0], id: "lot_closed", state: "closed" }]],
+    ["no lots at all", []],
+  ])("with %s, says there is no stock to waste and does not log", async (_l, lots) => {
+    mockListLots.mockResolvedValue({ ok: true, data: { lots } });
+    render(<WasteDialog onClose={vi.fn()} />);
+    expect(await screen.findByText("No stock to waste for this item.")).toBeDefined();
+    expect(screen.queryByText(/closed lot/i)).toBeNull();
+    const btn = screen.getByRole("button", { name: /log waste/i });
+    expect(btn).toBeDisabled();
+    await act(async () => { fireEvent.click(btn); });
+    expect(mockLogWaste).not.toHaveBeenCalled();
+  });
+
+  // QA R6 barista P3-1: a lot with nothing left (remaining <= 0) is refused by
+  // logWaste, so the picker never offers it.
+  it("does not list lots with nothing left", async () => {
+    mockListLots.mockResolvedValue({
+      ok: true,
+      data: {
+        lots: [
+          { ...LOTS[0], id: "lot_neg", state: "active", quantityRemaining: -2 },
+          { ...LOTS[0], id: "lot_zero", state: "active", quantityRemaining: 0 },
+          { ...LOTS[0], id: "lot_ok", state: "depleted", quantityRemaining: 4 },
+        ],
+      },
+    });
+    render(<WasteDialog onClose={vi.fn()} />);
+    const lot = (await screen.findByLabelText("Lot")) as HTMLSelectElement;
+    expect(Array.from(lot.options).map((o) => o.value)).toEqual(["lot_ok"]);
+  });
+
+  it("with only lots at or below zero, says there is no stock to waste and does not log", async () => {
+    mockListLots.mockResolvedValue({
+      ok: true,
+      data: { lots: [{ ...LOTS[0], id: "lot_cup", state: "active", quantityRemaining: -66 }] },
+    });
+    render(<WasteDialog onClose={vi.fn()} />);
+    expect(await screen.findByText("No stock to waste for this item.")).toBeDefined();
+    expect(screen.queryByLabelText("Lot")).toBeNull();
+    expect(screen.getByRole("button", { name: /log waste/i })).toBeDisabled();
+  });
+
+  it("caps the reason at 500 characters", async () => {
+    render(<WasteDialog onClose={vi.fn()} />);
+    const reason = (await screen.findByLabelText(/reason/i)) as HTMLInputElement;
+    expect(reason.maxLength).toBe(500);
+  });
+
   it("rejects a non-positive quantity without calling logWaste", async () => {
     render(<WasteDialog onClose={vi.fn()} />);
     await waitFor(() => expect(mockListLots).toHaveBeenCalled());

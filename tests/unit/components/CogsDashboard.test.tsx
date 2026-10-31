@@ -70,6 +70,11 @@ describe("CogsDashboard", () => {
     );
     expect(screen.getByText(/Provisional/)).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /recost/i })[0]).toHaveAttribute("href", "/admin/yield");
+    // QA R4 iPad #5: the Recost link was 43 px wide; it must be a 44x44 target.
+    for (const a of screen.getAllByRole("link", { name: /recost/i })) {
+      expect(a.className).toMatch(/\bmin-h-11\b/);
+      expect(a.className).toMatch(/\bmin-w-11\b/);
+    }
     const net = screen.getAllByText(/R\s*650,00/);
     expect(net.some((el) => el.style.color === "var(--status-warn)")).toBe(true);
     expect(net.some((el) => el.style.color === "var(--color-dark-teal)")).toBe(false);

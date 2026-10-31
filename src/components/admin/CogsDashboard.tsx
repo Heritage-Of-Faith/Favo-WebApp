@@ -47,8 +47,28 @@ function shortDate(isoDay: string): string {
   return `${d} ${months[m - 1]}`;
 }
 
-function trendOf(current: number, previous: number | undefined) {
-  if (previous === undefined || previous === current) {
+/**
+ * R3-2: the "vs prev" comparison. `days` is the date-sorted daily series
+ * (ideally 2 × rangeDays long). Current = the last `rangeDays` days (the same
+ * window the KPI tiles sum); previous = the `rangeDays` days immediately
+ * before it. When the series does not reach back a full prior window the
+ * previous period is undefined — no arrow is shown rather than a guess.
+ * Sums only; no rounding (each day is already Σ order_cogs, REQ-106).
+ */
+export function periodComparison(
+  days: readonly CogsLive[],
+  rangeDays: number,
+  date: string
+): { current: CogsLive; previous: CogsLive | undefined } {
+  const current = aggregate(days.slice(-rangeDays), date);
+  const prior = days.slice(-2 * rangeDays, -rangeDays);
+  const previous = prior.length === rangeDays ? aggregate(prior, date) : undefined;
+  return { current, previous };
+}
+
+export function trendOf(current: number, previous: number | undefined) {
+  if (previous === undefined) return undefined;
+  if (previous === current) {
     return { direction: "flat" as const, label: "no change" };
   }
   const delta = current - previous;
@@ -141,7 +161,8 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
   const refreshHistory = useCallback(
     (days: RangeDays) => {
       startHistory(async () => {
-        const res = await getCogsHistory({ days });
+        // Twice the range: the second half is the "vs prev" comparison window.
+        const res = await getCogsHistory({ days: days * 2 });
         if (res.ok) {
           setHistory([...res.data.history].sort((a, b) => a.date.localeCompare(b.date)));
         }
@@ -176,9 +197,8 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
   // Merge live `today` into the trend so the latest point is always current.
   const mergedByDate = new Map(history.map((h) => [h.date, h]));
   mergedByDate.set(today.date, today);
-  const trend = Array.from(mergedByDate.values())
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(-rangeDays);
+  const series = Array.from(mergedByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  const trend = series.slice(-rangeDays);
 
   const labels = trend.map((t) => shortDate(t.date));
   const prevDay = trend.length >= 2 ? trend[trend.length - 2] : undefined;
@@ -188,10 +208,8 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
   // (REQ-109); any provisional day makes it provisional (REQ-110).
   const periodTotal: CogsLive = inspectDate && snapshot ? snapshot : aggregate(trend, today.date);
 
-  // Half-period comparison for trend arrows (first half vs second half).
-  const half = Math.floor(trend.length / 2);
-  const periodPrev = aggregate(trend.slice(0, half), today.date);
-  const periodCurr = aggregate(trend.slice(half), today.date);
+  // Trend arrows: this window vs the equal-length window before it (R3-2).
+  const { current: periodCurr, previous: periodPrev } = periodComparison(series, rangeDays, today.date);
 
   // KPI source: snapshot when inspecting a date, else the period aggregate.
   const kpi = periodTotal;
@@ -256,7 +274,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
           title={`COGS, gross margin and net: ${unavailableLine}`}
           description="A cost input is missing, so no figure is shown rather than a smaller one. Enter the missing cost to restore these figures."
           action={
-            <a href="/admin/yield" className="favo-small" style={{ color: "var(--color-accent)", fontWeight: 600 }}>
+            <a href="/admin/yield" className="favo-small inline-flex min-h-11 min-w-11 items-center justify-center" style={{ color: "var(--color-accent)", fontWeight: 600 }}>
               Recost
             </a>
           }
@@ -270,7 +288,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
           title="Provisional — these figures rest on estimated lot costs"
           description="Margin and net stay provisional until every contributing lot is invoice-backed."
           action={
-            <a href="/admin/yield" className="favo-small" style={{ color: "var(--color-accent)", fontWeight: 600 }}>
+            <a href="/admin/yield" className="favo-small inline-flex min-h-11 min-w-11 items-center justify-center" style={{ color: "var(--color-accent)", fontWeight: 600 }}>
               Recost
             </a>
           }
@@ -339,7 +357,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
               type="button"
               onClick={() => setRangeDays(r)}
               aria-pressed={rangeDays === r}
-              className="min-h-10 rounded-[var(--radius-btn)] px-3 favo-small transition-colors"
+              className="min-h-11 min-w-11 rounded-[var(--radius-btn)] px-3 favo-small transition-colors"
               style={{
                 background: rangeDays === r ? "var(--color-text-strong)" : "var(--color-elevated)",
                 color: rangeDays === r ? "var(--color-text-inverse)" : "var(--color-text-muted)",
@@ -362,7 +380,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
             max={todayDate}
             value={inspectDate ?? ""}
             onChange={(e) => setInspectDate(e.target.value || null)}
-            className="min-h-10 rounded-[var(--radius-btn)] px-2 favo-small"
+            className="min-h-11 rounded-[var(--radius-btn)] px-2 text-base"
             style={{
               background: "var(--color-surface)",
               color: "var(--color-text-strong)",
@@ -373,7 +391,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
             <button
               type="button"
               onClick={() => setInspectDate(null)}
-              className="min-h-10 px-2 favo-small underline"
+              className="min-h-11 px-2 favo-small underline"
               style={{ color: "var(--color-accent)" }}
             >
               Back to live

@@ -13,8 +13,7 @@ import {
   addTodaySession, updateTodaySession, deleteTodaySession,
   type OpeningSession,
 } from "@/server/actions/opening";
-
-const ORDINALS = ["First", "Second", "Third", "Fourth", "Fifth"];
+import { sessionSpan, openingLabel, plannedEndError } from "@/lib/session-span";
 
 type EditState = { id: string | null; opensAt: string; closesAt: string; notify: boolean } | null;
 
@@ -32,6 +31,9 @@ export default function TodaySessionsPlanner({ initialSessions, todayLabel, fall
 
   async function save() {
     if (!edit || busy) return;
+    // QA R6-2: refuse a planned end before the open time, with a message.
+    const endError = plannedEndError(edit.opensAt, edit.closesAt || null);
+    if (endError) { setError(endError); return; }
     setBusy(true);
     setError(null);
     const input = { opensAt: edit.opensAt, closesAt: edit.closesAt || null, notify: edit.notify };
@@ -55,14 +57,14 @@ export default function TodaySessionsPlanner({ initialSessions, todayLabel, fall
 
   const timeInput = (value: string, onChange: (v: string) => void, label: string) => (
     <input type="time" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}
-      className="rounded border border-border-subtle bg-surface px-2 py-1.5 text-sm text-text-strong focus:outline-none focus:ring-2 focus:ring-ring" />
+      className="min-h-11 rounded border border-border-subtle bg-surface px-2 py-1.5 text-base text-text-strong focus:outline-none focus:ring-2 focus:ring-ring" />
   );
 
   // AT-134: admin edits are silent unless the admin opts in per change.
   const notifyCheckbox = (checked: boolean, onChange: (v: boolean) => void) => (
     <label className="flex items-center gap-1.5 text-sm text-text-muted">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 rounded border-border-subtle" aria-label="Notify customers" />
+        className="h-6 w-6 rounded border-border-subtle" aria-label="Notify customers" />
       Notify customers
     </label>
   );
@@ -78,39 +80,39 @@ export default function TodaySessionsPlanner({ initialSessions, todayLabel, fall
         {sessions.map((s, i) =>
           edit?.id === s.id ? (
             <div key={s.id} className="flex flex-wrap items-center gap-2 rounded border border-border-subtle bg-surface px-3 py-2">
-              <span className="text-sm font-medium text-text-strong w-32">{ORDINALS[i] ?? `${i + 1}th`} opening</span>
+              <span className="text-sm font-medium text-text-strong w-32">{openingLabel(i)}</span>
               {timeInput(edit.opensAt, (v) => setEdit({ ...edit, opensAt: v }), "Opens at")}
               <span className="text-text-muted text-sm">–</span>
               {timeInput(edit.closesAt, (v) => setEdit({ ...edit, closesAt: v }), "Closes at (optional)")}
               {notifyCheckbox(edit.notify, (v) => setEdit({ ...edit, notify: v }))}
               <button type="button" onClick={save} disabled={busy || !edit.opensAt}
-                className="rounded border border-border-subtle bg-elevated px-3 py-1.5 text-sm font-medium text-text-strong hover:bg-surface disabled:opacity-40">
+                className="min-h-11 rounded border border-border-subtle bg-elevated px-4 py-1.5 text-sm font-medium text-text-strong hover:bg-surface disabled:opacity-40">
                 Save
               </button>
               <button type="button" onClick={() => setEdit(null)} disabled={busy}
-                className="text-sm text-text-muted hover:text-text-strong">
+                className="min-h-11 px-3 text-sm text-text-muted hover:text-text-strong">
                 Cancel
               </button>
             </div>
           ) : (
             <div key={s.id} className="flex flex-wrap items-center gap-2 rounded border border-border-subtle bg-surface px-3 py-2">
-              <span className="text-sm font-medium text-text-strong w-32">{ORDINALS[i] ?? `${i + 1}th`} opening</span>
+              <span className="text-sm font-medium text-text-strong w-32">{openingLabel(i)}</span>
               {s.viaPos && (
                 <span className="rounded border border-border-subtle px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-text-muted">
                   via POS
                 </span>
               )}
               <span className="text-sm text-text-strong tabular-nums">
-                {s.opensAt} {s.closesAt ? `– ${s.closesAt}` : "→ open-ended"}
+                {sessionSpan(s)}
               </span>
               <span className="ml-auto flex gap-3">
                 <button type="button" disabled={busy}
                   onClick={() => setEdit({ id: s.id, opensAt: s.opensAt, closesAt: s.closesAt ?? "", notify: false })}
-                  className="text-xs text-text-muted underline underline-offset-2 hover:text-text-strong">
+                  className="min-h-11 min-w-11 px-2 text-xs text-text-muted underline underline-offset-2 hover:text-text-strong">
                   Edit
                 </button>
                 <button type="button" disabled={busy} onClick={() => remove(s.id)}
-                  className="text-xs text-text-muted underline underline-offset-2 hover:text-text-strong">
+                  className="min-h-11 min-w-11 px-2 text-xs text-text-muted underline underline-offset-2 hover:text-text-strong">
                   Delete
                 </button>
               </span>
@@ -126,11 +128,11 @@ export default function TodaySessionsPlanner({ initialSessions, todayLabel, fall
             {timeInput(edit.closesAt, (v) => setEdit({ ...edit, closesAt: v }), "Closes at (optional)")}
             {notifyCheckbox(edit.notify, (v) => setEdit({ ...edit, notify: v }))}
             <button type="button" onClick={save} disabled={busy || !edit.opensAt}
-              className="rounded border border-border-subtle bg-elevated px-3 py-1.5 text-sm font-medium text-text-strong hover:bg-surface disabled:opacity-40">
+              className="min-h-11 rounded border border-border-subtle bg-elevated px-4 py-1.5 text-sm font-medium text-text-strong hover:bg-surface disabled:opacity-40">
               Save
             </button>
             <button type="button" onClick={() => setEdit(null)} disabled={busy}
-              className="text-sm text-text-muted hover:text-text-strong">
+              className="min-h-11 px-3 text-sm text-text-muted hover:text-text-strong">
               Cancel
             </button>
           </div>
@@ -141,7 +143,7 @@ export default function TodaySessionsPlanner({ initialSessions, todayLabel, fall
 
       {!edit && (
         <button type="button" disabled={busy} onClick={() => setEdit({ id: null, opensAt: "", closesAt: "", notify: false })}
-          className="mt-3 rounded border border-border-subtle bg-surface px-3 py-1.5 text-sm font-medium text-text-strong hover:bg-elevated">
+          className="mt-3 min-h-11 rounded border border-border-subtle bg-surface px-4 py-1.5 text-sm font-medium text-text-strong hover:bg-elevated">
           + Add session
         </button>
       )}

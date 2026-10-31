@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatZar, formatDate } from "@/lib/format";
+import { parseMenuPriceCents } from "@/lib/admin-input";
 import {
   getMenuAdmin,
   getMenuItemPriceHistory,
@@ -75,6 +76,14 @@ export default function MenuEditor() {
   }, [refresh]);
 
   async function handleToggleActive(item: MenuItem) {
+    // Deactivating hides the item from the POS and customer menu — ask first
+    // (same pattern as staff deactivate). Reactivating needs no confirm.
+    if (
+      item.active &&
+      !window.confirm(`Deactivate ${item.name}? It will disappear from the POS and the customer menu.`)
+    ) {
+      return;
+    }
     const res = await setMenuItemActive(item.id, !item.active);
     if (!res.ok) {
       toast.error(res.message);
@@ -115,7 +124,7 @@ export default function MenuEditor() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="min-h-10"
+                    className="min-h-11"
                     onClick={() => setDialog({ mode: "editPrice", item })}
                   >
                     Edit price
@@ -123,14 +132,14 @@ export default function MenuEditor() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="min-h-10"
+                    className="min-h-11"
                     onClick={() => setDialog({ mode: "history", item })}
                   >
                     History
                   </Button>
                   <Link
                     href={`/admin/menu/${item.id}/recipe` as Route}
-                    className="inline-flex min-h-10 items-center rounded-[var(--radius-btn)] px-3 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
+                    className="inline-flex min-h-11 items-center rounded-[var(--radius-btn)] px-3 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
                     style={{ color: "var(--color-text-strong)" }}
                   >
                     Recipe
@@ -138,7 +147,7 @@ export default function MenuEditor() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="min-h-10 text-destructive hover:text-destructive"
+                    className="min-h-11 text-destructive hover:text-destructive"
                     onClick={() => handleToggleActive(item)}
                   >
                     Deactivate
@@ -166,7 +175,7 @@ export default function MenuEditor() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="min-h-10"
+                      className="min-h-11"
                       onClick={() => handleToggleActive(item)}
                     >
                       Reactivate
@@ -213,21 +222,24 @@ function CreateItemDialog({
   const [category, setCategory] = useState<MenuCategory>("coffee");
   const [rands, setRands] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const priceZar = Math.round(parseFloat(rands) * 100);
-    if (!name.trim()) { toast.error("Name is required."); return; }
-    if (Number.isNaN(priceZar) || priceZar <= 0) { toast.error("Enter a valid price."); return; }
+    setError(null);
+    if (!name.trim()) { setError("Name is required."); return; }
+    if (name.trim().length > 80) { setError("Name too long (80 characters max)."); return; }
+    const price = parseMenuPriceCents(rands);
+    if (!price.ok) { setError(price.message); return; }
     setSubmitting(true);
     try {
-      const res = await createMenuItem({ name: name.trim(), category, priceZar });
-      if (!res.ok) { toast.error(res.message); return; }
+      const res = await createMenuItem({ name: name.trim(), category, priceZar: price.value });
+      if (!res.ok) { setError(res.message); return; }
       toast.success(`${res.data.name} added to the menu.`);
       onSaved();
       onClose();
     } catch {
-      toast.error("Failed to add item. Please try again.");
+      setError("Failed to add item. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -281,9 +293,15 @@ function CreateItemDialog({
             </div>
           </div>
 
+          {error && (
+            <p role="alert" className="pb-3 favo-small" style={{ color: "var(--color-error)" }}>
+              {error}
+            </p>
+          )}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={submitting} className="min-h-10">
+            <Button type="submit" disabled={submitting} className="min-h-11">
               {submitting ? "Adding…" : "Add item"}
             </Button>
           </DialogFooter>
@@ -304,20 +322,24 @@ function EditPriceDialog({
 }) {
   const [rands, setRands] = useState((item.currentPriceZar / 100).toFixed(2));
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const cents = Math.round(parseFloat(rands) * 100);
-    if (Number.isNaN(cents)) { toast.error("Enter a valid amount."); return; }
+    setError(null);
+    // parseZar rejects -5, empty, abc and >2 decimals (45.555 no longer rounds silently).
+    const price = parseMenuPriceCents(rands);
+    if (!price.ok) { setError(price.message); return; }
+    const cents = price.value;
     setSubmitting(true);
     try {
       const res = await setMenuItemPrice({ menuItemId: item.id, newPriceZar: cents });
-      if (!res.ok) { toast.error(res.message); return; }
+      if (!res.ok) { setError(res.message); return; }
       toast.success(`${item.name} price updated to ${formatZar(cents)}.`);
       onSaved();
       onClose();
     } catch {
-      toast.error("Failed to update price. Please try again.");
+      setError("Failed to update price. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -346,9 +368,15 @@ function EditPriceDialog({
             />
           </div>
 
+          {error && (
+            <p role="alert" className="pb-3 favo-small" style={{ color: "var(--color-error)" }}>
+              {error}
+            </p>
+          )}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={submitting} className="min-h-10">
+            <Button type="submit" disabled={submitting} className="min-h-11">
               {submitting ? "Saving…" : "Save price"}
             </Button>
           </DialogFooter>

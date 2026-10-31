@@ -231,6 +231,9 @@ export async function runStockTake(
 
 // ─── recordStockTakeLine ──────────────────────────────────────────────────────
 
+/** Sane per-lot ceiling in base units (g / ml / unit); well inside int4. */
+const MAX_STOCK_TAKE_COUNT = 10_000_000;
+
 /**
  * Updates one stock-take line with the physically-counted quantity.
  * Recomputes variance = counted − expected.
@@ -244,11 +247,23 @@ export async function recordStockTakeLine(
   const auth = await authorize(...ADMIN_ROLES);
   if (!auth.ok) return auth;
 
-  if (!Number.isInteger(counted) || counted < 0) {
+  // R3-1: reject non-finite, negative, fractional and absurd counts with a
+  // readable message. stock_take_lines.counted/variance are int4 columns, so an
+  // unchecked 2147483648 overflowed in Postgres and surfaced as HTTP 500.
+  if (typeof counted !== "number" || !Number.isFinite(counted)) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "Enter the counted amount as a number." };
+  }
+  if (counted < 0) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "The count can't be negative." };
+  }
+  if (!Number.isInteger(counted)) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "Enter a whole number for the count." };
+  }
+  if (counted > MAX_STOCK_TAKE_COUNT) {
     return {
       ok: false,
       code: "VALIDATION_ERROR",
-      message: "counted must be a non-negative integer.",
+      message: `That count is too large. Enter ${MAX_STOCK_TAKE_COUNT.toLocaleString("en-ZA")} or less.`,
     };
   }
 
