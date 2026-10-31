@@ -269,8 +269,9 @@ export const orders = pgTable("orders", {
   notificationTarget: notificationTarget("notification_target").notNull(),
   // AT-201 / PRD §10.3, P3, REQ-027: the root of every tender reference —
   // payments.client_reference = client_uuid || ':' || attempt. NOT NULL,
-  // UNIQUE. The DB default is provisional (migration 0044): createOrder does
-  // not pass the POS-minted uuid yet; AT-201 part 2b decides whether it does.
+  // UNIQUE. The DB default stays (migration 0044): createOrder, the offline
+  // replay (apply-outbox) and the demo seed do not pass a POS-minted uuid yet
+  // (S7b's repeat-submission rule is not built).
   clientUuid: text("client_uuid").default(sql`gen_random_uuid()`).notNull().unique(),
 }, () => [
   // PRD §10.3: a row can never claim it will notify someone and carry no customer.
@@ -344,7 +345,9 @@ export const payments = pgTable("payments", {
   attempt: integer("attempt").notNull(),
   // `client_uuid:attempt` (P3, REQ-027), written BEFORE the send.
   clientReference: text("client_reference").notNull().unique(),
-  // Legacy Yoco Online checkout id. Part 2 of AT-201 removes it with the old flow.
+  // Legacy Yoco Online checkout id. Nothing writes or reads it since AT-201
+  // part 2b removed that flow; kept so old rows keep their history. Dropping
+  // the column is a separate migration.
   yocoCheckoutId: text("yoco_checkout_id"),
   // Yoco's payment id, persisted the moment the send returns (REQ-029).
   yocoPaymentId: text("yoco_payment_id").unique(),
@@ -363,7 +366,8 @@ export const payments = pgTable("payments", {
   sentAt: timestamp("sent_at", { withTimezone: true }),
   lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
   at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
-  // Legacy webhook timestamp. Part 2 of AT-201 removes it with the old flow.
+  // Legacy webhook timestamp. Nothing writes or reads it since AT-201 part 2b
+  // retired the webhook (§11.1); kept for old rows, dropped separately.
   webhookReceivedAt: timestamp("webhook_received_at", { withTimezone: true }),
 }, (t) => [
   // AT-181 / REQ-011: an order has at most one successful payment, and the

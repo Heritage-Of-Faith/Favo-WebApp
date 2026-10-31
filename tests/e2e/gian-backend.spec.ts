@@ -1,6 +1,6 @@
 /**
  * Gian's backend vertical — E2E / API-contract tests
- * Covers: G4 (auth), G6 (Yoco webhook + SSE queue), G7 (push subscribe)
+ * Covers: G4 (auth), G6 (SSE queue; the Yoco webhook is retired), G7 (push subscribe)
  *
  * Server actions (G5: searchCustomer, createOrder, transitionOrder, cancelOrder,
  * applyStaffDiscount) are exercised through the POS UI below and in
@@ -11,20 +11,11 @@
  *   - Admin:   Mia Manager  PIN 4321   id: staff_manager_mia
  *   - Customer: Louis        id: cust_louis
  *   - Menu:    Cappuccino R38,00  id: menu_cappuccino
- *
- * Env for webhook tests: YOCO_WEBHOOK_SECRET must match TEST_WEBHOOK_SECRET.
- * Set in .env.local: YOCO_WEBHOOK_SECRET=e2e-webhook-secret
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { createHmac } from "node:crypto";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-/** HMAC-SHA256 base64 — mirrors verifyYocoSignature in src/server/yoco/signature.ts */
-function signWebhook(payload: string, secret: string): string {
-  return createHmac("sha256", secret).update(payload).digest("base64");
-}
 
 /** Log in as the seeded barista (PIN 1234). */
 async function loginAsBarista(page: Page): Promise<void> {
@@ -51,12 +42,6 @@ async function loginAsAdmin(page: Page): Promise<void> {
     timeout: 5000,
   });
 }
-
-/**
- * Webhook secret to use in tests. Must match YOCO_WEBHOOK_SECRET in .env.local.
- * If the env var isn't set the endpoint returns 500 — see webhook tests below.
- */
-const TEST_WEBHOOK_SECRET = "e2e-webhook-secret";
 
 // ── 1. Healthz (no auth) ─────────────────────────────────────────────────────
 
@@ -146,108 +131,16 @@ test.describe("G6: SSE queue", () => {
 
 // ── 4. G6: Yoco webhook ──────────────────────────────────────────────────────
 
-test.describe("G6: Yoco webhook", () => {
+// AT-201 part 2b: retired, not re-pointed (PRD v7.0 §11.1 — "Removed with the
+// Online flow. FAVO fetches payment status server-side and subscribes to no
+// webhook"). The route no longer exists.
+test.describe("G6: Yoco webhook (retired)", () => {
   const WEBHOOK = "/api/payments/yoco/webhook";
 
-  test("missing / bad signature → 401 (or 500 if secret not configured)", async ({
-    request,
-  }) => {
-    const body = JSON.stringify({ type: "payment.succeeded", paymentId: "py_bad_sig" });
-    const res = await request.post(WEBHOOK, {
-      headers: { "webhook-signature": "not-a-valid-signature" },
-      data: body,
-    });
-    // 401 when secret IS configured (signature mismatch).
-    // 500 when YOCO_WEBHOOK_SECRET is absent from the environment.
-    expect([401, 500]).toContain(res.status());
-  });
-
-  test("unrecognised event type → 400", async ({ request }) => {
-    const body = JSON.stringify({ type: "charge.refunded", paymentId: "py_unknown" });
-    const sig = signWebhook(body, TEST_WEBHOOK_SECRET);
-    const res = await request.post(WEBHOOK, {
-      headers: { "webhook-signature": sig },
-      data: body,
-    });
-    // 400 when secret matches and event is unrecognised.
-    // 401 when the test secret doesn't match the server's secret.
-    // 500 when the env var is absent.
-    if (res.status() === 400) {
-      const json = await res.json();
-      expect(json.error).toMatch(/unrecogni/i);
-    } else {
-      expect([401, 500]).toContain(res.status());
-    }
-  });
-
-  test("invalid JSON body → 400", async ({ request }) => {
-    const body = "not-json";
-    const sig = signWebhook(body, TEST_WEBHOOK_SECRET);
-    const res = await request.post(WEBHOOK, {
-      headers: { "webhook-signature": sig },
-      data: body,
-    });
-    if (res.status() === 400) {
-      const json = await res.json();
-      expect(json.error).toMatch(/json/i);
-    } else {
-      expect([401, 500]).toContain(res.status());
-    }
-  });
-
-  test("payment.succeeded with valid HMAC → 200 { ok: true }", async ({ request }) => {
-    const paymentId = `py_e2e_success_${Date.now()}`;
-    const body = JSON.stringify({ type: "payment.succeeded", paymentId });
-    const sig = signWebhook(body, TEST_WEBHOOK_SECRET);
-    const res = await request.post(WEBHOOK, {
-      headers: { "webhook-signature": sig },
-      data: body,
-    });
-    if (res.status() === 200) {
-      expect((await res.json()).ok).toBe(true);
-    } else {
-      // 401 = server secret doesn't match TEST_WEBHOOK_SECRET; 500 = not configured.
-      // Either is acceptable in a dev env without Yoco credentials set.
-      expect([401, 500]).toContain(res.status());
-    }
-  });
-
-  test("payment.failed with valid HMAC → 200 { ok: true }", async ({ request }) => {
-    const paymentId = `py_e2e_failed_${Date.now()}`;
-    const body = JSON.stringify({ type: "payment.failed", paymentId });
-    const sig = signWebhook(body, TEST_WEBHOOK_SECRET);
-    const res = await request.post(WEBHOOK, {
-      headers: { "webhook-signature": sig },
-      data: body,
-    });
-    if (res.status() === 200) {
-      expect((await res.json()).ok).toBe(true);
-    } else {
-      expect([401, 500]).toContain(res.status());
-    }
-  });
-
-  test("duplicate paymentId delivery → deduped: true (idempotency)", async ({
-    request,
-  }) => {
-    const paymentId = `py_e2e_dedup_${Date.now()}`;
-    const body = JSON.stringify({ type: "payment.succeeded", paymentId });
-    const sig = signWebhook(body, TEST_WEBHOOK_SECRET);
-    const headers = { "webhook-signature": sig };
-
-    const r1 = await request.post(WEBHOOK, { headers, data: body });
-    const r2 = await request.post(WEBHOOK, { headers, data: body });
-
-    if (r1.status() === 200 && r2.status() === 200) {
-      // First delivery: processed (ok: true, no deduped key or deduped: false).
-      // Second delivery: idempotent — since no matching payment row exists in the
-      // test DB, both calls hit the same code path.  The deduped flag only fires
-      // when an existing processed payment row is found; without that row the
-      // second call is treated identically to the first (no-op DB update, audit
-      // written, ok: true).  Verify both calls succeed without error.
-      expect((await r1.json()).ok).toBe(true);
-      expect((await r2.json()).ok).toBe(true);
-    }
+  test("POST /api/payments/yoco/webhook → 404", async ({ request }) => {
+    const body = JSON.stringify({ type: "payment.succeeded", paymentId: "py_retired" });
+    const res = await request.post(WEBHOOK, { data: body });
+    expect(res.status()).toBe(404);
   });
 });
 

@@ -3,26 +3,26 @@
 /**
  * ChargeOrderDialog — take payment for an order that's already in the queue.
  *
- * The place-order flow charges immediately, but if the customer steps away or
+ * The place-order flow tenders immediately, but if the customer steps away or
  * the barista backs out, the order sits in `ordered` unpaid. This dialog
- * reopens payment for a specific queued order:
- *   • online  → a manual confirmation for payments tendered on the card
- *               machine (or cash / EFT) — confirmManualPayment persists the
- *               payment as successful. There is no in-browser card capture:
- *               REQ-071 allows no Yoco key of any kind client-side.
+ * reopens payment for a specific queued order ("one tap from the queue if the
+ * customer stepped away", T2 step 3):
+ *   • online  → the card tender (TenderPanel): beginTender → sendToTerminal →
+ *               pollTenderResult, all server-side (REQ-071, §10.2.1).
  *   • offline → the deferred notice (take payment on the card machine in
  *               person; reconciled manually by an admin once connectivity
  *               returns).
  *
- * On settle it calls onPaid(orderId). Card data is never stored — L01/AT-122:
- * the manual path only records THAT the order was paid, never how much card.
+ * There is no "Mark as paid": a barista's tap may not record a card payment as
+ * successful (PRD §10.2.1 — exactly two paths write status='successful').
+ *
+ * On settle it calls onPaid(orderId).
  */
 
 import { useEffect, useState } from "react";
-import { X, HandCoins } from "lucide-react";
+import { X } from "lucide-react";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
-import { confirmManualPayment } from "@/server/actions/orders";
-import { formatZar } from "@/lib/format";
+import TenderPanel from "@/components/pos/TenderPanel";
 import type { Order } from "@/lib/types";
 
 export type Props = {
@@ -33,8 +33,6 @@ export type Props = {
 
 export default function ChargeOrderDialog({ order, onPaid, onClose }: Props) {
   const [online, setOnline] = useState(true);
-  const [manualBusy, setManualBusy] = useState(false);
-  const [manualErr, setManualErr] = useState<string | null>(null);
 
   useEffect(() => {
     setOnline(navigator.onLine);
@@ -49,20 +47,6 @@ export default function ChargeOrderDialog({ order, onPaid, onClose }: Props) {
   }, []);
 
   const settle = () => { onPaid(order.id); onClose(); };
-
-  // Manual confirmation (cash / card machine / EFT) — persists the payment as
-  // successful server-side. Online only: it needs the network. Offline tender
-  // goes through DeferredPaymentNotice instead.
-  async function confirmManual() {
-    setManualBusy(true);
-    setManualErr(null);
-    const r = await confirmManualPayment(order.id).catch(
-      () => ({ ok: false as const, code: "ERR", message: "Could not confirm payment." })
-    );
-    setManualBusy(false);
-    if (r.ok) settle();
-    else setManualErr(r.message);
-  }
 
   return (
     <div
@@ -87,24 +71,7 @@ export default function ChargeOrderDialog({ order, onPaid, onClose }: Props) {
 
         <div className="flex flex-col gap-4 px-5 py-5">
           {online ? (
-            <>
-              {/* Manual tender — card machine / cash / EFT. */}
-              <button
-                type="button"
-                onClick={confirmManual}
-                disabled={manualBusy}
-                className="flex w-full items-center justify-center gap-2 rounded-[var(--radius-btn)] border border-cool-steel/30 px-4 py-3 favo-label text-coffee-bean hover:bg-coffee-bean/8 disabled:opacity-50"
-              >
-                <HandCoins size={18} strokeWidth={2} />
-                {manualBusy ? "Confirming…" : `Mark as paid — cash / card machine / EFT (${formatZar(order.totalZar)})`}
-              </button>
-
-              {manualErr && (
-                <p className="favo-caption text-center" style={{ color: "var(--color-warning)" }}>
-                  {manualErr}
-                </p>
-              )}
-            </>
+            <TenderPanel orderId={order.id} amountZar={order.totalZar} onPaid={settle} />
           ) : (
             <DeferredPaymentNotice
               totalZar={order.totalZar}

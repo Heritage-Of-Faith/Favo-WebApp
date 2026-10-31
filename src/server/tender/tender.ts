@@ -10,9 +10,9 @@
 // is called only from recordTenderResult and resolveTenderByLookup (directly,
 // or through attachSuccessful / flagDuplicate, which only they call).
 // sendToTerminal and pollTenderResult reach a status change only by calling
-// recordTenderResult. Outside this module, two legacy writers remain and are
-// AT-201 part 2b's to remove: confirmManualPayment (src/server/actions/orders.ts)
-// and the Yoco Online webhook (src/app/api/payments/yoco/webhook/route.ts).
+// recordTenderResult. Nothing outside this module writes payments.status:
+// AT-201 part 2b removed the two legacy writers (confirmManualPayment and the
+// Yoco Online webhook, §11.1).
 //
 // Every state change writes an audit row in the same transaction, and every
 // refusal is audited too — the functions RETURN their refusals rather than

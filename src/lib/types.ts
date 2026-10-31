@@ -99,8 +99,10 @@ export type Order = {
   totalZar: number;
   isStaffDiscount: boolean;
   paymentStatus: PaymentStatus | null;
-  /** A Yoco card checkout exists for this order — its total is frozen (owner rule, PRD P4). */
+  /** Paid, or a tender attempt is open — the order's total is frozen (owner rule, PRD P4). */
   cardCheckout?: boolean;
+  /** REQ-008 / S4: a SENT attempt ended unresolved — the drink is made while recovery asks Yoco. */
+  paymentAwaitingLookup?: boolean;
   items: OrderItem[];
 };
 
@@ -109,16 +111,6 @@ export type Order = {
 export type ActionResult<T = void> =
   | { ok: true; data: T }
   | { ok: false; code: string; message: string };
-
-// ─── Yoco ─────────────────────────────────────────────────────────────────────
-
-export type YocoPaymentIntent = {
-  id: string;
-  clientSecret: string;
-  amountZar: number;
-  currency: "ZAR";
-  status: PaymentStatus;
-};
 
 // ─── SSE Queue ────────────────────────────────────────────────────────────────
 

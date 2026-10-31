@@ -18,9 +18,14 @@ const mockWriteAudit = vi.fn(async (..._a: unknown[]) => {});
 vi.mock("@/server/audit", () => ({ writeAudit: (...a: unknown[]) => mockWriteAudit(...a) }));
 vi.mock("@/server/queue/notify", () => ({ notifyOrderChange: vi.fn(async () => {}) }));
 vi.mock("@/server/inventory/lot-picker", () => ({ checkRecipeStock: vi.fn(async () => ({ ok: true })) }));
-const mockCreatePaymentIntent = vi.fn(async (..._a: unknown[]) => ({ id: "ch_1", clientSecret: "cs_1" }));
-vi.mock("@/server/yoco/client", () => ({
-  createPaymentIntent: (...a: unknown[]) => mockCreatePaymentIntent(...a),
+// AT-201 part 2b: createOrder begins the tender through the chain (beginTender
+// writes the pending row inside src/server/tender/, at the committed total).
+// createOrder itself never writes payments and never creates a Yoco checkout.
+const mockStartTender = vi.fn(async (_actor: unknown, _orderId: string) => ({
+  ok: true as const, paymentId: "pmt_1", attempt: 1, clientReference: "cu:1", amountZar: 3800,
+}));
+vi.mock("@/server/tender/service", () => ({
+  startTender: (actor: unknown, orderId: string) => mockStartTender(actor, orderId),
 }));
 
 type Row = Record<string, unknown>;
@@ -91,13 +96,10 @@ const sundayEvent = () => given({ sessions: [session("event", "2026-10-11", [KIN
 
 const insertsInto = (t: unknown) => inserts.filter((i) => i.table === t).map((i) => i.values);
 const updatesOf = (t: unknown) => updates.filter((u) => u.table === t).map((u) => u.set);
-// AT-201 part 1: the legacy checkout flow writes attempt 1 with a legacy
-// client_reference and device until part 2 rewires createOrder to beginTender.
-const LEGACY_ROW = (orderId: string) => ({
-  attempt: 1,
-  clientReference: `legacy:${orderId}:1`,
-  webposDeviceId: "legacy:yoco-online-checkout",
-});
+// No `legacy:` client_reference or device is written anywhere (AT-201 part 2b).
+const noLegacy = () =>
+  expect(JSON.stringify([inserts.map((i) => i.values), updates.map((u) => u.set)])).not.toContain("legacy:");
+const ACTOR = { kind: "staff", staffId: "staff_louis", role: "barista" };
 const audits = () => mockWriteAudit.mock.calls.map((c) => c[0] as { action: string; reason?: string; after?: Row });
 const line = (id: string, quantity: number, voucherCount?: number) => ({
   menuItemId: id, quantity, modifications: [] as string[], ...(voucherCount === undefined ? {} : { voucherCount }),
@@ -120,13 +122,15 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
     if (!res.ok) return;
     expect(res.data.totalZar).toBe(0);
     expect(res.data.cardCheckout).toBe(false);
-    expect(res.data.yocoClientSecret).toBe("");
+    // CHANGED (AT-201 part 2b): REQ-153 — no tender at all, so no payments row and nothing sent.
+    expect(res.data.tender).toBeNull();
     expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 0, paymentMode: "free" });
     const [items] = insertsInto(orderItems) as Row[][];
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ quantity: 1, unitPriceZar: 3800, discountZar: 3800 });
     expect(insertsInto(payments)).toEqual([]);
-    expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
+    expect(mockStartTender).not.toHaveBeenCalled();
+    noLegacy();
 
     // One voucher_redemptions row, redeemed by the barista, against the line.
     const [redemptions] = insertsInto(voucherRedemptions) as Row[][];
@@ -142,7 +146,10 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
     expect(audits().map((a) => a.action)).toEqual(["create", "redeem_voucher"]);
   });
 
-  it("2 × Cappuccino + 1 voucher → total R38, one pending payment of R38, line discount R38 (REQ-150, REQ-151)", async () => {
+  // CHANGED (AT-201 part 2b, owner decision 31 Oct 2026): createOrder writes no
+  // payments row itself and creates no Yoco checkout; it begins the tender
+  // (beginTender, at the committed R38) only after the order is written.
+  it("2 × Cappuccino + 1 voucher → total R38, line discount R38; the tender is begun for the order, createOrder writes no payments row (REQ-150, REQ-151, REQ-026)", async () => {
     sundayEvent();
     const res = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO.id, 2, 1)] });
 
@@ -152,27 +159,31 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
     expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 3800, paymentMode: null });
     const [items] = insertsInto(orderItems) as Row[][];
     expect(items[0]).toMatchObject({ quantity: 2, unitPriceZar: 3800, discountZar: 3800 });
-    expect(insertsInto(payments)).toEqual([
-      { orderId: res.data.orderId, amountZar: 3800, status: "pending", yocoCheckoutId: "ch_1", ...LEGACY_ROW(res.data.orderId) },
-    ]);
-    expect(mockCreatePaymentIntent).toHaveBeenCalledTimes(1);
-    expect(mockCreatePaymentIntent).toHaveBeenCalledWith({ amountZar: 3800, metadata: { orderId: res.data.orderId } });
+    expect(insertsInto(payments)).toEqual([]);
+    expect(updatesOf(payments)).toEqual([]);
+    expect(mockStartTender).toHaveBeenCalledTimes(1);
+    expect(mockStartTender).toHaveBeenCalledWith(ACTOR, res.data.orderId);
+    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 3800 });
+    expect(res.data.cardCheckout).toBe(true);
+    noLegacy();
     expect(insertsInto(voucherRedemptions)[0]).toHaveLength(1);
     expect(updatesOf(openingSessions)).toEqual([{ voucherRedemptionsRecorded: 5 }]);
   });
 
-  it("T10: vouchered Hot Chocolate beside a paid Cappuccino → the card is asked for R38 alone (REQ-150)", async () => {
+  it("T10: vouchered Hot Chocolate beside a paid Cappuccino → the order (and so the tender) is R38 alone; no row at createOrder, no checkout (REQ-150)", async () => {
     sundayEvent();
     const res = await createOrder({ notificationTarget: "none", items: [line(HOT_CHOC.id, 1, 1), line(CAPPUCCINO.id, 1)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.totalZar).toBe(3800);
+    // beginTender reads orders.total_zar under the order lock: this is what the card is asked for.
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 3800 });
     const [items] = insertsInto(orderItems) as Row[][];
     expect(items.map((i) => i.discountZar)).toEqual([3200, 0]);
-    expect(insertsInto(payments)).toEqual([
-      { orderId: res.data.orderId, amountZar: 3800, status: "pending", yocoCheckoutId: "ch_1", ...LEGACY_ROW(res.data.orderId) },
-    ]);
+    expect(insertsInto(payments)).toEqual([]);
+    expect(mockStartTender).toHaveBeenCalledWith(ACTOR, res.data.orderId);
+    noLegacy();
   });
 
   it("T9: 2 × Hot Chocolate with 2 vouchers + 3 × Cappuccino with 3 → R0, five rows, no payments row (REQ-149)", async () => {
@@ -188,7 +199,8 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
     expect(redemptions.map((r) => r.discountZar)).toEqual([3200, 3200, 3800, 3800, 3800]);
     expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 0, paymentMode: "free" });
     expect(insertsInto(payments)).toEqual([]);
-    expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
+    expect(mockStartTender).not.toHaveBeenCalled();
+    expect(res.data.tender).toBeNull();
     expect(updatesOf(openingSessions)).toEqual([{ voucherRedemptionsRecorded: 9 }]);
   });
 
@@ -200,7 +212,7 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
     expect(insertsInto(orders)).toEqual([]);
     expect(insertsInto(voucherRedemptions)).toEqual([]);
     expect(insertsInto(payments)).toEqual([]);
-    expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
+    expect(mockStartTender).not.toHaveBeenCalled();
     expect(audits()).toEqual([expect.objectContaining({ action: "reject", reason: "VALIDATION" })]);
   });
 
@@ -232,7 +244,7 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
     expect(audits()).toEqual([expect.objectContaining({ action: "reject", reason: "NO_SESSION" })]);
   });
 
-  it("a Sunday order without vouchers is unchanged: no session read for vouchers, no item id, R38 pending payment", async () => {
+  it("a Sunday order without vouchers: no session read for vouchers, no item id, a tender begun at R38 (no row written by createOrder)", async () => {
     given({ sessions: [] }); // no session needed when no voucher is carried
     const res = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO.id, 1)] });
 
@@ -244,8 +256,9 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
     expect(items[0]).toMatchObject({ discountZar: 0 });
     expect(insertsInto(voucherRedemptions)).toEqual([]);
     expect(updatesOf(openingSessions)).toEqual([]);
-    expect(insertsInto(payments)).toEqual([
-      { orderId: res.data.orderId, amountZar: 3800, status: "pending", yocoCheckoutId: "ch_1", ...LEGACY_ROW(res.data.orderId) },
-    ]);
+    expect(insertsInto(payments)).toEqual([]);
+    expect(mockStartTender).toHaveBeenCalledWith(ACTOR, res.data.orderId);
+    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 3800 });
+    noLegacy();
   });
 });

@@ -17,6 +17,15 @@ vi.mock("@/server/actions/orders", () => ({
   declineFreeCoffee: (...a: unknown[]) => mockDecline(...a),
   transitionOrder: vi.fn(), cancelOrder: vi.fn(),
 }));
+// AT-201 part 2b: the card tender runs through server actions. They never
+// settle here, so the payment screen stays on its first step.
+const mockBegin = vi.fn((..._a: unknown[]) => new Promise(() => {}));
+const mockSend = vi.fn((..._a: unknown[]) => new Promise(() => {}));
+vi.mock("@/server/actions/tender", () => ({
+  beginTender: (...a: unknown[]) => mockBegin(...a),
+  sendToTerminal: (...a: unknown[]) => mockSend(...a),
+  pollTenderResult: vi.fn(() => new Promise(() => {})),
+}));
 vi.mock("@/server/actions/auth", () => ({ signOut: vi.fn() }));
 vi.mock("@/server/actions/favo", () => ({ getFavo: vi.fn().mockResolvedValue({ ok: true, data: { favo: null } }), setFavo: vi.fn(), clearFavo: vi.fn() }));
 vi.mock("@/server/actions/customers", () => ({ searchCustomer: vi.fn() }));
@@ -65,7 +74,7 @@ describe("POSWorkspace — free cup at ring-up", () => {
     mockCreateOrder.mockResolvedValue({
       ok: true,
       data: {
-        orderId: "ord_1", yocoClientSecret: "", totalZar: 0,
+        orderId: "ord_1", tender: null, totalZar: 0,
         freeCup: { applied: true, code: null, message: "Free cup applied", discountZar: 3000 },
       },
     });
@@ -88,7 +97,7 @@ describe("POSWorkspace — free cup at ring-up", () => {
     mockCreateOrder.mockResolvedValue({
       ok: true,
       data: {
-        orderId: "ord_2", yocoClientSecret: "cs_1", totalZar: 3000,
+        orderId: "ord_2", tender: { ok: true, attempt: 1, amountZar: 3000 }, cardCheckout: true, totalZar: 3000,
         freeCup: { applied: false, code: "ENTITLEMENT_USED", message: "Free cup already claimed today", discountZar: 0 },
       },
     });
@@ -98,27 +107,43 @@ describe("POSWorkspace — free cup at ring-up", () => {
     expect(screen.queryByText("Free cup applied")).toBeNull();
   });
 
-  it("declining a FREE order with no checkout says where to take payment — not 'retry when online' (round-2 item 3)", async () => {
+  it("the card step begins on Place: createOrder's attempt 1 is sent and no Decline is offered (P4 — round-2 item 2)", async () => {
     mockCreateOrder.mockResolvedValue({
       ok: true,
       data: {
-        orderId: "ord_4", yocoClientSecret: "", totalZar: 0,
+        orderId: "ord_3", tender: { ok: true, attempt: 1, amountZar: 3000 }, cardCheckout: true, totalZar: 3000,
         freeCup: { applied: true, code: null, message: "Free cup applied", discountZar: 3000 },
       },
     });
     await placeOrder();
-    mockDecline.mockResolvedValue({ ok: true, data: { totalZar: 3000, yocoClientSecret: "" } });
+    expect(mockSend).toHaveBeenCalledWith("ord_3", 1);
+    expect(mockBegin).not.toHaveBeenCalled(); // never a second attempt
+    expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
+  });
+
+  it("declining a FREE order begins a tender at the new total — not 'retry when online' (round-2 item 3)", async () => {
+    mockCreateOrder.mockResolvedValue({
+      ok: true,
+      data: {
+        orderId: "ord_4", tender: null, totalZar: 0,
+        freeCup: { applied: true, code: null, message: "Free cup applied", discountZar: 3000 },
+      },
+    });
+    await placeOrder();
+    expect(mockBegin).not.toHaveBeenCalled(); // R0: no tender (REQ-153)
+    mockDecline.mockResolvedValue({ ok: true, data: { totalZar: 3000 } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Decline" })); });
-    expect(screen.getByText(/open take payment on its card and tap mark as paid/i)).toBeDefined();
+    expect(mockBegin).toHaveBeenCalledWith("ord_4");
+    expect(screen.getByText(/to the card machine/i)).toBeDefined();
     expect(screen.queryByText(/retry when online/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /confirm — send to queue/i })).toBeNull(); // no longer free
   });
 
-  it("no Decline at all once the server set up a card checkout (owner rule, round 3)", async () => {
+  it("no Decline at all once the server began a tender attempt (owner rule, round 3)", async () => {
     mockCreateOrder.mockResolvedValue({
       ok: true,
       data: {
-        orderId: "ord_5", yocoClientSecret: "cs_5", cardCheckout: true, totalZar: 3000,
+        orderId: "ord_5", tender: { ok: true, attempt: 1, amountZar: 3000 }, cardCheckout: true, totalZar: 3000,
         freeCup: { applied: true, code: null, message: "Free cup applied", discountZar: 3000 },
       },
     });
@@ -152,7 +177,7 @@ describe("ActiveOrder — free cup", () => {
     expect(screen.queryByLabelText(/staff member id/i)).toBeNull();
   });
 
-  it("no Decline when the order has a card checkout (server state)", () => {
+  it("no Decline when the order's total is frozen by a tender attempt (server state)", () => {
     render(<ActiveOrder order={{ ...ORDER, cardCheckout: true }} />);
     expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
   });

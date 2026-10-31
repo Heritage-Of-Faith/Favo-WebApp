@@ -62,7 +62,8 @@ vi.mock("@/lib/db", () => {
         from: () => ({
           where: () => {
             const rows = state.order ? [state.order] : [];
-            return Object.assign(Promise.resolve(rows), { limit: () => Promise.resolve([]) });
+            // orderBy: loadOrder reads every payment attempt ORDER BY attempt (AT-201 part 2b).
+            return Object.assign(Promise.resolve(rows), { limit: () => Promise.resolve([]), orderBy: () => Promise.resolve([]) });
           },
           leftJoin: () => ({ where: () => Promise.resolve([]) }),
           limit: () => Promise.resolve([]),

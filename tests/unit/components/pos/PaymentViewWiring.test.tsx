@@ -1,6 +1,7 @@
 // M4/AT-13 — payment view wiring through POSWorkspace:
-//  - a paid order (total > 0, checkout id present) renders NO card form (REQ-071)
-//  - a free order (staff-discount zeroes total) skips the form
+//  - a paid order (total > 0) runs the card tender server-side — no card form
+//    in the browser (REQ-071); createOrder's attempt is sent, never re-begun
+//  - a free order (staff-discount zeroes total) skips the tender
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
@@ -13,6 +14,13 @@ const mockCreateOrder = vi.fn();
 vi.mock("@/server/actions/orders", () => ({
   createOrder: (...a: unknown[]) => mockCreateOrder(...a),
   transitionOrder: vi.fn(), cancelOrder: vi.fn(),
+}));
+const mockBegin = vi.fn((..._a: unknown[]) => new Promise(() => {}));
+const mockSend = vi.fn((..._a: unknown[]) => new Promise(() => {}));
+vi.mock("@/server/actions/tender", () => ({
+  beginTender: (...a: unknown[]) => mockBegin(...a),
+  sendToTerminal: (...a: unknown[]) => mockSend(...a),
+  pollTenderResult: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock("@/server/actions/auth", () => ({ signOut: vi.fn() }));
 vi.mock("@/server/actions/favo", () => ({ getFavo: vi.fn().mockResolvedValue({ ok: true, data: { favo: null } }), setFavo: vi.fn(), clearFavo: vi.fn() }));
@@ -64,7 +72,7 @@ async function placeOrder() {
 
 describe("L28 notification target at ring-up (REQ-046)", () => {
   it("Charge stays disabled until a target is bound; 'No notification' sends target 'none'", async () => {
-    mockCreateOrder.mockResolvedValue({ ok: true, data: { orderId: "ord_n", yocoClientSecret: "" } });
+    mockCreateOrder.mockResolvedValue({ ok: true, data: { orderId: "ord_n", tender: null } });
     render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
     const charge = await screen.findByRole("button", { name: /^charge r/i });
     expect((charge as HTMLButtonElement).disabled).toBe(true);
@@ -92,26 +100,37 @@ describe("L28 notification target at ring-up (REQ-046)", () => {
 });
 
 describe("M4 payment view wiring", () => {
-  it("REQ-071: a paid order with a checkout id gets no in-browser card form — payment is taken in the queue", async () => {
-    mockCreateOrder.mockResolvedValue({ ok: true, data: { orderId: "ord_1", yocoClientSecret: "chk_abc" } });
+  it("REQ-071: a chargeable order — createOrder's attempt 1 is sent to the machine server-side; no card form, no second begin", async () => {
+    mockCreateOrder.mockResolvedValue({
+      ok: true, data: { orderId: "ord_1", totalZar: 6000, tender: { ok: true, attempt: 1, amountZar: 6000 }, cardCheckout: true },
+    });
     await placeOrder();
-    expect(await screen.findByText(/open take payment on its card and tap mark as paid/i)).toBeDefined();
-    expect(screen.getByText(/take payment on the card machine, cash or eft/i)).toBeDefined();
+    expect(mockSend).toHaveBeenCalledWith("ord_1", 1);
+    expect(mockBegin).not.toHaveBeenCalled();
+    expect(screen.getByText(/to the card machine/i)).toBeDefined();
     expect(screen.queryByRole("button", { name: /charge card/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /mark as paid/i })).toBeNull();
   });
 
-  it("a paid order with NO checkout (Yoco unreachable) opens the same payment screen — no blocking error", async () => {
-    mockCreateOrder.mockResolvedValue({ ok: true, data: { orderId: "ord_3", yocoClientSecret: "", totalZar: 6000 } });
+  it("a chargeable order with no attempt from createOrder opens the same payment screen and begins one — no blocking error", async () => {
+    mockCreateOrder.mockResolvedValue({ ok: true, data: { orderId: "ord_3", tender: null, totalZar: 6000 } });
     await placeOrder();
-    expect(await screen.findByText(/open take payment on its card and tap mark as paid/i)).toBeDefined();
+    expect(mockBegin).toHaveBeenCalledWith("ord_3");
+    expect(await screen.findByText(/to the card machine/i)).toBeDefined();
     expect(screen.queryByText(/could not be reached/i)).toBeNull();
   });
 
-  it("falls back to manual confirm when there is no checkout id", async () => {
-    // No Yoco key path returns empty secret → handlePlaceOrder shows manual toast,
-    // never opens the payment view. Verify createOrder still succeeds without a form.
-    mockCreateOrder.mockResolvedValue({ ok: true, data: { orderId: "ord_2", yocoClientSecret: "" } });
+  it("a refused tender (no machine) is shown as the server said it — nothing is sent", async () => {
+    mockCreateOrder.mockResolvedValue({
+      ok: true,
+      data: {
+        orderId: "ord_2", totalZar: 6000, cardCheckout: false,
+        tender: { ok: false, code: "TERMINAL_UNREACHABLE", message: "Card machine not responding — check it's on and on the wifi, or switch to deferred" },
+      },
+    });
     await placeOrder();
+    expect(screen.getByText(/card machine not responding/i)).toBeDefined();
+    expect(mockSend).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: /charge card/i })).toBeNull();
   });
 });

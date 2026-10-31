@@ -48,7 +48,6 @@ export type DraftOrderState = {
 
   // Set after createOrder succeeds
   orderId: string | null;
-  yocoClientSecret: string | null;
   /** Who the saved draft belongs to: "<staffId>|<SAST date>". A draft for anyone/any other day is discarded. */
   draftOwner: string | null;
 };
@@ -63,7 +62,7 @@ export type DraftOrderActions = {
   updateQuantity: (key: string, quantity: number) => void;
   /** Set the line's voucher count (§6.9.3 chip), clamped to 0..quantity. */
   setVoucherCount: (key: string, count: number) => void;
-  setOrderCreated: (orderId: string, yocoClientSecret: string) => void;
+  setOrderCreated: (orderId: string) => void;
   reset: () => void;
 };
 
@@ -73,7 +72,6 @@ const INITIAL: DraftOrderState = {
   items: [],
   totalZar: 0,
   orderId: null,
-  yocoClientSecret: null,
   draftOwner: null,
 };
 
@@ -147,8 +145,8 @@ export const useDraftOrder = create<DraftOrderState & DraftOrderActions>()(persi
       ),
     })),
 
-  setOrderCreated: (orderId, yocoClientSecret) =>
-    set({ orderId, yocoClientSecret, step: "pay" }),
+  setOrderCreated: (orderId) =>
+    set({ orderId, step: "pay" }),
 
   reset: () => set((s) => ({ ...INITIAL, draftOwner: s.draftOwner })),
 }), {

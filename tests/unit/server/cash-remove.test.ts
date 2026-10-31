@@ -49,10 +49,11 @@ vi.mock("@/lib/db", () => {
                   Promise.resolve(txState.order ? [txState.order] : []),
               };
             }
-            // Second: payments lookup
-            return Promise.resolve(
-              txState.payment ? [txState.payment] : []
-            );
+            // Second: payments lookup — every attempt, ORDER BY attempt (AT-201)
+            const attempts = txState.payment ? [txState.payment] : [];
+            return Object.assign(Promise.resolve(attempts), {
+              orderBy: () => Promise.resolve(attempts),
+            });
           },
           leftJoin: () => ({ where: () => Promise.resolve([]) }),
           limit: () => Promise.resolve([]),
@@ -75,6 +76,7 @@ vi.mock("@/lib/db", () => {
           self.where = () => {
             const w: Record<string, unknown> = {};
             w.limit = () => Promise.resolve([]);
+            w.orderBy = () => Promise.resolve([]); // loadOrder's payments read (AT-201)
             // Make it awaitable (returns the full order for the first select call).
             Object.assign(w, Promise.resolve(txState.order ? [txState.order] : []));
             w.then = (resolve: (v: unknown[]) => void) =>
@@ -164,6 +166,29 @@ describe("transitionOrder — cash-remove guard (AT-122)", () => {
   it("returns PAYMENT_REQUIRED when payment.status is 'failed'", async () => {
     setOrder({ totalZar: 3800 });
     txState.payment = { orderId: "ord-1", status: "failed" };
+    const res = await transitionOrder("ord-1", "in_progress");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("PAYMENT_REQUIRED");
+  });
+
+  it("returns PAYMENT_REQUIRED when the attempt was declined", async () => {
+    setOrder({ totalZar: 3800 });
+    txState.payment = { orderId: "ord-1", status: "declined", sentAt: new Date("2026-10-25T07:00:00Z") };
+    const res = await transitionOrder("ord-1", "in_progress");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("PAYMENT_REQUIRED");
+  });
+
+  it("REQ-008 / S4: a SENT attempt that ended unresolved lets the drink be made", async () => {
+    setOrder({ totalZar: 3800 });
+    txState.payment = { orderId: "ord-1", status: "unresolved", sentAt: new Date("2026-10-25T07:00:00Z") };
+    const res = await transitionOrder("ord-1", "in_progress");
+    if (!res.ok) expect(res.code).not.toBe("PAYMENT_REQUIRED");
+  });
+
+  it("an unresolved attempt that was NEVER sent (closed out) does not open the gate", async () => {
+    setOrder({ totalZar: 3800 });
+    txState.payment = { orderId: "ord-1", status: "unresolved", sentAt: null };
     const res = await transitionOrder("ord-1", "in_progress");
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("PAYMENT_REQUIRED");

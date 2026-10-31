@@ -92,7 +92,7 @@ export default function OrderBuilder() {
         })),
       });
       if (result.ok) {
-        setOrderCreated(result.data.orderId, result.data.yocoClientSecret);
+        setOrderCreated(result.data.orderId);
       } else {
         setSubmitError(result.message);
       }

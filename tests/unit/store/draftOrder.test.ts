@@ -114,16 +114,15 @@ describe("draftOrder store", () => {
 
   it("setOrderCreated stores orderId and moves to pay step", () => {
     store().addItem(item1);
-    store().setOrderCreated("ord-1", "secret-abc");
+    store().setOrderCreated("ord-1");
     expect(store().orderId).toBe("ord-1");
-    expect(store().yocoClientSecret).toBe("secret-abc");
     expect(store().step).toBe("pay");
   });
 
   it("reset returns to initial state", () => {
     store().addItem(item1);
     store().setCustomer({ id: "c1", name: "Louis" });
-    store().setOrderCreated("ord-1", "secret");
+    store().setOrderCreated("ord-1");
     store().reset();
     const s = store();
     expect(s.items).toHaveLength(0);

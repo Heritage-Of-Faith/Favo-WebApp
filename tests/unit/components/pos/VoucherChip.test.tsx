@@ -14,6 +14,12 @@ vi.mock("@/server/actions/orders", () => ({
   createOrder: (...a: unknown[]) => mockCreateOrder(...a),
   declineFreeCoffee: vi.fn(), transitionOrder: vi.fn(), cancelOrder: vi.fn(),
 }));
+// AT-201 part 2b: the card tender's server actions never settle here.
+vi.mock("@/server/actions/tender", () => ({
+  beginTender: vi.fn(() => new Promise(() => {})),
+  sendToTerminal: vi.fn(() => new Promise(() => {})),
+  pollTenderResult: vi.fn(() => new Promise(() => {})),
+}));
 const mockVoucherCtx = vi.fn();
 vi.mock("@/server/actions/vouchers", () => ({ getVoucherContext: () => mockVoucherCtx() }));
 vi.mock("@/server/actions/auth", () => ({ signOut: vi.fn() }));
@@ -141,7 +147,7 @@ describe("Place — the createOrder call and the button", () => {
     mockVoucherCtx.mockResolvedValue(LIVE);
     seed([{ ...CAPP, quantity: 1 }, { ...HOT, quantity: 1, voucherCount: 1 }]);
     mockCreateOrder.mockResolvedValue({
-      ok: true, data: { orderId: "ord_t10", yocoClientSecret: "", totalZar: 2000, freeCup: { applied: false, code: null, message: null, discountZar: 0 } },
+      ok: true, data: { orderId: "ord_t10", tender: null, totalZar: 2000, freeCup: { applied: false, code: null, message: null, discountZar: 0 } },
     });
     await mount();
     const place = await screen.findByRole("button", { name: /^charge r\s?20[.,]00$/i });

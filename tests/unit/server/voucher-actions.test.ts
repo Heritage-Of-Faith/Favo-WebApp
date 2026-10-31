@@ -19,10 +19,6 @@ vi.mock("@/server/audit", () => ({ writeAudit: (...a: unknown[]) => mockWriteAud
 const mockSendNotification = vi.fn(async (..._a: unknown[]) => ({}));
 vi.mock("web-push", () => ({ default: { sendNotification: (...a: unknown[]) => mockSendNotification(...a) } }));
 vi.mock("@/server/push/vapid", () => ({ initVapid: () => {} }));
-const mockCreatePaymentIntent = vi.fn(async (..._a: unknown[]) => ({ id: "ch_1", clientSecret: "cs_1" }));
-vi.mock("@/server/yoco/client", () => ({
-  createPaymentIntent: (...a: unknown[]) => mockCreatePaymentIntent(...a),
-}));
 
 type Row = Record<string, unknown>;
 let rows = new Map<unknown, Row[]>();
@@ -64,6 +60,8 @@ vi.mock("@/lib/db", () => ({
 
 import { redeemVoucher, removeVoucher, recordVoucherCount } from "@/server/actions/vouchers";
 import { closeSession } from "@/server/actions/opening";
+import { beginTender } from "@/server/tender/tender";
+import { MemoryTenderStore } from "./tender/memory-store";
 
 // Sun 11 Oct 2026, 18:30 SAST — inside the Untracked Church window.
 const SUNDAY_EVENING = new Date("2026-10-11T18:30:00+02:00");
@@ -83,12 +81,12 @@ const CAPPUCCINO_X2 = {
 };
 
 function given(opts: {
-  order?: Row; line?: Row; session?: Row | null; payment?: Row | null; live?: Row[];
+  order?: Row; line?: Row; session?: Row | null; payment?: Row | null; payments?: Row[]; live?: Row[];
 } = {}) {
   rows = new Map<unknown, Row[]>([
     [orderItems, [opts.line ?? CAPPUCCINO_X2]],
     [orders, [opts.order ?? DEFERRED_ORDER]],
-    [payments, opts.payment ? [opts.payment] : []],
+    [payments, opts.payments ?? (opts.payment ? [opts.payment] : [])],
     [openingSessions, opts.session === null ? [] : [opts.session ?? SESSION]],
     [eventWindows, [WINDOW]],
     [voucherRedemptions, opts.live ?? []],
@@ -98,12 +96,11 @@ function given(opts: {
 
 const insertsInto = (t: unknown) => inserts.filter((i) => i.table === t).map((i) => i.values);
 const updatesOf = (t: unknown) => updates.filter((u) => u.table === t).map((u) => u.set);
-// AT-201 part 1: the legacy flow writes attempt 1 with a legacy
-// client_reference and device until part 2 rewires it to beginTender.
-const LEGACY_ROW = (orderId: string) => ({
-  attempt: 1,
-  clientReference: `legacy:${orderId}:1`,
-  webposDeviceId: "legacy:yoco-online-checkout",
+// AT-201 part 2b: one payments row per tender attempt. `sentAt` set = the
+// attempt reached the machine.
+const SENT = new Date("2026-10-11T18:25:00+02:00");
+const attemptRow = (attempt: number, status: string, sent: boolean, yocoPaymentId: string | null = null) => ({
+  id: `pay_${attempt}`, orderId: "ord_1", attempt, status, sentAt: sent ? SENT : null, yocoPaymentId,
 });
 const audits = () => mockWriteAudit.mock.calls.map((c) => c[0] as { action: string; after?: Row });
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -193,35 +190,80 @@ describe("redeemVoucher (REQ-154, REQ-151, L41)", () => {
     expect(insertsInto(voucherRedemptions)).toEqual([]);
   });
 
-  // CHANGED (Mia, Q2(b)): a pending row with no Yoco checkout is repriced, as
-  // applyFreeCoffee does; it used to be refused outright.
-  it("a pending row with no checkout (R76) follows the order: 1 voucher → row R38", async () => {
-    given({
-      order: { ...DEFERRED_ORDER, paymentMode: null },
-      payment: { id: "pay_1", status: "pending", yocoCheckoutId: null, yocoPaymentId: null },
-    });
+  // CHANGED (AT-201 part 2b, owner decision 31 Oct 2026 — replaces Mia's
+  // Q2(b) legacy-model rule): a payment row's amount is never changed. Any open
+  // tender attempt (pending, or sent and unresolved) freezes the total (P4,
+  // REQ-028); "no row" is a normal state, never STALE_STATE.
+  it("a chargeable order with NO payments row: the voucher applies, the total changes, no row is written — not STALE_STATE", async () => {
+    given({ order: { ...DEFERRED_ORDER, paymentMode: null } });
     expect(await redeemVoucher("oi_1", KIND)).toEqual({ ok: true, data: { totalZar: 3800, lineDiscountZar: 3800 } });
-    expect(updatesOf(payments)).toEqual([{ amountZar: 3800 }]);
     expect(updatesOf(orders)).toEqual([{ totalZar: 3800, paymentMode: null }]);
     expect(insertsInto(payments)).toEqual([]);
+    expect(updatesOf(payments)).toEqual([]);
   });
 
-  it("with a pending row, the voucher that would take the order to R0 is refused as applyFreeCoffee refuses it (rows are never deleted)", async () => {
+  it("REQ-149 / L42: a chargeable rowless order redeemed to R0 becomes payment_mode='free' with no payments row", async () => {
     given({
       order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
       line: { ...CAPPUCCINO_X2, discountZar: 3800 },
       live: [{ id: "vr_1", discountZar: 3800, at: new Date("2026-10-11T18:20:00+02:00"), sessionId: "os_evening" }],
-      payment: { id: "pay_1", status: "pending", yocoCheckoutId: null, yocoPaymentId: null },
     });
+    expect(await redeemVoucher("oi_1", KIND)).toEqual({ ok: true, data: { totalZar: 0, lineDiscountZar: 7600 } });
+    expect(updatesOf(orders)).toEqual([{ totalZar: 0, paymentMode: "free" }]);
+    expect(insertsInto(payments)).toEqual([]);
+    expect(updatesOf(payments)).toEqual([]);
+  });
+
+  it("P4: a PENDING attempt → TENDER_IN_PROGRESS; nothing written, the amount unchanged, the reject audited", async () => {
+    given({ order: { ...DEFERRED_ORDER, paymentMode: null }, payment: attemptRow(1, "pending", false) });
     expect(await redeemVoucher("oi_1", KIND)).toMatchObject({ ok: false, code: "TENDER_IN_PROGRESS" });
     expect(insertsInto(voucherRedemptions)).toEqual([]);
     expect(updates).toEqual([]);
+    expect(audits()).toEqual([
+      expect.objectContaining({ action: "reject", after: expect.objectContaining({ attempted: "redeem_voucher", code: "TENDER_IN_PROGRESS" }) }),
+    ]);
   });
 
-  it("a row that already has a Yoco checkout → TENDER_IN_PROGRESS, nothing written", async () => {
+  it("P4: a SENT attempt that ended unresolved → TENDER_IN_PROGRESS; nothing written, the reject audited", async () => {
+    given({ order: { ...DEFERRED_ORDER, paymentMode: null }, payment: attemptRow(1, "unresolved", true, "p_1") });
+    expect(await redeemVoucher("oi_1", KIND)).toMatchObject({ ok: false, code: "TENDER_IN_PROGRESS" });
+    expect(insertsInto(voucherRedemptions)).toEqual([]);
+    expect(updates).toEqual([]);
+    expect(audits().map((a) => a.action)).toEqual(["reject"]);
+  });
+
+  it("after a DECLINED attempt the voucher applies (no row written or changed), and the next beginTender is attempt 2 at the new total", async () => {
+    given({ order: { ...DEFERRED_ORDER, paymentMode: null }, payment: attemptRow(1, "declined", true, "p_1") });
+    const res = await redeemVoucher("oi_1", KIND);
+    expect(res).toEqual({ ok: true, data: { totalZar: 3800, lineDiscountZar: 3800 } });
+    expect(insertsInto(payments)).toEqual([]);
+    expect(updatesOf(payments)).toEqual([]);
+
+    // The tender chain, on the order as the voucher left it (R38) with its
+    // declined attempt 1: a new attempt 2 carries R38.
+    const store = new MemoryTenderStore([{ id: "ord_1", state: "ordered", totalZar: 3800, clientUuid: "cu-1" }]);
+    store.state.payments.push({
+      id: "pay_1", orderId: "ord_1", attempt: 1, clientReference: "cu-1:1", yocoPaymentId: "p_1",
+      webposDeviceId: "dev-1", amountZar: 7600, chargedAmountZar: null, status: "declined",
+      sentAt: SENT, lastCheckedAt: null, at: SENT,
+    });
+    const notify = { paymentUnresolved: vi.fn(async () => {}), duplicateCharge: vi.fn(async () => {}) };
+    const begun = await beginTender(
+      { store, port: {} as never, now: () => SUNDAY_EVENING, readDeviceId: async () => "dev-1", notify },
+      { kind: "staff", staffId: "staff_thandeka", role: "barista" }, "ord_1"
+    );
+    expect(begun).toMatchObject({ ok: true, attempt: 2, amountZar: 3800, clientReference: "cu-1:2" });
+    expect(store.paymentsOf("ord_1").map((p) => [p.attempt, p.amountZar, p.status])).toEqual([
+      [1, 7600, "declined"], [2, 3800, "pending"],
+    ]);
+  });
+
+  it("a declined attempt still carries a row, so a voucher taking the order to R0 is refused (rows are never deleted)", async () => {
     given({
-      order: { ...DEFERRED_ORDER, paymentMode: null },
-      payment: { id: "pay_1", status: "pending", yocoCheckoutId: "ch_1", yocoPaymentId: null },
+      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
+      line: { ...CAPPUCCINO_X2, discountZar: 3800 },
+      live: [{ id: "vr_1", discountZar: 3800, at: new Date("2026-10-11T18:20:00+02:00"), sessionId: "os_evening" }],
+      payment: attemptRow(1, "declined", true, "p_1"),
     });
     expect(await redeemVoucher("oi_1", KIND)).toMatchObject({ ok: false, code: "TENDER_IN_PROGRESS" });
     expect(insertsInto(voucherRedemptions)).toEqual([]);
@@ -229,18 +271,9 @@ describe("redeemVoucher (REQ-154, REQ-151, L41)", () => {
   });
 
   it("a successful payment → ALREADY_RESOLVED", async () => {
-    given({
-      order: { ...DEFERRED_ORDER, paymentMode: null },
-      payment: { id: "pay_1", status: "successful", yocoCheckoutId: null, yocoPaymentId: "p_1" },
-    });
+    given({ order: { ...DEFERRED_ORDER, paymentMode: null }, payment: attemptRow(1, "successful", true, "p_1") });
     expect(await redeemVoucher("oi_1", KIND)).toMatchObject({ ok: false, code: "ALREADY_RESOLVED" });
     expect(updates).toEqual([]);
-  });
-
-  it("a chargeable order with no payments row and no deferred mode is mid-createOrder → STALE_STATE", async () => {
-    given({ order: { ...DEFERRED_ORDER, paymentMode: null } });
-    expect(await redeemVoucher("oi_1", KIND)).toMatchObject({ ok: false, code: "STALE_STATE" });
-    expect(insertsInto(voucherRedemptions)).toEqual([]);
   });
 
   it("an order already under way → ALREADY_RESOLVED", async () => {
@@ -265,8 +298,8 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
       session: { ...SESSION, voucherRedemptionsRecorded: 2 },
     });
     const res = await removeVoucher("oi_1");
-    // CHANGED (Q3): the result also carries yocoClientSecret, as declineFreeCoffee's does.
-    expect(res).toEqual({ ok: true, data: { totalZar: 6800, lineDiscountZar: 3800, yocoClientSecret: "" } });
+    // CHANGED (AT-201 part 2b): no yocoClientSecret — nothing creates a Yoco checkout.
+    expect(res).toEqual({ ok: true, data: { totalZar: 6800, lineDiscountZar: 3800 } });
     expect(updatesOf(voucherRedemptions)).toEqual([
       { reversedAt: SUNDAY_EVENING, reversedByStaffId: "staff_thandeka" },
     ]);
@@ -275,11 +308,15 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
     expect(updatesOf(orders)).toEqual([{ totalZar: 6800, paymentMode: "yoco_deferred" }]);
     expect(updatesOf(openingSessions)).toEqual([{ voucherRedemptionsRecorded: 1 }]);
     expect(audits().map((a) => a.action)).toEqual(["remove_voucher"]);
+    expect(insertsInto(payments)).toEqual([]);
+    expect(updatesOf(payments)).toEqual([]);
   });
 
-  // CHANGED (Q3): mirrors declineFreeCoffee — a free order made chargeable gets
-  // a pending row at the new total BEFORE anything is sent, then a checkout.
-  it("a free (R0) order made chargeable: pending row R38 written first, then the checkout", async () => {
+  // CHANGED (AT-201 part 2b, owner decision 31 Oct 2026 — replaces Q3's legacy
+  // flow): a free order made chargeable gets NO payments row and no Yoco
+  // checkout here; the screen's beginTender writes the row at the new total
+  // before anything is sent (REQ-026).
+  it("a free (R0) order made chargeable: payment_mode cleared, R38 owed, no payments row, no checkout, no secret", async () => {
     given({
       order: { ...DEFERRED_ORDER, totalZar: 0, paymentMode: "free" },
       line: { ...CAPPUCCINO_X2, discountZar: 7600 },
@@ -289,33 +326,73 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
       ],
     });
     const res = await removeVoucher("oi_1");
-    expect(res).toEqual({ ok: true, data: { totalZar: 3800, lineDiscountZar: 3800, yocoClientSecret: "cs_1" } });
-    expect(insertsInto(payments)).toEqual([{ orderId: "ord_1", amountZar: 3800, status: "pending", ...LEGACY_ROW("ord_1") }]);
+    expect(res).toEqual({ ok: true, data: { totalZar: 3800, lineDiscountZar: 3800 } });
     expect(updatesOf(orders)).toEqual([{ totalZar: 3800, paymentMode: null }]);
-    expect(mockCreatePaymentIntent).toHaveBeenCalledWith({ amountZar: 3800, metadata: { orderId: "ord_1" } });
-    expect(updatesOf(payments)).toEqual([{ yocoCheckoutId: "ch_1" }]);
+    expect(insertsInto(payments)).toEqual([]);
+    expect(updatesOf(payments)).toEqual([]);
+    // COL-29: still a reversal, never a delete.
+    expect(updatesOf(voucherRedemptions)).toEqual([{ reversedAt: SUNDAY_EVENING, reversedByStaffId: "staff_thandeka" }]);
+    expect(deletes).toEqual([]);
   });
 
-  it("a pending row with no checkout is repriced (R38 → R76)", async () => {
+  it("a chargeable order with NO payments row: the removal applies (R38 → R76), no row written — not STALE_STATE", async () => {
     given({
       order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
       line: { ...CAPPUCCINO_X2, discountZar: 3800 },
       live: [{ id: "vr_1", discountZar: 3800, at: at1, sessionId: "os_evening" }],
-      payment: { id: "pay_1", status: "pending", yocoCheckoutId: null, yocoPaymentId: null },
     });
-    expect(await removeVoucher("oi_1")).toMatchObject({ ok: true, data: { totalZar: 7600 } });
-    expect(updatesOf(payments)).toEqual([{ amountZar: 7600 }]);
-    expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
+    expect(await removeVoucher("oi_1")).toEqual({ ok: true, data: { totalZar: 7600, lineDiscountZar: 0 } });
+    expect(insertsInto(payments)).toEqual([]);
+    expect(updatesOf(payments)).toEqual([]);
   });
 
-  it("a row with a Yoco checkout → TENDER_IN_PROGRESS", async () => {
+  it("P4: a PENDING attempt → TENDER_IN_PROGRESS; nothing written, the amount unchanged, the reject audited", async () => {
     given({
       order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
       line: { ...CAPPUCCINO_X2, discountZar: 3800 },
       live: [{ id: "vr_1", discountZar: 3800, at: at1, sessionId: "os_evening" }],
-      payment: { id: "pay_1", status: "pending", yocoCheckoutId: "ch_1", yocoPaymentId: null },
+      payment: attemptRow(1, "pending", true),
     });
     expect(await removeVoucher("oi_1")).toMatchObject({ ok: false, code: "TENDER_IN_PROGRESS" });
+    expect(updates).toEqual([]);
+    expect(insertsInto(payments)).toEqual([]);
+    expect(audits()).toEqual([
+      expect.objectContaining({ action: "reject", after: expect.objectContaining({ attempted: "remove_voucher", code: "TENDER_IN_PROGRESS" }) }),
+    ]);
+  });
+
+  it("P4: a SENT attempt that ended unresolved → TENDER_IN_PROGRESS; nothing written, the reject audited", async () => {
+    given({
+      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
+      line: { ...CAPPUCCINO_X2, discountZar: 3800 },
+      live: [{ id: "vr_1", discountZar: 3800, at: at1, sessionId: "os_evening" }],
+      payment: attemptRow(1, "unresolved", true, "p_1"),
+    });
+    expect(await removeVoucher("oi_1")).toMatchObject({ ok: false, code: "TENDER_IN_PROGRESS" });
+    expect(updates).toEqual([]);
+    expect(audits().map((a) => a.action)).toEqual(["reject"]);
+  });
+
+  it("after a DECLINED attempt the removal applies; no payments row written or changed", async () => {
+    given({
+      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
+      line: { ...CAPPUCCINO_X2, discountZar: 3800 },
+      live: [{ id: "vr_1", discountZar: 3800, at: at1, sessionId: "os_evening" }],
+      payment: attemptRow(1, "declined", true, "p_1"),
+    });
+    expect(await removeVoucher("oi_1")).toEqual({ ok: true, data: { totalZar: 7600, lineDiscountZar: 0 } });
+    expect(insertsInto(payments)).toEqual([]);
+    expect(updatesOf(payments)).toEqual([]);
+  });
+
+  it("a successful attempt → ALREADY_RESOLVED; nothing written", async () => {
+    given({
+      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
+      line: { ...CAPPUCCINO_X2, discountZar: 3800 },
+      live: [{ id: "vr_1", discountZar: 3800, at: at1, sessionId: "os_evening" }],
+      payment: attemptRow(1, "successful", true, "p_1"),
+    });
+    expect(await removeVoucher("oi_1")).toMatchObject({ ok: false, code: "ALREADY_RESOLVED" });
     expect(updates).toEqual([]);
   });
 

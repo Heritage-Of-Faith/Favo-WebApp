@@ -1,10 +1,14 @@
 // Whether an order's total may still change — moved verbatim from
 // src/server/actions/orders.ts (AT-204) so the voucher actions reuse it. Not a
 // "use server" module: nothing here may become a client-callable action.
+//
+// AT-201 part 2b: the rule is the tender chain's (PRD P4, REQ-028). Used by
+// applyFreeCoffee, declineFreeCoffee, redeemVoucher and removeVoucher.
 
 import { eq } from "drizzle-orm";
 import { payments } from "@db/schema";
 import type { DB } from "@/lib/db";
+import { isAttemptOpen } from "@/server/tender/tender";
 
 export const ORDER_MOVED_ON = {
   ok: false as const,
@@ -13,58 +17,40 @@ export const ORDER_MOVED_ON = {
 };
 
 // Owner rule (Mia, 12 Oct 2026): a free-cup change is allowed ONLY while no
-// card checkout has been set up for the order. Once one exists the total is
-// frozen (PRD P4) — the remedy is to cancel and re-ring. Owner-approved copy.
+// tender attempt is open for the order. Once one is, the total is frozen
+// (PRD P4, REQ-028) — the remedy is to cancel and re-ring. Owner-approved copy.
 export const CHECKOUT_EXISTS = {
   ok: false as const,
   code: "TENDER_IN_PROGRESS",
   message: "Cancel and re-ring the order to change the free cup.",
 };
 
-// PRD S1 STALE_STATE: createOrder has committed the order but not yet written
-// its payments row. Refusing here means createOrder's later insert can never
-// meet a row written by a concurrent decline.
-export const ROW_NOT_WRITTEN_YET = {
-  ok: false as const,
-  code: "STALE_STATE",
-  message: "This order just changed — reloading",
-};
-
-type LockedPayment = { id: string } | null;
-
 /**
- * Lock the order's payments row (SELECT … FOR UPDATE, as the webhook does) and
- * say whether the order's total may still change. Never deletes anything.
- *  - no row: allowed only for a `free` order (REQ-153 — it never gets one
- *    from createOrder); a chargeable order with no row yet is mid-createOrder.
- *  - a row carrying a Yoco checkout or payment id: a checkout exists → refused.
- *  - a `successful` row: already paid. Any other non-pending row: refused.
- *  - a `pending` row with no checkout (Yoco was unavailable at ring-up): allowed.
+ * Read every payment attempt on the order (ORDER BY attempt, FOR UPDATE) and
+ * say whether the order's total may still change. Called with the order row
+ * already locked, which is the lock beginTender takes too. Never writes a
+ * payments row — an attempt's amount is frozen once begun (P4), and a later
+ * attempt is begun at the order's new total.
+ *  - any `successful` attempt: already paid → refused.
+ *  - any open attempt (`pending`, or sent and `unresolved`) → TENDER_IN_PROGRESS.
+ *  - none, or only declined / closed-out never-sent attempts: allowed. "No
+ *    row" is a normal state: no tender has begun yet.
  */
 export async function lockPaymentForTotalChange(
   tx: Pick<DB, "select">,
-  order: { id: string; totalZar: number; paymentMode: string | null }
+  order: { id: string }
 ): Promise<{
-  payment: LockedPayment;
-  refusal: typeof ORDER_MOVED_ON | typeof CHECKOUT_EXISTS | typeof ROW_NOT_WRITTEN_YET | null;
+  hasPayments: boolean;
+  refusal: typeof ORDER_MOVED_ON | typeof CHECKOUT_EXISTS | null;
 }> {
-  const [payment] = await tx
-    .select({
-      id: payments.id,
-      status: payments.status,
-      yocoCheckoutId: payments.yocoCheckoutId,
-      yocoPaymentId: payments.yocoPaymentId,
-    })
+  const attempts = await tx
+    .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId })
     .from(payments)
     .where(eq(payments.orderId, order.id))
+    .orderBy(payments.attempt)
     .for("update");
-  if (!payment) {
-    const free = order.paymentMode === "free" || order.totalZar === 0;
-    return { payment: null, refusal: free ? null : ROW_NOT_WRITTEN_YET };
-  }
-  if (payment.status === "successful") return { payment, refusal: ORDER_MOVED_ON };
-  if (payment.yocoCheckoutId || payment.yocoPaymentId || payment.status !== "pending") {
-    return { payment, refusal: CHECKOUT_EXISTS };
-  }
-  return { payment: { id: payment.id }, refusal: null };
+  const hasPayments = attempts.length > 0;
+  if (attempts.some((p) => p.status === "successful")) return { hasPayments, refusal: ORDER_MOVED_ON };
+  if (attempts.some(isAttemptOpen)) return { hasPayments, refusal: CHECKOUT_EXISTS };
+  return { hasPayments, refusal: null };
 }

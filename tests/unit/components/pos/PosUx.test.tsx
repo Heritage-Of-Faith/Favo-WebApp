@@ -15,6 +15,12 @@ vi.mock("@/server/actions/orders", () => ({
   createOrder: (...a: unknown[]) => mockCreateOrder(...a),
   transitionOrder: vi.fn(), cancelOrder: vi.fn(), declineFreeCoffee: vi.fn(),
 }));
+// AT-201 part 2b: the card tender's server actions never settle here.
+vi.mock("@/server/actions/tender", () => ({
+  beginTender: vi.fn(() => new Promise(() => {})),
+  sendToTerminal: vi.fn(() => new Promise(() => {})),
+  pollTenderResult: vi.fn(() => new Promise(() => {})),
+}));
 vi.mock("@/server/actions/auth", () => ({ signOut: (...a: unknown[]) => mockSignOut(...a) }));
 vi.mock("@/server/actions/favo", () => ({ getFavo: vi.fn().mockResolvedValue({ ok: true, data: { favo: null } }), setFavo: vi.fn(), clearFavo: vi.fn() }));
 const mockResolve = vi.fn();
@@ -48,7 +54,7 @@ const OWNER = `s1|${revenueDay()}`;
 const AMERICANO = { menuItemId: "ame", menuItemName: "Americano", unitPriceZar: 3000, modifications: [] };
 const FREE_RESULT = {
   ok: true as const,
-  data: { orderId: "o1", yocoClientSecret: "", totalZar: 0, cardCheckout: false, freeCup: { applied: true, message: "" } },
+  data: { orderId: "o1", tender: null, totalZar: 0, cardCheckout: false, freeCup: { applied: true, message: "" } },
 };
 
 beforeEach(() => {
@@ -179,7 +185,7 @@ describe("a sent cart never comes back (review blocker)", () => {
   it("after a successful send the saved draft is empty, and a rehydrate restores nothing", async () => {
     mockCreateOrder.mockResolvedValue({
       ok: true,
-      data: { orderId: "o9", yocoClientSecret: "cs_1", totalZar: 3000, cardCheckout: true, freeCup: { applied: false, message: "" } },
+      data: { orderId: "o9", tender: { ok: true, attempt: 1, amountZar: 3000 }, totalZar: 3000, cardCheckout: true, freeCup: { applied: false, message: "" } },
     });
     mount();
     await tapNoNotification();

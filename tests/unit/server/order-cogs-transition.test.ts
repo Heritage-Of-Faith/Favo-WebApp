@@ -47,7 +47,8 @@ vi.mock("@/lib/db", () => {
     db: {
       select: vi.fn().mockImplementation(() => ({
         from: () => ({
-          where: () => Object.assign(rows(), { limit: () => Promise.resolve([]) }),
+          // orderBy: loadOrder reads every payment attempt ORDER BY attempt (AT-201 part 2b).
+          where: () => Object.assign(rows(), { limit: () => Promise.resolve([]), orderBy: () => Promise.resolve([]) }),
           leftJoin: () => ({ where: () => Promise.resolve([]) }),
           limit: () => Promise.resolve([]),
         }),

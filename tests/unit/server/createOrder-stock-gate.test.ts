@@ -28,8 +28,8 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/server/audit", () => ({ writeAudit: vi.fn(async () => {}) }));
 vi.mock("@/server/queue/notify", () => ({ notifyOrderChange: vi.fn(async () => {}) }));
 vi.mock("@/server/orders/pricing", () => ({ computeOrderTotalZar: () => 4000 }));
-vi.mock("@/server/yoco/client", () => ({
-  createPaymentIntent: vi.fn(async () => ({ id: "ch_1", clientSecret: "cs_1" })),
+vi.mock("@/server/tender/service", () => ({
+  startTender: vi.fn(async () => ({ ok: true, paymentId: "pmt_1", attempt: 1, clientReference: "cu:1", amountZar: 4000 })),
 }));
 
 const mockCheckRecipeStock = vi.fn();

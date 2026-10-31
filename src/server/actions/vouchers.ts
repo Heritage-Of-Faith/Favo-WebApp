@@ -8,13 +8,17 @@
 //  - Removal is a reversal (reversed_at, reversed_by_staff_id), never a delete.
 //  - opening_sessions.voucher_redemptions_recorded follows the live rows: it is
 //    changed by one under the session row's lock, in the same transaction.
-//  - Payments (P4), mirroring applyFreeCoffee / declineFreeCoffee (Mia, Q2(b)
-//    and Q3): a pending row with no Yoco checkout follows the order's total;
-//    a checkout, a non-pending row or an order past `ordered` refuses. With a
-//    row present, a voucher that would take the order to R0 is refused, as
-//    applyFreeCoffee refuses it (no payments row is ever deleted). A rowless
-//    order that nets R0 becomes payment_mode='free' (L42). removeVoucher on a
-//    free order writes a pending row first, then creates the checkout.
+//  - Payments (P4, REQ-028), mirroring applyFreeCoffee / declineFreeCoffee
+//    (AT-201 part 2b, owner decision 31 Oct 2026): any open tender attempt
+//    (pending, or sent and unresolved) freezes the total → TENDER_IN_PROGRESS;
+//    a successful one, or an order past `ordered`, refuses. A payment row's
+//    amount is never changed, and no payments row is ever written here: "no
+//    row" is a normal state, and a later attempt is begun by beginTender at
+//    the new total. With a row present (e.g. a declined attempt), a voucher
+//    that would take the order to R0 is refused, as applyFreeCoffee refuses it
+//    (no payments row is ever deleted). A rowless order that nets R0 becomes
+//    payment_mode='free' (L42); removeVoucher on a free order makes it
+//    chargeable with no row until beginTender runs.
 //  - Refusals are returned, not thrown, so their reject audit commits.
 
 import { z } from "zod";
@@ -22,7 +26,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { DB } from "@/lib/db";
 import {
-  orders, orderItems, payments, openingSessions, voucherRedemptions, eventWindows,
+  orders, orderItems, openingSessions, voucherRedemptions, eventWindows,
 } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
@@ -30,10 +34,8 @@ import { LINE_SURCHARGE_CHARGED_ZAR, decideRedeem, decideRemove } from "@/server
 import { lockOpenSession } from "@/server/orders/voucher-session";
 import { pairAlreadyRecorded, pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
 import {
-  CHECKOUT_EXISTS, ORDER_MOVED_ON as LOCK_ORDER_MOVED_ON, ROW_NOT_WRITTEN_YET, lockPaymentForTotalChange,
+  CHECKOUT_EXISTS, ORDER_MOVED_ON as LOCK_ORDER_MOVED_ON, lockPaymentForTotalChange,
 } from "@/server/orders/payment-lock";
-import { createPaymentIntent } from "@/server/yoco/client";
-import { LEGACY_ONLINE_CHECKOUT_DEVICE, legacyClientReference } from "@/server/yoco/webpos-port";
 import type { ActionResult } from "@/lib/types";
 import { revenueDay } from "@/lib/format";
 import { forcedCloseAt } from "@/lib/session-mode";
@@ -99,21 +101,17 @@ async function lockLine(tx: Tx, orderItemId: string): Promise<LockedLine | Fail>
 
 /**
  * P4 guard — lockPaymentForTotalChange, the rule applyFreeCoffee uses (owner
- * rule, Mia 12 Oct 2026; for vouchers, Mia Q2(b)): a pending row with no Yoco
- * checkout may follow the order's total; anything further along refuses.
- * The one addition: an offline (yoco_deferred) order has no row by design, so
- * it is not mistaken for one still inside createOrder.
+ * rule, Mia 12 Oct 2026; AT-201 part 2b): any open tender attempt freezes the
+ * total; a successful attempt refuses; no row, or only declined / closed-out
+ * never-sent attempts, allows the change. Never writes a payments row.
  */
 async function paymentGuard(
   tx: Tx,
   order: LockedLine["order"]
-): Promise<{ fail: Fail } | { fail: null; payment: { id: string } | null }> {
+): Promise<{ fail: Fail } | { fail: null; hasPayments: boolean }> {
   if (order.state !== "ordered") return { fail: ORDER_MOVED_ON };
-  const { payment, refusal } = await lockPaymentForTotalChange(tx, order);
-  if (!refusal) return { fail: null, payment };
-  if (refusal === ROW_NOT_WRITTEN_YET && !payment && order.paymentMode === "yoco_deferred") {
-    return { fail: null, payment: null };
-  }
+  const { hasPayments, refusal } = await lockPaymentForTotalChange(tx, order);
+  if (!refusal) return { fail: null, hasPayments };
   if (refusal === CHECKOUT_EXISTS) return { fail: PAYMENT_STARTED };
   if (refusal === LOCK_ORDER_MOVED_ON) return { fail: ORDER_MOVED_ON };
   return { fail: refusal };
@@ -166,7 +164,7 @@ export async function redeemVoucher(
       await auditReject(tx, actor, order.id, "redeem_voucher", line.id, guard.fail);
       return guard.fail;
     }
-    const payment = guard.payment;
+    const hasPayments = guard.hasPayments;
 
     const session = await lockOpenSession(tx, now);
     const live = await liveRedemptions(tx, line.id);
@@ -188,17 +186,13 @@ export async function redeemVoucher(
     // As applyFreeCoffee: REQ-153 wants an R0 order to have no payments row,
     // and no payments row is ever deleted — so a row-carrying order cannot be
     // taken to R0 here.
-    if (payment && totalZar === 0) {
+    if (hasPayments && totalZar === 0) {
       await auditReject(tx, actor, order.id, "redeem_voucher", line.id, PAYMENT_STARTED);
       return PAYMENT_STARTED;
     }
     // L42 / REQ-153: an order that nets R0 is `free` and never gets a payments row.
     const paymentMode = totalZar === 0 ? "free" : order.paymentMode;
     const txDb = tx as unknown as DB;
-    if (payment) {
-      // A pending row with no checkout: keep its amount equal to the order's.
-      await tx.update(payments).set({ amountZar: totalZar }).where(eq(payments.id, payment.id));
-    }
     const [row] = await tx
       .insert(voucherRedemptions)
       .values({
@@ -236,7 +230,7 @@ export async function redeemVoucher(
  */
 export async function removeVoucher(
   orderItemId: string
-): Promise<ActionResult<{ totalZar: number; lineDiscountZar: number; yocoClientSecret: string }>> {
+): Promise<ActionResult<{ totalZar: number; lineDiscountZar: number }>> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
   const actor = { id: auth.session.id, role: auth.session.role };
@@ -244,8 +238,8 @@ export async function removeVoucher(
   if (!id.success) return { ok: false, code: "VALIDATION", message: "Pick a drink." };
   const now = new Date();
 
-  type Done = { totalZar: number; lineDiscountZar: number; orderId: string; rowCreated: boolean };
-  const result = await db.transaction(async (tx): Promise<ActionResult<Done>> => {
+  type Done = { totalZar: number; lineDiscountZar: number };
+  return db.transaction(async (tx): Promise<ActionResult<Done>> => {
     const locked = await lockLine(tx, id.data);
     if ("ok" in locked) return locked;
     const { line, order } = locked;
@@ -254,7 +248,6 @@ export async function removeVoucher(
       await auditReject(tx, actor, order.id, "remove_voucher", line.id, guard.fail);
       return guard.fail;
     }
-    const payment = guard.payment;
 
     const live = await liveRedemptions(tx, line.id);
     const decision = decideRemove({ line, live });
@@ -286,30 +279,16 @@ export async function removeVoucher(
       .set({ reversedAt: now, reversedByStaffId: actor.id })
       .where(and(eq(voucherRedemptions.id, target.id), isNull(voucherRedemptions.reversedAt)));
     await tx.update(orderItems).set({ discountZar: decision.lineDiscountZar }).where(eq(orderItems.id, line.id));
-    // As declineFreeCoffee: a free order that becomes chargeable loses `free`
-    // and gets a pending row at the new total, written BEFORE anything is sent.
+    // As declineFreeCoffee: a free order that becomes chargeable loses `free`.
+    // No payments row is written here — the screen begins a tender
+    // (beginTender) at the committed new total, before anything is sent
+    // (REQ-026).
     const wasFree = order.paymentMode === "free";
     const paymentMode = wasFree ? null : order.paymentMode;
     await tx
       .update(orders)
       .set({ totalZar, paymentMode: paymentMode as typeof orders.$inferInsert.paymentMode })
       .where(eq(orders.id, order.id));
-    let rowCreated = false;
-    if (payment) {
-      // A pending row with no checkout: keep its amount equal to the order's.
-      await tx.update(payments).set({ amountZar: totalZar }).where(eq(payments.id, payment.id));
-    } else if (wasFree) {
-      // AT-201 part 1: no row existed, so this is attempt 1 (legacy flow).
-      await tx.insert(payments).values({
-        orderId: order.id,
-        attempt: 1,
-        clientReference: legacyClientReference(order.id, 1),
-        webposDeviceId: LEGACY_ONLINE_CHECKOUT_DEVICE,
-        amountZar: totalZar,
-        status: "pending",
-      });
-      rowCreated = true;
-    }
     await tx
       .update(openingSessions)
       .set({ voucherRedemptionsRecorded: session.voucherRedemptionsRecorded - 1 })
@@ -321,32 +300,12 @@ export async function removeVoucher(
         after: {
           redemptionId: target.id, orderItemId: line.id, sessionId: target.sessionId,
           restoredZar: decision.restoredZar, lineDiscountZar: decision.lineDiscountZar, totalZar,
-          paymentRow: payment ? "repriced" : rowCreated ? "created" : "none",
         },
       },
       txDb
     );
-    return {
-      ok: true,
-      data: { totalZar, lineDiscountZar: decision.lineDiscountZar, orderId: order.id, rowCreated },
-    };
+    return { ok: true, data: { totalZar, lineDiscountZar: decision.lineDiscountZar } };
   });
-
-  if (!result.ok) return result;
-  const { totalZar, lineDiscountZar, orderId, rowCreated } = result.data;
-  let yocoClientSecret = "";
-  if (rowCreated) {
-    // As declineFreeCoffee: the pending row is committed; now price the checkout from it.
-    const intent = await createPaymentIntent({ amountZar: totalZar, metadata: { orderId } }).catch(() => null);
-    if (intent?.id) {
-      await db
-        .update(payments)
-        .set({ yocoCheckoutId: intent.id })
-        .where(and(eq(payments.orderId, orderId), eq(payments.status, "pending")));
-    }
-    yocoClientSecret = intent?.clientSecret ?? "";
-  }
-  return { ok: true, data: { totalZar, lineDiscountZar, yocoClientSecret } };
 }
 
 /**
