@@ -22,7 +22,7 @@ export default function AdminError({ error, reset }: Props) {
       <button
         type="button"
         onClick={reset}
-        className="mt-2 min-h-10 rounded-[var(--radius-btn)] px-4 favo-cta"
+        className="mt-2 min-h-11 rounded-[var(--radius-btn)] px-4 favo-cta"
         style={{ background: "var(--color-accent)", color: "var(--color-text-inverse)" }}
       >
         Try again

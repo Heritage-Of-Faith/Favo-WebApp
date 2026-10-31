@@ -1,8 +1,9 @@
-// Weekly P&L — PRD v7 §9.6.2 job 3 (generateWeeklyPnL, Monday 06:00 SAST),
-// §7.3. Aggregates revenue, COGS, expenses for a COMPLETE week
-// (Mon 00:00 – Sun 23:59 SAST) and inserts into weekly_reports, idempotent
-// per week. The scheduled run, its catch-up and its push are in
-// weekly-pnl-job.ts (AT-206).
+// Weekly P&L cron — task G14
+// Scheduled Monday 06:00 SAST for the completed week (src/server/jobs/registry.ts). Aggregates revenue, COGS, expenses for
+// Mon 00:00 – Sun 23:59 SAST and inserts into weekly_reports, idempotent per
+// week; a week that has not ended is refused (AT-206). The REQ-123 push is in
+// weekly-pnl-job.ts.
+// Docs: API.md · BUSINESS_RULES.md T05 L09 · FAVO_PRD_v3.md §07 §09
 
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -46,6 +47,16 @@ export function weekBounds(referenceDate?: Date): { start: Date; end: Date; week
   const weekStarting = mondaySast.toISOString().slice(0, 10);
 
   return { start: mondayUtc, end: sundayUtcEnd, weekStarting };
+}
+
+/** Whether the report for the week starting `weekStarting` exists: the scheduler's "done" for this job. */
+export async function hasWeeklyReport(weekStarting: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: weeklyReports.id })
+    .from(weeklyReports)
+    .where(eq(weeklyReports.weekStarting, weekStarting))
+    .limit(1);
+  return Boolean(row);
 }
 
 /**

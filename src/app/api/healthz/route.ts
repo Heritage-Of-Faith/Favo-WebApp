@@ -1,11 +1,13 @@
 // Extended healthz — AT-83 (G25)
-// Checks Postgres, Yoco reachability, and Loki reachability.
+// Checks Postgres, Yoco reachability, Loki reachability, and (AT-170) that the
+// SSE session URL is configured (configuration only — see checkSseConfig).
 // Returns 200 when all configured checks pass; 503 otherwise.
 // Result is cached for 5 seconds to limit DB/external load from monitors.
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { missingDatabaseEnv } from "@/server/deploy/startup-checks";
 
 const CACHE_TTL_MS = 5_000;
 
@@ -18,6 +20,7 @@ interface HealthBody {
     postgres: CheckResult;
     yoco: CheckResult;
     loki: CheckResult;
+    sse_config: CheckResult;
   };
   timestamp: string;
 }
@@ -81,6 +84,20 @@ async function checkLoki(): Promise<CheckResult> {
   }
 }
 
+// AT-170: without DATABASE_URL_SESSION the SSE brokers serve heartbeats only and
+// the POS queue goes stale, so the instance must not report healthy. The
+// entrypoint already refuses to start without it; this catches an instance
+// started some other way.
+//
+// Configuration only: it proves DATABASE_URL_SESSION is set, NOT that LISTEN
+// connected — src/server/queue/broker.ts swallows LISTEN failures, so a wrong
+// URL still reports ok here. Hence the name.
+function checkSseConfig(): CheckResult {
+  return missingDatabaseEnv(process.env).includes("DATABASE_URL_SESSION")
+    ? { ok: false, reason: "DATABASE_URL_SESSION not set" }
+    : { ok: true };
+}
+
 export async function GET() {
   const now = Date.now();
   if (cache && now - cache.at < CACHE_TTL_MS) {
@@ -98,11 +115,12 @@ export async function GET() {
 
   // Yoco is advisory: a card-payments API blip must never restart-loop a
   // working café, so it's reported but does not gate the health verdict.
-  const allOk = postgres.ok && loki.ok;
+  const sse_config = checkSseConfig();
+  const allOk = postgres.ok && loki.ok && sse_config.ok;
   const body: HealthBody = {
     ok: allOk,
     service: "favo-webapp",
-    checks: { postgres, yoco, loki },
+    checks: { postgres, yoco, loki, sse_config },
     timestamp: new Date().toISOString(),
   };
 

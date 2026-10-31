@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { applyOutboxItem, outboxItemSchema } from "@/server/sync/apply-outbox";
+import { readJsonBody } from "@/server/http/request-guards";
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -20,12 +21,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, code: "FORBIDDEN" }, { status: 403 });
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ ok: false, code: "INVALID_JSON" }, { status: 400 });
+  // SEC-6: bounded read — 413 over ~100 KB, 400 on bad JSON.
+  const read = await readJsonBody(request);
+  if (!read.ok) {
+    return read.status === 413
+      ? NextResponse.json({ ok: false, code: "PAYLOAD_TOO_LARGE" }, { status: 413 })
+      : NextResponse.json({ ok: false, code: "INVALID_JSON" }, { status: 400 });
   }
+  const body = read.value;
 
   const parsed = outboxItemSchema.safeParse(body);
   if (!parsed.success) {

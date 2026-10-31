@@ -13,7 +13,8 @@ import type { Staff } from "@/lib/types";
 type FormState =
   | { mode: "closed" }
   | { mode: "create" }
-  | { mode: "resetPin"; member: Staff };
+  | { mode: "resetPin"; member: Staff }
+  | { mode: "reactivate"; member: Staff };
 
 export default function StaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -44,7 +45,7 @@ export default function StaffPage() {
             Manage staff members, roles, and PINs.
           </p>
         </div>
-        <Button className="min-h-10" onClick={() => setForm({ mode: "create" })}>
+        <Button className="min-h-11" onClick={() => setForm({ mode: "create" })}>
           Add staff
         </Button>
       </header>
@@ -55,6 +56,7 @@ export default function StaffPage() {
         <StaffTable
           staff={staff.filter((m) => (m.role as string) !== "owner")}
           onResetPin={(member) => setForm({ mode: "resetPin", member })}
+          onReactivate={(member) => setForm({ mode: "reactivate", member })}
           onChanged={refresh}
         />
       )}
@@ -62,10 +64,13 @@ export default function StaffPage() {
       {form.mode === "create" && (
         <StaffForm onClose={() => setForm({ mode: "closed" })} onSaved={refresh} />
       )}
-      {form.mode === "resetPin" && (
+      {(form.mode === "resetPin" || form.mode === "reactivate") && (
         <StaffForm
           staffId={form.member.id}
           staffName={form.member.name}
+          // Only the Reactivate button switches someone back on (QA R2-5);
+          // a plain Reset PIN on an inactive row leaves them inactive.
+          reactivate={form.mode === "reactivate"}
           onClose={() => setForm({ mode: "closed" })}
           onSaved={refresh}
         />

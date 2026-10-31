@@ -126,6 +126,19 @@ describe("useOrderStream", () => {
     expect(FakeEventSource.instances).toHaveLength(2);
   });
 
+  it("R3 P3-2: a status change keeps the order's placed time (09:34 stays 09:34)", () => {
+    const placed = "2026-10-27T07:34:00.000Z";
+    const { result } = renderHook(() =>
+      useOrderStream([{ orderId: "ord-1", state: "ordered", lastUpdatedAt: placed, customerName: null }])
+    );
+    act(() => {
+      FakeEventSource.lastInstance().emit({ type: "state_change", orderId: "ord-1", state: "in_progress", at: "2026-10-27T07:35:00.000Z" });
+      FakeEventSource.lastInstance().emit({ type: "state_change", orderId: "ord-1", state: "ready", at: "2026-10-27T07:36:00.000Z" });
+    });
+    expect(result.current.activeOrders[0].state).toBe("ready");
+    expect(result.current.activeOrders[0].lastUpdatedAt).toBe(placed);
+  });
+
   it("closes EventSource on unmount", () => {
     const { unmount } = renderHook(() => useOrderStream());
     const es = FakeEventSource.lastInstance();

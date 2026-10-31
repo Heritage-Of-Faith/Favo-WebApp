@@ -7,7 +7,7 @@
 //   willDepleteLot(currentStock, needed) → boolean
 //   DeductionError                        → typed error for OUT_OF_STOCK
 
-import { eq, and, asc, sql } from "drizzle-orm";
+import { eq, and, asc, sql, inArray } from "drizzle-orm";
 import {
   inventoryLots,
   stockMovements,
@@ -17,6 +17,7 @@ import {
 import type { DB } from "@/lib/db";
 import { revenueDay } from "@/lib/format";
 import { isCupOrLid, dayConsumesCupAndLid } from "@/server/orders/cup-lid";
+import { shotFactor } from "@/server/orders/shots";
 
 // ─── Exported pure helpers ────────────────────────────────────────────────────
 
@@ -243,12 +244,20 @@ export type StockCheckResult = { ok: true } | { ok: false; itemName: string };
  * AT-187 · REQ-125 · L24: like deductForOrder, cups and lids are not checked
  * when `day` (default: today, SAST) is in weekday mode — people bring their
  * own mugs, so an empty cup or lid lot must not block a weekday order.
+ *
+ * AT-182 · REQ-137: the coffee ingredient needs `shots` × `orderQty` units,
+ * every other ingredient `orderQty` (shot_factor, see shots.ts) — the same
+ * amounts deductForOrder takes. For cup items that means counting: when every
+ * open/sealed lot is a legacy (counted) lot, their running stock must cover
+ * the need, so a double is refused with one bean cup left. A container lot has
+ * no predicted total to count, so its existence alone passes, as before.
  */
 export async function checkRecipeStock(
   recipeId: string,
   orderQty: number,
   executor: DB,
-  day: string = revenueDay()
+  day: string = revenueDay(),
+  shots: number = 1
 ): Promise<StockCheckResult> {
   const ingredients = await executor
     .select({
@@ -271,28 +280,41 @@ export async function checkRecipeStock(
       cupLid ??= await dayConsumesCupAndLid(day, executor);
       if (!cupLid) continue;
     }
+    const units = orderQty * shotFactor(ing.itemKind, shots);
     if (ing.itemUnit === "cup") {
       // Container lots (no predicted quantity) have no countable "remaining"
-      // to sum against orderQty — the only meaningful early check is whether
-      // a container physically exists to serve from at all. Legacy lots with
-      // a real predicted quantity are covered by the same existence check;
+      // to sum against the need — the only meaningful early check is whether
+      // a container physically exists to serve from at all. Legacy lots have
+      // a real count, and deductCups spans them, so their running stock
+      // summed must cover `units` (AT-182: a double needs two bean cups).
       // pickOpenContainer/deductCups remain the authoritative guard either way.
-      const [row] = await executor
-        .select({ id: inventoryLots.id })
+      const lots = await executor
+        .select({ id: inventoryLots.id, quantityReceived: inventoryLots.quantityReceived })
         .from(inventoryLots)
         .where(
           and(
             eq(inventoryLots.inventoryItemId, ing.inventoryItemId),
             sql`${inventoryLots.state} IN ('open', 'active')`
           )
-        )
-        .limit(1);
+        );
 
-      if (!row) {
+      if (lots.length === 0) {
         return { ok: false, itemName: ing.itemName };
       }
+      if (lots.every((l) => l.quantityReceived !== null)) {
+        const [stockRow] = await executor
+          .select({
+            total: sql<number>`COALESCE(SUM(${stockMovements.delta}), 0)::int`,
+          })
+          .from(stockMovements)
+          .where(inArray(stockMovements.inventoryLotId, lots.map((l) => l.id)));
+
+        if ((stockRow?.total ?? 0) < units) {
+          return { ok: false, itemName: ing.itemName };
+        }
+      }
     } else {
-      const needed = ing.quantity * orderQty;
+      const needed = ing.quantity * units;
       const [oldest] = await executor
         .select({ id: inventoryLots.id })
         .from(inventoryLots)

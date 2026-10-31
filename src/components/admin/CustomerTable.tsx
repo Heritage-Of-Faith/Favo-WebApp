@@ -43,7 +43,7 @@ export default function CustomerTable({ initialQuery = "" }: CustomerTableProps)
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name or email…"
+          placeholder="Search by name or surname…"
           aria-label="Search customers"
           className="flex-1 max-w-sm rounded border border-border-subtle bg-surface px-3 py-2 text-sm text-text-strong focus:outline-none focus:ring-2 focus:ring-ring"
         />
@@ -66,7 +66,7 @@ export default function CustomerTable({ initialQuery = "" }: CustomerTableProps)
             <thead>
               <tr className="border-b border-border-subtle bg-elevated">
                 <th className="px-4 py-3 text-left font-medium text-text-muted">Name</th>
-                <th className="px-4 py-3 text-left font-medium text-text-muted">Email</th>
+                <th className="px-4 py-3 text-left font-medium text-text-muted">Status</th>
                 <th className="px-4 py-3 text-left font-medium text-text-muted">Phone</th>
                 <th className="px-4 py-3 text-left font-medium text-text-muted">Joined</th>
               </tr>
@@ -82,11 +82,11 @@ export default function CustomerTable({ initialQuery = "" }: CustomerTableProps)
                       href={`/admin/customers/${c.id}`}
                       className="font-medium text-text-strong hover:underline"
                     >
-                      {c.name}
+                      {[c.name, c.surname].filter(Boolean).join(" ")}
                     </a>
                   </td>
-                  <td className="px-4 py-3 text-text-muted">{c.email ?? "—"}</td>
-                  <td className="px-4 py-3 text-text-muted">{c.phone ?? "—"}</td>
+                  <td className="px-4 py-3 text-text-muted">{c.status === "office_staff" ? "Office staff" : "Church member"}</td>
+                  <td className="px-4 py-3 text-text-muted">{c.phoneLast4 ? `•••• ${c.phoneLast4}` : "—"}</td>
                   <td className="px-4 py-3 text-text-muted">
                     {formatDate(c.createdAt)}
                   </td>

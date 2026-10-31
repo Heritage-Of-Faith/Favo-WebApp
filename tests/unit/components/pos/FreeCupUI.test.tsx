@@ -74,7 +74,9 @@ describe("POSWorkspace — free cup at ring-up", () => {
     expect(toast.success).toHaveBeenCalledTimes(1);
     expect(toast.success).toHaveBeenCalledWith("Free cup applied");
     expect(screen.getByText("Free cup applied")).toBeDefined();
-    expect(screen.getByRole("button", { name: /confirm — send to queue/i })).toBeDefined(); // R0 → no card
+    // CHANGED (QA r1): the order already exists, so the free screen offers "New order", not a second send.
+    expect(screen.getByRole("button", { name: /^new order$/i })).toBeDefined(); // R0 → no card
+    expect(screen.queryByRole("button", { name: /send to queue/i })).toBeNull();
 
     mockDecline.mockResolvedValue({ ok: true, data: { totalZar: 3000 } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Decline" })); });
