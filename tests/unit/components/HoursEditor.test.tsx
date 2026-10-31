@@ -116,3 +116,22 @@ describe("HoursEditor", () => {
     ).toBeTruthy();
   });
 });
+
+// QA r1-admin P2d: refuse closing before opening, and show a visible "Saved".
+describe("HoursEditor — QA r1-admin", () => {
+  it("shows a message and saves nothing when a day closes before it opens", async () => {
+    const { setOperatingHours } = await import("@/server/actions/hours");
+    render(<HoursEditor initialHours={SAMPLE_HOURS} />);
+    fireEvent.change(screen.getByLabelText("Wed opens at"), { target: { value: "10:00" } });
+    fireEvent.change(screen.getByLabelText("Wed closes at"), { target: { value: "09:00" } });
+    fireEvent.click(screen.getByRole("button", { name: /save hours/i }));
+    expect(screen.getByRole("alert").textContent).toBe("Wed: closing time must be after opening time.");
+    expect(setOperatingHours).not.toHaveBeenCalled();
+  });
+
+  it("shows 'Saved' next to the button after a successful save", async () => {
+    render(<HoursEditor initialHours={SAMPLE_HOURS} />);
+    fireEvent.click(screen.getByRole("button", { name: /save hours/i }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Saved"));
+  });
+});

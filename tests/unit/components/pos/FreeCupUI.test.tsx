@@ -74,7 +74,9 @@ describe("POSWorkspace — free cup at ring-up", () => {
     expect(toast.success).toHaveBeenCalledTimes(1);
     expect(toast.success).toHaveBeenCalledWith("Free cup applied");
     expect(screen.getByText("Free cup applied")).toBeDefined();
-    expect(screen.getByRole("button", { name: /confirm — send to queue/i })).toBeDefined(); // R0 → no card
+    // CHANGED (QA r1): the order already exists, so the free screen offers "New order", not a second send.
+    expect(screen.getByRole("button", { name: /^new order$/i })).toBeDefined(); // R0 → no card
+    expect(screen.queryByRole("button", { name: /send to queue/i })).toBeNull();
 
     mockDecline.mockResolvedValue({ ok: true, data: { totalZar: 3000 } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Decline" })); });
@@ -96,22 +98,6 @@ describe("POSWorkspace — free cup at ring-up", () => {
     expect(screen.queryByText("Free cup applied")).toBeNull();
   });
 
-  it("Decline disappears once the card step begins (P4 — round-2 item 2)", async () => {
-    process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY = "pk_test_123";
-    (globalThis as unknown as { YocoSDK?: unknown }).YocoSDK = function () { return { showPopup: vi.fn() }; } as unknown;
-    mockCreateOrder.mockResolvedValue({
-      ok: true,
-      data: {
-        orderId: "ord_3", yocoClientSecret: "cs_3", totalZar: 3000,
-        freeCup: { applied: true, code: null, message: "Free cup applied", discountZar: 3000 },
-      },
-    });
-    await placeOrder();
-    expect(screen.getByRole("button", { name: "Decline" })).toBeDefined();
-    await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /charge card/i })); });
-    expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
-  });
-
   it("declining a FREE order with no checkout says where to take payment — not 'retry when online' (round-2 item 3)", async () => {
     mockCreateOrder.mockResolvedValue({
       ok: true,
@@ -123,14 +109,12 @@ describe("POSWorkspace — free cup at ring-up", () => {
     await placeOrder();
     mockDecline.mockResolvedValue({ ok: true, data: { totalZar: 3000, yocoClientSecret: "" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Decline" })); });
-    expect(screen.getByText(/no online card checkout for this order/i)).toBeDefined();
+    expect(screen.getByText(/open take payment on its card and tap mark as paid/i)).toBeDefined();
     expect(screen.queryByText(/retry when online/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /confirm — send to queue/i })).toBeNull(); // no longer free
   });
 
   it("no Decline at all once the server set up a card checkout (owner rule, round 3)", async () => {
-    process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY = "pk_test_123";
-    (globalThis as unknown as { YocoSDK?: unknown }).YocoSDK = function () { return { showPopup: vi.fn() }; } as unknown;
     mockCreateOrder.mockResolvedValue({
       ok: true,
       data: {

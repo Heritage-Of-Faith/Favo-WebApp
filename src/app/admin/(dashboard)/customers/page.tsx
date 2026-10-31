@@ -1,5 +1,5 @@
 // Customer admin list — owner: Mia (AT-78, A16)
-// Search by name or email. Read-only — no mutation entry points (POPIA).
+// Search by name or surname (email never reaches the browser, REQ-142). Read-only — no mutation entry points (POPIA).
 import CustomerTable from "@/components/admin/CustomerTable";
 
 export const metadata = { title: "Customers" };

@@ -68,7 +68,7 @@ export default function StockTakeCounter({
         {/* Lot context: helps user identify the physical container */}
         <div className="flex flex-col gap-0.5">
           {line.lotSourceName && (
-            <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>
+            <p className="favo-small break-words" style={{ color: "var(--color-text-muted)" }}>
               {line.lotSourceName}
             </p>
           )}

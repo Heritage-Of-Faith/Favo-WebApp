@@ -1,7 +1,7 @@
 "use server";
 
 // Recipe server actions — Phase 2 (G8 seed / A11 UI), real DB implementations.
-// getRecipe / listRecipes: admin/owner only (admin UI only; deduction uses direct DB helpers).
+// getRecipe: admin only. listRecipes: barista + admin (read-only; POS stock badges).
 // updateRecipeIngredient / bumpRecipeVersion: admin/owner only, audited.
 //
 // Active-recipe model: menu_items.recipe_id points at the live recipe. There is
@@ -11,6 +11,7 @@
 //
 // Docs: docs/API.md · docs/DATA_MODEL.md · recipes, recipe_ingredients
 
+import { z } from "zod";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { menuItems, recipes, recipeIngredients, inventoryItems } from "@db/schema";
@@ -25,6 +26,11 @@ import type {
 import type { DB } from "@/lib/db";
 
 const ADMIN_ROLES = ["admin"] as const;
+
+/** Largest per-drink quantity accepted (g, ml, unit or cup). Anything above is a typo. */
+const MAX_RECIPE_QUANTITY = 1000;
+const RECIPE_QUANTITY_MESSAGE = `Quantity must be a whole number from 1 to ${MAX_RECIPE_QUANTITY}.`;
+const recipeQuantitySchema = z.number().int().min(1).max(MAX_RECIPE_QUANTITY);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -116,9 +122,14 @@ export async function getRecipe(
 
 // ─── listRecipes ──────────────────────────────────────────────────────────────
 
-/** Returns the active recipe for every menu item that has one. Admin/owner only. */
+/**
+ * Returns the active recipe for every menu item that has one. Read-only.
+ * Barista + admin: the till's useStockStatus reads it to badge menu tiles, and
+ * an admin-only guard made every barista page load fire a FORBIDDEN call (QA
+ * R2-SEC-1). It carries no customer data and no money. Edits stay admin-only.
+ */
 export async function listRecipes(): Promise<ActionResult<{ recipes: RecipeDetail[] }>> {
-  const auth = await authorize(...ADMIN_ROLES);
+  const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
 
   const items = await db
@@ -167,11 +178,13 @@ export async function updateRecipeIngredient(
   const auth = await authorize(...ADMIN_ROLES);
   if (!auth.ok) return auth;
 
-  if (
-    update.quantity !== undefined &&
-    (!Number.isInteger(update.quantity) || update.quantity < 0)
-  ) {
-    return { ok: false, code: "INVALID_INPUT", message: "Quantity must be a whole number ≥ 0." };
+  // QA R2-7: 0 (or an emptied field) silently dropped the ingredient from
+  // deduction and COGS, and 1 000 000 000 was saved. Whole number, 1 to MAX.
+  if (update.quantity !== undefined) {
+    const q = recipeQuantitySchema.safeParse(update.quantity);
+    if (!q.success) {
+      return { ok: false, code: "INVALID_INPUT", message: RECIPE_QUANTITY_MESSAGE };
+    }
   }
   if (
     update.tolerancePct !== undefined &&

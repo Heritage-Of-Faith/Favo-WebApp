@@ -1,7 +1,7 @@
 // Queue-card payment gate: an unpaid order shows "Take payment" and cannot start
 // making; a paid order shows "Start Making". (Rule L01.)
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -49,25 +49,20 @@ function fullOrder(paymentStatus: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
-  // L01 gate is only active when Yoco is configured — simulate that here.
-  process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY = "pk_test_key";
 });
 
-afterEach(() => {
-  delete process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
-});
-
-async function expandCard() {
-  render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
+// L01 gate is only active when Yoco is configured. REQ-071: the page tells the
+// workspace via a server-computed boolean prop — never a client-side Yoco key.
+async function expandCard(yocoConfigured = true) {
+  render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" yocoConfigured={yocoConfigured} />);
   const card = await screen.findByText("#ORD_1");
   await act(async () => { fireEvent.click(card); });
 }
 
 describe("queue payment gate (L01)", () => {
-  it("without Yoco key, order can start without Take payment", async () => {
-    delete process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
+  it("without Yoco configured, order can start without Take payment", async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => fullOrder("pending") }) as unknown as typeof fetch;
-    await expandCard();
+    await expandCard(false);
     expect(await screen.findByRole("button", { name: /start making/i })).toBeDefined();
     expect(screen.queryByRole("button", { name: /take payment/i })).toBeNull();
   });
@@ -77,7 +72,7 @@ describe("queue payment gate (L01)", () => {
     await expandCard();
     expect(await screen.findByRole("button", { name: /take payment/i })).toBeDefined();
     expect(screen.queryByRole("button", { name: /start making/i })).toBeNull();
-    expect(screen.getByText(/unpaid/i)).toBeDefined();
+    expect(screen.getByText(/^pending$/i)).toBeDefined();
   });
 
   it("paid order shows Start Making and no Take payment", async () => {
@@ -86,5 +81,16 @@ describe("queue payment gate (L01)", () => {
     expect(await screen.findByRole("button", { name: /start making/i })).toBeDefined();
     expect(screen.queryByRole("button", { name: /take payment/i })).toBeNull();
     expect(screen.getByText(/paid/i)).toBeDefined();
+  });
+
+  it("free-cup Decline hides on the queue card while its Take-payment dialog is open", async () => {
+    const o = fullOrder("pending");
+    const withCup = { order: { ...o.order, isStaffDiscount: true, items: o.order.items.map(i => ({ ...i, discountZar: 0 })) } };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => withCup }) as unknown as typeof fetch;
+    await expandCard();
+    expect(await screen.findByRole("button", { name: "Decline" })).toBeDefined();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /take payment/i })); });
+    expect(screen.getByRole("dialog", { name: /take payment/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
   });
 });

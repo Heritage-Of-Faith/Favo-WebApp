@@ -43,8 +43,8 @@ jobs:
       TZ: Africa/Johannesburg
       # TEST_AUDIT_SECRET enables the audit-coverage assertion in full-suite.spec.ts
       TEST_AUDIT_SECRET: preflight-audit-secret
-      # CRON_SECRET must match what the app reads; used by cron E2E tests
-      CRON_SECRET: e2e-cron-secret
+      # The in-app scheduler (AT-169) must never fire jobs against the test DB
+      SCHEDULER_ENABLED: "false"
       PUBLIC_BASE_URL: ${{ github.event.inputs.base_url || 'http://localhost:3000' }}
       SKIP_LIGHTHOUSE: "1"
 

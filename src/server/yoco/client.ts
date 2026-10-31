@@ -11,12 +11,12 @@ export type YocoCreateIntentParams = {
 };
 
 /**
- * Create a Yoco checkout and return its id used as the clientSecret by the
- * hosted-fields SDK on the frontend. Requires YOCO_SECRET_KEY in env.
+ * Create a Yoco checkout and return its id. Server-side only; requires
+ * YOCO_SECRET_KEY in env. There is no Yoco SDK on the frontend — REQ-071
+ * allows no Yoco key of any kind client-side.
  *
  * Yoco checkout API: POST /api/checkouts
- * Response: { id: string, ... } — the `id` is passed to yoco.js as the
- * payment intent identifier for the hosted-fields payment form.
+ * Response: { id: string, ... }
  */
 export async function createPaymentIntent(
   params: YocoCreateIntentParams
