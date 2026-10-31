@@ -111,7 +111,6 @@ export class MemoryTenderStore implements TenderStore {
           webposDeviceId: row.webposDeviceId,
           amountZar: row.amountZar,
           chargedAmountZar: null,
-          tipZar: 0,
           status: "pending",
           sentAt: null,
           lastCheckedAt: null,

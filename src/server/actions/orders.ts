@@ -12,12 +12,14 @@ import {
   staffEntitlementLog,
   payments,
   openingSessions,
+  voucherRedemptions,
 } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { authorize } from "@/server/auth/guard";
 import { revenueDay } from "@/lib/format";
 import { canTransition } from "@/server/orders/state-machine";
 import { deductForOrder, DeductionError } from "@/server/orders/deduction";
+import { writeOrderCogs } from "@/server/orders/order-cogs";
 import { checkRecipeStock } from "@/server/inventory/lot-picker";
 import type { DB } from "@/lib/db";
 import {
@@ -35,6 +37,13 @@ import {
 import { startTender, TENDER_NOT_BEGUN } from "@/server/tender/service";
 import { isAttemptOpen, isUnresolvedNeedingAttention } from "@/server/tender/tender";
 import { summarisePayments } from "@/server/tender/summary";
+import {
+  ORDER_MOVED_ON, CHECKOUT_EXISTS, lockPaymentForTotalChange,
+} from "@/server/orders/payment-lock";
+import {
+  LINE_SURCHARGE_CHARGED_ZAR, OTHER_DISCOUNT, TOO_MANY_VOUCHERS, planLineVouchers,
+} from "@/server/orders/voucher";
+import { lockOpenSession } from "@/server/orders/voucher-session";
 import { notifyOrderChange } from "@/server/queue/notify";
 import { sendOrderReadyPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
@@ -52,7 +61,11 @@ export type CreateOrderInput = {
     menuItemId: string;
     quantity: number;
     modifications: string[];
+    /** §6.9: Untracked vouchers on this line, 0..quantity (L41, REQ-151). Default 0. */
+    voucherCount?: number;
   }[];
+  /** The voucher kind; default = the open session's single active kind. */
+  voucherKind?: string;
 };
 
 const createOrderSchema = z.object({
@@ -65,14 +78,18 @@ const createOrderSchema = z.object({
         menuItemId: z.string().min(1),
         quantity: z.number().int().positive(),
         modifications: z.array(z.string()),
+        voucherCount: z.number().int().min(0).optional(),
       })
     )
     .min(1),
+  voucherKind: z.string().trim().min(1).optional(),
 }).refine(
   // PRD §10.3 CHECK: (notification_target = 'customer') = (customer_id IS NOT NULL).
   (d) => (d.notificationTarget === "customer") === (d.customerId !== undefined),
   { message: "notificationTarget must be 'customer' with a customer, or 'none' without one." }
 );
+
+type VoucherRefusal = { code: string; message: string };
 
 /** What happened to the L03 free cup on this order — shown to the barista once. */
 export type FreeCupResult = {
@@ -118,6 +135,17 @@ export async function createOrder(
     return { ok: false, code: "INVALID_INPUT", message: "Invalid order input." };
   }
   const data = parsed.data;
+
+  // Pre-generated in Node (crypto.randomUUID() is a v4 UUID, the same as
+  // gen_random_uuid()) so the order, its items and any refusal audit share it.
+  const orderId = crypto.randomUUID();
+
+  // §6.9 / REQ-151: never more vouchers than the line has units. Audited.
+  const voucherCounts = data.items.map((i) => i.voucherCount ?? 0);
+  const vouchersOnOrder = voucherCounts.reduce((a, b) => a + b, 0);
+  if (data.items.some((item, i) => voucherCounts[i] > item.quantity)) {
+    return rejectVoucherOrder(orderId, session, { code: "VALIDATION", message: TOO_MANY_VOUCHERS }, voucherCounts);
+  }
 
   // Resolve current prices from the DB (never trust client-supplied prices).
   // The item and modifier lookups are independent — run them in parallel so
@@ -188,10 +216,6 @@ export async function createOrder(
     quantity: item.quantity,
   }));
 
-  // Pre-generate the order ID in Node (crypto.randomUUID() is a v4 UUID, the
-  // same as gen_random_uuid()) so the order and its items share it.
-  const orderId = crypto.randomUUID();
-
   const baseItemRows = data.items.map((item, i) => {
     const mi = menuById.get(item.menuItemId)!;
     const mods = item.modifications
@@ -199,6 +223,8 @@ export async function createOrder(
       .filter((m): m is NonNullable<typeof m> => Boolean(m))
       .map((m) => ({ id: m.id, name: m.name, priceDeltaZar: m.priceDeltaZar }));
     return {
+      // A vouchered line needs its id now: voucher_redemptions references it.
+      ...(voucherCounts[i] > 0 ? { id: crypto.randomUUID() } : {}),
       orderId,
       menuItemId: item.menuItemId,
       quantity: item.quantity,
@@ -213,7 +239,9 @@ export async function createOrder(
   // and only then is a tender begun. So the payments row and whatever is
   // sent to the machine always carry exactly the committed total.
   const outcome = await db.transaction(
-    async (tx): Promise<{ totalZar: number; freeCup: FreeCupResult }> => {
+    async (tx): Promise<
+      { totalZar: number; freeCup: FreeCupResult; refusal?: undefined } | { refusal: VoucherRefusal }
+    > => {
       const txDb = tx as unknown as DB;
 
       let decision: FreeCupDecision;
@@ -235,7 +263,46 @@ export async function createOrder(
         });
       }
       const discountZar = decision.status === "apply" ? decision.discountZar : 0;
-      const totalZar = grossZar - discountZar;
+
+      // ── §6.9 vouchers — decided before anything is written (L41, L42) ──────
+      type PlannedLine = { index: number; perVoucherZar: number[]; lineDiscountZar: number };
+      let vouchers: null | {
+        sessionId: string; recorded: number; kind: string; lines: PlannedLine[]; discountZar: number;
+      } = null;
+      if (vouchersOnOrder > 0) {
+        const open = await lockOpenSession(txDb, receivedAt);
+        if (!open) return { refusal: { code: "NO_SESSION", message: "Open the session first." } };
+        const kind = data.voucherKind ?? (open.voucherKindsActive.length === 1 ? open.voucherKindsActive[0] : "");
+        const planned: PlannedLine[] = [];
+        for (const [i, row] of baseItemRows.entries()) {
+          if (voucherCounts[i] === 0) continue;
+          const plan = planLineVouchers({
+            session: { mode: open.mode, voucherKindsActive: open.voucherKindsActive },
+            kind,
+            line: {
+              quantity: row.quantity, unitPriceZar: row.unitPriceZar, modsZar: row.modsZar,
+              surchargeZar: LINE_SURCHARGE_CHARGED_ZAR, discountZar: 0, compReason: null,
+            },
+            count: voucherCounts[i],
+          });
+          if (plan.status === "refused") return { refusal: { code: plan.code, message: plan.message } };
+          planned.push({ index: i, perVoucherZar: plan.perVoucherZar, lineDiscountZar: plan.lineDiscountZar });
+        }
+        // L41, safest reading: the free cup and a voucher never share an
+        // order. Unreachable today — the free cup needs every session today in
+        // weekday mode; a voucher needs a non-weekday open session.
+        if (decision.status === "apply") {
+          return { refusal: { code: "VALIDATION", message: OTHER_DISCOUNT } };
+        }
+        vouchers = {
+          sessionId: open.id, recorded: open.voucherRedemptionsRecorded, kind, lines: planned,
+          discountZar: planned.reduce((sum, l) => sum + l.lineDiscountZar, 0),
+        };
+      }
+      const voucherLineDiscount = (i: number) => vouchers?.lines.find((l) => l.index === i)?.lineDiscountZar ?? 0;
+
+      // Total = Σ lines after discounts (REQ-150: the card sees the paid part only).
+      const totalZar = grossZar - discountZar - (vouchers?.discountZar ?? 0);
 
       // INSERT orders first (FK), then items and audit in parallel.
       await tx.insert(orders).values({
@@ -257,7 +324,8 @@ export async function createOrder(
           baseItemRows.map((row, i) => ({
             ...row,
             // L03: one unit of one eligible line, never the line, never the order.
-            discountZar: decision.status === "apply" && decision.lineIndex === i ? discountZar : 0,
+            // §6.9: a vouchered line carries one unit's price per voucher.
+            discountZar: decision.status === "apply" && decision.lineIndex === i ? discountZar : voucherLineDiscount(i),
           }))
         ),
         writeAudit(
@@ -275,6 +343,41 @@ export async function createOrder(
           txDb
         ),
       ]);
+
+      if (vouchers) {
+        // One voucher_redemptions row per voucher, redeemed by the barista, and
+        // the session's recorded count moved under its row lock — as redeemVoucher.
+        const v = vouchers;
+        const redemptionRows = v.lines.flatMap((l) =>
+          l.perVoucherZar.map((zar) => ({
+            orderItemId: baseItemRows[l.index].id as string, sessionId: v.sessionId, voucherKind: v.kind,
+            discountZar: zar, redeemedByStaffId: session.id, at: receivedAt,
+          }))
+        );
+        const inserted = await tx
+          .insert(voucherRedemptions)
+          .values(redemptionRows)
+          .returning({ id: voucherRedemptions.id });
+        await tx
+          .update(openingSessions)
+          .set({ voucherRedemptionsRecorded: v.recorded + redemptionRows.length })
+          .where(eq(openingSessions.id, v.sessionId));
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "redeem_voucher",
+            actorId: session.id, actorRole: session.role,
+            after: {
+              sessionId: v.sessionId, voucherKind: v.kind, redemptionIds: inserted.map((r) => r.id),
+              lines: v.lines.map((l) => ({
+                orderItemId: baseItemRows[l.index].id, vouchers: l.perVoucherZar.length,
+                lineDiscountZar: l.lineDiscountZar,
+              })),
+              discountZar: v.discountZar, totalZar, paymentMode: totalZar === 0 ? "free" : null,
+            },
+          },
+          txDb
+        );
+      }
 
       if (decision.status === "apply" && data.customerId) {
         if (await insertEntitlement(tx, data.customerId, session.id, orderId, day)) {
@@ -322,11 +425,16 @@ export async function createOrder(
     }
   );
 
+  // A voucher refusal wrote nothing; its audit row is written here, outside
+  // the transaction, so it always commits.
+  if (outcome.refusal) return rejectVoucherOrder(orderId, session, outcome.refusal, voucherCounts);
+
   // REQ-026 / P1: the order and its items are committed above; ONLY NOW does
   // beginTender write the `pending` payments row (under the order's row lock,
   // at the order's committed total), and nothing is sent from here — the
-  // screen sends it with sendToTerminal. REQ-153: a net-R0 order begins no
-  // tender at all — no payments row, nothing sent (it is payment_mode 'free').
+  // screen sends it with sendToTerminal. REQ-153: a net-R0 order (a free cup,
+  // or fully vouchered) begins no tender at all — no payments row, nothing
+  // sent (it is payment_mode 'free').
   let tender: CreateOrderTender = null;
   if (outcome.totalZar > 0) {
     // The order is committed: a refusal (NO_SESSION, TERMINAL_UNREACHABLE when
@@ -373,6 +481,22 @@ export async function createOrder(
       tender,
     },
   };
+}
+
+/** A createOrder refused for its vouchers: audited action='reject', nothing else written. */
+async function rejectVoucherOrder(
+  orderId: string,
+  session: { id: string; role: string },
+  refusal: VoucherRefusal,
+  voucherCounts: number[]
+): Promise<{ ok: false; code: string; message: string }> {
+  await writeAudit({
+    entityKind: "order", entityId: orderId, action: "reject",
+    actorId: session.id, actorRole: session.role,
+    after: { attempted: "create_with_vouchers", code: refusal.code, voucherCounts },
+    reason: refusal.code,
+  });
+  return { ok: false, code: refusal.code, message: refusal.message };
 }
 
 // Local errors used to surface structured failures out of transactions
@@ -485,8 +609,11 @@ export async function transitionOrder(
         .where(eq(orders.id, orderId));
 
       // ── 2. Deduct stock on ordered → in_progress (L01 / R5) ───────────────
+      // AT-188 / REQ-106: freeze the order's COGS in this same transaction,
+      // only after deduction succeeded (if it throws, no row is written).
       if (toState === "in_progress") {
-        await deductForOrder(orderId, txDb, session.id);
+        const consumed = await deductForOrder(orderId, txDb, session.id);
+        await writeOrderCogs(orderId, consumed, txDb);
       }
 
       // ── 3. Fetch subscription for order-ready push (in_progress → ready) ──
@@ -739,50 +866,6 @@ async function writeFreeCupReject(
     },
     txDb
   );
-}
-
-const ORDER_MOVED_ON = {
-  ok: false as const,
-  code: "ALREADY_RESOLVED",
-  message: "Already paid or under way — the free cup can't change now.",
-};
-
-// Owner rule (Mia, 12 Oct 2026): a free-cup change is allowed ONLY while no
-// tender attempt is open for the order. Once one is, the total is frozen
-// (PRD P4, REQ-028) — the remedy is to cancel and re-ring. Owner-approved copy.
-const CHECKOUT_EXISTS = {
-  ok: false as const,
-  code: "TENDER_IN_PROGRESS",
-  message: "Cancel and re-ring the order to change the free cup.",
-};
-
-/**
- * Read every payment attempt on the order (ORDER BY attempt, FOR UPDATE) and
- * say whether the order's total may still change. Called with the order row
- * already locked, which is the lock beginTender takes too. Never writes a
- * payments row — an attempt's amount is frozen once begun (P4), and a later
- * attempt is begun at the order's new total.
- *  - any `successful` attempt: already paid → refused.
- *  - any open attempt (`pending`, or sent and `unresolved`) → TENDER_IN_PROGRESS.
- *  - none, or only declined / closed-out never-sent attempts: allowed.
- */
-async function lockPaymentForTotalChange(
-  tx: Pick<DB, "select">,
-  order: { id: string }
-): Promise<{
-  hasPayments: boolean;
-  refusal: typeof ORDER_MOVED_ON | typeof CHECKOUT_EXISTS | null;
-}> {
-  const attempts = await tx
-    .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId })
-    .from(payments)
-    .where(eq(payments.orderId, order.id))
-    .orderBy(payments.attempt)
-    .for("update");
-  const hasPayments = attempts.length > 0;
-  if (attempts.some((p) => p.status === "successful")) return { hasPayments, refusal: ORDER_MOVED_ON };
-  if (attempts.some(isAttemptOpen)) return { hasPayments, refusal: CHECKOUT_EXISTS };
-  return { hasPayments, refusal: null };
 }
 
 /**

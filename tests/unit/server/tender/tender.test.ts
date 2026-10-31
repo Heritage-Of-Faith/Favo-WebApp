@@ -255,7 +255,7 @@ describe("pollTenderResult + recordTenderResult (T2 steps 5–6, REQ-003/004/030
     const w = world({ sends: [{ outcome: "sent", yocoPaymentId: "yp-1", fetches: [{ status: "successful", chargedAmountZar: 3000 }] }] });
     await begunAndSent(w);
     expect(await pollTenderResult(w.deps, BARISTA, "ord-1", 1)).toEqual({ ok: true, status: "successful" });
-    expect(w.pay()).toMatchObject({ status: "successful", chargedAmountZar: 3000, tipZar: 0, yocoPaymentId: "yp-1" });
+    expect(w.pay()).toMatchObject({ status: "successful", chargedAmountZar: 3000, yocoPaymentId: "yp-1" });
     expect(w.audits("payment.flagged")).toHaveLength(0);
   });
 
@@ -267,14 +267,6 @@ describe("pollTenderResult + recordTenderResult (T2 steps 5–6, REQ-003/004/030
     expect(w.audits("payment.flagged")).toMatchObject([
       { reason: "amount_mismatch", after: { orderTotalZar: 3000, amountZar: 3000, chargedAmountZar: 2500 } },
     ]);
-  });
-
-  it("a tip is a variance, flagged (§6.8.4)", async () => {
-    const w = world({ sends: [{ outcome: "sent", yocoPaymentId: "yp-1", fetches: [{ status: "successful", chargedAmountZar: 3000, tipZar: 500 }] }] });
-    await begunAndSent(w);
-    await pollTenderResult(w.deps, BARISTA, "ord-1", 1);
-    expect(w.pay()).toMatchObject({ status: "successful", tipZar: 500 });
-    expect(w.audits("payment.flagged")).toMatchObject([{ reason: "tip_variance" }]);
   });
 
   it("REQ-003: at 180 s from the send FAVO stops waiting — unresolved, PAYMENT_UNKNOWN, Admin pushed, no further fetch", async () => {
@@ -303,7 +295,7 @@ describe("pollTenderResult + recordTenderResult (T2 steps 5–6, REQ-003/004/030
   it("recordTenderResult is idempotent on (orderId, attempt): a replay writes nothing", async () => {
     const w = world({ sends: [{ outcome: "sent", yocoPaymentId: "yp-1" }] });
     await begunAndSent(w);
-    const payment = { yocoPaymentId: "yp-1", clientReference: "cu-1:1", status: "successful" as const, chargedAmountZar: 3000, tipZar: 0 };
+    const payment = { yocoPaymentId: "yp-1", clientReference: "cu-1:1", status: "successful" as const, chargedAmountZar: 3000 };
     await recordTenderResult(w.deps, BARISTA, "ord-1", 1, { kind: "read", payment });
     const again = await recordTenderResult(w.deps, BARISTA, "ord-1", 1, { kind: "read", payment });
     expect(again).toEqual({ ok: true, status: "successful", flags: [] });
@@ -316,7 +308,7 @@ describe("pollTenderResult + recordTenderResult (T2 steps 5–6, REQ-003/004/030
     await pollTenderResult(w.deps, BARISTA, "ord-1", 1);
     const r = await recordTenderResult(w.deps, BARISTA, "ord-1", 1, {
       kind: "read",
-      payment: { yocoPaymentId: "yp-1", clientReference: "cu-1:1", status: "successful", chargedAmountZar: 3000, tipZar: 0 },
+      payment: { yocoPaymentId: "yp-1", clientReference: "cu-1:1", status: "successful", chargedAmountZar: 3000 },
     });
     expect(r).toMatchObject({ ok: false, code: "VALIDATION" });
     expect(w.pay().status).toBe("declined");
@@ -328,7 +320,7 @@ describe("pollTenderResult + recordTenderResult (T2 steps 5–6, REQ-003/004/030
     await begunAndSent(w);
     const r = await recordTenderResult(w.deps, BARISTA, "ord-1", 1, {
       kind: "read",
-      payment: { yocoPaymentId: "yp-1", clientReference: "cu-OTHER:1", status: "successful", chargedAmountZar: 3000, tipZar: 0 },
+      payment: { yocoPaymentId: "yp-1", clientReference: "cu-OTHER:1", status: "successful", chargedAmountZar: 3000 },
     });
     expect(r).toMatchObject({ ok: false, code: "VALIDATION" });
     expect(w.pay().status).toBe("pending");

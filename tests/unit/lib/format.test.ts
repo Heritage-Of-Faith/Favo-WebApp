@@ -75,16 +75,28 @@ describe("formatZarField", () => {
   });
 });
 
+// CHANGED (AT-191/AT-192): pnlColor now takes the cost state — green only on
+// invoice-backed ("final") costs, never on estimates (PRD §7.0.1b, REQ-110).
 describe("pnlColor", () => {
-  it("positive net → green (0x2ecc71)", () => {
-    expect(pnlColor(1000)).toBe(0x2ecc71);
+  it("positive net on final costs → green (0x2ecc71)", () => {
+    expect(pnlColor(1000, "final")).toBe(0x2ecc71);
   });
 
-  it("zero net → green (break-even treated as ok)", () => {
-    expect(pnlColor(0)).toBe(0x2ecc71);
+  it("zero net on final costs → green (break-even treated as ok)", () => {
+    expect(pnlColor(0, "final")).toBe(0x2ecc71);
   });
 
-  it("negative net → red (0xe74c3c)", () => {
-    expect(pnlColor(-1)).toBe(0xe74c3c);
+  it("negative net on final costs → red (0xe74c3c)", () => {
+    expect(pnlColor(-1, "final")).toBe(0xe74c3c);
+  });
+
+  it("positive net on estimated costs → the warn colour, never green (REQ-110)", () => {
+    expect(pnlColor(14437, "provisional")).toBe(0x8a5a00);
+    expect(pnlColor(14437, "provisional")).not.toBe(0x2ecc71);
+  });
+
+  it("UNAVAILABLE → its own colour, distinct from warn (REQ-129)", () => {
+    expect(pnlColor(null, "unavailable")).toBe(0x5a6268);
+    expect(pnlColor(null, "unavailable")).not.toBe(pnlColor(1, "provisional"));
   });
 });

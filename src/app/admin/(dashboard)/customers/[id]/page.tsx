@@ -37,9 +37,10 @@ export default async function CustomerDetailPage({
       </div>
 
       <header>
-        <h1 className="text-2xl font-semibold text-text-strong">{c.name}</h1>
+        <h1 className="text-2xl font-semibold text-text-strong">{[c.name, c.surname].filter(Boolean).join(" ")}</h1>
         <p className="mt-1 text-sm text-text-muted">
-          {c.email ?? "No email"} · {c.phone ?? "No phone"} · Joined{" "}
+          {c.status === "office_staff" ? "Office staff" : "Church member"} ·{" "}
+          {c.phoneLast4 ? `Phone •••• ${c.phoneLast4}` : "No phone"} · Joined{" "}
           {formatDate(c.createdAt)}
         </p>
       </header>

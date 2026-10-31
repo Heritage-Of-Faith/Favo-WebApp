@@ -15,7 +15,7 @@ vi.mock("@/server/auth/guard", () => ({
 }));
 
 vi.mock("@db/schema", () => ({
-  customers: { id: "id", name: "name", email: "email", phone: "phone", createdAt: "created_at" },
+  customers: { id: "id", name: "name", email: "email", phone: "phone", surname: "surname", status: "status", createdAt: "created_at" },
   orders: { id: "id", customerId: "customer_id", state: "state", totalZar: "total_zar", placedAt: "placed_at" },
 }));
 
@@ -35,7 +35,9 @@ import { db } from "@/lib/db";
 
 const CUSTOMER_ROW = {
   id: "cust-1",
-  name: "Louis Dreyfus",
+  name: "Louis",
+  surname: "Dreyfus",
+  status: "office_staff",
   email: "louis@test.com",
   phone: "0821234567",
   createdAt: new Date("2026-01-15T08:00:00Z"),
@@ -57,8 +59,24 @@ describe("listCustomers", () => {
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.data).toHaveLength(1);
-      expect(res.data[0]!.name).toBe("Louis Dreyfus");
+      expect(res.data[0]!.name).toBe("Louis");
     }
+  });
+
+  it("carries surname, status and last-4 phone, with no email and no full phone (REQ-142)", async () => {
+    vi.mocked(db.select).mockReturnValue(
+      buildDbMock([CUSTOMER_ROW]) as unknown as ReturnType<typeof db.select>
+    );
+    const { listCustomers } = await import("@/server/actions/customers");
+    const res = await listCustomers();
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data[0]).toMatchObject({ surname: "Dreyfus", status: "office_staff", phoneLast4: "4567" });
+    const json = JSON.stringify(res.data);
+    expect(json).not.toContain("louis@test.com");
+    expect(json).not.toContain("0821234567");
+    expect(res.data[0]).not.toHaveProperty("email");
+    expect(res.data[0]).not.toHaveProperty("phone");
   });
 
   it("returns UNAUTHORIZED when not admin+", async () => {
@@ -88,6 +106,22 @@ describe("getCustomerDetail", () => {
 
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("NOT_FOUND");
+  });
+
+  it("detail carries no email and no full phone (REQ-142)", async () => {
+    let n = 0;
+    vi.mocked(db.select).mockImplementation(() => {
+      n++;
+      return buildDbMock(n === 1 ? [CUSTOMER_ROW] : []) as unknown as ReturnType<typeof db.select>;
+    });
+    const { getCustomerDetail } = await import("@/server/actions/customers");
+    const res = await getCustomerDetail("cust-1");
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const json = JSON.stringify(res.data);
+    expect(json).not.toContain("louis@test.com");
+    expect(json).not.toContain("0821234567");
+    expect(res.data.phoneLast4).toBe("4567");
   });
 
   it("includes recent orders in detail", async () => {

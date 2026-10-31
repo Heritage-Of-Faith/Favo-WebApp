@@ -18,7 +18,7 @@ const KIND_LABELS: Record<ExportKind, string> = {
 };
 
 const selectClass =
-  "w-full rounded border border-border-subtle bg-surface px-3 py-2 text-sm text-text-strong focus:outline-none focus:ring-2 focus:ring-ring";
+  "w-full rounded border border-border-subtle bg-surface min-h-11 px-3 py-2 text-base text-text-strong focus:outline-none focus:ring-2 focus:ring-ring";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -40,15 +40,14 @@ export default function ReportExportForm() {
     format: string;
   } | null>(null);
 
+  const dateError = !from || !to
+    ? "Pick both a From and a To date."
+    : to < from
+      ? "The 'To' date is before the 'From' date. Swap them to export."
+      : null;
+
   const handleExport = useCallback(async () => {
-    if (!from || !to) {
-      toast.error("Please fill in both date fields.");
-      return;
-    }
-    if (to < from) {
-      toast.error("'To' date must be on or after 'From' date.");
-      return;
-    }
+    if (dateError) return;
 
     setLoading(true);
     setLastExport(null);
@@ -67,19 +66,21 @@ export default function ReportExportForm() {
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `favo-${kind}-${from}-${to}.${format}`;
+      // format=pdf returns a print-ready HTML page (no PDF is produced), so
+      // name the file for what it is.
+      a.download = `favo-${kind}-${from}-${to}.${format === "pdf" ? "html" : "csv"}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(blobUrl);
 
-      setLastExport({ kind: KIND_LABELS[kind], format: format.toUpperCase() });
+      setLastExport({ kind: KIND_LABELS[kind], format: format === "pdf" ? "HTML" : "CSV" });
     } catch {
       toast.error("Export failed — check your connection and try again.");
     } finally {
       setLoading(false);
     }
-  }, [kind, format, from, to]);
+  }, [kind, format, from, to, dateError]);
 
   return (
     <div className="space-y-6 max-w-md">
@@ -111,7 +112,7 @@ export default function ReportExportForm() {
             className={selectClass}
           >
             <option value="csv">CSV</option>
-            <option value="pdf">PDF</option>
+            <option value="pdf">Printable page (HTML, print to PDF)</option>
           </select>
         </div>
 
@@ -123,7 +124,6 @@ export default function ReportExportForm() {
               type="date"
               id="report-from"
               value={from}
-              max={to}
               onChange={(e) => setFrom(e.target.value)}
               disabled={loading}
               className={selectClass}
@@ -135,7 +135,6 @@ export default function ReportExportForm() {
               type="date"
               id="report-to"
               value={to}
-              min={from}
               onChange={(e) => setTo(e.target.value)}
               disabled={loading}
               className={selectClass}
@@ -144,7 +143,13 @@ export default function ReportExportForm() {
         </div>
       </div>
 
-      <Button onClick={handleExport} disabled={loading}>
+      {dateError && (
+        <p role="alert" className="text-sm text-error">
+          {dateError}
+        </p>
+      )}
+
+      <Button className="min-h-11" onClick={handleExport} disabled={loading || dateError !== null}>
         {loading ? "Exporting…" : "Export report"}
       </Button>
 
