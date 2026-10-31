@@ -27,7 +27,26 @@ function hits(re: RegExp, files: string[]): string[] {
     .map((f) => relative(ROOT, f));
 }
 
-const SOURCES = [...walk(SRC), join(ROOT, "next.config.ts"), join(ROOT, "proxy.ts")].filter((f) => {
+// Build and deploy inputs can inline a NEXT_PUBLIC_ value into the bundle too
+// (Docker build args, workflow env, compose files), so they are scanned as well.
+function deployFiles(): string[] {
+  const out = [join(ROOT, "Dockerfile"), join(ROOT, "docker-entrypoint.sh")];
+  for (const dir of [join(ROOT, ".github", "workflows"), join(ROOT, "infra")]) {
+    try {
+      for (const name of readdirSync(dir, { recursive: true }) as string[]) {
+        if (/\.(ya?ml|sh)$/.test(name)) out.push(join(dir, name));
+      }
+    } catch { /* directory absent */ }
+  }
+  return out;
+}
+
+const SOURCES = [
+  ...walk(SRC),
+  join(ROOT, "next.config.ts"),
+  join(ROOT, "proxy.ts"),
+  ...deployFiles(),
+].filter((f) => {
   try { return statSync(f).isFile(); } catch { return false; }
 });
 
