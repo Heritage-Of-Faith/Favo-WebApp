@@ -34,7 +34,7 @@ vi.mock("@/server/yoco/client", () => ({
 
 import { createOrder } from "@/server/actions/orders";
 
-const ORDER_INPUT = { items: [{ menuItemId: "mi-cap", quantity: 1, modifications: [] }] };
+const ORDER_INPUT = { notificationTarget: "none" as const, items: [{ menuItemId: "mi-cap", quantity: 1, modifications: [] }] };
 
 beforeEach(() => vi.clearAllMocks());
 

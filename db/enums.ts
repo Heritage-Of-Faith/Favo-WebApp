@@ -159,3 +159,10 @@ export const reportCostState = pgEnum("report_cost_state", [
 // trustworthy. NOT NULL DEFAULT 'estimate' on inventory_lots; 'invoice' only by
 // an Admin recost through /admin/yield, audited.
 export const costSource = pgEnum("cost_source", ["estimate", "invoice"]);
+
+// L28 / REQ-046 / PRD §10.3: who to tell when an order is ready, bound at
+// ring-up. `customer` = orders.customer_id; `none` is an explicit tap.
+export const notificationTarget = pgEnum("notification_target", [
+  "customer",
+  "none",
+]);

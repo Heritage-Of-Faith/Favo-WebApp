@@ -83,7 +83,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 function setOrder(over: Record<string, unknown> = {}) {
   state.order = {
-    id: "ord-1", state: "in_progress", totalZar: 3800, customerId: "cust-1",
+    id: "ord-1", state: "in_progress", totalZar: 3800, customerId: "cust-1", notificationTarget: "customer",
     staffId: "staff1", completedAt: null,
     placedAt: { toISOString: () => "2026-06-19T08:00:00.000Z" },
     ...over,
@@ -109,7 +109,7 @@ describe("transitionOrder('ready') customer push", () => {
   });
 
   it("does not push when the order has no customer", async () => {
-    setOrder({ customerId: null });
+    setOrder({ customerId: null, notificationTarget: "none" });
     await transitionOrder("ord-1", "ready");
     await flush();
     expect(mockSendReady).not.toHaveBeenCalled();

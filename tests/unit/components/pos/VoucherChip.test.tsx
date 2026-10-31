@@ -145,9 +145,12 @@ describe("Place — the createOrder call and the button", () => {
     });
     await mount();
     const place = await screen.findByRole("button", { name: /^charge r\s?20[.,]00$/i });
+    // L28 / REQ-046: no customer attached, so the barista taps "No notification".
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "No notification" })); });
     await act(async () => { fireEvent.click(place); });
     expect(mockCreateOrder).toHaveBeenCalledWith({
       customerId: undefined,
+      notificationTarget: "none",
       items: [
         { menuItemId: "mi_capp", quantity: 1, modifications: [] },
         { menuItemId: "mi_hot", quantity: 1, modifications: [], voucherCount: 1 },
@@ -169,9 +172,11 @@ describe("Place — the createOrder call and the button", () => {
     seed([{ ...CAPP, quantity: 1 }]);
     mockCreateOrder.mockResolvedValue({ ok: false, code: "X", message: "stop" });
     await mount();
+    // L28 / REQ-046: no customer attached, so the barista taps "No notification".
+    await act(async () => { fireEvent.click(await screen.findByRole("button", { name: "No notification" })); });
     await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /^charge r/i })); });
     expect(mockCreateOrder).toHaveBeenCalledWith({
-      customerId: undefined, items: [{ menuItemId: "mi_capp", quantity: 1, modifications: [] }],
+      customerId: undefined, notificationTarget: "none", items: [{ menuItemId: "mi_capp", quantity: 1, modifications: [] }],
     });
   });
 });

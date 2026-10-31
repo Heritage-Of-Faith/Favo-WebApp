@@ -150,6 +150,8 @@ async function main() {
           .values({
             id: orderId,
             customerId: customerId ?? null,
+            // L28 / §10.3 CHECK: 'customer' exactly when a customer is bound.
+            notificationTarget: customerId ? "customer" : "none",
             staffId: STAFF_BARISTA,
             state: "collected",
             placedAt,

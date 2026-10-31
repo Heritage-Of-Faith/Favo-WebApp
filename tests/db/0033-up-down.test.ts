@@ -31,6 +31,8 @@ const UP = "0033_at181_day5_substrate.sql";
 const DOWN = "down/0033_at181_day5_substrate.down.sql";
 // CHANGED (AT-204 prerequisite): the later migration's down, applied first.
 const LATER_DOWN = "down/0036_at204_event_sessions.down.sql";
+// L28: 0042 (orders.notification_target) also sits on top of 0033.
+const DOWN_0042 = "down/0042_l28_notification_target.down.sql";
 
 const TOUCHED = [
   "customers",
@@ -145,6 +147,8 @@ maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () 
         // CHANGED (AT-204 prerequisite): CI now migrates past 0033, and 0036
         // adds columns to opening_sessions. Step back to 0033 first (rolled
         // back with everything else) so this suite still tests 0033 alone.
+        // L28: 0042 adds a column to orders; step it down first (newest first).
+        await tx.unsafe(migrationSql(DOWN_0042));
         await tx.unsafe(migrationSql(LATER_DOWN));
         await fn(tx);
         throw new Rollback();

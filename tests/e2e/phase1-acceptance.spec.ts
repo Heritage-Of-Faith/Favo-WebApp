@@ -139,6 +139,8 @@ test.describe("4. Payment", () => {
   test("placing an order shows Yoco hosted fields or order confirmation", async ({ page }) => {
     await page.getByText("Cappuccino").first().click();
     await page.getByRole("button", { name: /add to order/i }).click();
+    // L28 / REQ-046: a walk-in binds target `none` with one explicit tap.
+    await page.getByRole("button", { name: "No notification" }).click();
     await page.getByRole("button", { name: /^charge r/i }).click();
     // With Yoco: shows hosted fields iframe. Without Yoco (dev): shows "Order placed" banner.
     await expect(

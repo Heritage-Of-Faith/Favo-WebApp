@@ -146,7 +146,20 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   const searchSeq = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draft = useDraftOrder();
-  const { customer, items, totalZar, reset } = draft;
+  const { customer, items, totalZar } = draft;
+  // L28 / REQ-046: every order binds a notification target before it is placed —
+  // the attached customer, or an explicit "No notification" tap. Never defaulted.
+  const [noNotification, setNoNotification] = useState(false);
+  const notificationTarget: "customer" | "none" | null = customer ? "customer" : noNotification ? "none" : null;
+  // Attaching a customer replaces an earlier "none" — so detaching them later
+  // needs a fresh tap rather than silently falling back to `none` (L28).
+  const attachedCustomerId = customer?.id ?? null;
+  useEffect(() => {
+    if (attachedCustomerId) setNoNotification(false);
+  }, [attachedCustomerId]);
+  // L28: a reset draft (order sent, paid, abandoned or signed out) binds its own
+  // target next time — the "none" tap never carries over to the next order.
+  const reset = () => { draft.reset(); setNoNotification(false); };
   // Clear removes the lines only — the attached customer stays (never detached silently).
   const clearItems = () => { for (const i of items) draft.removeItem(lineKey(i)); };
   // Starting a new draft drops the previous order's "sent to the queue" message.
@@ -384,7 +397,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   async function handlePlaceOrder() {
     // A ref, not just state: a fast double tap fires twice before React re-renders,
     // and the second tap must be ignored, never create a second order.
-    if (items.length === 0 || submitting || placingRef.current) return;
+    if (items.length === 0 || submitting || placingRef.current || !notificationTarget) return;
     placingRef.current = true;
     setSubmitting(true);
     setOrderError(null);
@@ -397,6 +410,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   }
 
   async function placeOrder() {
+    if (!notificationTarget) return; // L28: no order without a bound target.
     // Offline at place-order — createOrder can't run. Go straight to the payment
     // screen, which (being offline) shows the deferred-payment notice. There's no
     // order in the DB yet, so confirming queues it to the outbox.
@@ -407,6 +421,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
     }
     const r = await createOrder({
       customerId: customer?.id,
+      notificationTarget,
       items: items.map(i => ({
         menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id),
         // §6.9: vouchers ride the line they were tapped on (L41) — only while a kind is live.
@@ -613,6 +628,21 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                   );
                 })}
               </ul>
+            )}
+            {/* L28 / REQ-046: "none" is one explicit tap, never a default. */}
+            {noNotification ? (
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <p className="favo-small text-coffee-bean font-semibold">No notification</p>
+                <button type="button" onClick={() => setNoNotification(false)}
+                  className="favo-caption text-cool-steel hover:text-coffee-bean underline underline-offset-2 min-h-[44px]">
+                  Undo
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setNoNotification(true)}
+                className="mt-2 w-full rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-coffee-bean hover:bg-coffee-bean/8 min-h-[44px]">
+                No notification
+              </button>
             )}
           </div>
         ) : (
@@ -826,7 +856,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                 Clear
               </button>
             )}
-            <button type="button" onClick={handlePlaceOrder} disabled={submitting || items.length === 0}
+            <button type="button" onClick={handlePlaceOrder} disabled={submitting || items.length === 0 || !notificationTarget}
               className="flex items-center gap-2 whitespace-nowrap rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
               style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
               {submitting

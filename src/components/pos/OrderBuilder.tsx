@@ -82,6 +82,9 @@ export default function OrderBuilder() {
     try {
       const result = await createOrder({
         customerId: customer?.id,
+        // Not mounted anywhere (the live POS is POSWorkspace, which has L28's
+        // explicit `none` tap). Mirrors the bound customer to satisfy the type.
+        notificationTarget: customer ? "customer" : "none",
         items: items.map((i) => ({
           menuItemId: i.menuItemId,
           quantity: i.quantity,

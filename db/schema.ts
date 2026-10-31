@@ -38,6 +38,7 @@ import {
   eventMenuScope,
   eventPaymentPosture,
   eventAudience,
+  notificationTarget,
 } from "./enums";
 
 const TENANT = "hofmi";
@@ -263,7 +264,16 @@ export const orders = pgTable("orders", {
   // AT-181 / L07 · REQ-039: the SAST revenue day, from the server's clock at
   // receipt (never the client's). Midnight SAST is the boundary.
   revenueDay: date("revenue_day").notNull(),
-});
+  // L28 / REQ-046 / PRD §10.3: bound at ring-up, never null, no default —
+  // `none` is chosen, never defaulted into. The target customer is customer_id.
+  notificationTarget: notificationTarget("notification_target").notNull(),
+}, () => [
+  // PRD §10.3: a row can never claim it will notify someone and carry no customer.
+  check(
+    "orders_notification_target_customer",
+    sql`(notification_target = 'customer') = (customer_id IS NOT NULL)`
+  ),
+]);
 
 export const orderItems = pgTable("order_items", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),

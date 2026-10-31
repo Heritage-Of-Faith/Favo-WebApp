@@ -30,6 +30,8 @@ const maybe = hasRealDb() ? describe : describe.skip;
 
 const UP = "0034_at209_walk_ins.sql";
 const DOWN = "down/0034_at209_walk_ins.down.sql";
+// L28: 0042 adds orders.notification_target on top of this; stepped down first.
+const DOWN_0042 = "down/0042_l28_notification_target.down.sql";
 
 /** Tables walk_ins points at; 0034 must leave them exactly as 0033 did. */
 const REFERENCED = ["orders", "menu_items", "staff"] as const;
@@ -102,6 +104,10 @@ maybe("0034 walk_ins: up → down → up, the CHECK, and REQ-116 (AT-209)", () =
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        // CI now migrates past 0042, which adds a column to orders (one of
+        // REFERENCED). Step it back (rolled back with everything else) so
+        // orders reads as 0033 left it.
+        await tx.unsafe(migrationSql(DOWN_0042));
         await fn(tx);
         throw new Rollback();
       });

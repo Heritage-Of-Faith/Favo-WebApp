@@ -131,7 +131,7 @@ afterEach(() => vi.useRealTimers());
 describe("createOrder applies the free weekday cup automatically (L03, REQ-024)", () => {
   it("1. weekday + office_staff + coffee line → applied with no tap; one entitlement row", async () => {
     given({ customer: OFFICE });
-    const res = await createOrder({ customerId: OFFICE.id, items: [one(AMERICANO.id)] });
+    const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -147,7 +147,7 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
 
   it("2. second order the same day → ENTITLEMENT_USED; the order continues PAID; refusal audited 'reject'", async () => {
     given({ customer: OFFICE, claimedToday: true });
-    const res = await createOrder({ customerId: OFFICE.id, items: [one(AMERICANO.id)] });
+    const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)] });
 
     expect(res.ok).toBe(true); // not blocked
     if (!res.ok) return;
@@ -166,7 +166,7 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
   it("2b. lost UNIQUE(customer_id, day) race → paid; checkout = payments.amount_zar = order total (round-2 item 1)", async () => {
     given({ customer: OFFICE });
     entitlementConflict = true; // the pre-check saw nothing; the DB said no
-    const res = await createOrder({ customerId: OFFICE.id, items: [one(AMERICANO.id)] });
+    const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -185,7 +185,7 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
 
   it("3. church_member → NOT_ELIGIBLE; the order continues normally (and is charged as before)", async () => {
     given({ customer: CHURCH });
-    const res = await createOrder({ customerId: CHURCH.id, items: [one(AMERICANO.id)] });
+    const res = await createOrder({ notificationTarget: "customer", customerId: CHURCH.id, items: [one(AMERICANO.id)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -202,7 +202,7 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
       inserts.length = 0;
       vi.setSystemTime(now);
       given({ customer: OFFICE, modes: [...modes] });
-      const res = await createOrder({ customerId: OFFICE.id, items: [one(AMERICANO.id)] });
+      const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)] });
       expect(res.ok).toBe(true);
       if (!res.ok) return;
       expect(res.data.freeCup).toMatchObject({ applied: false, code: "NOT_ELIGIBLE" });
@@ -213,7 +213,7 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
 
   it("4b. no opening session today → NO_SESSION (PRD S1), audited; the order is not blocked (round-2 item 5)", async () => {
     given({ customer: OFFICE, modes: [] });
-    const res = await createOrder({ customerId: OFFICE.id, items: [one(AMERICANO.id)] });
+    const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)] });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.freeCup).toEqual({
@@ -226,7 +226,7 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
 
   it("5. no customer bound → no entitlement; barista told to pick the customer; order continues", async () => {
     given({ customer: null });
-    const res = await createOrder({ items: [one(AMERICANO.id)] });
+    const res = await createOrder({ notificationTarget: "none", items: [one(AMERICANO.id)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -239,7 +239,7 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
 
   it("6. two coffees → ONE unit free, the second still charged (never the whole order)", async () => {
     given({ customer: OFFICE });
-    const res = await createOrder({ customerId: OFFICE.id, items: [one(AMERICANO.id, 2)] });
+    const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id, 2)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -250,6 +250,7 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
   it("7. discount_zar on exactly one eligible line = that line's unit_price_zar; total = Σ qty×unit − Σ discount", async () => {
     given({ customer: OFFICE, menu: [CAPPUCCINO, AMERICANO] });
     const res = await createOrder({
+      notificationTarget: "customer",
       customerId: OFFICE.id,
       items: [one(CAPPUCCINO.id, 1), one(AMERICANO.id, 2)],
     });
@@ -266,7 +267,7 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
 
   it("9. only coffee is eligible: a non-coffee-only order → NOT_ELIGIBLE, no entitlement, audited", async () => {
     given({ customer: OFFICE, menu: [CHAI] });
-    const res = await createOrder({ customerId: OFFICE.id, items: [one(CHAI.id)] });
+    const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(CHAI.id)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -281,7 +282,7 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
 describe("REQ-153: a net-R0 order writes no payments row and sends nothing (round-2 item 3)", () => {
   it("weekday free cup → 0 payments rows, Yoco not called, payment_mode='free'", async () => {
     given({ customer: OFFICE });
-    const res = await createOrder({ customerId: OFFICE.id, items: [one(AMERICANO.id)] });
+    const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)] });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.totalZar).toBe(0);
@@ -293,7 +294,7 @@ describe("REQ-153: a net-R0 order writes no payments row and sends nothing (roun
 
   it("a non-R0 order is unchanged: one pending payments row and one checkout at its total", async () => {
     given({ customer: null });
-    const res = await createOrder({ items: [one(AMERICANO.id)] });
+    const res = await createOrder({ notificationTarget: "none", items: [one(AMERICANO.id)] });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(insertsInto(payments)).toEqual([
@@ -320,7 +321,7 @@ describe("B1: the free cup discounts unit_price_zar + mods_zar (oat milk)", () =
 
   it("oat-milk Cappuccino, weekday, office_staff → total 0, no payments row, Yoco not called, payment_mode='free'", async () => {
     givenOat();
-    const res = await createOrder({ customerId: OFFICE.id, items: [oatCappuccino()] });
+    const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [oatCappuccino()] });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.totalZar).toBe(0);
@@ -335,7 +336,7 @@ describe("B1: the free cup discounts unit_price_zar + mods_zar (oat milk)", () =
 
   it("two oat Cappuccinos → one unit free (4600), the second still charged 4600", async () => {
     givenOat();
-    const res = await createOrder({ customerId: OFFICE.id, items: [oatCappuccino(2)] });
+    const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [oatCappuccino(2)] });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     const [line] = insertsInto(orderItems)[0] as Row[];
@@ -349,7 +350,7 @@ describe("B1: the free cup discounts unit_price_zar + mods_zar (oat milk)", () =
 
   it("a plain line snapshots mods_zar = 0", async () => {
     given({ customer: null, menu: [CAPPUCCINO] });
-    const res = await createOrder({ items: [one(CAPPUCCINO.id)] });
+    const res = await createOrder({ notificationTarget: "none", items: [one(CAPPUCCINO.id)] });
     expect(res.ok).toBe(true);
     const [line] = insertsInto(orderItems)[0] as Row[];
     expect(line).toMatchObject({ unitPriceZar: 3800, modsZar: 0, discountZar: 0 });

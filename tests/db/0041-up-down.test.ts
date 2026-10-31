@@ -27,14 +27,19 @@ async function columns(tx: TransactionSql, table: string): Promise<Record<string
 }
 
 describe("0041 journal entry (AT-205)", () => {
-  it("is the last entry and its `when` is strictly greater than every earlier one", () => {
+  // CHANGED (L28 merge): 0042 now follows 0041, so 0041 is no longer the last
+  // entry. It must still be present at idx 41 with a `when` strictly greater
+  // than every entry before it (and smaller than every entry after it).
+  it("is present at idx 41 and its `when` is strictly greater than every earlier one", () => {
     const journal = JSON.parse(readFileSync(resolve(process.cwd(), "drizzle/meta/_journal.json"), "utf8")) as {
       entries: { idx: number; when: number; tag: string }[];
     };
-    const last = journal.entries[journal.entries.length - 1];
-    expect(last.tag).toBe("0041_at205_expense_note");
-    expect(last.idx).toBe(41);
-    for (const e of journal.entries.slice(0, -1)) expect(last.when).toBeGreaterThan(e.when);
+    const at = journal.entries.findIndex((e) => e.tag === "0041_at205_expense_note");
+    expect(at).toBeGreaterThanOrEqual(0);
+    const entry = journal.entries[at];
+    expect(entry.idx).toBe(41);
+    for (const e of journal.entries.slice(0, at)) expect(entry.when).toBeGreaterThan(e.when);
+    for (const e of journal.entries.slice(at + 1)) expect(entry.when).toBeLessThan(e.when);
   });
 });
 

@@ -63,12 +63,17 @@ beforeEach(() => {
 
 const sendButton = () => screen.findByRole("button", { name: /^charge r/i });
 const mount = () => render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
+// L28 / REQ-046: with no customer attached the barista taps "No notification" before sending.
+const tapNoNotification = async () => {
+  await act(async () => { fireEvent.click(await screen.findByRole("button", { name: "No notification" })); });
+};
 
 describe("Send button", () => {
   it("ignores a double tap: one order, cart kept until the first result", async () => {
     let resolve!: (v: unknown) => void;
     mockCreateOrder.mockReturnValue(new Promise((r) => { resolve = r; }));
     mount();
+    await tapNoNotification();
     const btn = await sendButton();
     fireEvent.click(btn);
     fireEvent.click(btn);
@@ -92,6 +97,7 @@ describe("after the order is sent", () => {
   it("offers New order, not Back to order or a second send, and never restores the sent cart", async () => {
     mockCreateOrder.mockResolvedValue(FREE_RESULT);
     mount();
+    await tapNoNotification();
     await act(async () => { fireEvent.click(await sendButton()); });
     expect(screen.queryByText(/back to order/i)).toBeNull();
     expect(screen.queryByText(/send to queue/i)).toBeNull();
@@ -176,6 +182,7 @@ describe("a sent cart never comes back (review blocker)", () => {
       data: { orderId: "o9", yocoClientSecret: "cs_1", totalZar: 3000, cardCheckout: true, freeCup: { applied: false, message: "" } },
     });
     mount();
+    await tapNoNotification();
     await act(async () => { fireEvent.click(await sendButton()); });
     expect(useDraftOrder.getState().items).toHaveLength(0);
     expect(sessionStorage.getItem("favo-pos-draft")).not.toContain("Americano");

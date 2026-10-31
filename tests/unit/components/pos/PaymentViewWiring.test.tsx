@@ -34,10 +34,11 @@ vi.mock("@/hooks/useOfflineOutbox", () => ({
 }));
 
 let TOTAL = 6000;
+let CUSTOMER: { id: string; name: string } | null = null;
 vi.mock("@/store/draftOrder", () => ({
   lineKey: (x: { menuItemId: string }) => x.menuItemId,
   useDraftOrder: () => ({
-    customer: null,
+    get customer() { return CUSTOMER; },
     items: [{ menuItemId: "ame", menuItemName: "Americano", quantity: 2, unitPriceZar: 3000, modifications: [] }],
     get totalZar() { return TOTAL; },
     setCustomer: vi.fn(), addItem: vi.fn(), removeItem: vi.fn(), updateQuantity: vi.fn(), reset: vi.fn(),
@@ -49,14 +50,46 @@ import POSWorkspace from "@/components/pos/POSWorkspace";
 beforeEach(() => {
   vi.clearAllMocks();
   TOTAL = 6000;
+  CUSTOMER = null;
   Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
 });
 
 async function placeOrder() {
   render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
+  // L28 / REQ-046: no customer attached, so the barista taps "No notification".
+  await act(async () => { fireEvent.click(await screen.findByRole("button", { name: "No notification" })); });
   // Phase 5 layout: the place-order button is the running-order "Charge Rxx.xx" CTA.
   await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /^charge r/i })); });
 }
+
+describe("L28 notification target at ring-up (REQ-046)", () => {
+  it("Charge stays disabled until a target is bound; 'No notification' sends target 'none'", async () => {
+    mockCreateOrder.mockResolvedValue({ ok: true, data: { orderId: "ord_n", yocoClientSecret: "" } });
+    render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
+    const charge = await screen.findByRole("button", { name: /^charge r/i });
+    expect((charge as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { fireEvent.click(charge); });
+    expect(mockCreateOrder).not.toHaveBeenCalled();
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "No notification" })); });
+    expect((charge as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => { fireEvent.click(charge); });
+    expect(mockCreateOrder).toHaveBeenCalledTimes(1);
+    expect(mockCreateOrder.mock.calls[0][0]).toMatchObject({ notificationTarget: "none", customerId: undefined });
+  });
+
+  it("'none' then attach a customer then detach: Charge needs a fresh tap, never falls back to 'none'", async () => {
+    const view = render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
+    await act(async () => { fireEvent.click(await screen.findByRole("button", { name: "No notification" })); });
+    CUSTOMER = { id: "cust_naledi", name: "Naledi" };
+    await act(async () => { view.rerender(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />); });
+    CUSTOMER = null;
+    await act(async () => { view.rerender(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />); });
+    const charge = screen.getByRole("button", { name: /^charge r/i });
+    expect((charge as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "No notification" })).toBeDefined();
+  });
+});
 
 describe("M4 payment view wiring", () => {
   it("REQ-071: a paid order with a checkout id gets no in-browser card form — payment is taken in the queue", async () => {

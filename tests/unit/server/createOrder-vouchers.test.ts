@@ -107,7 +107,7 @@ afterEach(() => vi.useRealTimers());
 describe("createOrder with vouchers (§6.9, L41, L42)", () => {
   it("1 Cappuccino R38 + 1 voucher → total R0, payment_mode free, no payments row, nothing sent to Yoco (REQ-149, REQ-153)", async () => {
     sundayEvent();
-    const res = await createOrder({ items: [line(CAPPUCCINO.id, 1, 1)] });
+    const res = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO.id, 1, 1)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -137,7 +137,7 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
 
   it("2 × Cappuccino + 1 voucher → total R38, one pending payment of R38, line discount R38 (REQ-150, REQ-151)", async () => {
     sundayEvent();
-    const res = await createOrder({ items: [line(CAPPUCCINO.id, 2, 1)] });
+    const res = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO.id, 2, 1)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -156,7 +156,7 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
 
   it("T10: vouchered Hot Chocolate beside a paid Cappuccino → the card is asked for R38 alone (REQ-150)", async () => {
     sundayEvent();
-    const res = await createOrder({ items: [line(HOT_CHOC.id, 1, 1), line(CAPPUCCINO.id, 1)] });
+    const res = await createOrder({ notificationTarget: "none", items: [line(HOT_CHOC.id, 1, 1), line(CAPPUCCINO.id, 1)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -170,7 +170,7 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
 
   it("T9: 2 × Hot Chocolate with 2 vouchers + 3 × Cappuccino with 3 → R0, five rows, no payments row (REQ-149)", async () => {
     sundayEvent();
-    const res = await createOrder({ items: [line(HOT_CHOC.id, 2, 2), line(CAPPUCCINO.id, 3, 3)] });
+    const res = await createOrder({ notificationTarget: "none", items: [line(HOT_CHOC.id, 2, 2), line(CAPPUCCINO.id, 3, 3)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -187,7 +187,7 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
 
   it("3 vouchers on quantity 2 → VALIDATION; nothing written; the refusal is audited (REQ-151)", async () => {
     sundayEvent();
-    const res = await createOrder({ items: [line(CAPPUCCINO.id, 2, 3)] });
+    const res = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO.id, 2, 3)] });
 
     expect(res).toMatchObject({ ok: false, code: "VALIDATION" });
     expect(insertsInto(orders)).toEqual([]);
@@ -200,7 +200,7 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
   it("weekday session → VOUCHER_NOT_IN_MODE; nothing written; audited", async () => {
     vi.setSystemTime(THURSDAY);
     given({ sessions: [session("weekday", "2026-10-08", [])] });
-    const res = await createOrder({ items: [line(CAPPUCCINO.id, 1, 1)], voucherKind: KIND });
+    const res = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO.id, 1, 1)], voucherKind: KIND });
 
     expect(res).toMatchObject({ ok: false, code: "VOUCHER_NOT_IN_MODE" });
     expect(insertsInto(orders)).toEqual([]);
@@ -210,14 +210,14 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
 
   it("a kind not in the session's voucher_kinds_active → VOUCHER_NOT_IN_MODE", async () => {
     given({ sessions: [session("sunday", "2026-10-11", [])] });
-    const res = await createOrder({ items: [line(CAPPUCCINO.id, 1, 1)] });
+    const res = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO.id, 1, 1)] });
     expect(res).toMatchObject({ ok: false, code: "VOUCHER_NOT_IN_MODE" });
     expect(insertsInto(orders)).toEqual([]);
   });
 
   it("no open session → NO_SESSION; nothing written; audited", async () => {
     given({ sessions: [] });
-    const res = await createOrder({ items: [line(CAPPUCCINO.id, 1, 1)] });
+    const res = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO.id, 1, 1)] });
 
     expect(res).toMatchObject({ ok: false, code: "NO_SESSION" });
     expect(insertsInto(orders)).toEqual([]);
@@ -227,7 +227,7 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
 
   it("a Sunday order without vouchers is unchanged: no session read for vouchers, no item id, R38 pending payment", async () => {
     given({ sessions: [] }); // no session needed when no voucher is carried
-    const res = await createOrder({ items: [line(CAPPUCCINO.id, 1)] });
+    const res = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO.id, 1)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
