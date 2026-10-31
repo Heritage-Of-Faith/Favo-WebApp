@@ -77,10 +77,19 @@ jobs:
       # concurrent pair is a SMOKE TEST: it shows two overlapping runs both
       # exit 0 and leave a correct schema, but nothing proves they actually
       # contended for the advisory lock (one may finish before the other starts).
+      #
+      # A migration marked `-- favo:requires-approval` is refused unless
+      # FAVO_APPROVE_MIGRATION names its tag (the production opt-in). This is a
+      # throwaway test database, so the step approves every marked file. That is
+      # safe: "Migration approval markers" above fails the job when a risky
+      # migration is NOT marked, so nothing risky slips through unmarked.
       - name: Migrate test DB (release migrator, concurrent + re-run)
         env:
           DATABASE_URL_SESSION: postgresql://favo:favo@localhost:5432/favo_test
         run: |
+          FAVO_APPROVE_MIGRATION="$(grep -l 'favo:requires-approval' drizzle/*.sql | xargs -r -n1 basename | sed 's/\.sql$//' | paste -sd, -)"
+          export FAVO_APPROVE_MIGRATION
+          echo "approving marked migrations on the test DB: ${FAVO_APPROVE_MIGRATION:-none}"
           bun scripts/migrate.ts & a=$!
           bun scripts/migrate.ts & b=$!
           wait $a
