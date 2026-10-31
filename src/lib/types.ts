@@ -83,6 +83,8 @@ export type OrderItem = {
   modifications: MenuCustomisation[];
   /** Integer cents taken off this line (L03 free cup = one unit). 0 when none. */
   discountZar?: number;
+  /** §6.9: live (unreversed) Untracked voucher redemptions on this line. Absent = 0. */
+  voucherCount?: number;
 };
 
 export type Order = {

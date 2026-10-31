@@ -42,6 +42,7 @@ import {
 import { audienceForMode, type CustomerStatus } from "@/lib/push/audience";
 import { sendOpeningPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
+import { pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
 import type { ActionResult } from "@/lib/types";
 
 const POS_ROLES = ["barista", "admin"] as const;
@@ -94,6 +95,7 @@ type OpenRow = {
   id: string; sessionDate: string; opensAt: string; closesAt: string | null;
   viaPos: boolean; notifiedAt: Date | null; mode: SessionMode; eventWindowId: string | null;
   windowStartsAt: Date | null; windowEndsAt: Date | null;
+  voucherKindsActive: string[];
 };
 
 /** The one session with closed_at IS NULL (§6.11.1), with its window's span. */
@@ -105,6 +107,7 @@ async function findOpenSession(dbc: Pick<DB, "select"> = db): Promise<OpenRow | 
       viaPos: openingSessions.viaPos, notifiedAt: openingSessions.notifiedAt,
       mode: openingSessions.mode, eventWindowId: openingSessions.eventWindowId,
       windowStartsAt: eventWindows.startsAt, windowEndsAt: eventWindows.endsAt,
+      voucherKindsActive: openingSessions.voucherKindsActive,
     })
     .from(openingSessions)
     .leftJoin(eventWindows, eq(openingSessions.eventWindowId, eventWindows.id))
@@ -448,6 +451,8 @@ export type CurrentSession = {
   opensAt: string;
   mode: SessionMode;
   eventWindow: EventWindowView | null;
+  /** Non-empty → closeSession prompts for the voucher slip count (§6.11.1, L43). */
+  voucherKindsActive: string[];
 };
 
 /**
@@ -477,6 +482,7 @@ export async function getOpeningStep(): Promise<ActionResult<{
     current = {
       id: open.id, opensAt: open.opensAt, mode: open.mode,
       eventWindow: open.eventWindowId ? windows.find((w) => w.id === open.eventWindowId) ?? null : null,
+      voucherKindsActive: [...(open.voucherKindsActive ?? [])],
     };
   }
   return { ok: true, data: { date, current, sessions, windows, profiles } };
@@ -508,7 +514,9 @@ export async function openSession(input: {
 
 /**
  * closeSession(sessionId) — PRD §11, §6.11.1. Sets closed_at. The slip count is
- * optional and never blocks the close; omitted, it stays NULL (L43).
+ * optional and never blocks the close; omitted, it stays NULL (L43). A count
+ * that differs from voucher_redemptions_recorded pushes the Admin with both
+ * figures after the close commits, and the close completes (REQ-156).
  */
 export async function closeSession(
   sessionId: string,
@@ -523,12 +531,20 @@ export async function closeSession(
   const result = await db.transaction(async (tx) => {
     const txDb = tx as unknown as DB;
     const [row] = await tx
-      .select({ id: openingSessions.id, closedAt: openingSessions.closedAt, opensAt: openingSessions.opensAt })
+      .select({
+        id: openingSessions.id, closedAt: openingSessions.closedAt, opensAt: openingSessions.opensAt,
+        sessionDate: openingSessions.sessionDate,
+        voucherSlipsCounted: openingSessions.voucherSlipsCounted,
+        voucherRedemptionsRecorded: openingSessions.voucherRedemptionsRecorded,
+      })
       .from(openingSessions)
       .where(eq(openingSessions.id, sessionId))
       .for("update");
     if (!row) return "not_found" as const;
     if (row.closedAt) return "closed" as const;
+    // REQ-156: a close with a differing count always pushes — no de-dupe here
+    // (recordVoucherCount de-dupes mid-session re-sends only).
+    const variance = voucherSlipsCounted === undefined ? null : slipVariance(row, voucherSlipsCounted);
     const closedAt = new Date();
     await tx
       .update(openingSessions)
@@ -539,11 +555,15 @@ export async function closeSession(
         entityKind: "opening_session", entityId: sessionId, action: "close",
         actorId: auth.session.id, actorRole: auth.session.role,
         before: { closedAt: null },
-        after: { closedAt: closedAt.toISOString(), voucherSlipsCounted: voucherSlipsCounted ?? null },
+        after: {
+          // What is actually stored: a count given now, else any count already recorded.
+          closedAt: closedAt.toISOString(), voucherSlipsCounted: voucherSlipsCounted ?? row.voucherSlipsCounted ?? null,
+          voucherRedemptionsRecorded: row.voucherRedemptionsRecorded,
+        },
       },
       txDb
     );
-    return "ok" as const;
+    return variance;
   });
 
   if (result === "not_found") {
@@ -564,7 +584,9 @@ export async function closeSession(
       }
     );
   }
-  return { ok: true, data: { sessions: await listToday() } };
+  const sessions = await listToday();
+  if (result) pushVoucherVariance(result);
+  return { ok: true, data: { sessions } };
 }
 
 const isoSchema = z.string().refine((s) => !Number.isNaN(new Date(s).getTime()), "Invalid time");
