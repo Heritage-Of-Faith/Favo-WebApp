@@ -327,17 +327,38 @@ export const orderCogs = pgTable("order_cogs", {
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
+// AT-201 / PRD §10.3.3: one row per payment ATTEMPT, not per order.
 export const payments = pgTable("payments", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: tenantId(),
-  orderId: text("order_id").notNull().references(() => orders.id),
-  // Checkout ID from Yoco's POST /checkouts response — stored at order creation.
-  // Different from yocoPaymentId which arrives later via the webhook.
+  // The payment's subject: an order OR a fund top-up, exactly one (CHECK below).
+  orderId: text("order_id").references(() => orders.id),
+  // → donor_fund_entries.id once that table exists (§10.2). No FK yet.
+  fundTopupId: text("fund_topup_id"),
+  // 1, 2, 3 … per subject. A re-attempt adds a row; it never overwrites.
+  attempt: integer("attempt").notNull(),
+  // `client_uuid:attempt` (P3, REQ-027), written BEFORE the send.
+  clientReference: text("client_reference").notNull().unique(),
+  // Legacy Yoco Online checkout id. Part 2 of AT-201 removes it with the old flow.
   yocoCheckoutId: text("yoco_checkout_id"),
-  // Payment ID from Yoco's webhook — null until the webhook fires.
+  // Yoco's payment id, persisted the moment the send returns (REQ-029).
   yocoPaymentId: text("yoco_payment_id").unique(),
+  // Which machine took the money, read once from config at beginTender (REQ-065).
+  webposDeviceId: text("webpos_device_id").notNull(),
+  // What was sent to the machine — integer cents, frozen (P4).
   amountZar: integer("amount_zar").notNull(),
+  // What the machine actually charged — NULL until an outcome is known (REQ-030).
+  chargedAmountZar: integer("charged_amount_zar"),
+  // Yoco's actual fee from the daily import — NULL, never 0, while unknown.
+  feeZar: integer("fee_zar"),
+  // No tip column (DEC-17): a stray tip is a T10 variance, never stored.
+  receiptNo: text("receipt_no"),
+  settlementRef: text("settlement_ref"),
   status: paymentStatus("status").default("pending").notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+  at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
+  // Legacy webhook timestamp. Part 2 of AT-201 removes it with the old flow.
   webhookReceivedAt: timestamp("webhook_received_at", { withTimezone: true }),
 }, (t) => [
   // AT-181 / REQ-011: an order has at most one successful payment, and the
@@ -345,6 +366,15 @@ export const payments = pgTable("payments", {
   uniqueIndex("payments_one_successful_per_order")
     .on(t.orderId)
     .where(sql`status = 'successful'`),
+  // AT-201 / §10.6 (COL-5): the same guarantee for fund top-ups — NULLs are
+  // distinct, so the order index alone leaves top-ups unguarded.
+  uniqueIndex("payments_one_successful_per_fund_topup")
+    .on(t.fundTopupId)
+    .where(sql`status = 'successful'`),
+  // AT-201 / §10.3.3: attempt is "1, 2, 3 … per order" — one row per attempt.
+  unique("payments_order_attempt_unique").on(t.orderId, t.attempt),
+  // AT-201 / §10.3: a payment points at exactly one subject.
+  check("payments_exactly_one_subject", sql`num_nonnulls(${t.orderId}, ${t.fundTopupId}) = 1`),
 ]);
 
 export const refunds = pgTable("refunds", {

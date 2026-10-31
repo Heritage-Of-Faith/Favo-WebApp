@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     } else if (event.type === "payment.failed") {
       await tx
         .update(payments)
-        .set({ status: "failed", webhookReceivedAt: new Date(), ...paymentIdSet })
+        .set({ status: "declined", webhookReceivedAt: new Date(), ...paymentIdSet })
         .where(eq(payments.id, locked.id));
 
       if (locked.orderId) {

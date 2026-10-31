@@ -8,7 +8,8 @@ describe("payment badge", () => {
   it("R38 order with pending payment is Pending, not Paid", () => {
     expect(paymentBadgeKind(3800, "pending")).toBe("pending");
     expect(paymentBadgeKind(3800, null)).toBe("pending");
-    expect(paymentBadgeKind(3800, "failed")).toBe("pending");
+    // AT-201: payment_status `failed` became `declined` (PRD §10.3.3).
+    expect(paymentBadgeKind(3800, "declined")).toBe("pending");
     render(<PaymentBadge kind="pending" />);
     expect(screen.getByTestId("payment-badge").textContent).toBe("Pending");
     expect(screen.getByTestId("payment-badge").getAttribute("style")).not.toContain("--color-success");

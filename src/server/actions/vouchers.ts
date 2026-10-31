@@ -33,6 +33,7 @@ import {
   CHECKOUT_EXISTS, ORDER_MOVED_ON as LOCK_ORDER_MOVED_ON, ROW_NOT_WRITTEN_YET, lockPaymentForTotalChange,
 } from "@/server/orders/payment-lock";
 import { createPaymentIntent } from "@/server/yoco/client";
+import { LEGACY_ONLINE_CHECKOUT_DEVICE, legacyClientReference } from "@/server/yoco/webpos-port";
 import type { ActionResult } from "@/lib/types";
 import { revenueDay } from "@/lib/format";
 import { forcedCloseAt } from "@/lib/session-mode";
@@ -298,7 +299,15 @@ export async function removeVoucher(
       // A pending row with no checkout: keep its amount equal to the order's.
       await tx.update(payments).set({ amountZar: totalZar }).where(eq(payments.id, payment.id));
     } else if (wasFree) {
-      await tx.insert(payments).values({ orderId: order.id, amountZar: totalZar, status: "pending" });
+      // AT-201 part 1: no row existed, so this is attempt 1 (legacy flow).
+      await tx.insert(payments).values({
+        orderId: order.id,
+        attempt: 1,
+        clientReference: legacyClientReference(order.id, 1),
+        webposDeviceId: LEGACY_ONLINE_CHECKOUT_DEVICE,
+        amountZar: totalZar,
+        status: "pending",
+      });
       rowCreated = true;
     }
     await tx

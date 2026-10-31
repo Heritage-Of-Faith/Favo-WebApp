@@ -295,6 +295,13 @@
       "when": 1793200000000,
       "tag": "0042_l28_notification_target",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793205000000,
+      "tag": "0043_at201_tender_payments",
+      "breakpoints": true
     }
   ]
 }

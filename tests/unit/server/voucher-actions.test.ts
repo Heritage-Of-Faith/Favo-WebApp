@@ -98,6 +98,13 @@ function given(opts: {
 
 const insertsInto = (t: unknown) => inserts.filter((i) => i.table === t).map((i) => i.values);
 const updatesOf = (t: unknown) => updates.filter((u) => u.table === t).map((u) => u.set);
+// AT-201 part 1: the legacy flow writes attempt 1 with a legacy
+// client_reference and device until part 2 rewires it to beginTender.
+const LEGACY_ROW = (orderId: string) => ({
+  attempt: 1,
+  clientReference: `legacy:${orderId}:1`,
+  webposDeviceId: "legacy:yoco-online-checkout",
+});
 const audits = () => mockWriteAudit.mock.calls.map((c) => c[0] as { action: string; after?: Row });
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -283,7 +290,7 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
     });
     const res = await removeVoucher("oi_1");
     expect(res).toEqual({ ok: true, data: { totalZar: 3800, lineDiscountZar: 3800, yocoClientSecret: "cs_1" } });
-    expect(insertsInto(payments)).toEqual([{ orderId: "ord_1", amountZar: 3800, status: "pending" }]);
+    expect(insertsInto(payments)).toEqual([{ orderId: "ord_1", amountZar: 3800, status: "pending", ...LEGACY_ROW("ord_1") }]);
     expect(updatesOf(orders)).toEqual([{ totalZar: 3800, paymentMode: null }]);
     expect(mockCreatePaymentIntent).toHaveBeenCalledWith({ amountZar: 3800, metadata: { orderId: "ord_1" } });
     expect(updatesOf(payments)).toEqual([{ yocoCheckoutId: "ch_1" }]);

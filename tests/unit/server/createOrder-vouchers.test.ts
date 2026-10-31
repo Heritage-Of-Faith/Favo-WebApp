@@ -91,6 +91,13 @@ const sundayEvent = () => given({ sessions: [session("event", "2026-10-11", [KIN
 
 const insertsInto = (t: unknown) => inserts.filter((i) => i.table === t).map((i) => i.values);
 const updatesOf = (t: unknown) => updates.filter((u) => u.table === t).map((u) => u.set);
+// AT-201 part 1: the legacy checkout flow writes attempt 1 with a legacy
+// client_reference and device until part 2 rewires createOrder to beginTender.
+const LEGACY_ROW = (orderId: string) => ({
+  attempt: 1,
+  clientReference: `legacy:${orderId}:1`,
+  webposDeviceId: "legacy:yoco-online-checkout",
+});
 const audits = () => mockWriteAudit.mock.calls.map((c) => c[0] as { action: string; reason?: string; after?: Row });
 const line = (id: string, quantity: number, voucherCount?: number) => ({
   menuItemId: id, quantity, modifications: [] as string[], ...(voucherCount === undefined ? {} : { voucherCount }),
@@ -146,7 +153,7 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
     const [items] = insertsInto(orderItems) as Row[][];
     expect(items[0]).toMatchObject({ quantity: 2, unitPriceZar: 3800, discountZar: 3800 });
     expect(insertsInto(payments)).toEqual([
-      { orderId: res.data.orderId, amountZar: 3800, status: "pending", yocoCheckoutId: "ch_1" },
+      { orderId: res.data.orderId, amountZar: 3800, status: "pending", yocoCheckoutId: "ch_1", ...LEGACY_ROW(res.data.orderId) },
     ]);
     expect(mockCreatePaymentIntent).toHaveBeenCalledTimes(1);
     expect(mockCreatePaymentIntent).toHaveBeenCalledWith({ amountZar: 3800, metadata: { orderId: res.data.orderId } });
@@ -164,7 +171,7 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
     const [items] = insertsInto(orderItems) as Row[][];
     expect(items.map((i) => i.discountZar)).toEqual([3200, 0]);
     expect(insertsInto(payments)).toEqual([
-      { orderId: res.data.orderId, amountZar: 3800, status: "pending", yocoCheckoutId: "ch_1" },
+      { orderId: res.data.orderId, amountZar: 3800, status: "pending", yocoCheckoutId: "ch_1", ...LEGACY_ROW(res.data.orderId) },
     ]);
   });
 
@@ -238,7 +245,7 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
     expect(insertsInto(voucherRedemptions)).toEqual([]);
     expect(updatesOf(openingSessions)).toEqual([]);
     expect(insertsInto(payments)).toEqual([
-      { orderId: res.data.orderId, amountZar: 3800, status: "pending", yocoCheckoutId: "ch_1" },
+      { orderId: res.data.orderId, amountZar: 3800, status: "pending", yocoCheckoutId: "ch_1", ...LEGACY_ROW(res.data.orderId) },
     ]);
   });
 });
