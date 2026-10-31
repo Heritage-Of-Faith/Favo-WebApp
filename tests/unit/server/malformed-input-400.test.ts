@@ -42,6 +42,13 @@ describe("GET /api/cogs/live — date validation", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects an empty date= with 400, not a bare 500 (QA R2-SEC-2)", async () => {
+    const res = await cogsLive(new NextRequest("http://x/api/cogs/live?date="));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "date must be a real calendar date in YYYY-MM-DD format." });
+    expect(computeCogsLive).not.toHaveBeenCalled();
+  });
+
   it("accepts a real date and still defaults to today when absent", async () => {
     expect((await cogsLive(new NextRequest("http://x/api/cogs/live?date=2024-02-29"))).status).toBe(200);
     expect(computeCogsLive).toHaveBeenLastCalledWith("2024-02-29");

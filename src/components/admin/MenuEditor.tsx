@@ -124,7 +124,7 @@ export default function MenuEditor() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="min-h-10"
+                    className="min-h-11"
                     onClick={() => setDialog({ mode: "editPrice", item })}
                   >
                     Edit price
@@ -132,14 +132,14 @@ export default function MenuEditor() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="min-h-10"
+                    className="min-h-11"
                     onClick={() => setDialog({ mode: "history", item })}
                   >
                     History
                   </Button>
                   <Link
                     href={`/admin/menu/${item.id}/recipe` as Route}
-                    className="inline-flex min-h-10 items-center rounded-[var(--radius-btn)] px-3 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
+                    className="inline-flex min-h-11 items-center rounded-[var(--radius-btn)] px-3 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
                     style={{ color: "var(--color-text-strong)" }}
                   >
                     Recipe
@@ -147,7 +147,7 @@ export default function MenuEditor() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="min-h-10 text-destructive hover:text-destructive"
+                    className="min-h-11 text-destructive hover:text-destructive"
                     onClick={() => handleToggleActive(item)}
                   >
                     Deactivate
@@ -175,7 +175,7 @@ export default function MenuEditor() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="min-h-10"
+                      className="min-h-11"
                       onClick={() => handleToggleActive(item)}
                     >
                       Reactivate
@@ -301,7 +301,7 @@ function CreateItemDialog({
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={submitting} className="min-h-10">
+            <Button type="submit" disabled={submitting} className="min-h-11">
               {submitting ? "Adding…" : "Add item"}
             </Button>
           </DialogFooter>
@@ -376,7 +376,7 @@ function EditPriceDialog({
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={submitting} className="min-h-10">
+            <Button type="submit" disabled={submitting} className="min-h-11">
               {submitting ? "Saving…" : "Save price"}
             </Button>
           </DialogFooter>

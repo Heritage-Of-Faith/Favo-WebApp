@@ -68,7 +68,7 @@ export default function DualSignBlock({ report, canSignAdmin, onSigned }: DualSi
           <button
             type="button"
             onClick={() => setConfirm(true)}
-            className="self-start min-h-10 rounded-[var(--radius-btn)] px-3 favo-cta"
+            className="self-start min-h-11 rounded-[var(--radius-btn)] px-3 favo-cta"
             style={{ background: "var(--color-accent)", color: "var(--color-text-inverse)" }}
           >
             Sign &amp; close report
@@ -100,7 +100,7 @@ export default function DualSignBlock({ report, canSignAdmin, onSigned }: DualSi
             <Button type="button" variant="outline" onClick={() => setConfirm(false)}>
               Cancel
             </Button>
-            <Button type="button" disabled={signing} onClick={() => void doSign()} className="min-h-10">
+            <Button type="button" disabled={signing} onClick={() => void doSign()} className="min-h-11">
               {signing ? "Signing…" : "Sign & close"}
             </Button>
           </DialogFooter>

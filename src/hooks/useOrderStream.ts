@@ -76,10 +76,15 @@ export function useOrderStream(initialOrders?: LiveOrder[]) {
         if (parsed.type === "state_change") {
           setOrders((prev) => {
             const next = new Map(prev);
+            const known = prev.get(parsed.orderId);
             next.set(parsed.orderId, {
               orderId: parsed.orderId,
               state: parsed.state,
-              lastUpdatedAt: parsed.at,
+              // R3 barista P3-2: the queue shows the order's placed time
+              // (listActiveOrders sends placedAt). A status change must not
+              // move it — keep the known time; only a brand-new order falls
+              // back to the event's time until the next resync.
+              lastUpdatedAt: known?.lastUpdatedAt ?? parsed.at,
               // Prefer the name carried in the event; fall back to what we
               // already know (so mid-order transitions don't wipe it out).
               customerName: parsed.customerName !== undefined

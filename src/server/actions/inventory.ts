@@ -17,6 +17,9 @@ import {
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
 import { INT4_MAX, parseLotUnitCost } from "@/lib/admin-input";
+import { isCupOrLid, dayConsumesCupAndLid } from "@/server/orders/cup-lid";
+import { todaySast } from "@/server/cogs/compute";
+import { yieldLotFilter } from "@/server/inventory/yield-filter";
 import type {
   ActionResult,
   ContainerYield,
@@ -169,24 +172,28 @@ export async function listLots(
     for (const r of rows) cupsMadeByLot.set(r.lotId, r.total);
   }
 
+  // R3-SEC-1: supplier and cost are admin data; the barista's waste picker
+  // gets them as null.
+  const isAdmin = auth.session.role === "admin";
+
   const result: InventoryLot[] = lots.map((lot) => ({
     id: lot.id,
     inventoryItemId: lot.inventoryItemId,
     inventoryItemName: itemName,
-    sourceName: lot.sourceName,
+    sourceName: isAdmin ? lot.sourceName : null,
     batchNumber: lot.batchNumber,
     roastDate: lot.roastDate?.toISOString() ?? null,
     receivedAt: lot.receivedAt.toISOString(),
     state: lot.state as InventoryLot["state"],
     origin: lot.origin,
-    unitCostZar: lot.unitCostZar,
+    unitCostZar: isAdmin ? lot.unitCostZar : null,
     quantityReceived: lot.quantityReceived,
     quantityRemaining: remainingByLot.get(lot.id) ?? 0,
     openedAt: lot.openedAt?.toISOString() ?? null,
     closedAt: lot.closedAt?.toISOString() ?? null,
     containerSize: lot.containerSize,
     containerSizeUnit: lot.containerSizeUnit as InventoryLot["containerSizeUnit"],
-    containerCostZar: lot.containerCostZar,
+    containerCostZar: isAdmin ? lot.containerCostZar : null,
     ...(isCup ? { cupsMade: cupsMadeByLot.get(lot.id) ?? 0 } : {}),
   }));
 
@@ -208,7 +215,16 @@ export async function listInventoryStatus(): Promise<
   const items = await db.select().from(inventoryItems);
   const statusMap: InventoryStatusMap = {};
 
+  // REQ-125 / L24: on a weekday-mode day no order uses a cup or lid (own
+  // mugs; deduction.ts skips them), so a cup/lid shortage must not mark a
+  // drink OUT on the till or appear in its out-of-stock banner. Same mode
+  // rule as deduction (cup-lid.ts), read for today's SAST date.
+  const skipCupLid = items.some((i) => isCupOrLid(i.kind))
+    ? !(await dayConsumesCupAndLid(todaySast(), db))
+    : false;
+
   for (const item of items) {
+    if (skipCupLid && isCupOrLid(item.kind)) continue;
     const isContainerItem = item.unit === "cup";
     const currentStock = isContainerItem
       ? ((await hasServableContainer(item.id)) ? 1 : 0)
@@ -246,6 +262,10 @@ export async function getActiveBeanLot(): Promise<
 
   if (!lot) return { ok: true, data: { lot: null } };
 
+  // R3-SEC-1: the till needs stock level and state only. Supplier name and
+  // cost per unit are admin/finance data — never sent to a barista browser.
+  const isAdmin = auth.session.role === "admin";
+
   return {
     ok: true,
     data: {
@@ -253,13 +273,13 @@ export async function getActiveBeanLot(): Promise<
         id: lot.id,
         inventoryItemId: lot.inventoryItemId,
         inventoryItemName: "Espresso Beans",
-        sourceName: lot.sourceName,
+        sourceName: isAdmin ? lot.sourceName : null,
         batchNumber: lot.batchNumber,
         roastDate: lot.roastDate?.toISOString() ?? null,
         receivedAt: lot.receivedAt.toISOString(),
         state: lot.state as InventoryLot["state"],
         origin: lot.origin,
-        unitCostZar: lot.unitCostZar,
+        unitCostZar: isAdmin ? lot.unitCostZar : null,
         quantityReceived: lot.quantityReceived,
         quantityRemaining: await lotRunningStock(lot.id),
       },
@@ -391,8 +411,10 @@ export async function updateLotCost(
  * Real yield per container (milk & beans): every closed container-model lot
  * (real size/cost, no predicted quantity) plus any currently-open one, with
  * the actual cups made and the real cost/cup that came out of it. Powers the
- * admin yield report + chart. Legacy (predicted-quantity) lots are excluded —
- * they never had a real container size/cost to report.
+ * admin yield report + chart. A cup-tracked lot with no recorded container
+ * cost/size is listed with its cups made and "—" for size and cost/cup
+ * (R3-4: it was hidden, so an open bag with 121 cups read "No containers
+ * opened yet"). Non-cup lots still need a real container cost to appear.
  */
 export async function getContainerYields(): Promise<
   ActionResult<{ yields: ContainerYield[] }>
@@ -416,12 +438,9 @@ export async function getContainerYields(): Promise<
     })
     .from(inventoryLots)
     .innerJoin(inventoryItems, eq(inventoryLots.inventoryItemId, inventoryItems.id))
-    .where(
-      and(
-        sql`${inventoryLots.containerCostZar} IS NOT NULL`,
-        sql`${inventoryLots.state} IN ('open', 'closed')`
-      )
-    )
+    // R3-4: every opened cup-tracked container counts, with or without a
+    // recorded container cost (cost/cup then stays null → "—").
+    .where(yieldLotFilter())
     .orderBy(desc(inventoryLots.receivedAt));
 
   if (lots.length === 0) {

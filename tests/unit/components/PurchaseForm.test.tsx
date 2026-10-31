@@ -60,8 +60,8 @@ describe("PurchaseForm", () => {
     expect(screen.getByRole("alert").textContent).toMatch(/total paid/);
   });
 
-  it("caps the source at 100 characters", () => {
+  it("caps the source at 80 characters", () => {
     renderForm();
-    expect(screen.getByLabelText("Source").getAttribute("maxLength")).toBe("100");
+    expect(screen.getByLabelText("Source").getAttribute("maxLength")).toBe("80");
   });
 });

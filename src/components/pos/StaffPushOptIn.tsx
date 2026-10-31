@@ -56,51 +56,31 @@ export default function StaffPushOptIn() {
   if (!visible) return null;
 
   return (
-    // In-flow banner under the header (was fixed bottom-right, which covered
-    // primary buttons on a portrait iPad). It pushes content down instead.
-    <div data-pos-push-banner className="shrink-0 border-b border-cool-steel/25 bg-dark-teal-deep p-3">
-      <div className="flex items-start gap-3">
-        <Bell size={18} strokeWidth={2} className="text-crimson-carrot shrink-0 mt-0.5" />
-        <div className="flex-1">
-          <p className="favo-subhead text-porcelain">Get stock & order alerts</p>
-          <p className="favo-small text-cool-steel mt-0.5">
-            Get pinged on this device when stock runs low or an order needs attention.
-          </p>
-          {denied ? (
-            <div className="mt-3 flex gap-2">
-              <p className="favo-small text-cool-steel">
-                Notifications are blocked. Allow them in your browser settings, then refresh.
-              </p>
-              <button type="button" onClick={dismiss} className="ml-auto shrink-0 min-h-[44px] rounded-[4px] border border-cool-steel/30 px-4 favo-small text-cool-steel hover:bg-porcelain/10">
-                Dismiss
-              </button>
-            </div>
-          ) : (
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                onClick={handleEnable}
-                disabled={loading}
-                className="flex min-h-[44px] items-center gap-2 rounded-[4px] bg-crimson-carrot px-4 transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
-                style={{ color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}
-              >
-                {loading ? <Loader2 size={14} strokeWidth={2} className="animate-spin" /> : "Enable"}
-              </button>
-              <button
-                type="button"
-                onClick={dismiss}
-                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 px-4 favo-small text-cool-steel hover:bg-porcelain/10"
-              >
-                Not now
-              </button>
-            </div>
-          )}
-        </div>
+    // One compact line (~28px) so the till keeps its height; buttons keep a 44px
+    // hit area through negative margins.
+    <div data-pos-push-banner className="shrink-0 border-b border-cool-steel/25 bg-dark-teal-deep px-3">
+      <div className="flex h-7 items-center gap-2">
+        <Bell size={14} strokeWidth={2} className="text-crimson-carrot shrink-0" />
+        <p className="favo-small text-porcelain flex-1 truncate">
+          {denied
+            ? "Get stock & order alerts: blocked. Allow notifications in browser settings, then refresh."
+            : "Get stock & order alerts on this device"}
+        </p>
+        {!denied && (
+          <button
+            type="button"
+            onClick={handleEnable}
+            disabled={loading}
+            className="-my-2 flex min-h-[44px] shrink-0 items-center gap-2 rounded-[4px] px-3 favo-small font-bold uppercase text-crimson-carrot disabled:opacity-40"
+          >
+            {loading ? <Loader2 size={14} strokeWidth={2} className="animate-spin" /> : "Enable"}
+          </button>
+        )}
         <button
           type="button"
           onClick={dismiss}
-          aria-label="Dismiss"
-          className="flex h-11 w-11 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
+          aria-label={denied ? "Dismiss" : "Not now"}
+          className="-my-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
         >
           <X size={14} strokeWidth={2} />
         </button>

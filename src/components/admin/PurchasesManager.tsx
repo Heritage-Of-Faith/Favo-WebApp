@@ -65,7 +65,7 @@ export default function PurchasesManager({ initialPurchases, items, canApprove }
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          className="min-h-10 rounded-[var(--radius-btn)] px-4 favo-cta"
+          className="min-h-11 rounded-[var(--radius-btn)] px-4 favo-cta"
           style={{ background: "var(--color-accent)", color: "var(--color-text-inverse)" }}
         >
           + Record purchase
@@ -97,12 +97,11 @@ export default function PurchasesManager({ initialPurchases, items, canApprove }
                   <TableRow key={p.id}>
                     <TableCell>{formatDate(p.receivedAt)}</TableCell>
                     {/* Long names (older rows predate the 100-char cap) are cut with "…"; full text on hover. */}
-                    <TableCell
-                      title={p.sourceName}
-                      className="max-w-[16rem] truncate"
-                      style={{ color: "var(--color-text-strong)", fontWeight: 600 }}
-                    >
-                      {p.sourceName}
+                    <TableCell style={{ color: "var(--color-text-strong)", fontWeight: 600 }}>
+                      {/* max-width only binds on a block inside the cell, not on the <td> (QA R5-5). */}
+                      <span title={p.sourceName} className="block max-w-[16rem] truncate">
+                        {p.sourceName}
+                      </span>
                     </TableCell>
                     <TableCell style={{ textTransform: "capitalize" }}>
                       {p.kind === "emergency" ? <StatusBadge variant="warning" dot={false}>emergency</StatusBadge> : "planned"}
@@ -117,7 +116,7 @@ export default function PurchasesManager({ initialPurchases, items, canApprove }
                             type="button"
                             onClick={() => void approve(p.id)}
                             disabled={approving === p.id}
-                            className="min-h-9 rounded-[var(--radius-btn)] px-3 favo-cta disabled:opacity-50"
+                            className="min-h-11 rounded-[var(--radius-btn)] px-3 favo-cta disabled:opacity-50"
                             style={{ background: "var(--color-warning)", color: "var(--color-text-inverse)" }}
                           >
                             {approving === p.id ? "Approving…" : "Approve"}

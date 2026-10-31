@@ -50,6 +50,8 @@ const nextConfig: NextConfig = {
   typedRoutes: true,
   // Produces .next/standalone — the self-contained server the Dockerfile copies in.
   output: "standalone",
+  // Do not advertise the framework in an `x-powered-by` response header.
+  poweredByHeader: false,
   async headers() {
     return [
       {

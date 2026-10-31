@@ -134,7 +134,7 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
                         updateRow(row.dayOfWeek, { openTime: e.target.value })
                       }
                       aria-label={`${DAY_NAMES[row.dayOfWeek]} opens at`}
-                      className="rounded border border-border-subtle bg-surface px-2 py-1 text-sm text-text-strong disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="min-h-11 rounded border border-border-subtle bg-surface px-2 py-1 text-base text-text-strong disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </td>
 
@@ -148,7 +148,7 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
                         updateRow(row.dayOfWeek, { closeTime: e.target.value })
                       }
                       aria-label={`${DAY_NAMES[row.dayOfWeek]} closes at`}
-                      className="rounded border border-border-subtle bg-surface px-2 py-1 text-sm text-text-strong disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="min-h-11 rounded border border-border-subtle bg-surface px-2 py-1 text-base text-text-strong disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </td>
 
@@ -163,11 +163,11 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
                           updateRow(row.dayOfWeek, { isClosed: e.target.checked })
                         }
                         aria-label={`${DAY_NAMES[row.dayOfWeek]} closed all day`}
-                        className="h-4 w-4 cursor-pointer rounded border-border-subtle accent-[color:var(--color-accent)] disabled:cursor-not-allowed"
+                        className="h-11 w-11 cursor-pointer rounded border-border-subtle accent-[color:var(--color-accent)] disabled:cursor-not-allowed"
                       />
                       <Label
                         htmlFor={`${dayId}-closed`}
-                        className="text-xs text-text-muted cursor-pointer"
+                        className="min-h-11 inline-flex items-center text-xs text-text-muted cursor-pointer"
                       >
                         {row.isClosed ? "Closed" : "Open"}
                       </Label>
@@ -187,7 +187,7 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
       )}
 
       <div className="flex items-center gap-3">
-        <Button onClick={handleSave} disabled={isPending}>
+        <Button className="min-h-11" onClick={handleSave} disabled={isPending}>
           {isPending ? "Saving…" : "Save hours"}
         </Button>
         {saved && !isPending && (

@@ -19,10 +19,12 @@ import type { Staff } from "@/lib/types";
 export type Props = {
   staff: Staff[];
   onResetPin: (member: Staff) => void;
+  /** Opens the PIN dialog in reactivate mode (a new PIN is required). */
+  onReactivate: (member: Staff) => void;
   onChanged: () => void;
 };
 
-export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
+export default function StaffTable({ staff, onResetPin, onReactivate, onChanged }: Props) {
   // Per-id set so concurrent row actions don't clobber each other's busy state.
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const markBusy = (id: string) =>
@@ -53,7 +55,7 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
   // Switching back on always sets a new PIN (opens the PIN dialog), so a PIN given to
   // someone else meanwhile can never end up shared.
   function handleReactivate(member: Staff) {
-    onResetPin(member);
+    onReactivate(member);
   }
 
   if (staff.length === 0) {
@@ -106,6 +108,7 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
                 <Button
                   variant="outline"
                   size="default"
+                  className="min-h-11"
                   onClick={() => onResetPin(member)}
                 >
                   Reset PIN
@@ -114,6 +117,7 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
                   <Button
                     variant="destructive"
                     size="default"
+                  className="min-h-11"
                     disabled={busyIds.has(member.id)}
                     onClick={() => handleDeactivate(member)}
                   >
@@ -123,6 +127,7 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
                   <Button
                     variant="outline"
                     size="default"
+                  className="min-h-11"
                     disabled={busyIds.has(member.id)}
                     onClick={() => handleReactivate(member)}
                   >

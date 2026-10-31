@@ -58,7 +58,7 @@ export default function ThresholdEditor({ itemId, value, unit, onSaved }: Thresh
           setDraft(String(value));
           setEditing(true);
         }}
-        className="inline-flex min-h-10 items-center gap-1.5 rounded-[var(--radius-btn)] px-2 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-[var(--radius-btn)] px-2 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
         style={{ color: "var(--color-text-strong)" }}
         aria-label={`Edit threshold for this item (currently ${value} ${unit})`}
       >
@@ -85,7 +85,7 @@ export default function ThresholdEditor({ itemId, value, unit, onSaved }: Thresh
           if (e.key === "Enter") void save();
           if (e.key === "Escape") setEditing(false);
         }}
-        className="h-10 w-20 rounded-[var(--radius-btn)] border px-2 favo-small focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]"
+        className="h-11 w-20 rounded-[var(--radius-btn)] border px-2 text-base focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]"
         style={{
           background: "var(--color-surface)",
           color: "var(--color-text-strong)",
@@ -99,7 +99,7 @@ export default function ThresholdEditor({ itemId, value, unit, onSaved }: Thresh
         type="button"
         onClick={() => void save()}
         disabled={saving}
-        className="min-h-10 rounded-[var(--radius-btn)] px-2 favo-cta disabled:opacity-50"
+        className="min-h-11 rounded-[var(--radius-btn)] px-2 favo-cta disabled:opacity-50"
         style={{ color: "var(--color-accent)" }}
       >
         {saving ? "…" : "Save"}
@@ -107,7 +107,7 @@ export default function ThresholdEditor({ itemId, value, unit, onSaved }: Thresh
       <button
         type="button"
         onClick={() => setEditing(false)}
-        className="min-h-10 px-1 favo-small"
+        className="min-h-11 px-1 favo-small"
         style={{ color: "var(--color-text-muted)" }}
       >
         ✕

@@ -6,7 +6,8 @@
 import AuditViewer from "@/components/admin/AuditViewer";
 import { listAudit, listAuditEntityKinds } from "@/server/actions/audit";
 
-export const metadata = { title: "Audit Log — FAVO Admin" };
+// The admin layout's title template adds " — FAVO Admin" (QA R6: was doubled).
+export const metadata = { title: "Audit Log" };
 
 export default async function AuditPage() {
   const [result, kindsRes] = await Promise.all([listAudit({ page: 0 }), listAuditEntityKinds()]);

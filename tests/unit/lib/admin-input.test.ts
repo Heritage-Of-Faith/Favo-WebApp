@@ -111,7 +111,7 @@ describe("parseMenuPriceCents", () => {
 });
 
 describe("SOURCE_NAME_MAX", () => {
-  it("is 100 characters", () => {
-    expect(SOURCE_NAME_MAX).toBe(100);
+  it("is 80 characters", () => {
+    expect(SOURCE_NAME_MAX).toBe(80);
   });
 });

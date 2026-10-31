@@ -214,4 +214,24 @@ describe("recordStockTakeLine — validation", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
   });
+
+  // R3-1: int4 overflow values and absurd counts must be refused, not 500.
+  it.each([2147483648, 99999999999, 10_000_001, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects %s with a readable message",
+    async (value) => {
+      const { recordStockTakeLine } = await import("@/server/actions/stock-takes");
+      const result = await recordStockTakeLine("take_001", "lot_001", value);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe("VALIDATION_ERROR");
+        expect(result.message).not.toMatch(/^counted must/);
+      }
+    }
+  );
+
+  it("names the ceiling when the count is too large", async () => {
+    const { recordStockTakeLine } = await import("@/server/actions/stock-takes");
+    const result = await recordStockTakeLine("take_001", "lot_001", 99999999999);
+    if (!result.ok) expect(result.message).toMatch(/too large/);
+  });
 });

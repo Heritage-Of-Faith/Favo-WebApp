@@ -22,3 +22,25 @@ describe("AuditViewer entity filter", () => {
     expect(values).not.toContain("inventory");
   });
 });
+
+// QA R5-4: the entity cell read "reportssales…" — kind and id ran together.
+describe("AuditViewer entity cell", () => {
+  it("separates the entity kind from its id and keeps the full id on hover", () => {
+    const row = {
+      id: "a1", entityKind: "reports", entityId: "sales_2026-10-14_2026-10-27", action: "export",
+      actorId: null, actorRole: "admin", at: "2026-10-27T08:00:00.000Z", before: null, after: null, reason: null,
+    };
+    render(<AuditViewer initialRows={[row]} total={1} entityKinds={["reports"]} />);
+    const cell = screen.getByTitle("reports · sales_2026-10-14_2026-10-27");
+    expect(cell.textContent).toBe("reports · sales_20…");
+  });
+
+  it("does not add an ellipsis to a short id", () => {
+    const row = {
+      id: "a2", entityKind: "staff", entityId: "unknown", action: "login_failed",
+      actorId: null, actorRole: null, at: "2026-10-27T08:00:00.000Z", before: null, after: null, reason: null,
+    };
+    render(<AuditViewer initialRows={[row]} total={1} entityKinds={["staff"]} />);
+    expect(screen.getByTitle("staff · unknown").textContent).toBe("staff · unknown");
+  });
+});

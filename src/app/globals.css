@@ -63,7 +63,7 @@
   --font-sans:    'DM Sans', 'Helvetica Neue', Arial, sans-serif;
 
   /* ── Type scale ── */
-  --text-caption: 0.6875rem;   /* 11px */
+  --text-caption: 0.75rem;     /* 12px: iPad legibility floor */
   --text-small:   0.8125rem;   /* 13px */
   --text-base:    1rem;        /* 16px */
   --text-sub:     1.125rem;    /* 18px */

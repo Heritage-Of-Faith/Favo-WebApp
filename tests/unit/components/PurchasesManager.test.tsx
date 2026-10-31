@@ -27,5 +27,9 @@ describe("PurchasesManager source cell", () => {
     expect(cell.getAttribute("title")).toBe(long);
     expect(cell.className).toContain("truncate");
     expect(cell.className).toContain("max-w-[16rem]");
+    // QA R5-5: max-width on a <td> does not bind in an auto-layout table, so the
+    // truncation lives on a block element inside the cell.
+    expect(cell.tagName).toBe("SPAN");
+    expect(cell.className).toContain("block");
   });
 });

@@ -13,8 +13,10 @@ const insertValues = vi.fn().mockReturnValue({
 });
 const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
 
-vi.mock("@db/index", () => ({
-  db: {
+const execute = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("@db/index", () => {
+  const db: Record<string, unknown> = {
     select: vi.fn().mockImplementation(() => ({
       from: () => ({
         where: () => Promise.resolve(activeRows),
@@ -22,10 +24,14 @@ vi.mock("@db/index", () => ({
     })),
     insert: vi.fn().mockImplementation(() => ({ values: insertValues })),
     update: vi.fn().mockImplementation(() => ({ set: updateSet })),
-  },
-}));
+    execute: (...a: unknown[]) => execute(...a),
+  };
+  db.transaction = async (cb: (tx: unknown) => Promise<unknown>) => cb(db);
+  return { db };
+});
 
-vi.mock("@/server/audit", () => ({ writeAudit: vi.fn().mockResolvedValue(undefined) }));
+const writeAudit = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/server/audit", () => ({ writeAudit: (...a: unknown[]) => writeAudit(...a) }));
 vi.mock("@/server/auth/guard", () => ({
   authorize: vi.fn().mockResolvedValue({
     ok: true,
@@ -92,5 +98,60 @@ describe("switching a staff member back on", () => {
     const res = await setStaffPin({ staffId: "staff_old", newPin: "1234", reactivate: true });
     expect(res.ok).toBe(false);
     expect(updateSet).not.toHaveBeenCalled();
+  });
+
+  // QA R2-6: reactivation refuses the member's OWN old PIN, with the generic wording.
+  it("reactivate refuses the member's own old PIN, without saying why", async () => {
+    const { setStaffPin } = await import("@/server/actions/staff");
+    // The mocked lookup returns Sam's row (PIN 1234) as the member being reactivated.
+    const res = await setStaffPin({ staffId: "staff_barista_sam", newPin: "1234", reactivate: true });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe("PIN_REUSED");
+      expect(res.message).toBe("That PIN can't be used. Choose a different PIN.");
+    }
+    expect(updateSet).not.toHaveBeenCalled();
+  });
+
+  it("reactivate with a new PIN switches the member on", async () => {
+    const { setStaffPin } = await import("@/server/actions/staff");
+    const res = await setStaffPin({ staffId: "staff_barista_sam", newPin: "5555", reactivate: true });
+    expect(res.ok).toBe(true);
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ active: true }));
+  });
+
+  it("refusals are audited, with no PIN material in the row", async () => {
+    const { setStaffPin } = await import("@/server/actions/staff");
+    await setStaffPin({ staffId: "staff_barista_sam", newPin: "1234", reactivate: true });
+    activeRows.push({ id: "staff_admin_olivia", name: "Olivia", pinHash: await hashPin("1111") });
+    await setStaffPin({ staffId: "staff_admin_olivia", newPin: "1234" }); // Sam's PIN
+    const rows = writeAudit.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    expect(rows[0]).toMatchObject({ entityId: "staff_barista_sam", action: "reactivate_refused", reason: "PIN_REUSED" });
+    expect(rows[1]).toMatchObject({ entityId: "staff_admin_olivia", action: "set_pin_refused", reason: "PIN_TAKEN" });
+    expect(JSON.stringify(rows)).not.toMatch(/1234|1111|pinHash|\$2[aby]\$/);
+  });
+
+  it("reactivate on an already-active member is refused with ALREADY_ACTIVE", async () => {
+    activeRows[0] = { ...activeRows[0]!, active: true } as (typeof activeRows)[number];
+    const { setStaffPin } = await import("@/server/actions/staff");
+    const res = await setStaffPin({ staffId: "staff_barista_sam", newPin: "5555", reactivate: true });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("ALREADY_ACTIVE");
+    expect(updateSet).not.toHaveBeenCalled();
+  });
+
+  it("takes the PIN-write advisory lock before checking uniqueness", async () => {
+    const { setStaffPin } = await import("@/server/actions/staff");
+    await setStaffPin({ staffId: "staff_barista_sam", newPin: "5555" });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  // QA R2-5: a plain PIN reset never changes active.
+  it("plain reset PIN does not touch active", async () => {
+    const { setStaffPin } = await import("@/server/actions/staff");
+    const res = await setStaffPin({ staffId: "staff_barista_sam", newPin: "5555" });
+    expect(res.ok).toBe(true);
+    const arg = updateSet.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(arg).not.toHaveProperty("active");
   });
 });

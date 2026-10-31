@@ -412,12 +412,46 @@ export async function setMenuItemActive(
   if (!auth.ok) return auth;
 
   const [existing] = await db
-    .select({ id: menuItems.id, active: menuItems.active })
+    .select({ id: menuItems.id, name: menuItems.name, category: menuItems.category, active: menuItems.active })
     .from(menuItems)
     .where(eq(menuItems.id, menuItemId));
 
   if (!existing) return { ok: false, code: "NOT_FOUND", message: "Menu item not found." };
   if (existing.active === active) return { ok: true, data: undefined };
+
+  // QA R5-1: reactivating must not put a second item of the same name on the
+  // menu. Same rule as createMenuItem: same category, case-insensitive, trimmed.
+  if (active) {
+    const [dupe] = await db
+      .select({ id: menuItems.id, name: menuItems.name })
+      .from(menuItems)
+      .where(
+        and(
+          eq(menuItems.category, existing.category),
+          eq(menuItems.active, true),
+          sql`${menuItems.id} <> ${menuItemId}`,
+          sql`lower(trim(${menuItems.name})) = lower(${existing.name.trim()})`
+        )
+      );
+    if (dupe) {
+      // QA R6-8: a refused action is audited (nothing else is written).
+      await writeAudit({
+        entityKind: "menu_item",
+        entityId: menuItemId,
+        action: "reactivate_refused",
+        actorId: auth.session.id,
+        actorRole: auth.session.role,
+        before: { active: existing.active },
+        after: { code: "DUPLICATE", duplicateOfId: dupe.id },
+        reason: "DUPLICATE",
+      });
+      return {
+        ok: false,
+        code: "DUPLICATE",
+        message: `"${dupe.name}" is already on the menu in this category.`,
+      };
+    }
+  }
 
   await db.update(menuItems).set({ active }).where(eq(menuItems.id, menuItemId));
 
