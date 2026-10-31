@@ -6,13 +6,14 @@
 // Docs: docs/API.md · docs/DATA_MODEL.md → menu_items, price_history, operating_hours
 
 import { z } from "zod";
-import { eq, asc, desc, and, isNull } from "drizzle-orm";
+import { eq, asc, desc, and, isNull, sql } from "drizzle-orm";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
 import type { DB } from "@/lib/db";
 import { menuItems, menuCustomisations, priceHistory, operatingHours } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
+import { INT4_MAX } from "@/lib/admin-input";
 import type { ActionResult, MenuItem, MenuCustomisation, MenuCategory } from "@/lib/types";
 
 // Cache tag for the public menu. The menu changes rarely (only on price edits
@@ -41,15 +42,23 @@ export type OperatingHour = {
 
 const MENU_CATEGORIES = ["coffee", "tea", "cold_brew", "food", "merchandise", "other"] as const;
 
+// Upper bound = the integer column (current_price_zar / price_zar); above it
+// Postgres throws and the admin saw a 500.
+const priceZarSchema = z
+  .number()
+  .int()
+  .positive("Price must be a positive integer (cents).")
+  .max(INT4_MAX, "Price is too large.");
+
 const setPriceSchema = z.object({
   menuItemId: z.string().min(1),
-  newPriceZar: z.number().int().positive("Price must be a positive integer (cents)."),
+  newPriceZar: priceZarSchema,
 });
 
 const createItemSchema = z.object({
-  name: z.string().min(1, "Name is required.").max(80, "Name too long."),
+  name: z.string().trim().min(1, "Name is required.").max(80, "Name too long (80 characters max)."),
   category: z.enum(MENU_CATEGORIES),
-  priceZar: z.number().int().positive("Price must be a positive integer (cents)."),
+  priceZar: priceZarSchema,
 });
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
@@ -320,6 +329,28 @@ export async function createMenuItem(input: {
   }
 
   const { name, category, priceZar } = parsed.data;
+
+  // One item per name per category, case-insensitive — active or not, so a
+  // retired item is reactivated rather than duplicated (QA: second "Mocha").
+  const [dupe] = await db
+    .select({ id: menuItems.id, name: menuItems.name, active: menuItems.active })
+    .from(menuItems)
+    .where(
+      and(
+        eq(menuItems.category, category),
+        sql`lower(${menuItems.name}) = lower(${name})`
+      )
+    );
+  if (dupe) {
+    return {
+      ok: false,
+      code: "DUPLICATE",
+      message: dupe.active
+        ? `"${dupe.name}" is already on the menu in this category.`
+        : `"${dupe.name}" already exists but is inactive. Reactivate it instead.`,
+    };
+  }
+
   const now = new Date();
 
   const [created] = await db.transaction(async (tx) => {
@@ -381,12 +412,46 @@ export async function setMenuItemActive(
   if (!auth.ok) return auth;
 
   const [existing] = await db
-    .select({ id: menuItems.id, active: menuItems.active })
+    .select({ id: menuItems.id, name: menuItems.name, category: menuItems.category, active: menuItems.active })
     .from(menuItems)
     .where(eq(menuItems.id, menuItemId));
 
   if (!existing) return { ok: false, code: "NOT_FOUND", message: "Menu item not found." };
   if (existing.active === active) return { ok: true, data: undefined };
+
+  // QA R5-1: reactivating must not put a second item of the same name on the
+  // menu. Same rule as createMenuItem: same category, case-insensitive, trimmed.
+  if (active) {
+    const [dupe] = await db
+      .select({ id: menuItems.id, name: menuItems.name })
+      .from(menuItems)
+      .where(
+        and(
+          eq(menuItems.category, existing.category),
+          eq(menuItems.active, true),
+          sql`${menuItems.id} <> ${menuItemId}`,
+          sql`lower(trim(${menuItems.name})) = lower(${existing.name.trim()})`
+        )
+      );
+    if (dupe) {
+      // QA R6-8: a refused action is audited (nothing else is written).
+      await writeAudit({
+        entityKind: "menu_item",
+        entityId: menuItemId,
+        action: "reactivate_refused",
+        actorId: auth.session.id,
+        actorRole: auth.session.role,
+        before: { active: existing.active },
+        after: { code: "DUPLICATE", duplicateOfId: dupe.id },
+        reason: "DUPLICATE",
+      });
+      return {
+        ok: false,
+        code: "DUPLICATE",
+        message: `"${dupe.name}" is already on the menu in this category.`,
+      };
+    }
+  }
 
   await db.update(menuItems).set({ active }).where(eq(menuItems.id, menuItemId));
 

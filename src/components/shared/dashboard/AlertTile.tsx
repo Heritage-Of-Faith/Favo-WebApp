@@ -4,7 +4,7 @@
 // Server-safe; the optional action is a render-prop so callers supply their
 // own client button when needed.
 
-export type AlertSeverity = "info" | "warning" | "critical" | "success";
+export type AlertSeverity = "info" | "warning" | "critical" | "success" | "provisional" | "unavailable";
 
 // FAVO brand palette only — info/success use dark teal, warning/critical crimson.
 const SEVERITY_STYLE: Record<AlertSeverity, { fg: string; bg: string; border: string }> = {
@@ -27,6 +27,17 @@ const SEVERITY_STYLE: Record<AlertSeverity, { fg: string; bg: string; border: st
     fg: "var(--color-dark-teal)",
     bg: "color-mix(in srgb, var(--color-dark-teal) 8%, transparent)",
     border: "color-mix(in srgb, var(--color-dark-teal) 35%, transparent)",
+  },
+  // AT-191/AT-192 (§17.6.1): estimated ≠ absent, and neither reads as loss or profit.
+  provisional: {
+    fg: "var(--status-warn)",
+    bg: "color-mix(in srgb, var(--status-warn) 10%, transparent)",
+    border: "color-mix(in srgb, var(--status-warn) 40%, transparent)",
+  },
+  unavailable: {
+    fg: "var(--status-unavailable)",
+    bg: "color-mix(in srgb, var(--status-unavailable) 10%, transparent)",
+    border: "color-mix(in srgb, var(--status-unavailable) 45%, transparent)",
   },
 };
 
@@ -58,7 +69,7 @@ export default function AlertTile({ severity, title, description, action, classN
     >
       <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-s)", minWidth: 0 }}>
         <span aria-hidden style={{ color: style.fg, fontSize: "1.1rem", lineHeight: 1, flexShrink: 0 }}>
-          {severity === "success" ? "✓" : severity === "info" ? "ℹ" : "⚠"}
+          {severity === "success" ? "✓" : severity === "info" ? "ℹ" : severity === "unavailable" ? "∅" : "⚠"}
         </span>
         <div style={{ minWidth: 0 }}>
           <p className="favo-small" style={{ color: "var(--color-text-strong)", fontWeight: 600 }}>

@@ -5,6 +5,8 @@
 // so the customer can manage their preference at any time.
 
 import { useState, useEffect } from "react";
+import { detectInstallRequired } from "@/lib/push/install-step";
+import InstallStep from "./InstallStep";
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
@@ -31,8 +33,13 @@ export default function NotificationToggle({ customerId, serverHasSubscription }
   const [dbHasSub, setDbHasSub] = useState(serverHasSubscription);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [installRequired, setInstallRequired] = useState(false);
 
   useEffect(() => {
+    if (detectInstallRequired()) {
+      setInstallRequired(true);
+      return;
+    }
     if (!("Notification" in window) || !("serviceWorker" in navigator)) {
       setPermission("unsupported");
       return;
@@ -98,7 +105,22 @@ export default function NotificationToggle({ customerId, serverHasSubscription }
     }
   }
 
-  const fullyEnabled = permission === "granted" && dbHasSub;
+  // REQ-048: an uninstalled iPhone can never be in the subscribed state.
+  const fullyEnabled = !installRequired && permission === "granted" && dbHasSub;
+
+  if (installRequired) {
+    return (
+      <div style={{ backgroundColor: "var(--color-dark-teal)", padding: "28px 32px", display: "flex", flexDirection: "column", gap: 16 }}>
+        <p style={{
+          fontFamily: "var(--font-sans)", fontWeight: 300, fontSize: 11, letterSpacing: "0.14em",
+          textTransform: "uppercase" as const, color: "var(--color-crimson-carrot)", margin: 0,
+        }}>
+          Order notifications
+        </p>
+        <InstallStep />
+      </div>
+    );
+  }
 
   return (
     <div style={{

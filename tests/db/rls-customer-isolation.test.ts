@@ -46,7 +46,7 @@ maybe("RLS customer isolation (F2)", () => {
     custA = a[0].id as string;
     custB = b[0].id as string;
 
-    // revenue_day is NOT NULL since 0033 (AT-181); notification_target since 0034 (L28).
+    // revenue_day is NOT NULL since 0033 (AT-181); notification_target since 0040 (L28).
     const oa = await sql`
       INSERT INTO orders (customer_id, staff_id, total_zar, revenue_day, notification_target)
       VALUES (${custA}, ${staffId}, 1000, (now() AT TIME ZONE 'Africa/Johannesburg')::date, 'customer')

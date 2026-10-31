@@ -22,7 +22,7 @@ export default async function StockTakeDetailPage({
         </p>
         <Link
           href={"/admin/stock-takes" as Route}
-          className="inline-flex min-h-10 items-center rounded-[var(--radius-btn)] border px-4 favo-small"
+          className="inline-flex min-h-11 items-center rounded-[var(--radius-btn)] border px-4 favo-small"
           style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
         >
           ← Back to stock takes

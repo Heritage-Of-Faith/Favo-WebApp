@@ -70,6 +70,28 @@ describe("TodaySessionsPlanner", () => {
     expect(screen.getByText(/08:00/)).toBeDefined();
   });
 
+  // QA R6-2: a planned end before the open time is refused with a message,
+  // on Edit and on Add, without calling the server.
+  it("Edit refuses a planned end before the open time", async () => {
+    render(<TodaySessionsPlanner initialSessions={[SESSIONS[0]]} todayLabel="Thu 9 Jul" fallbackLabel="your usual Thursday schedule" />);
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.change(screen.getByLabelText("Opens at"), { target: { value: "07:30" } });
+    fireEvent.change(screen.getByLabelText("Closes at (optional)"), { target: { value: "07:00" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^save$/i })); });
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe("The planned end must be after the open time.");
+  });
+
+  it("Add refuses a planned end before the open time", async () => {
+    render(<TodaySessionsPlanner initialSessions={[]} todayLabel="Thu 9 Jul" fallbackLabel="your usual Thursday schedule" />);
+    fireEvent.click(screen.getByRole("button", { name: /add session/i }));
+    fireEvent.change(screen.getByLabelText("Opens at"), { target: { value: "14:00" } });
+    fireEvent.change(screen.getByLabelText("Closes at (optional)"), { target: { value: "13:00" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^save$/i })); });
+    expect(mockAdd).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe("The planned end must be after the open time.");
+  });
+
   it("surfaces action errors inline", async () => {
     mockDelete.mockResolvedValue({ ok: false, code: "NOT_FOUND", message: "Session not found for today." });
     render(<TodaySessionsPlanner initialSessions={[SESSIONS[0]]} todayLabel="Thu 9 Jul" fallbackLabel="your usual Thursday schedule" />);

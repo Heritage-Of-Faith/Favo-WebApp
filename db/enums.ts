@@ -123,6 +123,43 @@ export const compReason = pgEnum("comp_reason", [
   "donation",
 ]);
 
+// AT-204 prerequisite / PRD §6.6 "The six switches" and §10.2 (event_profiles,
+// event_windows). Option labels are §6.6's: Full · coffee-only · custom subset.
+export const eventMenuScope = pgEnum("event_menu_scope", [
+  "full",
+  "coffee_only",
+  "custom",
+]);
+
+// PRD §6.6, L25: `free` · `standard` (normal prices) · `override` (event prices).
+export const eventPaymentPosture = pgEnum("event_payment_posture", [
+  "free",
+  "standard",
+  "override",
+]);
+
+// PRD §6.6 broadcast audience: Office staff · church member · both · nobody.
+export const eventAudience = pgEnum("event_audience", [
+  "office_staff",
+  "church_member",
+  "both",
+  "nobody",
+]);
+
+// AT-192 / PRD §7.0.2, §7.0.1b, REQ-129: a stored report's cost state — the
+// three render states (empty ≠ unavailable ≠ provisional) plus final.
+export const reportCostState = pgEnum("report_cost_state", [
+  "empty",
+  "unavailable",
+  "provisional",
+  "final",
+]);
+
+// AT-191 / PRD §7.0.1b, REQ-110, REQ-131: why a lot's cost is (or is not)
+// trustworthy. NOT NULL DEFAULT 'estimate' on inventory_lots; 'invoice' only by
+// an Admin recost through /admin/yield, audited.
+export const costSource = pgEnum("cost_source", ["estimate", "invoice"]);
+
 // L28 / REQ-046 / PRD §10.3: who to tell when an order is ready, bound at
 // ring-up. `customer` = orders.customer_id; `none` is an explicit tap.
 export const notificationTarget = pgEnum("notification_target", [

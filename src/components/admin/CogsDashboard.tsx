@@ -19,6 +19,13 @@ import AreaChart from "@/components/shared/charts/AreaChart";
 import BarChart from "@/components/shared/charts/BarChart";
 import DonutChart from "@/components/shared/charts/DonutChart";
 import type { CogsLive } from "@/lib/types";
+import {
+  combineCostStates,
+  periodFigures,
+  UNAVAILABLE,
+  unavailableText,
+  type NetTone,
+} from "@/lib/cost-state";
 
 const RANGE_OPTIONS = [7, 14, 30, 90] as const;
 type RangeDays = (typeof RANGE_OPTIONS)[number];
@@ -40,8 +47,28 @@ function shortDate(isoDay: string): string {
   return `${d} ${months[m - 1]}`;
 }
 
-function trendOf(current: number, previous: number | undefined) {
-  if (previous === undefined || previous === current) {
+/**
+ * R3-2: the "vs prev" comparison. `days` is the date-sorted daily series
+ * (ideally 2 × rangeDays long). Current = the last `rangeDays` days (the same
+ * window the KPI tiles sum); previous = the `rangeDays` days immediately
+ * before it. When the series does not reach back a full prior window the
+ * previous period is undefined — no arrow is shown rather than a guess.
+ * Sums only; no rounding (each day is already Σ order_cogs, REQ-106).
+ */
+export function periodComparison(
+  days: readonly CogsLive[],
+  rangeDays: number,
+  date: string
+): { current: CogsLive; previous: CogsLive | undefined } {
+  const current = aggregate(days.slice(-rangeDays), date);
+  const prior = days.slice(-2 * rangeDays, -rangeDays);
+  const previous = prior.length === rangeDays ? aggregate(prior, date) : undefined;
+  return { current, previous };
+}
+
+export function trendOf(current: number, previous: number | undefined) {
+  if (previous === undefined) return undefined;
+  if (previous === current) {
     return { direction: "flat" as const, label: "no change" };
   }
   const delta = current - previous;
@@ -51,6 +78,56 @@ function trendOf(current: number, previous: number | undefined) {
     label: `${delta > 0 ? "+" : ""}${pct}% vs prev`,
   };
 }
+
+/**
+ * Σ of several days' inputs (revenue, COGS, expenses — integer cents), then
+ * the derived figures from periodFigures, the same function the CSV and the
+ * weekly/monthly reports use. COGS is NULL (UNAVAILABLE) if any day's is.
+ */
+export function aggregate(days: readonly CogsLive[], date: string): CogsLive {
+  const revenueZar = days.reduce((s, d) => s + d.revenueZar, 0);
+  const cogsZar = days.some((d) => d.cogsZar === null) ? null : days.reduce((s, d) => s + (d.cogsZar as number), 0);
+  const expensesZar = days.reduce((s, d) => s + d.expensesZar, 0);
+  const costState = combineCostStates(days.map((d) => d.costState));
+  const f = periodFigures({ revenueZar, cogsZar, expensesZar, costState });
+  return {
+    date,
+    revenueZar,
+    cogsZar,
+    expensesZar,
+    grossMarginZar: f.grossMarginZar,
+    netZar: f.netZar,
+    costState,
+    absentItems: [...new Set(days.flatMap((d) => d.absentItems))].sort(),
+    ordersWithoutCost: days.reduce((s, d) => s + d.ordersWithoutCost, 0),
+  };
+}
+
+/**
+ * The revenue-allocation donut. When net ≥ 0 the slices are COGS, expenses and
+ * net, which add up to revenue — so each slice's % is its share OF REVENUE,
+ * the same % the COGS tile shows. On a loss the slices are COGS and expenses
+ * (their share of costs) and the centre says so. NULL when COGS is UNAVAILABLE.
+ */
+export function allocationSlices(kpi: Pick<CogsLive, "revenueZar" | "cogsZar" | "expensesZar" | "netZar">) {
+  if (kpi.cogsZar === null || kpi.netZar === null) return null;
+  const slices: { label: string; value: number; color: string }[] = [
+    { label: "COGS", value: kpi.cogsZar, color: chartColor.warning },
+    { label: "Expenses", value: kpi.expensesZar, color: chartColor.brand },
+  ];
+  // A slice split only — the net's tone/colour comes from periodFigures, never this sign.
+  if (kpi.netZar < 0) return { slices, centerZar: kpi.cogsZar + kpi.expensesZar, centerSub: "costs" };
+  slices.push({ label: "Net", value: kpi.netZar, color: chartColor.positive });
+  return { slices, centerZar: kpi.revenueZar, centerSub: "revenue" };
+}
+
+const KPI_TONE: Record<NetTone, "default" | "positive" | "negative" | "warn" | "unavailable"> = {
+  neutral: "default",
+  positive: "positive",
+  negative: "negative",
+  warn: "warn",
+  unavailable: "unavailable",
+};
 
 const STATUS_LABEL: Record<CogsStreamStatus, string> = {
   connecting: "Connecting…",
@@ -84,7 +161,8 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
   const refreshHistory = useCallback(
     (days: RangeDays) => {
       startHistory(async () => {
-        const res = await getCogsHistory({ days });
+        // Twice the range: the second half is the "vs prev" comparison window.
+        const res = await getCogsHistory({ days: days * 2 });
         if (res.ok) {
           setHistory([...res.data.history].sort((a, b) => a.date.localeCompare(b.date)));
         }
@@ -119,61 +197,42 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
   // Merge live `today` into the trend so the latest point is always current.
   const mergedByDate = new Map(history.map((h) => [h.date, h]));
   mergedByDate.set(today.date, today);
-  const trend = Array.from(mergedByDate.values())
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(-rangeDays);
+  const series = Array.from(mergedByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  const trend = series.slice(-rangeDays);
 
   const labels = trend.map((t) => shortDate(t.date));
   const prevDay = trend.length >= 2 ? trend[trend.length - 2] : undefined;
 
-  // Period aggregate: sum over all days in the trend window.
-  const sum = (key: keyof CogsLive) =>
-    trend.reduce((s, d) => s + (d[key] as number), 0);
+  // Period aggregate: Σ of the days' figures — each day already Σ order_cogs
+  // (REQ-106). Any UNAVAILABLE day makes the period's cost figures UNAVAILABLE
+  // (REQ-109); any provisional day makes it provisional (REQ-110).
+  const periodTotal: CogsLive = inspectDate && snapshot ? snapshot : aggregate(trend, today.date);
 
-  const periodNetZar = sum("netZar");
-  const periodTotal: CogsLive = inspectDate && snapshot ? snapshot : {
-    date: today.date,
-    revenueZar: sum("revenueZar"),
-    cogsZar: sum("cogsZar"),
-    expensesZar: 0,
-    grossMarginZar: sum("grossMarginZar"),
-    netZar: periodNetZar,
-    profit: periodNetZar >= 0,
-    costEstimatedWarning: trend.some((d) => d.costEstimatedWarning),
-  };
-
-  // Half-period comparison for trend arrows (first half vs second half).
-  const half = Math.floor(trend.length / 2);
-  const firstHalf = trend.slice(0, half);
-  const secondHalf = trend.slice(half);
-  const halfSum = (arr: CogsLive[], key: keyof CogsLive) =>
-    arr.reduce((s, d) => s + (d[key] as number), 0);
-
-  const periodPrev = {
-    revenueZar: halfSum(firstHalf, "revenueZar"),
-    cogsZar: halfSum(firstHalf, "cogsZar"),
-    netZar: halfSum(firstHalf, "netZar"),
-  };
-  const periodCurr = {
-    revenueZar: halfSum(secondHalf, "revenueZar"),
-    cogsZar: halfSum(secondHalf, "cogsZar"),
-    netZar: halfSum(secondHalf, "netZar"),
-  };
+  // Trend arrows: this window vs the equal-length window before it (R3-2).
+  const { current: periodCurr, previous: periodPrev } = periodComparison(series, rangeDays, today.date);
 
   // KPI source: snapshot when inspecting a date, else the period aggregate.
   const kpi = periodTotal;
+  const cur = inspectDate ? view : periodCurr;
+  const prev = inspectDate ? prevDay : periodPrev;
   const kpiTrend = {
-    revenue: trendOf(inspectDate ? view.revenueZar : periodCurr.revenueZar, inspectDate ? prevDay?.revenueZar : periodPrev.revenueZar),
-    cogs: trendOf(inspectDate ? view.cogsZar : periodCurr.cogsZar, inspectDate ? prevDay?.cogsZar : periodPrev.cogsZar),
-    net: trendOf(inspectDate ? view.netZar : periodCurr.netZar, inspectDate ? prevDay?.netZar : periodPrev.netZar),
+    revenue: trendOf(cur.revenueZar, prev?.revenueZar),
+    cogs: cur.cogsZar === null || prev?.cogsZar === null ? undefined : trendOf(cur.cogsZar, prev?.cogsZar),
+    net: cur.netZar === null || prev?.netZar === null ? undefined : trendOf(cur.netZar, prev?.netZar),
   };
   const kpiSub = inspectDate ? undefined : `last ${rangeDays}d`;
 
+  const trendCostKnown = trend.every((t) => t.cogsZar !== null && t.netZar !== null);
+  // Every derived figure on screen — tone, label, COGS % — from periodFigures.
+  const fig = periodFigures(kpi);
+  const tone = fig.tone;
+  const unavailable = kpi.costState === "unavailable";
+  const unavailableLine = unavailableText(kpi.absentItems, kpi.ordersWithoutCost);
+  const netWord = fig.label;
+
   // Revenue allocation for the viewed day or period (handles loss gracefully).
-  const allocation = [
-    { label: "COGS", value: Math.max(kpi.cogsZar, 0), color: chartColor.warning },
-    { label: kpi.netZar >= 0 ? "Net profit" : "Net loss", value: Math.max(kpi.netZar, 0), color: chartColor.positive },
-  ];
+  // Not drawn while the cost is UNAVAILABLE — a split of an absent number.
+  const allocation = allocationSlices(kpi);
 
   return (
     <div className="space-y-6">
@@ -208,17 +267,36 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
         </div>
       </header>
 
-      {/* ── Cost-estimate warning (R10) ────────────────────────────────────── */}
-      {kpi.costEstimatedWarning && (
+      {/* ── UNAVAILABLE: an absent cost input, named (AT-190/AT-192, REQ-109) ── */}
+      {unavailable && (
         <AlertTile
-          severity="warning"
-          title="Some lot costs are best-estimate"
-          description="COGS may be inaccurate until lots are recosted. Review costs under Inventory → lot drawer."
+          severity="unavailable"
+          title={`COGS, gross margin and net: ${unavailableLine}`}
+          description="A cost input is missing, so no figure is shown rather than a smaller one. Enter the missing cost to restore these figures."
+          action={
+            <a href="/admin/yield" className="favo-small inline-flex min-h-11 min-w-11 items-center justify-center" style={{ color: "var(--color-accent)", fontWeight: 600 }}>
+              Recost
+            </a>
+          }
+        />
+      )}
+
+      {/* ── Provisional: estimated lot costs, never green (AT-191, REQ-110) ─── */}
+      {kpi.costState === "provisional" && (
+        <AlertTile
+          severity="provisional"
+          title="Provisional — these figures rest on estimated lot costs"
+          description="Margin and net stay provisional until every contributing lot is invoice-backed."
+          action={
+            <a href="/admin/yield" className="favo-small inline-flex min-h-11 min-w-11 items-center justify-center" style={{ color: "var(--color-accent)", fontWeight: 600 }}>
+              Recost
+            </a>
+          }
         />
       )}
 
       {/* ── Empty-period notice ─────────────────────────────────────────────── */}
-      {kpi.revenueZar === 0 && kpi.cogsZar === 0 && (
+      {kpi.revenueZar === 0 && kpi.costState === "empty" && (
         <AlertTile
           severity="info"
           title={inspectDate ? "No activity recorded for this day" : `No activity recorded in the last ${rangeDays} days`}
@@ -237,18 +315,33 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
         />
         <KpiTile
           label="COGS"
-          valueZar={kpi.cogsZar}
-          trend={{ ...kpiTrend.cogs, upIsGood: false }}
-          sub={kpi.revenueZar > 0 ? `${Math.round((kpi.cogsZar / kpi.revenueZar) * 100)}% of revenue` : undefined}
+          {...(kpi.cogsZar === null ? { valueText: UNAVAILABLE } : { valueZar: kpi.cogsZar })}
+          tone={unavailable ? "unavailable" : kpi.costState === "provisional" ? "warn" : "default"}
+          trend={kpiTrend.cogs && { ...kpiTrend.cogs, upIsGood: false }}
+          sub={
+            kpi.cogsZar === null
+              ? unavailableLine
+              : fig.cogsPctOfRevenue !== null
+                ? `${Math.round(fig.cogsPctOfRevenue)}% of revenue`
+                : undefined
+          }
           hint="ingredient cost of items sold"
         />
         <KpiTile
+          label="Gross margin"
+          {...(fig.grossMarginZar === null ? { valueText: UNAVAILABLE } : { valueZar: fig.grossMarginZar })}
+          tone={unavailable ? "unavailable" : kpi.costState === "provisional" ? "warn" : "default"}
+          sub={fig.grossMarginPct !== null ? `${Math.round(fig.grossMarginPct)}% of revenue` : undefined}
+          hint="revenue − COGS (the export's margin)"
+        />
+        <KpiTile label="Expenses" valueZar={kpi.expensesZar} hint="operating expenses logged" />
+        <KpiTile
           label="Net"
-          valueZar={kpi.netZar}
-          tone={kpi.netZar >= 0 ? "positive" : "negative"}
+          {...(kpi.netZar === null ? { valueText: UNAVAILABLE } : { valueZar: kpi.netZar })}
+          tone={KPI_TONE[tone]}
           trend={kpiTrend.net}
-          sub={kpiSub ?? (kpi.profit ? "profit" : "loss")}
-          hint="revenue − COGS"
+          sub={kpiSub ? `${kpiSub} · ${netWord}` : netWord}
+          hint="revenue − COGS − expenses"
         />
       </TileGrid>
 
@@ -264,7 +357,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
               type="button"
               onClick={() => setRangeDays(r)}
               aria-pressed={rangeDays === r}
-              className="min-h-10 rounded-[var(--radius-btn)] px-3 favo-small transition-colors"
+              className="min-h-11 min-w-11 rounded-[var(--radius-btn)] px-3 favo-small transition-colors"
               style={{
                 background: rangeDays === r ? "var(--color-text-strong)" : "var(--color-elevated)",
                 color: rangeDays === r ? "var(--color-text-inverse)" : "var(--color-text-muted)",
@@ -287,7 +380,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
             max={todayDate}
             value={inspectDate ?? ""}
             onChange={(e) => setInspectDate(e.target.value || null)}
-            className="min-h-10 rounded-[var(--radius-btn)] px-2 favo-small"
+            className="min-h-11 rounded-[var(--radius-btn)] px-2 text-base"
             style={{
               background: "var(--color-surface)",
               color: "var(--color-text-strong)",
@@ -298,7 +391,7 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
             <button
               type="button"
               onClick={() => setInspectDate(null)}
-              className="min-h-10 px-2 favo-small underline"
+              className="min-h-11 px-2 favo-small underline"
               style={{ color: "var(--color-accent)" }}
             >
               Back to live
@@ -324,8 +417,14 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
             formatValue={formatZar}
             series={[
               { label: "Revenue", data: trend.map((t) => t.revenueZar), color: chartColor.brand, fill: true },
-              { label: "COGS", data: trend.map((t) => t.cogsZar), color: chartColor.warning, fill: false },
-              { label: "Net", data: trend.map((t) => t.netZar), color: chartColor.positive, fill: false },
+              // COGS and net are drawn only when no day in the window is
+              // UNAVAILABLE — an absent figure is never plotted as 0 (REQ-109).
+              ...(trendCostKnown
+                ? [
+                    { label: "COGS", data: trend.map((t) => t.cogsZar as number), color: chartColor.warning, fill: false },
+                    { label: "Net", data: trend.map((t) => t.netZar as number), color: chartColor.positive, fill: false },
+                  ]
+                : []),
             ]}
             ariaLabel={`Revenue, COGS and net over the last ${rangeDays} days`}
           />
@@ -336,15 +435,22 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
           style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-elevated)" }}
         >
           <h2 className="favo-label mb-3">Revenue allocation — {inspectDate ?? `last ${rangeDays}d`}</h2>
-          <DonutChart
-            data={allocation}
-            size={150}
-            formatValue={formatZar}
-            centerLabel={formatZar(kpi.revenueZar)}
-            centerSub="revenue"
-            ariaLabel={`Revenue allocation: COGS ${formatZar(kpi.cogsZar)}, net ${formatZar(kpi.netZar)}`}
-          />
-          {kpi.netZar < 0 && (
+          {allocation === null || kpi.cogsZar === null || kpi.netZar === null ? (
+            <p className="favo-small" style={{ color: "var(--status-unavailable)", fontWeight: 600 }}>
+              {unavailableLine}
+            </p>
+          ) : (
+            <DonutChart
+              data={allocation.slices}
+              size={150}
+              formatValue={formatZar}
+              centerLabel={formatZar(allocation.centerZar)}
+              centerSub={allocation.centerSub}
+              ariaLabel={`Revenue allocation: COGS ${formatZar(kpi.cogsZar)}, expenses ${formatZar(kpi.expensesZar)}, net ${formatZar(kpi.netZar)}`}
+            />
+          )}
+          {/* Only a costed period with a real loss says "loss" — never an empty R0 day. */}
+          {tone === "negative" && kpi.netZar !== null && (
             <p className="favo-caption mt-2" style={{ color: "var(--color-crimson-carrot)", textTransform: "none", letterSpacing: 0 }}>
               Operating at a loss of {formatZar(Math.abs(kpi.netZar))} — costs exceed revenue.
             </p>
@@ -358,11 +464,22 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
         style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-elevated)" }}
       >
         <h2 className="favo-label mb-2">Daily net — last {rangeDays} days</h2>
-        <BarChart
-          data={trend.map((t) => ({ label: shortDate(t.date), value: t.netZar }))}
-          formatValue={formatZar}
-          ariaLabel={`Daily net profit or loss over the last ${rangeDays} days`}
-        />
+        {trendCostKnown ? (
+          <BarChart
+            data={trend.map((t) => ({ label: shortDate(t.date), value: t.netZar as number }))}
+            formatValue={formatZar}
+            ariaLabel={`Daily net profit or loss over the last ${rangeDays} days`}
+          />
+        ) : (
+          <ul className="favo-small space-y-1">
+            {trend.map((t) => (
+              <li key={t.date} style={{ color: t.netZar === null ? "var(--status-unavailable)" : "var(--color-text-strong)" }}>
+                {shortDate(t.date)} ·{" "}
+                {t.netZar === null ? unavailableText(t.absentItems, t.ordersWithoutCost) : formatZar(t.netZar)}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

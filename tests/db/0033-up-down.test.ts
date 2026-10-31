@@ -29,8 +29,10 @@ const maybe = hasRealDb() ? describe : describe.skip;
 
 const UP = "0033_at181_day5_substrate.sql";
 const DOWN = "down/0033_at181_day5_substrate.down.sql";
-// L28: 0034 (orders.notification_target) sits on top of 0033.
-const DOWN_0034 = "down/0034_l28_notification_target.down.sql";
+// CHANGED (AT-204 prerequisite): the later migration's down, applied first.
+const LATER_DOWN = "down/0036_at204_event_sessions.down.sql";
+// L28: 0040 (orders.notification_target) also sits on top of 0033.
+const DOWN_0040 = "down/0040_l28_notification_target.down.sql";
 
 const TOUCHED = [
   "customers",
@@ -138,15 +140,16 @@ class Rollback extends Error {}
 maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () => {
   let sql: Sql;
 
-  /**
-   * Run `fn` in a transaction that is always rolled back. `bun db:migrate`
-   * now brings the CI DB to 0034, so each case first steps 0034 down (inside
-   * the same rolled-back transaction) to start from 0033.
-   */
+  /** Run `fn` in a transaction that is always rolled back. */
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
-        await tx.unsafe(migrationSql(DOWN_0034));
+        // CHANGED (AT-204 prerequisite): CI now migrates past 0033, and 0036
+        // adds columns to opening_sessions. Step back to 0033 first (rolled
+        // back with everything else) so this suite still tests 0033 alone.
+        // L28: 0040 adds a column to orders; step it down first (newest first).
+        await tx.unsafe(migrationSql(DOWN_0040));
+        await tx.unsafe(migrationSql(LATER_DOWN));
         await fn(tx);
         throw new Rollback();
       });
