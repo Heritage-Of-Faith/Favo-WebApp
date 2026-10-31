@@ -32,9 +32,8 @@ Coolify resolves them at container start. Do not store values in this file.
 | `FAVO_APPROVE_MIGRATION` | Exact migration tag(s), comma-separated, e.g. `0034_drop_legacy_note` | Nikao | ❌ per deploy only | — | Approves a **risky** migration (marked `-- favo:requires-approval`) for this deploy. Without it the container refuses to start while that migration is pending. Only exact tags count, so one approval cannot cover a later risky migration. Set it only after a verified backup; remove it once applied. See "Risky migrations" below (AT-170, owner decision 21 Oct 2026). |
 | `AUTH_SECRET` | `openssl rand -hex 32` | Gian | ✅ | Annually | Auth.js signing secret — rotate requires re-login for all staff |
 | `AUTH_URL` | Manual | Gian | ✅ | On domain change | Must be `https://favo.hofmi.net` (no trailing slash) |
-| `YOCO_SECRET_KEY` | Yoco dashboard → Developers → API Keys | Gian | ✅ | On Yoco key compromise | Server-side only. NEVER commit or log. |
+| `YOCO_SECRET_KEY` | Yoco dashboard → Developers → API Keys | Gian | ✅ | On Yoco key compromise | Server-side only. NEVER commit or log. No Yoco key of any kind is exposed client-side (REQ-071) — there is no `NEXT_PUBLIC_YOCO_*` variable. |
 | `YOCO_WEBHOOK_SECRET` | Yoco dashboard → Developers → Webhooks | Gian | ✅ | On compromise | Used to verify HMAC signatures on incoming webhooks. |
-| `NEXT_PUBLIC_YOCO_PUBLIC_KEY` | Yoco dashboard → Developers → API Keys | Gian | ✅ | On Yoco key compromise | Embedded in browser bundle — safe to expose. |
 | `VAPID_PUBLIC_KEY` | `web-push generate-vapid-keys` | Gian | ✅ | On compromise (requires re-subscription from all devices) | |
 | `VAPID_PRIVATE_KEY` | Same keygen | Gian | ✅ | Same as public | Server-side only. |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Same as `VAPID_PUBLIC_KEY` | Gian | ✅ | Same | Embedded in browser SW — must match server-side key. |
