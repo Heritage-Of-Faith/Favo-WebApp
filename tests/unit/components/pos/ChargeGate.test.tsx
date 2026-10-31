@@ -72,7 +72,7 @@ describe("queue payment gate (L01)", () => {
     await expandCard();
     expect(await screen.findByRole("button", { name: /take payment/i })).toBeDefined();
     expect(screen.queryByRole("button", { name: /start making/i })).toBeNull();
-    expect(screen.getByText(/unpaid/i)).toBeDefined();
+    expect(screen.getByText(/^pending$/i)).toBeDefined();
   });
 
   it("paid order shows Start Making and no Take payment", async () => {

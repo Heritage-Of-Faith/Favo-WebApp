@@ -232,6 +232,9 @@ export async function seedLots() {
         sourceName: lot.sourceName,
         batchNumber: lot.batchNumber,
         unitCostZar: lot.unitCostZar,
+        // AT-191 / PRD §7.0.1b table L1672–1681: every seeded cost is an
+        // estimate. 'invoice' only via an Admin recost (/admin/yield), audited.
+        costSource: "estimate",
         quantityReceived: lot.quantityReceived,
         state: lot.state ?? "active",
         // Stamp opened_at for containers seeded already in use.
