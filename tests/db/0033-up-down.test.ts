@@ -35,6 +35,8 @@ const LATER_DOWN = "down/0036_at204_event_sessions.down.sql";
 const DOWN_0042 = "down/0042_l28_notification_target.down.sql";
 // AT-201: 0043 (payments as the tender record) is the newest; it steps down first.
 const DOWN_0043 = "down/0043_at201_tender_payments.down.sql";
+// AT-201 part 2a: 0044 (orders.client_uuid) is newer still; it steps down first.
+const DOWN_0044 = "down/0044_at201_orders_client_uuid.down.sql";
 
 const TOUCHED = [
   "customers",
@@ -152,6 +154,9 @@ maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () 
         // L28: 0042 adds a column to orders; step it down first (newest first).
         // AT-201: 0043 rebuilds payments and is newer still, so it goes first:
         // 0043 down, then 0042 down, then 0036 down → 0033.
+        // AT-201 part 2a: 0044 adds orders.client_uuid and is the newest, so
+        // it steps down before all of them.
+        await tx.unsafe(migrationSql(DOWN_0044));
         await tx.unsafe(migrationSql(DOWN_0043));
         await tx.unsafe(migrationSql(DOWN_0042));
         await tx.unsafe(migrationSql(LATER_DOWN));

@@ -37,6 +37,8 @@ const UP = "0043_at201_tender_payments.sql";
 const DOWN = "down/0043_at201_tender_payments.down.sql";
 const AT = "0043_snapshot.json";
 const BEFORE = "0042_snapshot.json";
+// AT-201 part 2a: 0044 (orders.client_uuid) sits on top of this; stepped down first.
+const DOWN_0044 = "down/0044_at201_orders_client_uuid.down.sql";
 
 type Shape = { columns: string[]; constraints: string[]; indexes: string[] };
 
@@ -98,6 +100,10 @@ maybe("0043 payments as the tender record: up → down → up, and the refusals 
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        // CI migrates past 0043: 0044 adds orders.client_uuid. It does not touch
+        // payments, but migrations step down newest first, so it goes before
+        // any 0043 down (rolled back with everything else).
+        await tx.unsafe(migrationSql(DOWN_0044));
         await fn(tx);
         throw new Rollback();
       });

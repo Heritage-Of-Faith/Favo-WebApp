@@ -32,6 +32,8 @@ const UP = "0034_at209_walk_ins.sql";
 const DOWN = "down/0034_at209_walk_ins.down.sql";
 // L28: 0042 adds orders.notification_target on top of this; stepped down first.
 const DOWN_0042 = "down/0042_l28_notification_target.down.sql";
+// AT-201 part 2a: 0044 adds orders.client_uuid and is newer still; stepped down before 0042.
+const DOWN_0044 = "down/0044_at201_orders_client_uuid.down.sql";
 
 /** Tables walk_ins points at; 0034 must leave them exactly as 0033 did. */
 const REFERENCED = ["orders", "menu_items", "staff"] as const;
@@ -106,7 +108,9 @@ maybe("0034 walk_ins: up → down → up, the CHECK, and REQ-116 (AT-209)", () =
       await sql.begin(async (tx) => {
         // CI now migrates past 0042, which adds a column to orders (one of
         // REFERENCED). Step it back (rolled back with everything else) so
-        // orders reads as 0033 left it.
+        // orders reads as 0033 left it. 0044 (orders.client_uuid) goes first,
+        // newest first; 0043 touches payments only, so it stays.
+        await tx.unsafe(migrationSql(DOWN_0044));
         await tx.unsafe(migrationSql(DOWN_0042));
         await fn(tx);
         throw new Rollback();

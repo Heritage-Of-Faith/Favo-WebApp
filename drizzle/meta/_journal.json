@@ -302,6 +302,13 @@
       "when": 1793205000000,
       "tag": "0043_at201_tender_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793210000000,
+      "tag": "0044_at201_orders_client_uuid",
+      "breakpoints": true
     }
   ]
 }
