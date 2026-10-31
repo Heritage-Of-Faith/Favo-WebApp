@@ -29,6 +29,7 @@ import { Label } from "@/components/ui/label";
 import AlertTile from "@/components/shared/dashboard/AlertTile";
 import { recordPurchase } from "@/server/actions/purchases";
 import { parseZar } from "@/lib/format";
+import { deriveUnitCostCents, formatUnitCostRands, SOURCE_NAME_MAX } from "@/lib/admin-input";
 import type { InventoryUnit, PurchaseKind, PurchaseLotItem } from "@/lib/types";
 // (PurchaseLotItem is the shared lot-line shape consumed by recordPurchase.)
 
@@ -76,6 +77,8 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
   const [kind, setKind] = useState<PurchaseKind>("planned");
   const [lines, setLines] = useState<LineDraft[]>([emptyLine(items[0])]);
   const [submitting, setSubmitting] = useState(false);
+  // Field-level message shown inside the dialog (QA: toasts alone went unseen).
+  const [error, setError] = useState<string | null>(null);
 
   function updateLine(i: number, patch: Partial<LineDraft>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -89,8 +92,13 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
     if (!sourceName.trim()) {
-      toast.error("Enter a source name.");
+      setError("Enter a source name.");
+      return;
+    }
+    if (sourceName.trim().length > SOURCE_NAME_MAX) {
+      setError(`Source name must be ${SOURCE_NAME_MAX} characters or fewer.`);
       return;
     }
 
@@ -99,15 +107,15 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
       const qty = Number(line.quantity);
       const cents = parseZar(line.total);
       if (!line.inventoryItemId) {
-        toast.error(`Line ${i + 1}: choose an item.`);
+        setError(`Line ${i + 1}: choose an item.`);
         return;
       }
-      if (!Number.isFinite(qty) || qty <= 0) {
-        toast.error(`Line ${i + 1}: size/quantity must be greater than 0.`);
+      if (line.quantity.trim() === "" || !Number.isFinite(qty) || qty <= 0) {
+        setError(`Line ${i + 1}: size/quantity must be greater than 0.`);
         return;
       }
       if (cents === null || cents <= 0) {
-        toast.error(`Line ${i + 1}: enter a valid total paid.`);
+        setError(`Line ${i + 1}: enter the total paid in rand, e.g. 225.00.`);
         return;
       }
 
@@ -121,11 +129,20 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
           totalZar: cents,
         });
       } else {
-        // Derive unit cost (cents per base unit) so total + unit cost agree.
+        // PRD §7.0.2: unit cost = cents paid ÷ base units, 4 dp (R225 / 500 g = 45.0000 c/g).
+        if (!Number.isInteger(qty)) {
+          setError(`Line ${i + 1}: quantity must be a whole number of the item's unit.`);
+          return;
+        }
+        const derived = deriveUnitCostCents(cents, qty);
+        if (!derived.ok) {
+          setError(`Line ${i + 1}: ${derived.message}`);
+          return;
+        }
         built.push({
           inventoryItemId: line.inventoryItemId,
           quantity: qty,
-          unitCostZar: (cents / qty).toFixed(4),
+          unitCostZar: derived.value,
           totalZar: cents,
         });
       }
@@ -135,7 +152,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
     try {
       const res = await recordPurchase({ sourceName: sourceName.trim(), kind, items: built });
       if (!res.ok) {
-        toast.error(res.message);
+        setError(res.message);
         return;
       }
       if (kind === "emergency" && !canApprove) {
@@ -146,7 +163,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
       onSaved();
       onClose();
     } catch {
-      toast.error("Failed to record purchase. Please try again.");
+      setError("Failed to record purchase. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -172,6 +189,7 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                 onChange={(e) => setSourceName(e.target.value)}
                 placeholder="e.g. Bean There Coffee Co."
                 autoComplete="off"
+                maxLength={SOURCE_NAME_MAX}
               />
             </div>
 
@@ -217,8 +235,15 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                   const selectedItem = items.find((it) => it.id === line.inventoryItemId);
                   const isContainerItem = selectedItem?.unit === "cup";
                   const unit = selectedItem?.unit ?? "";
+                  // Live preview of the stored unit cost, so a slip is visible before saving.
+                  const previewCents = parseZar(line.total);
+                  const preview =
+                    !isContainerItem && previewCents !== null && line.quantity.trim() !== ""
+                      ? deriveUnitCostCents(previewCents, Number(line.quantity))
+                      : null;
                   return (
-                    <div key={i} className="flex items-end gap-2">
+                    <div key={i} className="grid gap-1">
+                    <div className="flex items-end gap-2">
                       <div className="flex-1">
                         <select
                           aria-label={`Line ${i + 1} item`}
@@ -284,6 +309,22 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
                         ✕
                       </button>
                     </div>
+                    {preview && (
+                      <p
+                        className="favo-caption"
+                        data-testid={`line-${i + 1}-unit-cost`}
+                        style={{
+                          color: preview.ok ? "var(--color-text-muted)" : "var(--color-error)",
+                          textTransform: "none",
+                          letterSpacing: 0,
+                        }}
+                      >
+                        {preview.ok
+                          ? `Cost per ${unit}: ${formatUnitCostRands(preview.value)} (${preview.value} c)`
+                          : preview.message}
+                      </p>
+                    )}
+                    </div>
                   );
                 })}
               </div>
@@ -297,6 +338,12 @@ export default function PurchaseForm({ items, canApprove, onClose, onSaved }: Pu
               </button>
             </div>
           </div>
+
+          {error && (
+            <p role="alert" className="pb-3 favo-small" style={{ color: "var(--color-error)" }}>
+              {error}
+            </p>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

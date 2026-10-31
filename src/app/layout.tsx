@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { SITE_DESCRIPTION } from "@/lib/site";
 
 // Literal hex — maps to var(--color-coffee-bean)
 const COFFEE_BEAN = "#1C0501";
 
-const DESCRIPTION =
-  "The café at Heritage of Faith Ministries. Good coffee, real community. Reyno Ridge, Emalahleni.";
+const DESCRIPTION = SITE_DESCRIPTION;
 
 // Resolve a valid absolute base URL for metadata (OG/Twitter image URLs).
 // Defensive: env vars may be unset OR set to a non-URL placeholder (e.g. a
@@ -29,8 +29,11 @@ function resolveBaseUrl(): URL {
   return new URL("https://favo.hofmi.net");
 }
 
+// viewportFit "cover" for the iPad home-screen app. Pinch-zoom is left on
+// (no maximumScale / userScalable) — accessibility over app-like feel.
 export const viewport: Viewport = {
   themeColor: COFFEE_BEAN,
+  viewportFit: "cover",
 };
 
 export const metadata: Metadata = {
@@ -40,6 +43,11 @@ export const metadata: Metadata = {
     template: "%s · FAVO Café",
   },
   description: DESCRIPTION,
+  // iPad / iPhone home screen. Opaque "black" status bar so nothing renders
+  // underneath it. Next emits mobile-web-app-capable; older iPadOS only reads
+  // the apple- prefixed tag, hence `other`.
+  appleWebApp: { capable: true, title: "FAVO", statusBarStyle: "black" },
+  other: { "apple-mobile-web-app-capable": "yes" },
   openGraph: {
     title: "FAVO Café",
     description: DESCRIPTION,

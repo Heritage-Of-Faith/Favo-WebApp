@@ -22,6 +22,8 @@
 --
 -- Touches no payments, orders or order_items object.
 --
+-- favo:requires-approval closes past opening_sessions rows with an UPDATE (zero rows on a clean database)
+--
 -- Hand edits: (a) this header; (b) before the index, sessions from a past
 -- revenue day get closed_at = the next SAST midnight (L07: a session never
 -- straddles midnight; closeSession is forced at the day boundary). Zero rows

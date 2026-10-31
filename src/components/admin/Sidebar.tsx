@@ -12,6 +12,7 @@ import type { StaffRole } from "@/lib/types";
 import { adminLayout } from "@/lib/admin-tokens";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/server/actions/auth";
+import { clearDraftOnSignOut } from "@/store/draftOrder";
 
 export type Props = { role: StaffRole };
 
@@ -47,6 +48,7 @@ export default function Sidebar({ role }: Props) {
 
   const handleSignOut = useCallback(async () => {
     setSigningOut(true);
+    clearDraftOnSignOut();
     await signOut();
     router.push("/staff/login" as Route);
   }, [router]);

@@ -38,6 +38,11 @@ vi.mock("@/hooks/useOfflineOutbox", () => ({
 
 import POSWorkspace from "@/components/pos/POSWorkspace";
 import { useDraftOrder } from "@/store/draftOrder";
+import { revenueDay } from "@/lib/format";
+
+// The saved draft belongs to this staff member today (main's draft restore,
+// #279) — otherwise POSWorkspace drops the seeded lines on mount.
+const OWNER = `staff_thandeka|${revenueDay()}`;
 
 // §6.2.4c's drawing: R20 cappuccino, R20 hot chocolate.
 const CAPP = { menuItemId: "mi_capp", menuItemName: "Cappuccino", unitPriceZar: 2000, modifications: [] };
@@ -48,6 +53,7 @@ const OFF = { ok: true, data: { available: false, kind: null, kinds: [] } };
 
 function seed(items: Array<typeof CAPP & { quantity: number; voucherCount?: number }>) {
   useDraftOrder.getState().reset();
+  useDraftOrder.setState({ draftOwner: OWNER });
   for (const i of items) {
     const { voucherCount, ...rest } = i;
     useDraftOrder.getState().addItem(rest);

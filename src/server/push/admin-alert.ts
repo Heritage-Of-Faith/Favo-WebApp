@@ -1,5 +1,10 @@
-// The Admin's voucher-slip alert (AT-204, PRD §6.9.2, L43, REQ-156).
-// §6.9.2: a slip-count mismatch "raises the same Admin push as an L09 stock
+// Immediate Admin alert: a web push to every admin with a saved subscription.
+// Same recipients and transport as the daily-close mismatch alert
+// (src/server/crons/close-daily.ts). Never throws — an alert that fails must
+// not break the request that raised it.
+//
+// The Admin's voucher-slip alert (AT-204, PRD §6.9.2, L43, REQ-156) lives here
+// too. §6.9.2: a slip-count mismatch "raises the same Admin push as an L09 stock
 // mismatch" — so it goes the way closeDaily's L09 alert goes: Web Push to
 // every admin staff row with a saved subscription. Carries both figures.
 
@@ -10,6 +15,23 @@ import type { DB } from "@/lib/db";
 import { auditLog, staff } from "@db/schema";
 import { initVapid } from "@/server/push/vapid";
 import { isValidPushSubscription } from "@/server/push/payload";
+
+export async function alertAdmins(title: string, body: string, data: Record<string, unknown> = {}): Promise<void> {
+  try {
+    const admins = await db
+      .select({ pushSubscription: staff.pushSubscription })
+      .from(staff)
+      .where(and(eq(staff.role, "admin"), isNotNull(staff.pushSubscription)));
+    initVapid();
+    const payload = JSON.stringify({ title, body, data });
+    for (const a of admins) {
+      if (!isValidPushSubscription(a.pushSubscription)) continue;
+      await webpush.sendNotification(a.pushSubscription, payload).catch(() => {});
+    }
+  } catch {
+    // Swallow: the audit_log row is the durable record of the breach.
+  }
+}
 
 export type VoucherVariance = {
   sessionId: string;

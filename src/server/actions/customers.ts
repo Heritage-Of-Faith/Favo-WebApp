@@ -1,16 +1,47 @@
 "use server";
 
-import { or, ilike, eq, desc, asc } from "drizzle-orm";
+import { or, and, ilike, eq, desc, asc, sql, type SQL } from "drizzle-orm";
+import { checkRateLimit } from "@/server/rate-limit";
 import { db } from "@/lib/db";
 import { customers, orders } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
+import { stripControlChars } from "@/server/http/request-guards";
+import { phoneLast4 as maskPhoneLast4 } from "@/lib/mask-phone";
 import type { ActionResult, CustomerSearchResult } from "@/lib/types";
 
-// Docs: docs/API.md → searchCustomer · ILIKE on name + exact phone match.
-// Returns id, name and the last four phone digits only (read-only POS lookup).
-// REQ-142 / AT-185: no email and no full phone number ever leave the server.
+// Docs: docs/API.md → searchCustomer · PRD §6.9.4a (DEF-F) contract.
+// Prefix match on given name and surname, exact full phone, or a 2–4 digit
+// prefix of the phone's last four digits. Returns id, name, surname and the
+// last four phone digits only (read-only POS lookup).
+// REQ-142 / AT-185 / AT-213: no email, no full phone number and no status ever
+// leave the server.
 
 const MAX_RESULTS = 10;
+const SEARCH_LIMIT = 60;
+const SEARCH_WINDOW_MS = 60_000;
+
+/**
+ * Cheap read for the POS: does this customer id still exist? Returns id + name only
+ * (REQ-142: no email, no phone). Used to drop a stale customer from a restored draft.
+ */
+export async function resolveCustomer(
+  id: string
+): Promise<ActionResult<{ id: string; name: string }>> {
+  const auth = await authorize("barista", "admin");
+  if (!auth.ok) return auth;
+  const [row] = await db
+    .select({ id: customers.id, name: customers.name })
+    .from(customers)
+    .where(eq(customers.id, id))
+    .limit(1);
+  if (!row) return { ok: false, code: "NOT_FOUND", message: "Customer not found." };
+  return { ok: true, data: { id: row.id, name: row.name } };
+}
+
+/** Escape LIKE wildcards so user input is matched literally (backslash is Postgres' default escape). */
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
 
 /** Last four digits of a phone number, or null if absent / fewer than four digits. */
 function phoneLast4(phone: string | null): string | null {
@@ -24,19 +55,52 @@ export async function searchCustomer(
   const auth = await authorize("barista", "admin");
   if (!auth.ok) return auth;
 
-  const q = query.trim();
+  // Per-staff throttle: stops a barista scripting lookups to harvest numbers.
+  const rl = checkRateLimit(`customer-search:${auth.session.id}`, SEARCH_LIMIT, SEARCH_WINDOW_MS);
+  if (!rl.allowed) {
+    return { ok: false, code: "RATE_LIMITED", message: `Searching too fast. Wait ${rl.retryAfterSecs}s and try again.` };
+  }
+
+  // SEC-5: drop control characters — a NUL reaching Postgres is a bare 500.
+  const q = stripControlChars(query).trim();
   if (q.length < 2) {
     return { ok: false, code: "QUERY_TOO_SHORT", message: "Enter at least 2 characters." };
+  }
+
+  // DEF-F: prefix match on the given name or the surname.
+  const prefix = `${escapeLike(q)}%`;
+  const conditions: SQL[] = [
+    ilike(customers.name, prefix),
+    ilike(customers.surname, prefix),
+    eq(customers.phone, q),
+  ];
+  // A "Given Surname" query (DEF-F is silent on this; AT-213's choice): the
+  // first word prefix-matches the given name AND the rest prefix-matches the surname.
+  const words = q.split(/\s+/);
+  if (words.length > 1) {
+    conditions.push(
+      and(
+        ilike(customers.name, `${escapeLike(words[0]!)}%`),
+        ilike(customers.surname, `${escapeLike(words.slice(1).join(" "))}%`)
+      )!
+    );
+  }
+  // DEF-F: "Prefix match … on the last four digits of a phone".
+  if (/^\d{2,4}$/.test(q)) {
+    conditions.push(
+      sql`right(regexp_replace(${customers.phone}, '\\D', '', 'g'), 4) like ${`${q}%`}`
+    );
   }
 
   const rows = await db
     .select({
       id: customers.id,
       name: customers.name,
+      surname: customers.surname,
       phone: customers.phone,
     })
     .from(customers)
-    .where(or(ilike(customers.name, `%${q}%`), eq(customers.phone, q)))
+    .where(or(...conditions))
     .limit(MAX_RESULTS);
 
   // Build each result field by field — never spread the row, so the full
@@ -44,6 +108,7 @@ export async function searchCustomer(
   const results: CustomerSearchResult[] = rows.map((c) => ({
     id: c.id,
     name: c.name,
+    surname: c.surname ?? null,
     phoneLast4: phoneLast4(c.phone),
   }));
 
@@ -55,12 +120,13 @@ export async function searchCustomer(
 export type CustomerListItem = {
   id: string;
   name: string;
-  email: string | null;
-  phone: string | null;
+  surname: string | null;
+  status: "office_staff" | "church_member";
+  phoneLast4: string | null; // AT-214 / REQ-142: no email, no full phone
   createdAt: string; // ISO
 };
 
-/** List up to `limit` customers. If `query` is supplied, filters by name or email ILIKE. */
+/** List up to `limit` customers. If `query` is supplied, filters by name or surname ILIKE. */
 export async function listCustomers(opts?: {
   query?: string;
   limit?: number;
@@ -69,26 +135,35 @@ export async function listCustomers(opts?: {
   if (!auth.ok) return auth;
 
   const limit = Math.min(opts?.limit ?? 100, 500);
-  const q = opts?.query?.trim();
+  const q = opts?.query === undefined ? undefined : stripControlChars(opts.query).trim();
 
   const rows = await db
-    .select()
+    .select({
+      id: customers.id,
+      name: customers.name,
+      surname: customers.surname,
+      status: customers.status,
+      phone: customers.phone,
+      createdAt: customers.createdAt,
+    })
     .from(customers)
     .where(
       q && q.length >= 2
-        ? or(ilike(customers.name, `%${q}%`), ilike(customers.email, `%${q}%`))
+        ? or(ilike(customers.name, `%${q}%`), ilike(customers.surname, `%${q}%`))
         : undefined
     )
     .orderBy(asc(customers.name))
     .limit(limit);
 
+  // Field by field — never spread the row, so the full phone cannot ride along.
   return {
     ok: true,
     data: rows.map((c) => ({
       id: c.id,
       name: c.name,
-      email: c.email,
-      phone: c.phone,
+      surname: c.surname,
+      status: c.status,
+      phoneLast4: maskPhoneLast4(c.phone),
       createdAt: c.createdAt.toISOString(),
     })),
   };
@@ -106,8 +181,9 @@ export type AdminOrderRow = {
 export type CustomerDetail = {
   id: string;
   name: string;
-  email: string | null;
-  phone: string | null;
+  surname: string | null;
+  status: "office_staff" | "church_member";
+  phoneLast4: string | null;
   createdAt: string;
   recentOrders: AdminOrderRow[];
 };
@@ -119,7 +195,14 @@ export async function getCustomerDetail(
   if (!auth.ok) return auth;
 
   const [customer] = await db
-    .select()
+    .select({
+      id: customers.id,
+      name: customers.name,
+      surname: customers.surname,
+      status: customers.status,
+      phone: customers.phone,
+      createdAt: customers.createdAt,
+    })
     .from(customers)
     .where(eq(customers.id, customerId))
     .limit(1);
@@ -145,8 +228,9 @@ export async function getCustomerDetail(
     data: {
       id: customer.id,
       name: customer.name,
-      email: customer.email,
-      phone: customer.phone,
+      surname: customer.surname,
+      status: customer.status,
+      phoneLast4: maskPhoneLast4(customer.phone),
       createdAt: customer.createdAt.toISOString(),
       recentOrders: recentOrders.map((o) => ({
         id: o.id,

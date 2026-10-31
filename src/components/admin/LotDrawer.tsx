@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { listLots, updateLotCost } from "@/server/actions/inventory";
 import { formatDate, formatZar } from "@/lib/format";
+import { formatUnitCostRands, parseLotUnitCost } from "@/lib/admin-input";
 import { freshness } from "@/lib/status/freshness";
 import StatusBadge, { freshnessVariant } from "@/components/shared/StatusBadge";
 import type { InventoryItemStatus, InventoryLot } from "@/lib/types";
@@ -38,6 +39,7 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftCost, setDraftCost] = useState("");
   const [saving, setSaving] = useState(false);
+  const [costError, setCostError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!item) return;
@@ -53,22 +55,28 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
   }, [item]);
 
   async function saveCost(lotId: string) {
-    const n = Number(draftCost);
-    if (!Number.isFinite(n) || n < 0) {
-      toast.error("Cost must be a number ≥ 0.");
+    setCostError(null);
+    // Same rule as the server: no empty, no 0, nothing numeric(10,4) can't hold.
+    const parsed = parseLotUnitCost(draftCost);
+    if (!parsed.ok) {
+      setCostError(parsed.message);
       return;
     }
     setSaving(true);
-    // unit_cost_zar is numeric(10,4) — pass a fixed-precision string.
-    const res = await updateLotCost(lotId, n.toFixed(4));
-    setSaving(false);
-    if (res.ok) {
-      toast.success("Lot cost updated.");
-      setLots((prev) => prev.map((l) => (l.id === lotId ? { ...l, unitCostZar: n.toFixed(4) } : l)));
-      setEditingId(null);
-      onCostUpdated();
-    } else {
-      toast.error(res.message);
+    try {
+      const res = await updateLotCost(lotId, parsed.value);
+      if (res.ok) {
+        toast.success("Lot cost updated.");
+        setLots((prev) => prev.map((l) => (l.id === lotId ? { ...l, unitCostZar: parsed.value } : l)));
+        setEditingId(null);
+        onCostUpdated();
+      } else {
+        setCostError(res.message);
+      }
+    } catch {
+      setCostError("Could not save the cost. Please try again.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -180,15 +188,16 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
 
                 {/* Editable unit cost (R10 recosting) */}
                 <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2" style={{ borderColor: "var(--color-border-subtle)" }}>
+                  {/* unit_cost_zar is CENTS per base unit (PRD §7.0.2) — say so. */}
                   <span className="favo-caption" style={{ color: "var(--color-text-muted)" }}>
-                    Cost / {item.unit}
+                    Cost / {item.unit} (cents)
                   </span>
                   {editingId === lot.id ? (
-                    <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
                       <input
-                        type="number"
-                        min={0}
-                        step="0.0001"
+                        type="text"
+                        inputMode="decimal"
+                        aria-label={`Cost per ${item.unit} in cents`}
                         value={draftCost}
                         autoFocus
                         onChange={(e) => setDraftCost(e.target.value)}
@@ -220,19 +229,28 @@ export default function LotDrawer({ item, onClose, onCostUpdated }: LotDrawerPro
                       >
                         ✕
                       </button>
+                      {costError && (
+                        <span role="alert" className="w-full text-right favo-caption" style={{ color: "var(--color-error)", textTransform: "none", letterSpacing: 0 }}>
+                          {costError}
+                        </span>
+                      )}
                     </span>
                   ) : (
                     <button
                       type="button"
                       onClick={() => {
-                        setDraftCost(lot.unitCostZar ?? "0");
+                        setDraftCost(lot.unitCostZar ?? "");
+                        setCostError(null);
                         setEditingId(lot.id);
                       }}
+                      aria-label={`Edit cost per ${item.unit} for this lot`}
                       className="inline-flex min-h-9 items-center gap-1.5 rounded-[var(--radius-btn)] px-2 favo-small hover:bg-[color:var(--color-porcelain-soft)]"
                       style={{ color: "var(--color-text-strong)" }}
                     >
                       <span style={{ fontVariantNumeric: "tabular-nums" }}>
-                        {lot.unitCostZar ?? "—"}
+                        {lot.unitCostZar
+                          ? `${lot.unitCostZar} c (${formatUnitCostRands(lot.unitCostZar)})`
+                          : "—"}
                       </span>
                       <span aria-hidden style={{ color: "var(--color-text-muted)" }}>
                         ✎

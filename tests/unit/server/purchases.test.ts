@@ -124,6 +124,90 @@ describe("recordPurchase — validation", () => {
   });
 });
 
+// ─── recordPurchase — unit cost + bounds (QA r1-admin P1-1, P2b, P2h) ─────────
+// PRD v7 §7.0.2: unit_cost = lot.cost_zar / lot.yield_units, cents to 4 dp.
+// R225 for 500 g → 22500 c / 500 g = 45.0000 c/g (= R0.45 per g).
+
+describe("recordPurchase — unit cost and bounds", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const beans = { inventoryItemId: "inv_beans", quantity: 500, totalZar: 22500 };
+
+  it("stores R225 for 500 g as unit_cost_zar 45.0000 (cents per g)", async () => {
+    const { db } = await import("@db/index");
+    const inserted: Record<string, unknown>[] = [];
+    vi.mocked(db.transaction).mockImplementationOnce(async (cb) => {
+      const tx = {
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+            inserted.push(v);
+            return {
+              returning: vi.fn().mockResolvedValue([{ id: "x" }]),
+              then: (r: (v: unknown) => void) => r(undefined),
+            };
+          }),
+        }),
+      };
+      return (cb as (tx: unknown) => Promise<unknown>)(tx);
+    });
+    const { recordPurchase } = await import("@/server/actions/purchases");
+    const result = await recordPurchase({
+      sourceName: "Origin", kind: "planned", items: [{ ...beans, unitCostZar: "45.0000" }],
+    });
+    expect(result.ok).toBe(true);
+    const lot = inserted.find((v) => "unitCostZar" in v);
+    expect(lot?.unitCostZar).toBe("45.0000");
+  });
+
+  it("rejects a unit cost that does not equal total ÷ quantity (the 100x slip: 0.4500 for R225/500 g)", async () => {
+    const { recordPurchase } = await import("@/server/actions/purchases");
+    const result = await recordPurchase({
+      sourceName: "Origin", kind: "planned", items: [{ ...beans, unitCostZar: "0.4500" }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects a total that rounds the unit cost to 0.0000 (never silently free)", async () => {
+    const { recordPurchase } = await import("@/server/actions/purchases");
+    const result = await recordPurchase({
+      sourceName: "Origin", kind: "planned",
+      items: [{ inventoryItemId: "inv_beans", quantity: 1_000_000, totalZar: 1, unitCostZar: "0.0000" }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects a total above the integer-cents column (no server 500)", async () => {
+    const { recordPurchase } = await import("@/server/actions/purchases");
+    const result = await recordPurchase({
+      sourceName: "Origin", kind: "planned",
+      items: [{ inventoryItemId: "inv_beans", quantity: 1000, totalZar: 9_999_999_900, unitCostZar: "9999999.9000" }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects a fractional quantity for a non-container item (stock delta is whole units)", async () => {
+    const { recordPurchase } = await import("@/server/actions/purchases");
+    const result = await recordPurchase({
+      sourceName: "Origin", kind: "planned",
+      items: [{ inventoryItemId: "inv_beans", quantity: 1.5, totalZar: 300, unitCostZar: "200.0000" }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects an empty source and a source over 100 characters", async () => {
+    const { recordPurchase } = await import("@/server/actions/purchases");
+    for (const sourceName of ["", "   ", "x".repeat(101)]) {
+      const result = await recordPurchase({ sourceName, kind: "planned", items: [validItem] });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
+    }
+  });
+});
+
 // ─── recordPurchase — RBAC ────────────────────────────────────────────────────
 
 describe("recordPurchase — RBAC", () => {

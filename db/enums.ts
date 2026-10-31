@@ -145,3 +145,17 @@ export const eventAudience = pgEnum("event_audience", [
   "both",
   "nobody",
 ]);
+
+// AT-192 / PRD §7.0.2, §7.0.1b, REQ-129: a stored report's cost state — the
+// three render states (empty ≠ unavailable ≠ provisional) plus final.
+export const reportCostState = pgEnum("report_cost_state", [
+  "empty",
+  "unavailable",
+  "provisional",
+  "final",
+]);
+
+// AT-191 / PRD §7.0.1b, REQ-110, REQ-131: why a lot's cost is (or is not)
+// trustworthy. NOT NULL DEFAULT 'estimate' on inventory_lots; 'invoice' only by
+// an Admin recost through /admin/yield, audited.
+export const costSource = pgEnum("cost_source", ["estimate", "invoice"]);

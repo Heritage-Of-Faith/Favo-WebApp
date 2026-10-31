@@ -10,6 +10,7 @@ import { getSession } from "@/lib/auth/session";
 import { getCustomerSession } from "@/server/auth/customer-session";
 import { isValidPushSubscription } from "@/server/push/payload";
 import { writeAudit } from "@/server/audit";
+import { readJsonBody } from "@/server/http/request-guards";
 
 export async function POST(request: Request) {
   // Support both staff (P1 barista-side opt-in) and customer (P3 self opt-in).
@@ -20,12 +21,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  // SEC-6: bounded read — 413 over ~100 KB, 400 on bad JSON.
+  const read = await readJsonBody(request);
+  if (!read.ok) {
+    return read.status === 413
+      ? NextResponse.json({ error: "Request body too large" }, { status: 413 })
+      : NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+  const body = read.value;
 
   const { customerId: bodyCustomerId, subscription } = (body ?? {}) as {
     customerId?: string;
@@ -76,8 +79,11 @@ export async function DELETE(request: Request) {
   // Customers can only unsubscribe themselves.
   let customerId = customerSessionId;
   if (!customerId && staffSession) {
-    let body: unknown;
-    try { body = await request.json(); } catch { /* no body is fine */ }
+    const read = await readJsonBody(request); // no / bad body is fine here
+    if (!read.ok && read.status === 413) {
+      return NextResponse.json({ error: "Request body too large" }, { status: 413 });
+    }
+    const body = read.ok ? read.value : undefined;
     customerId = (body as { customerId?: string })?.customerId ?? null;
   }
 
