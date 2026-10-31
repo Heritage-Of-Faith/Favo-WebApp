@@ -10,7 +10,8 @@
 import { checkLowStock } from "@/server/crons/check-low-stock";
 import { closeDaily, closedDays } from "@/server/crons/close-daily";
 import { sweepCollected } from "@/server/crons/collected-sweep";
-import { generateWeeklyPnL, hasWeeklyReport, weekBounds } from "@/server/crons/generate-weekly-pnl";
+import { hasWeeklyReport, weekBounds } from "@/server/crons/generate-weekly-pnl";
+import { runWeeklyPnLJob } from "@/server/crons/weekly-pnl-job";
 import { checkMissingCloses } from "./close-watch";
 import { sastDate, sastMiddayDaysBack, sastMinute } from "./schedule";
 import type { JobDefinition } from "./scheduler";
@@ -64,7 +65,9 @@ export const JOBS: JobDefinition[] = [
     missedRun: "catchUp",
     periodFor: (firedAt) => weekBounds(completedWeek(firedAt)).weekStarting,
     isDone: (weekStarting) => hasWeeklyReport(weekStarting),
-    run: (firedAt) => generateWeeklyPnL(completedWeek(firedAt)),
+    // AT-206: the run also pushes REQ-123's "for week ending …" (Admin only
+    // when late); see weekly-pnl-job.ts.
+    run: (firedAt, late) => runWeeklyPnLJob(completedWeek(firedAt), late),
   },
   {
     // §9.6.2 #5 — every 5 min, `ready` → `collected` 20 min after completed_at

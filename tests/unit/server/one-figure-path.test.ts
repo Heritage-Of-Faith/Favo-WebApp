@@ -34,7 +34,9 @@ vi.mock("@db/index", async () => {
   const insert = vi.fn().mockImplementation(() => ({
     values: (v: Record<string, unknown>) => {
       inserted.push(v);
-      return { returning: () => Promise.resolve([{ id: "r1" }]) };
+      // CHANGED (AT-206): the weekly insert now goes through onConflictDoNothing.
+      const returning = () => Promise.resolve([{ id: "r1" }]);
+      return { returning, onConflictDoNothing: () => ({ returning }) };
     },
   }));
   return {
