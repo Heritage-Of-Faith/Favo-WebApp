@@ -7,7 +7,7 @@
 | Language | TypeScript 5.6 strict (`tsc --noEmit` in CI) |
 | Styling | Tailwind v4 + shadcn/ui |
 | DB | PostgreSQL 17 (Supabase, project `Flavo-Real`, eu-west-1) |
-| ORM | Drizzle ORM (`prepare: false` in `db/index.ts` — required for PgBouncer Transaction pooler) |
+| ORM | Drizzle ORM (prepared statements on — `DATABASE_URL` is a direct connection, AT-168) |
 | Auth | Auth.js v5 — PIN provider (staff) + email magic link (customers, Phase 3) |
 | Payments | Yoco Online API (hosted fields, tokenisation) |
 | Real-time | Postgres LISTEN/NOTIFY → SSE |
@@ -69,8 +69,7 @@ proxy.ts                 # route gating by role (Next.js 16 — replaces middlew
 ## Environment (canonical names — never commit)
 Set in `.env.local` (local). Production target: Infisical (PRD v7 §9.7, not set up yet):
 ```
-DATABASE_URL              # Supabase Transaction pooler (port 6543)
-DATABASE_URL_SESSION      # Supabase Session pooler (port 5432) — SSE/LISTEN only
+DATABASE_URL              # ONE direct connection (PRD v7 §9.2, AT-168) — queries, SSE LISTEN, migrations
 AUTH_SECRET               # Auth.js signing secret
 AUTH_URL                  # https://favo.hofmi.net (production)
 YOCO_SECRET_KEY · YOCO_WEBHOOK_SECRET · NEXT_PUBLIC_YOCO_PUBLIC_KEY
@@ -88,7 +87,7 @@ bun install
 cp .env.example .env.local   # fill in values (ask Gian for DB creds)
 bun dev
 ```
-DB is on Supabase (PG 17) — no local Postgres needed. `DATABASE_URL` must point at the Supabase Transaction pooler (port 6543). The Session pooler (port 5432) is required for PG LISTEN/NOTIFY only (SSE stream).
+DB is on Supabase (PG 17) — no local Postgres needed. `DATABASE_URL` must be a direct (or session-mode, port 5432) connection — never the transaction pooler (6543), which breaks prepared statements and LISTEN (AT-168).
 
 ## Test commands
 | Command | Scope |

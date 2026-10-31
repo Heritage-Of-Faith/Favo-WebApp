@@ -20,8 +20,8 @@ import { db, type DB } from "@db/index";
 
 /**
  * Run `fn` under the `favo_customer` role with RLS scoped to `customerId`.
- * Opens a single transaction (matches db/index.ts postgres-js client,
- * prepare: false). The passed `tx` is a Drizzle transaction typed as DB.
+ * Opens a single transaction on the db/index.ts postgres-js client. The
+ * passed `tx` is a Drizzle transaction typed as DB.
  */
 export async function withCustomerScope<T>(
   customerId: string,

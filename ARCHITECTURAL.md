@@ -69,8 +69,7 @@ middleware.ts            # route gating by role
 ## Environment (canonical names — never commit)
 Set in `.env.local` (local). Production target: Infisical (PRD v7 §9.7, not set up yet):
 ```
-DATABASE_URL              # Supabase Transaction pooler (port 6543)
-DATABASE_URL_SESSION      # Supabase Session pooler (port 5432) — SSE/LISTEN only
+DATABASE_URL              # ONE direct connection (PRD v7 §9.2, AT-168) — queries, SSE LISTEN, migrations
 AUTH_SECRET               # Auth.js signing secret
 AUTH_URL                  # https://favo.hofmi.net (production)
 YOCO_SECRET_KEY · YOCO_WEBHOOK_SECRET · NEXT_PUBLIC_YOCO_PUBLIC_KEY
