@@ -39,6 +39,8 @@ export type CustomerOrder = Pick<
 export type CustomerProfileInput = {
   name?: string;
   phone?: string;
+  /** AT-211: same schema as registration (src/lib/customer/identity.ts). Blank or null clears it. */
+  surname?: string | null;
 };
 
 // ─── The contract ───────────────────────────────────────────────────────────

@@ -5,29 +5,37 @@
 // Intentionally separate from the staff Auth.js/PIN flow.
 
 import { and, eq, isNull } from "drizzle-orm";
-import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { customers } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { createClient } from "@/lib/supabase/server";
 import { checkRateLimit } from "@/server/rate-limit";
+import { clientKey } from "@/server/client-ip";
+import { clearAttempts, cooldownSecsLeft, countRecent, noteAttempt, startCooldown } from "@/server/auth/attempts";
+import { customerIdentitySchema, type CustomerStatus } from "@/lib/customer/identity";
 import type { ActionResult } from "@/lib/types";
 
 const TENANT_ID = "hofmi-favo";
 
-// SEC-4 rate limits
-const AUTH_LIMIT = 5;           // attempts per window
-const AUTH_WINDOW_MS = 60_000;  // 1 minute
-const RESET_LIMIT = 3;          // requests per window
-const RESET_WINDOW_MS = 60 * 60_000; // 1 hour
+// PRD §9.5.3 customer-side limits. "Generous on accounts" — the whole office
+// shares one IP, so per-IP limits are loose and per-account ones count only
+// failures. Every breach writes audit_log action='reject' (never the value).
+const WINDOW_MS = 15 * 60_000;
+const PER_IP_LIMIT = 30;               // login, registration and reset: 30 per IP per 15 min
+const ACCOUNT_FAIL_LIMIT = 10;         // login: 10 failed per account per 15 min…
+const ACCOUNT_COOLDOWN_MS = 15 * 60_000; // …then a 15-minute cooldown, then the counter resets
 
-async function clientIp(): Promise<string> {
-  try {
-    const h = await headers();
-    return h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "anonymous";
-  } catch {
-    return "anonymous";
-  }
+// SEC-1: key on the trusted proxy hop, never the client-supplied first
+// X-Forwarded-For entry (src/server/client-ip.ts).
+const clientIp = clientKey;
+
+function tooManyAttempts(retryAfterSecs: number) {
+  return { ok: false as const, code: "RATE_LIMITED", message: `Too many attempts. Try again in ${retryAfterSecs}s.` };
+}
+
+/** Outside any transaction, so a refusal's audit row is never rolled back. */
+async function auditReject(reason: string): Promise<void> {
+  await writeAudit({ entityKind: "customers", entityId: "unknown", action: "reject", reason });
 }
 
 // ── Validation helpers ────────────────────────────────────────────────────────
@@ -56,11 +64,15 @@ export async function registerCustomer(input: {
   email: string;
   password: string;
   phone?: string;
+  surname?: string;
+  /** AT-211 / PRD §10.3: set at self-registration, and required — never defaulted. */
+  status: CustomerStatus;
 }): Promise<ActionResult<{ customerId: string; name: string; verificationSent: boolean }>> {
   const ip = await clientIp();
-  const rl = checkRateLimit(`register:${ip}`, AUTH_LIMIT, AUTH_WINDOW_MS);
+  const rl = checkRateLimit(`register:${ip}`, PER_IP_LIMIT, WINDOW_MS);
   if (!rl.allowed) {
-    return { ok: false, code: "RATE_LIMITED", message: `Too many attempts. Try again in ${rl.retryAfterSecs}s.` };
+    await auditReject("Registration limit reached: 30 per IP per 15 min");
+    return tooManyAttempts(rl.retryAfterSecs);
   }
 
   const name = input.name.trim();
@@ -68,7 +80,7 @@ export async function registerCustomer(input: {
   const password = validatePassword(input.password);
 
   if (name.length < 2) {
-    return { ok: false, code: "VALIDATION", message: "Please enter your full name." };
+    return { ok: false, code: "VALIDATION", message: "Please enter your first name." };
   }
   if (!email) {
     return { ok: false, code: "VALIDATION", message: "Please enter a valid email address." };
@@ -85,6 +97,16 @@ export async function registerCustomer(input: {
     }
     phone = validated;
   }
+
+  // Surname: same schema as the account page (updateCustomerProfile) — §6.4.
+  // Status: set here and only here (§10.3 "Set at self-registration").
+  const identity = customerIdentitySchema.safeParse({ surname: input.surname, status: input.status });
+  if (!identity.success) {
+    return { ok: false, code: "VALIDATION", message: identity.error.issues[0]?.message ?? "Invalid input." };
+  }
+  // A blank surname at sign-up is simply "not given" — never clears a re-linked row.
+  const surname = identity.data.surname ?? undefined;
+  const { status } = identity.data;
 
   // Phone uniqueness — same number already belongs to another customer.
   // Exception: legacy row with same email + null auth_id is allowed through (re-link path below).
@@ -142,14 +164,14 @@ export async function registerCustomer(input: {
     // Migrate legacy row — link the new Supabase user without creating a duplicate
     const [updated] = await db
       .update(customers)
-      .set({ authId: user.id, name, phone })
+      .set({ authId: user.id, name, phone, surname, status })
       .where(eq(customers.id, existingRow.id))
       .returning({ id: customers.id, name: customers.name });
     customer = updated;
   } else {
     const [inserted] = await db
       .insert(customers)
-      .values({ tenantId: TENANT_ID, name, email, phone, authId: user.id })
+      .values({ tenantId: TENANT_ID, name, email, phone, authId: user.id, surname, status })
       .returning({ id: customers.id, name: customers.name });
     customer = inserted;
   }
@@ -165,7 +187,7 @@ export async function registerCustomer(input: {
     action: "customer.register",
     entityKind: "customers",
     entityId: customer.id,
-    after: { email },
+    after: { email, surname: surname ?? null, status },
   });
 
   // data.session is null when Supabase email confirmation is enabled
@@ -182,9 +204,10 @@ export async function loginCustomer(input: {
   password: string;
 }): Promise<ActionResult<{ customerId: string; name: string }>> {
   const ip = await clientIp();
-  const rl = checkRateLimit(`login:${ip}`, AUTH_LIMIT, AUTH_WINDOW_MS);
+  const rl = checkRateLimit(`login:${ip}`, PER_IP_LIMIT, WINDOW_MS);
   if (!rl.allowed) {
-    return { ok: false, code: "RATE_LIMITED", message: `Too many attempts. Try again in ${rl.retryAfterSecs}s.` };
+    await auditReject("Customer login limit reached: 30 attempts per IP per 15 min");
+    return tooManyAttempts(rl.retryAfterSecs);
   }
 
   const email = validateEmail(input.email);
@@ -196,9 +219,26 @@ export async function loginCustomer(input: {
     return { ok: false, code: "VALIDATION", message: "Please enter your password." };
   }
 
+  const accountFailKey = `cust-login-fail:${email}`;
+  const accountCooldownKey = `cust-login-cooldown:${email}`;
+  const cooling = cooldownSecsLeft(accountCooldownKey);
+  if (cooling > 0) {
+    await auditReject(`Customer login refused: account cooldown running (${cooling}s left)`);
+    return tooManyAttempts(cooling);
+  }
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password: input.password });
+
+  if (error && !error.message.toLowerCase().includes("email not confirmed")) {
+    noteAttempt(accountFailKey, WINDOW_MS);
+    if (countRecent(accountFailKey, WINDOW_MS) >= ACCOUNT_FAIL_LIMIT) {
+      startCooldown(accountCooldownKey, ACCOUNT_COOLDOWN_MS);
+      clearAttempts(accountFailKey);
+      await auditReject("Customer login limit reached: 10 failed attempts per account in 15 min; 15-minute cooldown");
+    }
+  }
 
   if (error) {
     if (error.message.toLowerCase().includes("email not confirmed")) {
@@ -276,8 +316,9 @@ export async function requestPasswordReset(
     return { ok: false, code: "VALIDATION", message: "Please enter a valid email address." };
   }
 
-  const rl = checkRateLimit(`reset:${validated}`, RESET_LIMIT, RESET_WINDOW_MS);
+  const rl = checkRateLimit(`reset:${await clientIp()}`, PER_IP_LIMIT, WINDOW_MS);
   if (!rl.allowed) {
+    await auditReject("Password reset limit reached: 30 per IP per 15 min");
     // Return ok to avoid leaking that the email exists or that the limit was hit.
     // Suppressing the send silently is safer than 429-ing here (no-leak rule).
     return { ok: true, data: null };

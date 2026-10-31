@@ -75,7 +75,7 @@ AUTH_URL                  # https://favo.hofmi.net (production)
 YOCO_SECRET_KEY · YOCO_WEBHOOK_SECRET · NEXT_PUBLIC_YOCO_PUBLIC_KEY
 VAPID_PUBLIC_KEY · VAPID_PRIVATE_KEY · NEXT_PUBLIC_VAPID_PUBLIC_KEY
 PUBLIC_BASE_URL · TZ=Africa/Johannesburg
-CRON_SECRET               # secures cron route handlers
+SCHEDULER_ENABLED         # in-app job scheduler on/off (default: on in production)
 ```
 
 ## Deploy pipeline

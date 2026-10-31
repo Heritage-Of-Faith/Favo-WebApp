@@ -27,17 +27,17 @@ export default function StockBanner({ outOfStockItems }: Props) {
   return (
     <div
       role="alert"
-      className="flex items-center gap-2 border-b border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-4 py-2"
+      className="flex items-center gap-2 border-b border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-4 py-0 h-7"
     >
       <AlertCircle size={14} strokeWidth={2} className="text-[var(--color-error)] shrink-0" />
-      <span className="favo-small text-coffee-bean flex-1">
+      <span className="favo-small text-coffee-bean flex-1 truncate">
         Out of stock: <strong>{outOfStockItems.join(", ")}</strong>
       </span>
       <button
         type="button"
         onClick={() => setDismissedKey(key)}
         aria-label="Dismiss"
-        className="flex h-11 w-11 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
+        className="-my-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
       >
         <X size={14} strokeWidth={2} />
       </button>

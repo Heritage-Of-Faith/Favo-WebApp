@@ -31,6 +31,10 @@ describe("riskyReasons", () => {
     expect(riskyReasons(PLAIN)).toEqual([]);
     expect(riskyReasons(`ALTER TABLE "x" ALTER COLUMN "y" DROP DEFAULT;`)).toEqual([]);
     expect(riskyReasons(`ALTER TABLE "x" ALTER COLUMN "y" DROP NOT NULL;`)).toEqual([]);
+    // A view holds no rows (0038 drops v_daily_cogs); dropping one loses no data.
+    expect(riskyReasons(`DROP VIEW IF EXISTS v_daily_cogs;`)).toEqual([]);
+    expect(riskyReasons(`DROP MATERIALIZED VIEW "m";`)).toEqual(["DROP"]);
+    expect(riskyReasons(`DROP TABLE "x";`)).toEqual(["DROP"]);
     expect(riskyReasons(`CREATE TABLE "customer_orders_log" ("orders_count" int);`)).toEqual([]);
     expect(riskyReasons(`-- this used to DROP orders\n${PLAIN}`)).toEqual([]);
   });

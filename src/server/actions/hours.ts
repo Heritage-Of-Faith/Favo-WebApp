@@ -67,6 +67,10 @@ export async function setOperatingHours(
     return { ok: false, code: "VALIDATION", message: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
   const data = parsed.data;
+  // "HH:MM" strings compare correctly as text. A closed day's times are unused.
+  if (!data.isClosed && data.closeTime <= data.openTime) {
+    return { ok: false, code: "VALIDATION", message: "Closing time must be after opening time." };
+  }
 
   const [existing] = await db
     .select({ id: operatingHours.id })

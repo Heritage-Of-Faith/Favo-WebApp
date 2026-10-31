@@ -10,8 +10,8 @@ export default function ReportsPage() {
       <header className="mb-6">
         <h1 className="admin-page-title">Report Exports</h1>
         <p className="mt-1 favo-small text-text-muted">
-          Download sales, COGS, inventory, or monthly P&amp;L reports as CSV or
-          PDF.
+          Download sales, COGS or inventory reports as CSV, or as a printable
+          HTML page you can print or save as PDF from your browser.
         </p>
       </header>
       <ReportExportForm />

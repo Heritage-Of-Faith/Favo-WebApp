@@ -10,7 +10,6 @@
  * Prerequisites:
  *   - Seed applied (G3 + phase2 seed)
  *   - TEST_AUDIT_SECRET env var set (otherwise audit-coverage block skips)
- *   - CRON_SECRET=e2e-cron-secret for cron block to assert 200
  *
  * Seeded data:
  *   Barista: Sam Barista  PIN 1234  id: staff_barista_sam
