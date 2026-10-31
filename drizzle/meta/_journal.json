@@ -281,6 +281,13 @@
       "when": 1793040474308,
       "tag": "0039_at191_lot_cost_source",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793195043526,
+      "tag": "0041_at205_expense_note",
+      "breakpoints": true
     }
   ]
 }
