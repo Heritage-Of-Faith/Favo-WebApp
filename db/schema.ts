@@ -597,6 +597,8 @@ export const expenses = pgTable("expenses", {
   amountZar: integer("amount_zar").notNull(),
   incurredAt: timestamp("incurred_at", { withTimezone: true }).defaultNow().notNull(),
   loggedBy: text("logged_by").notNull().references(() => staff.id),
+  // AT-205 / PRD §11.2: logExpense(category, amount_zar, incurred_at, note?).
+  note: text("note"),
 });
 
 // ─── Audit Log (append-only — trigger-enforced) ───────────────────────────────

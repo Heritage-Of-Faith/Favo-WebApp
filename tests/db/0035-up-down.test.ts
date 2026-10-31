@@ -33,8 +33,8 @@ const maybe = hasRealDb() ? describe : describe.skip;
 const UP = "0035_at188_order_cogs.sql";
 const DOWN = "down/0035_at188_order_cogs.down.sql";
 const WHEN_0035 = 1792752696811; // drizzle/meta/_journal.json, idx 35
-// L28: 0040 adds orders.notification_target on top of this; stepped down first.
-const DOWN_0040 = "down/0040_l28_notification_target.down.sql";
+// L28: 0042 adds orders.notification_target on top of this; stepped down first.
+const DOWN_0042 = "down/0042_l28_notification_target.down.sql";
 
 type Shape = { columns: string[]; constraints: string[]; indexes: string[] };
 
@@ -103,9 +103,9 @@ maybe("0035 order_cogs: up → down → up, and the refusals (AT-188)", () => {
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
-        // CI now migrates past 0040, which adds a column to orders. Step it
+        // CI now migrates past 0042, which adds a column to orders. Step it
         // back (rolled back with everything else) so orders reads as 0035 left it.
-        await tx.unsafe(migrationSql(DOWN_0040));
+        await tx.unsafe(migrationSql(DOWN_0042));
         await fn(tx);
         throw new Rollback();
       });

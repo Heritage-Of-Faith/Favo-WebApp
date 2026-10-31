@@ -1,17 +1,17 @@
-// L28 / REQ-046: 0040 (orders.notification_target) ships with a tested `down`
+// L28 / REQ-046: 0042 (orders.notification_target) ships with a tested `down`
 // (PRD §14, "Rollback strategies").
 //
-// Renumbered 0034 -> 0040 (0034..0039 landed on main first); the migration's
-// SQL is unchanged.
+// Renumbered 0034 -> 0040 (0034..0039 landed on main first), then 0040 -> 0042
+// (0041 landed on main first); the migration's SQL is unchanged.
 //
 // Runs against the CI test DB, which `bun db:migrate` has already brought to
-// 0040. Every case runs inside ONE transaction that is always rolled back, so
+// 0042. Every case runs inside ONE transaction that is always rolled back, so
 // the DB is left exactly as found for the other suites and the E2E step.
 //
 // What it proves:
-//   - orders matches the 0040 snapshot; after `down` the 0039 snapshot (and the
-//     enum is gone, and 0040 is forgotten in drizzle's ledger); after `up`
-//     again the 0040 snapshot;
+//   - orders matches the 0042 snapshot; after `down` the 0041 snapshot (0041
+//     does not touch orders; the enum is gone, and 0042 is forgotten in
+//     drizzle's ledger); after `up` again the 0042 snapshot;
 //   - `up` backfills existing rows to the only value the CHECK allows;
 //   - the database refuses (PRD §10.3): a NULL target; a value outside
 //     customer | none; 'customer' with no customer_id; 'none' with a customer_id.
@@ -26,14 +26,14 @@ import { connect, hasRealDb, migrationSql } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
-const UP = "0040_l28_notification_target.sql";
-const DOWN = "down/0040_l28_notification_target.down.sql";
-const WHEN_0040 = 1793100000000; // drizzle/meta/_journal.json, idx 40
+const UP = "0042_l28_notification_target.sql";
+const DOWN = "down/0042_l28_notification_target.down.sql";
+const WHEN_0042 = 1793200000000; // drizzle/meta/_journal.json, idx 42
 
-async function ledgerHas0040(tx: TransactionSql): Promise<boolean | null> {
+async function ledgerHas0042(tx: TransactionSql): Promise<boolean | null> {
   const [reg] = await tx`SELECT to_regclass('drizzle.__drizzle_migrations') AS t`;
   if (reg.t === null) return null; // no drizzle ledger in this DB
-  const rows = await tx`SELECT 1 FROM drizzle.__drizzle_migrations WHERE created_at = ${WHEN_0040}`;
+  const rows = await tx`SELECT 1 FROM drizzle.__drizzle_migrations WHERE created_at = ${WHEN_0042}`;
   return rows.length > 0;
 }
 
@@ -82,7 +82,7 @@ async function enumExists(tx: TransactionSql): Promise<boolean> {
 
 class Rollback extends Error {}
 
-maybe("0040 orders.notification_target: up → down → up, and the refusals (L28, REQ-046)", () => {
+maybe("0042 orders.notification_target: up → down → up, and the refusals (L28, REQ-046)", () => {
   let sql: Sql;
 
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
@@ -99,18 +99,18 @@ maybe("0040 orders.notification_target: up → down → up, and the refusals (L2
   beforeAll(() => { sql = connect(); });
   afterAll(async () => { await sql?.end({ timeout: 5 }); });
 
-  it("down returns orders to 0039; up again returns it to 0040", async () => {
+  it("down returns orders to 0041; up again returns it to 0042", async () => {
     await inRolledBackTx(async (tx) => {
-      expect(await dbShape(tx)).toEqual(snapshotShape("0040_snapshot.json"));
+      expect(await dbShape(tx)).toEqual(snapshotShape("0042_snapshot.json"));
       expect(await enumExists(tx)).toBe(true);
-      const ledgerBefore = await ledgerHas0040(tx);
+      const ledgerBefore = await ledgerHas0042(tx);
       if (ledgerBefore !== null) expect(ledgerBefore).toBe(true);
       await tx.unsafe(migrationSql(DOWN));
-      expect(await dbShape(tx)).toEqual(snapshotShape("0039_snapshot.json"));
+      expect(await dbShape(tx)).toEqual(snapshotShape("0041_snapshot.json"));
       expect(await enumExists(tx)).toBe(false);
-      if (ledgerBefore !== null) expect(await ledgerHas0040(tx)).toBe(false);
+      if (ledgerBefore !== null) expect(await ledgerHas0042(tx)).toBe(false);
       await tx.unsafe(migrationSql(UP));
-      expect(await dbShape(tx)).toEqual(snapshotShape("0040_snapshot.json"));
+      expect(await dbShape(tx)).toEqual(snapshotShape("0042_snapshot.json"));
       expect(await enumExists(tx)).toBe(true);
     });
   });

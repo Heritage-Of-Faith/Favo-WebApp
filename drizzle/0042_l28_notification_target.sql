@@ -8,7 +8,9 @@
 -- the only value the CHECK allows for each existing row (customer_id set ->
 -- 'customer', else 'none'), so every legacy order keeps its current push
 -- behaviour. No column DEFAULT: L28 says `none` is chosen, never defaulted into.
--- The reverse is drizzle/down/0040_l28_notification_target.down.sql.
+-- The reverse is drizzle/down/0042_l28_notification_target.down.sql.
+-- Renumbered 0040 -> 0042 to follow merge order (0041 landed on main first);
+-- the SQL statements are unchanged.
 -- favo:requires-approval adds a NOT NULL column to orders and backfills every existing order with an UPDATE
 
 CREATE TYPE "public"."notification_target" AS ENUM('customer', 'none');--> statement-breakpoint
