@@ -65,7 +65,9 @@ export async function getCogsHistory(input?: {
   const auth = await authorize(...ADMIN_ROLES);
   if (!auth.ok) return auth;
 
-  const n = Math.min(Math.max(input?.days ?? 14, 1), 90); // clamp 1–90
+  // clamp 1–180: the dashboard asks for 2 × its range (max 90d) to compare
+  // a window with the equal-length window before it.
+  const n = Math.min(Math.max(input?.days ?? 14, 1), 180);
   const today = todaySast();
   const todayDate = new Date(today + "T00:00:00+02:00");
 

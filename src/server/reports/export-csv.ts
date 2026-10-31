@@ -7,6 +7,7 @@
 
 import { costStatusLabel, UNAVAILABLE } from "@/lib/cost-state";
 import { readDailyFigures, type DayFigures } from "@/server/cogs/period-cogs";
+import { csvCell } from "@/server/reports/csv";
 
 export type ReportRow = {
   date: string;
@@ -46,15 +47,6 @@ export function toReportRow(d: DayFigures): ReportRow {
  */
 export async function buildReportRows(from: string, to: string): Promise<ReportRow[]> {
   return (await readDailyFigures(from, to)).map(toReportRow);
-}
-
-/** Encode a value for RFC 4180 CSV (wrap in quotes, escape internal quotes). */
-function csvCell(value: string | number): string {
-  const s = String(value);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
 }
 
 /**
