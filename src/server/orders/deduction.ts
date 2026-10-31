@@ -30,6 +30,7 @@ import {
 } from "@/server/inventory/lot-picker";
 import { isCupOrLid, dayConsumesCupAndLid } from "@/server/orders/cup-lid";
 import { costShotFactor, type Consumption, type LotDraw } from "@/server/orders/order-cogs";
+import { shotFactor } from "@/server/orders/shots";
 
 // Re-export so callers only need one import
 export { DeductionError };
@@ -65,6 +66,11 @@ export { DeductionError };
  * order's revenue day is in weekday mode — own mugs, no cup/lid cost. Sunday
  * and event days deduct them as before (see cup-lid.ts). The mode is read only
  * when a cup or lid is actually met.
+ *
+ * AT-182 · REQ-137 · DEC-09: the coffee ingredient (kind 'bean', or its
+ * same-kind substitute) deducts `order_items.shots` × its base amount; every
+ * other ingredient deducts 1× (§7.0.2 shot_factor, see shots.ts). Both compose
+ * with the line quantity (REQ-105). Additive customisations are unaffected.
  *
  * Throws `DeductionError` (caught by `transitionOrder`) when:
  *   - An order item's menu item has no recipe (skipped — food items allowed)
@@ -187,6 +193,10 @@ export async function deductForOrder(
       // substitute shares the base ingredient's kind, so ing.itemKind decides.
       if (isCupOrLid(ing.itemKind) && !(await consumesCupLid())) continue;
 
+      // AT-182 / REQ-137: coffee × shots, everything else × 1. A substitute
+      // shares the base ingredient's kind, so ing.itemKind decides here too.
+      const units = line.orderQty * shotFactor(ing.itemKind, line.shots);
+
       if (!effectiveUnit) {
         // Should be unreachable (every id in substituteByKind was resolved
         // from effectItemById above) — fail loudly rather than silently
@@ -204,13 +214,13 @@ export async function deductForOrder(
 
       if (effectiveUnit === "cup") {
         // ── Container model (milk & beans): one cup per drink ──────────────────
-        const draws = await deductCups(effectiveInventoryItemId, line.orderQty, orderId, line.menuItemId, staffId, tx);
+        const draws = await deductCups(effectiveInventoryItemId, units, orderId, line.menuItemId, staffId, tx);
         consumed.push({ inventoryItemId: effectiveInventoryItemId, costUnits: line.orderQty * costFactor, draws });
       } else if (!substituteId) {
         // ── Quantity model (cups, lids, powder), no substitution: unchanged ────
         const draws = await deductQuantity(
           effectiveInventoryItemId,
-          ing.quantity * line.orderQty,
+          ing.quantity * units,
           effectiveUnit,
           orderId,
           line.menuItemId,

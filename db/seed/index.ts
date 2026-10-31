@@ -7,6 +7,7 @@ import { seedCustomisations } from "./customisations";
 import { seedStaff } from "./staff";
 import { seedCustomers } from "./customers";
 import { seedHours } from "./hours";
+import { seedEventProfiles } from "./event-profiles";
 
 async function main() {
   console.log("Seeding database...");
@@ -21,6 +22,7 @@ async function main() {
   await seedStaff();
   await seedCustomers();
   await seedHours();
+  await seedEventProfiles();
   console.log("Seed complete.");
   process.exit(0);
 }

@@ -14,6 +14,11 @@ import { getMenu } from "@/server/actions/menu";
 import { getActiveBeanLot } from "@/server/actions/inventory";
 import { createOrder, transitionOrder, cancelOrder, declineFreeCoffee } from "@/server/actions/orders";
 import { getFavo } from "@/server/actions/favo";
+import { getVoucherContext } from "@/server/actions/vouchers";
+import {
+  NO_VOUCHERS, SESSION_CHANGED_EVENT, draftLineGrossZar, draftLineNetZar, draftNetZar, nextVoucherCount,
+  type VoucherContext,
+} from "@/lib/pos-vouchers";
 import type { FavoView } from "@/server/favo/schema";
 import FavoPicker from "@/components/favo/FavoPicker";
 import { useOrderStream } from "@/hooks/useOrderStream";
@@ -151,6 +156,26 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const addItem = clearOnDraft(draft.addItem);
   const removeItem = clearOnDraft(draft.removeItem);
   const updateQuantity = clearOnDraft(draft.updateQuantity);
+  const setVoucherCount = clearOnDraft(draft.setVoucherCount);
+
+  // §6.9.3 / L48: the voucher chip exists only while the open session carries
+  // a voucher kind. Re-read whenever the opening step opens or closes a session.
+  const [voucherCtx, setVoucherCtx] = useState<VoucherContext>(NO_VOUCHERS);
+  useEffect(() => {
+    let stale = false;
+    const read = () => {
+      getVoucherContext()
+        .then(r => { if (!stale) setVoucherCtx(r.ok ? r.data : NO_VOUCHERS); })
+        .catch(() => { if (!stale) setVoucherCtx(NO_VOUCHERS); });
+    };
+    read();
+    window.addEventListener(SESSION_CHANGED_EVENT, read);
+    return () => { stale = true; window.removeEventListener(SESSION_CHANGED_EVENT, read); };
+  }, []);
+  const vouchersLive = voucherCtx.available && voucherCtx.kind !== null;
+  // The draft's net after vouchers (display only — createOrder prices the order).
+  const vouchersOnDraft = vouchersLive && items.some(i => (i.voucherCount ?? 0) > 0);
+  const draftDueZar = vouchersOnDraft ? draftNetZar(items) : totalZar;
 
   // AT-144 — the attached customer's Favo (saved usual order) + the Manage
   // Favo blocking modal (wireframe screens 6 + 2a).
@@ -389,7 +414,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     }
     const r = await createOrder({
       customerId: customer?.id,
-      items: items.map(i => ({ menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id) })),
+      items: items.map(i => ({
+        menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id),
+        // §6.9: vouchers ride the line they were tapped on (L41) — only while a kind is live.
+        ...(vouchersOnDraft && (i.voucherCount ?? 0) > 0 ? { voucherCount: i.voucherCount } : {}),
+      })),
+      ...(vouchersOnDraft && voucherCtx.kind ? { voucherKind: voucherCtx.kind } : {}),
     }).catch(() => ({ ok: false as const, code: "ERR", message: "Failed to place order." }));
     if (r.ok) {
       // Auto-expand the new order in the queue so barista sees it immediately
@@ -581,13 +611,15 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             {searchOpen && searchResults.length > 0 && (
               <ul id="customer-search-results" role="listbox" className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface shadow-[var(--shadow-2)] overflow-hidden">
                 {searchResults.map((c, idx) => {
-                  // REQ-142: where two results read alike, show the last four phone digits.
-                  const readsAlike = searchResults.some(o => o.id !== c.id && o.name.trim().toLowerCase() === c.name.trim().toLowerCase());
+                  // REQ-142 / DEF-F: the surname always renders beside the given
+                  // name; where two results still read alike, show the last four phone digits.
+                  const label = (r: CustomerSearchResult) => (r.surname ? `${r.name} ${r.surname}` : r.name);
+                  const readsAlike = searchResults.some(o => o.id !== c.id && label(o).trim().toLowerCase() === label(c).trim().toLowerCase());
                   return (
                   <li key={c.id} id={`customer-result-${idx}`} role="option" aria-selected={idx === activeIdx}>
                     <button type="button" tabIndex={-1} onMouseDown={() => pickCustomer(c)}
                       className={["flex w-full items-center justify-between px-3 py-2 min-h-[44px] hover:bg-coffee-bean/8 text-left", idx === activeIdx ? "bg-coffee-bean/10" : ""].join(" ")}>
-                      <span className="favo-small text-coffee-bean font-semibold">{c.name}</span>
+                      <span className="favo-small text-coffee-bean font-semibold">{label(c)}</span>
                       {readsAlike && c.phoneLast4 && (
                         <span className="favo-caption text-cool-steel tabular-nums">…{c.phoneLast4}</span>
                       )}
@@ -717,8 +749,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           <p className="favo-small text-cool-steel/60">No items yet</p>
         ) : (
           <div className="space-y-1.5 overflow-y-auto">
-            {items.map(item => (
-              <div key={lineKey(item)} className="flex items-center gap-2">
+            {items.map(item => {
+              const m = vouchersLive ? Math.min(item.voucherCount ?? 0, item.quantity) : 0;
+              const grossZar = draftLineGrossZar(item);
+              return (
+              <div key={lineKey(item)} data-line className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
                   <DraftLineButton onClick={() => updateQuantity(lineKey(item), item.quantity - 1)} aria-label={`Decrease ${item.menuItemName} quantity`}
                     className="rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
@@ -730,21 +765,40 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                     <Plus size={12} strokeWidth={2} />
                   </DraftLineButton>
                 </div>
+                {/* §6.9.3 voucher chip — rendered only while a kind is live (L48 / REQ-146).
+                    One tap, no confirm: the struck-through line is the confirmation. */}
+                {vouchersLive && grossZar > 0 && (
+                  <button type="button" aria-pressed={m > 0}
+                    onClick={() => setVoucherCount(lineKey(item), nextVoucherCount({ quantity: item.quantity, voucherCount: m }))}
+                    className={["flex h-11 min-w-11 items-center justify-center rounded-[999px] border px-3 favo-caption transition-colors",
+                      m > 0 ? "border-crimson-carrot bg-crimson-carrot/10 text-coffee-bean font-semibold" : "border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8",
+                    ].join(" ")}>
+                    voucher
+                  </button>
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="favo-small text-coffee-bean truncate">{item.menuItemName}</p>
                   {item.modifications.length > 0 && (
                     <p className="favo-caption text-cool-steel truncate">{formatModifications(item.modifications)}</p>
                   )}
+                  {/* REQ-147: m of n, so a partly vouchered line never reads as fully vouchered. */}
+                  {m > 0 && <p className="favo-caption text-cool-steel">{`${m} of ${item.quantity}`}</p>}
                 </div>
-                <span className="favo-small text-coffee-bean shrink-0">
-                  {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
-                </span>
+                {m > 0 ? (
+                  <span className="favo-small text-coffee-bean shrink-0 flex flex-col items-end">
+                    <s className="favo-caption text-cool-steel">{formatZar(grossZar)}</s>
+                    <span>{formatZar(draftLineNetZar({ ...item, voucherCount: m }))}</span>
+                  </span>
+                ) : (
+                  <span className="favo-small text-coffee-bean shrink-0">{formatZar(grossZar)}</span>
+                )}
                 <DraftLineButton onClick={() => removeItem(lineKey(item))} aria-label={`Remove ${item.menuItemName}`}
                   className="text-cool-steel hover:text-[var(--color-error)]">
                   <Trash2 size={12} strokeWidth={2} />
                 </DraftLineButton>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {orderError && <p className="favo-small text-[var(--color-error)]" role="alert">{orderError}</p>}
@@ -757,7 +811,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="favo-label text-cool-steel">Total</p>
-            <p className="favo-subhead text-coffee-bean">{formatZar(totalZar)}</p>
+            <p className="favo-subhead text-coffee-bean">{formatZar(draftDueZar)}</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
@@ -792,7 +846,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
               {submitting
                 ? <Loader2 size={14} strokeWidth={2} className="animate-spin" />
-                : `Charge ${formatZar(totalZar)}`}
+                : vouchersOnDraft && draftDueZar === 0
+                  ? "Send to queue" /* L42: nothing owed, no tender */
+                  : `Charge ${formatZar(draftDueZar)}`}
             </button>
           </div>
         </div>
@@ -1140,7 +1196,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                                 {item.modifications.length > 0 && (
                                   <p className="favo-caption text-cool-steel">{formatModifications(item.modifications)}</p>
                                 )}
-                                {(item.discountZar ?? 0) > 0 && (
+                                {(item.voucherCount ?? 0) > 0 ? (
+                                  <p className="favo-caption text-cool-steel">
+                                    {`Voucher · ${item.voucherCount} of ${item.quantity}`} −{formatZar(item.discountZar ?? 0)}
+                                  </p>
+                                ) : (item.discountZar ?? 0) > 0 && (
                                   <p className="favo-caption text-cool-steel">Free cup −{formatZar(item.discountZar ?? 0)}</p>
                                 )}
                               </div>

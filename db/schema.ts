@@ -13,6 +13,7 @@ import {
   numeric,
   uuid,
   date,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -34,6 +35,9 @@ import {
   customerStatus,
   sessionMode,
   compReason,
+  eventMenuScope,
+  eventPaymentPosture,
+  eventAudience,
 } from "./enums";
 
 const TENANT = "hofmi";
@@ -361,6 +365,28 @@ export const staffEntitlementLog = pgTable(
   (t) => [unique().on(t.customerId, t.day)]
 );
 
+// ─── Walk-ins ─────────────────────────────────────────────────────────────────
+
+// AT-209 / PRD §6.5, §10.2, L20, REQ-058: a weekday non-staff visitor's cup,
+// logged for consumption reporting. NO IDENTITY OF ANY KIND — no customer
+// reference, name, email or phone column, ever. One row per order LINE, so
+// §7.0.2's walk_in_cups = Σ quantity counts walk-in cups, not the order's
+// (REQ-116). Never charged, never counted against staff_entitlement_log.
+export const walkIns = pgTable(
+  "walk_ins",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    orderId: text("order_id").notNull().references(() => orders.id),
+    menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
+    quantity: integer("quantity").default(1).notNull(),
+    category: menuCategory("category").notNull(),
+    loggedByStaffId: text("logged_by_staff_id").notNull().references(() => staff.id),
+    at: now(),
+  },
+  () => [check("walk_ins_quantity_positive", sql`quantity >= 1`)]
+);
+
 // ─── Waste + Purchases ────────────────────────────────────────────────────────
 
 export const wasteLog = pgTable("waste_log", {
@@ -425,8 +451,121 @@ export const openingSessions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     /** Set when the customer push for this session was sent — the dedupe record. */
     notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    // AT-204 prerequisite / PRD §10.3 + §6.11.1. The event in force (§6.6).
+    eventWindowId: text("event_window_id").references(() => eventWindows.id),
+    // L43: NULL means nobody counted, distinguishable from zero.
+    voucherSlipsCounted: integer("voucher_slips_counted"),
+    voucherRedemptionsRecorded: integer("voucher_redemptions_recorded").default(0).notNull(),
+    // Snapshotted at open from the session's event window (§6.11.2, §10.4).
+    voucherKindsActive: text("voucher_kinds_active").array().default(sql`'{}'::text[]`).notNull(),
+    // Set by closeSession; the one-open-session index is defined over it.
+    closedAt: timestamp("closed_at", { withTimezone: true }),
   },
-  (t) => [unique("opening_sessions_date_opens_unique").on(t.sessionDate, t.opensAt)]
+  (t) => [
+    // KEEP (CLAUDE.md §3, COL-14): v7.0 retains this; it is not narrowed.
+    unique("opening_sessions_date_opens_unique").on(t.sessionDate, t.opensAt),
+    // §6.11.1 / §10.6: at most one open session across the whole table.
+    uniqueIndex("opening_sessions_one_open")
+      .on(t.tenantId)
+      .where(sql`closed_at IS NULL`),
+  ]
+);
+
+// ─── Event mode (AT-204 prerequisite — PRD §6.6, §10.2, L25–L27) ──────────────
+// A profile is the reusable definition (Path A recurring / Path B one-off).
+// A window is one concrete occurrence; its six switches are snapshotted at
+// open, so editing a profile never rewrites history (REQ-044).
+
+export const eventProfiles = pgTable("event_profiles", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  name: text("name").notNull(),
+  // null = one-off. Stored as an RFC 5545 RRULE, e.g. FREQ=WEEKLY;BYDAY=WE.
+  recurrence: text("recurrence"),
+  defaultStart: text("default_start"), // "18:30" (SAST wall clock)
+  defaultEnd: text("default_end"),     // "20:30"
+  menuScope: eventMenuScope("menu_scope").notNull(),
+  paymentPosture: eventPaymentPosture("payment_posture").notNull(),
+  consumesCupLid: boolean("consumes_cup_lid").notNull(),
+  audience: eventAudience("audience").notNull(),
+  extraShotSurcharge: boolean("extra_shot_surcharge").notNull(),
+  voucherKinds: text("voucher_kinds").array().default(sql`'{}'::text[]`).notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const eventWindows = pgTable(
+  "event_windows",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    eventProfileId: text("event_profile_id").references(() => eventProfiles.id), // null = ad-hoc
+    name: text("name").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(), // L27: mandatory
+    menuScope: eventMenuScope("menu_scope").notNull(),
+    paymentPosture: eventPaymentPosture("payment_posture").notNull(),
+    consumesCupLid: boolean("consumes_cup_lid").notNull(),
+    audience: eventAudience("audience").notNull(),
+    extraShotSurcharge: boolean("extra_shot_surcharge").notNull(),
+    voucherKinds: text("voucher_kinds").array().default(sql`'{}'::text[]`).notNull(),
+    // DEC-03: read snapshot of the price_history override rows, written once at open.
+    priceOverrides: jsonb("price_overrides"),
+    createdByStaffId: text("created_by_staff_id").references(() => staff.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // L27 / REQ-043: an end after the start, and never longer than 24 hours.
+    check(
+      "event_windows_max_24h",
+      sql`${t.endsAt} > ${t.startsAt} AND ${t.endsAt} - ${t.startsAt} <= interval '24 hours'`
+    ),
+  ]
+);
+
+// ─── Vouchers (AT-204 — PRD §6.9, §10.2, §10.4, L41, L43, COL-29) ─────────────
+// One row is one cup: a voucher discounts exactly one unit of one line.
+// Reversed, never deleted — counts and values read live rows (reversed_at IS NULL).
+
+export const voucherRedemptions = pgTable(
+  "voucher_redemptions",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    orderItemId: text("order_item_id").notNull().references(() => orderItems.id),
+    sessionId: text("session_id").notNull().references(() => openingSessions.id),
+    voucherKind: text("voucher_kind").notNull(),
+    // One unit's line_unit_price, snapshotted at redemption. Integer cents.
+    discountZar: integer("discount_zar").notNull(),
+    redeemedByStaffId: text("redeemed_by_staff_id").notNull().references(() => staff.id),
+    at: now(),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+    reversedByStaffId: text("reversed_by_staff_id").references(() => staff.id),
+  },
+  (t) => [
+    check("voucher_redemptions_discount_positive", sql`discount_zar > 0`),
+    // A reversal records both when and who, or neither.
+    check(
+      "voucher_redemptions_reversal_complete",
+      sql`(reversed_at IS NULL) = (reversed_by_staff_id IS NULL)`
+    ),
+    index("voucher_redemptions_order_item_idx").on(t.orderItemId),
+    index("voucher_redemptions_session_idx").on(t.sessionId),
+  ]
+);
+
+// ─── Config (PRD §10.4 — one store, keyed (tenant_id, key), jsonb values) ─────
+// Every write is audited with before/after and a reason; Admin-only.
+
+export const appConfig = pgTable(
+  "app_config",
+  {
+    tenantId: tenantId(),
+    key: text("key").notNull(),
+    value: jsonb("value").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.key] })]
 );
 
 export const operatingHours = pgTable("operating_hours", {

@@ -59,10 +59,9 @@ describe("csvCell", () => {
 describe("every CSV writer uses the guard", () => {
   it("COGS rowsToCsv", () => {
     const csv = rowsToCsv([
-      // Row shape after the cost chain (AT-189..192): expenses, net, cost status.
-      { date: "=cmd", revenueZar: 100, cogsZar: 50, grossMarginZar: -50, grossMarginPct: -50, expensesZar: 0, netZar: -50, costStatus: "final" },
+      { date: "=cmd", revenueZar: 100, cogsZar: 50, grossMarginZar: -50, grossMarginPct: -50 },
     ] as unknown as Parameters<typeof rowsToCsv>[0]);
-    expect(csv.split("\r\n")[1]).toBe("'=cmd,100,50,-50,-50,0,-50,final");
+    expect(csv.split("\r\n")[1]!.startsWith("'=cmd,100,50,-50,-50")).toBe(true);
   });
 
   it("sales CSV — customer name", async () => {

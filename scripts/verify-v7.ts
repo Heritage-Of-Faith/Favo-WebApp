@@ -24,6 +24,7 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { unmarkedRiskyMigrations } from "../src/server/deploy/migration-approval";
 
 type Severity = "FAIL" | "WARN";
 type Result = { name: string; ok: boolean; severity: Severity; detail: string };
@@ -183,6 +184,25 @@ mustBePresent("the offline outbox itself survives", "outboxLog\\|outbox_log", "d
 mustBePresent("deductForOrder is still modification-aware (0027)", "substitutesInventoryItemId", "src/server/orders/deduction.ts");
 mustBePresent("opening_sessions keeps UNIQUE(session_date, opens_at)", "session_date.*opens_at\\|sessionDate.*opensAt", "db/schema.ts drizzle/0029_at134_opening_sessions.sql");
 
+// Owner decision (Nikao, 21 Oct 2026, AT-170): risky migrations need an
+// explicit opt-in at deploy, so each must carry the approval marker. Same
+// check as the blocking CI step (scripts/check-migration-approval.ts).
+{
+  const journal: { idx: number; tag: string }[] = JSON.parse(
+    readFileSync("drizzle/meta/_journal.json", "utf8"),
+  ).entries;
+  const offenders = unmarkedRiskyMigrations(
+    journal.map((e) => ({ idx: e.idx, tag: e.tag, sql: readFileSync(`drizzle/${e.tag}.sql`, "utf8") })),
+  );
+  record(
+    "risky migrations carry -- favo:requires-approval",
+    offenders.length === 0,
+    offenders.length === 0
+      ? "no unmarked risky migrations"
+      : offenders.map((o) => `drizzle/${o.tag}.sql: ${o.reasons.join(", ")}`).join("\n      "),
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. MONEY SHAPE — REQ-101, REQ-106, REQ-109
 // ─────────────────────────────────────────────────────────────────────────────
@@ -318,11 +338,15 @@ record(
 // CLAUDE.md §5: no scheduled job writes payments. Reads (closeDaily's SUM) are fine.
 // The old pattern matched retry-deferred's `resolvedBy: "retry_cron"`; that file is
 // gone (#241), and the pattern's quote broke the shell (exit 2 = GATE IS BROKEN).
-const CRON_PATHS = "src/server/crons/ src/app/api/crons/";
+// src/server/jobs/ is the scheduler (AT-169); it runs these jobs, so it is held to the same rule.
+const CRON_PATHS = "src/server/crons/ src/server/jobs/";
 // Known gaps (code review must cover them): calls split across lines, lowercase or
 // quoted SQL table names, and a cron calling a helper outside these folders.
 mustBeAbsent("no cron writes payments (Drizzle)", "\\(update\\|insert\\|delete\\)( *\\(schema\\.\\)\\?payments *)", CRON_PATHS);
 mustBeAbsent("no cron writes payments (SQL)", "\\(UPDATE\\|INSERT INTO\\|DELETE FROM\\) payments", CRON_PATHS);
+// PRD §10.7 / §13.4: no Admin may run a timer, so no HTTP route reaches a job.
+// The in-app scheduler (src/server/jobs) is the only caller (AT-169).
+mustBeAbsent("no live /api/crons/* endpoint (§10.7)", "api/crons", "src/");
 mustBeAbsent("no voided payment status", "voided", "db/enums.ts src/lib/types.ts");
 
 // ─────────────────────────────────────────────────────────────────────────────
