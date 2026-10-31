@@ -22,7 +22,7 @@ export default async function InventoryPage() {
         </div>
         <Link
           href={"/admin/inventory/recipients" as Route}
-          className="inline-flex min-h-10 items-center rounded-[var(--radius-btn)] border px-3 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
+          className="inline-flex min-h-11 items-center rounded-[var(--radius-btn)] border px-3 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
           style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
         >
           Low-stock recipients →

@@ -18,7 +18,7 @@ import type {
 
 export type FakeFetchStep =
   | { status: "pending" }
-  | { status: "successful"; chargedAmountZar?: number; tipZar?: number }
+  | { status: "successful"; chargedAmountZar?: number }
   | { status: "failed" }
   | { fetchError: true };
 
@@ -125,9 +125,8 @@ export class FakeYocoWebPosPort implements YocoWebPosPort {
         ...base,
         status: "successful",
         chargedAmountZar: step.chargedAmountZar ?? p.amountZar,
-        tipZar: step.tipZar ?? 0,
       };
     }
-    return { ...base, status: step.status, chargedAmountZar: null, tipZar: 0 };
+    return { ...base, status: step.status, chargedAmountZar: null };
   }
 }

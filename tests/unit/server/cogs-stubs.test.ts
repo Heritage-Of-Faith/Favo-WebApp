@@ -66,7 +66,8 @@ describe("getCogsLive", () => {
     const { data } = result;
     // DB mocked to return [] so all values are 0
     expect(typeof data.revenueZar).toBe("number");
-    expect(typeof data.costEstimatedWarning).toBe("boolean");
+    // CHANGED (AT-192): costEstimatedWarning → costState. No orders → empty.
+    expect(data.costState).toBe("empty");
     expect(data.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
@@ -82,10 +83,12 @@ describe("getCogsHistory stub", () => {
   it("each history entry has the correct computed fields", async () => {
     const result = await getCogsHistory();
     if (!result.ok) return;
+    // CHANGED (AT-189..192): `profit` removed; an empty day is a genuine zero.
     for (const entry of result.data.history) {
-      expect(entry.grossMarginZar).toBe(entry.revenueZar - entry.cogsZar);
+      expect(entry.grossMarginZar).toBe(entry.revenueZar - (entry.cogsZar as number));
       expect(entry.netZar).toBe(entry.grossMarginZar);
-      expect(entry.profit).toBe(entry.netZar > 0);
+      expect(entry.costState).toBe("empty");
+      expect(entry.cogsZar).toBe(0);
     }
   });
 });

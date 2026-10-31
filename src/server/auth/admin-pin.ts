@@ -80,7 +80,7 @@ export async function verifyAdminPin(
     .where(and(eq(staff.active, true), eq(staff.role, "admin")));
   for (const a of admins) {
     if (await verifyPin(pin, a.pinHash)) {
-      // Success refunds the reservation and clears the count.
+      // Success releases the reservation and clears the count.
       failures = 0;
       return { ok: true, adminStaffId: a.id };
     }

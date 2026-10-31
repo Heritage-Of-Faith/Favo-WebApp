@@ -22,7 +22,10 @@ vi.mock("@/server/auth/guard", () => ({
 }));
 vi.mock("@/server/cogs/compute", () => ({ todaySast: vi.fn(() => "2026-10-25") }));
 
-import { REVENUE_ORDER_SCOPE_SQL, revenueOrderScope } from "@/server/reports/revenue-scope";
+import {
+  REVENUE_ORDER_SCOPE_SQL, revenueOrderScope,
+  CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL, cancelledWithSuccessfulPayment,
+} from "@/server/reports/revenue-scope";
 import { getPosToday } from "@/server/actions/pos-summary";
 import { buildReportRows } from "@/server/reports/export-csv";
 
@@ -45,20 +48,36 @@ describe("revenue scope (AT-209)", () => {
     expect(joined.replace(/\s+/g, " ").trim()).toBe(REVENUE_ORDER_SCOPE_SQL);
   });
 
-  it("migration 0043 rewrites v_daily_revenue with the same predicate; its down restores 0004's", () => {
-    const up = src("drizzle/0043_at209_comps_cancel_abandon.sql");
+  it("the cancelled-with-payment case alone carries exactly its constant's text, and is the scope's second half", () => {
+    const chunks = cancelledWithSuccessfulPayment.queryChunks as unknown as { value: string[] }[];
+    const joined = chunks.map((c) => c.value.join("")).join("");
+    expect(joined.replace(/\s+/g, " ").trim()).toBe(CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL);
+    expect(REVENUE_ORDER_SCOPE_SQL).toBe(
+      `(orders.state IN ('in_progress', 'ready', 'collected') OR ${CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL})`
+    );
+  });
+
+  it("migration 0045 rewrites v_daily_revenue with the same predicate; its down restores 0004's", () => {
+    const up = src("drizzle/0045_at209_comps_cancel_abandon.sql");
     expect(up).toContain("CREATE OR REPLACE VIEW v_daily_revenue AS");
     expect(up).toContain(`WHERE ${REVENUE_ORDER_SCOPE_SQL}`);
-    const down = src("drizzle/down/0043_at209_comps_cancel_abandon.down.sql");
+    const down = src("drizzle/down/0045_at209_comps_cancel_abandon.down.sql");
     expect(down).toContain("WHERE state IN ('in_progress', 'ready', 'collected')");
   });
 
-  it("monthly P&L and the weekly P&L read revenue through the shared predicate", () => {
+  it("monthly and weekly P&L read revenue through readPeriodFigures, whose one revenue read uses the predicate", () => {
     for (const f of ["src/server/actions/monthly-pnl.ts", "src/server/crons/generate-weekly-pnl.ts"]) {
       const s = src(f);
-      expect(s).toContain("revenueOrderScope");
+      expect(s).toContain("readPeriodFigures");
       expect(s).not.toMatch(/state\} IN \('in_progress', 'ready', 'collected'\)/);
     }
+  });
+
+  it("readDailyRevenue (the one revenue read) uses the predicate", async () => {
+    executed.length = 0;
+    const { readDailyRevenue } = await import("@/server/cogs/period-cogs");
+    await readDailyRevenue("2026-10-01", "2026-10-31");
+    expect(text(executed[0])).toContain(`WHERE ${REVENUE_ORDER_SCOPE_SQL}`);
   });
 
   it("the report export's revenue query uses the predicate", async () => {

@@ -1,26 +1,24 @@
-// AT-201 part 1: 0035 (payments as the Web POS tender record) ships with a
-// tested `down` (PRD §14). Spec: PRD v7.0 §10.3, §10.3.3, §10.6.
+// AT-188: 0035 (order_cogs) ships with a tested `down` (PRD §14, "Rollback
+// strategies": every Drizzle migration ships with a tested `down`).
 //
-// Runs against the CI test DB, which `bun db:migrate` has brought to 0035.
-// 0034 is orders.notification_target (PR #284) and does not touch payments,
-// so "down" lands payments on the 0034 snapshot. Order fixtures pass
-// notification_target = 'none' (0034's NOT NULL, no default).
-// Every case runs inside ONE transaction that is always rolled back.
+// Renumbered 0034 -> 0035 (0034 is walk_ins, PR #265) — see the header of
+// drizzle/0035_at188_order_cogs.sql.
+//
+// Runs against the CI test DB, which has already been migrated to 0035. Every
+// case runs inside ONE transaction that is always rolled back, so the DB is
+// left exactly as found for the other suites and the E2E step.
 //
 // What it proves:
-//   - payments matches the 0035 snapshot; down returns it to 0034; up again to 0035;
-//   - payment_status is exactly pending | successful | declined | unresolved
-//     (no failed, no refunded, no deferred, no voided);
-//   - a legacy pre-0035 row survives up: failed -> declined, attempt 1,
-//     client_reference 'legacy:<order>:1', at = the order's placed_at,
-//     charged_amount_zar / fee_zar / sent_at NULL, tip_zar 0;
-//   - legacy attempts are numbered oldest first (webhook_received_at, then id);
-//   - up refuses, changing nothing, over a `refunded` or `deferred` row;
-//   - down refuses over an `unresolved` row or a fund top-up;
-//   - the database refuses: a payment with no subject or with both; a duplicate
-//     client_reference; a duplicate (order_id, attempt); a second successful
-//     payment for one order or one fund top-up (REQ-011, COL-5); a missing
-//     client_reference or webpos_device_id.
+//   - the migrated order_cogs table matches the 0035 snapshot, and `orders`
+//     is untouched by 0035 (same shape in the 0034 and 0035 snapshots);
+//   - `down` removes order_cogs and forgets 0035 in drizzle's ledger; `up`
+//     brings it back to the snapshot;
+//   - the database refuses: an order_cogs row for no order (FK); a second row
+//     for one order (PK); a NULL cogs_zar with no absent item named; a number
+//     beside a named absent item; a negative cogs_zar;
+//   - ON CONFLICT (order_id) DO NOTHING keeps the first row (a retry never
+//     rewrites it), and recosting the lot afterwards leaves the row as it was
+//     (frozen at the sale).
 //
 // Requires a real Postgres (see tests/db/helpers.ts) — skips when none.
 
@@ -32,27 +30,32 @@ import { connect, hasRealDb, migrationSql } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
-const UP = "0035_at201_tender_payments.sql";
-const DOWN = "down/0035_at201_tender_payments.down.sql";
-const DOWN_0043 = "down/0043_at209_comps_cancel_abandon.down.sql";
-const AT = "0035_snapshot.json";
-const BEFORE = "0034_snapshot.json";
+const UP = "0035_at188_order_cogs.sql";
+const DOWN = "down/0035_at188_order_cogs.down.sql";
+const WHEN_0035 = 1792752696811; // drizzle/meta/_journal.json, idx 35
+// L28: 0042 adds orders.notification_target on top of this; stepped down first.
+const DOWN_0042 = "down/0042_l28_notification_target.down.sql";
+// AT-201 part 2a: 0044 adds orders.client_uuid and is newer still; stepped down before 0042.
+const DOWN_0044 = "down/0044_at201_orders_client_uuid.down.sql";
+// AT-209: 0045 re-creates v_daily_revenue over orders and payments.status, and
+// adds FKs from waste_log to orders and audit_log to staff. It is the newest
+// migration, so it steps down before all others (a view blocks ALTER COLUMN TYPE).
+const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
 
 type Shape = { columns: string[]; constraints: string[]; indexes: string[] };
 
-function snapshotShape(file: string): Shape {
-  const snap = JSON.parse(
-    readFileSync(resolve(process.cwd(), "drizzle", "meta", file), "utf8")
-  ) as {
-    tables: Record<string, {
-      columns: Record<string, { name: string; notNull: boolean }>;
-      foreignKeys: Record<string, unknown>;
-      uniqueConstraints: Record<string, unknown>;
-      checkConstraints?: Record<string, unknown>;
-      indexes: Record<string, unknown>;
-    }>;
-  };
-  const t = snap.tables["public.payments"];
+type SnapshotTable = {
+  columns: Record<string, { name: string; notNull: boolean }>;
+  foreignKeys: Record<string, unknown>;
+  uniqueConstraints: Record<string, unknown>;
+  checkConstraints?: Record<string, unknown>;
+  indexes: Record<string, unknown>;
+};
+
+function snapshotShape(file: string, table: string): Shape {
+  const path = resolve(process.cwd(), "drizzle", "meta", file);
+  const snap = JSON.parse(readFileSync(path, "utf8")) as { tables: Record<string, SnapshotTable> };
+  const t = snap.tables[`public.${table}`];
   return {
     columns: Object.values(t.columns).map((c) => c.name + (c.notNull ? "!" : "")).sort(),
     constraints: [
@@ -64,18 +67,21 @@ function snapshotShape(file: string): Shape {
   };
 }
 
-async function dbShape(tx: TransactionSql): Promise<Shape> {
+async function dbShape(tx: TransactionSql, table: string): Promise<Shape> {
   const cols = await tx`
     SELECT column_name, is_nullable FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'payments'`;
+    WHERE table_schema = 'public' AND table_name = ${table}`;
   const cons = await tx`
     SELECT conname FROM pg_constraint
-    WHERE conrelid = 'public.payments'::regclass AND contype IN ('f', 'u', 'c')`;
+    WHERE conrelid = ${"public." + table}::regclass AND contype IN ('f', 'u', 'c')`;
   const idx = await tx`
-    SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-    WHERE i.indrelid = 'public.payments'::regclass
-      AND NOT EXISTS (SELECT 1 FROM pg_constraint k
-                      WHERE k.conindid = i.indexrelid AND k.contype IN ('p', 'u', 'x'))`;
+    SELECT c.relname FROM pg_index i
+    JOIN pg_class c ON c.oid = i.indexrelid
+    WHERE i.indrelid = ${"public." + table}::regclass
+      AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint k
+        WHERE k.conindid = i.indexrelid AND k.contype IN ('p', 'u', 'x')
+      )`;
   return {
     columns: cols.map((r) => (r.column_name as string) + (r.is_nullable === "NO" ? "!" : "")).sort(),
     constraints: cons.map((r) => r.conname as string).sort(),
@@ -83,26 +89,33 @@ async function dbShape(tx: TransactionSql): Promise<Shape> {
   };
 }
 
-async function statusValues(tx: TransactionSql): Promise<string[]> {
-  const rows = await tx`
-    SELECT e.enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
-    WHERE t.typname = 'payment_status' ORDER BY e.enumsortorder`;
-  return rows.map((r) => r.enumlabel as string);
+async function tableExists(tx: TransactionSql, table: string): Promise<boolean> {
+  const [row] = await tx`SELECT to_regclass(${"public." + table}) AS t`;
+  return row.t !== null;
+}
+
+async function ledgerHas0035(tx: TransactionSql): Promise<boolean | null> {
+  const [reg] = await tx`SELECT to_regclass('drizzle.__drizzle_migrations') AS t`;
+  if (reg.t === null) return null; // no drizzle ledger in this DB
+  const rows = await tx`SELECT 1 FROM drizzle.__drizzle_migrations WHERE created_at = ${WHEN_0035}`;
+  return rows.length > 0;
 }
 
 class Rollback extends Error {}
 
-maybe("0035 payments as the tender record: up → down → up, and the refusals (AT-201)", () => {
+maybe("0035 order_cogs: up → down → up, and the refusals (AT-188)", () => {
   let sql: Sql;
 
-  // AT-209: 0043's v_daily_revenue reads payments.status, and a view blocks
-  // ALTER COLUMN TYPE, so each case first steps 0043 down inside the
-  // always-rolled-back transaction (0043 is the only newer migration that
-  // touches payments or a view over it).
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
-        await tx.unsafe(migrationSql(DOWN_0043));
+        // CI now migrates past 0042, which adds a column to orders. Step it
+        // back (rolled back with everything else) so orders reads as 0035 left it.
+        // 0044 (orders.client_uuid) goes first, newest first. AT-209: 0045
+        // (the newest; a view and an FK over orders) steps down before 0044.
+        await tx.unsafe(migrationSql(DOWN_0045));
+        await tx.unsafe(migrationSql(DOWN_0044));
+        await tx.unsafe(migrationSql(DOWN_0042));
         await fn(tx);
         throw new Rollback();
       });
@@ -111,165 +124,113 @@ maybe("0035 payments as the tender record: up → down → up, and the refusals 
     }
   }
 
+  /** A staff row, an order and a priced lot — rolled back with everything else. */
   async function fixtures(tx: TransactionSql) {
     const [staff] = await tx`
-      INSERT INTO staff (name, role, pin_hash) VALUES ('AT-201 Barista', 'barista', 'x') RETURNING id`;
+      INSERT INTO staff (name, role, pin_hash) VALUES ('AT-188 Barista', 'barista', 'x') RETURNING id`;
     const [order] = await tx`
-      INSERT INTO orders (staff_id, total_zar, revenue_day, placed_at, notification_target)
-      VALUES (${staff.id}, 3000, '2026-10-25', '2026-10-25T08:00:00+02:00', 'none') RETURNING id, placed_at`;
-    return { staff, order };
+      INSERT INTO orders (staff_id, total_zar, revenue_day)
+      VALUES (${staff.id}, 2000, '2026-08-16') RETURNING id`;
+    const [item] = await tx`
+      INSERT INTO inventory_items (name, kind, unit) VALUES ('AT-188 Beans', 'bean', 'cup') RETURNING id`;
+    const [lot] = await tx`
+      INSERT INTO inventory_lots (inventory_item_id, unit_cost_zar)
+      VALUES (${item.id}, 529.4118) RETURNING id`;
+    return { staff, order, item, lot };
   }
 
   beforeAll(() => {
     sql = connect();
   });
+
   afterAll(async () => {
     await sql?.end({ timeout: 5 });
   });
 
-  it("the migrated DB starts at 0035, and the status set is exactly the PRD's four", async () => {
+  it("the migrated DB has order_cogs at 0035, and orders is untouched", async () => {
     await inRolledBackTx(async (tx) => {
-      expect(await dbShape(tx)).toEqual(snapshotShape(AT));
-      expect(await statusValues(tx)).toEqual(["pending", "successful", "declined", "unresolved"]);
-    });
-  });
-
-  it("down returns payments to 0034; up again returns it to 0035", async () => {
-    await inRolledBackTx(async (tx) => {
-      await tx.unsafe(migrationSql(DOWN));
-      expect(await dbShape(tx)).toEqual(snapshotShape(BEFORE));
-      expect(await statusValues(tx)).toEqual(["pending", "successful", "failed", "refunded", "deferred"]);
-      await tx.unsafe(migrationSql(UP));
-      expect(await dbShape(tx)).toEqual(snapshotShape(AT));
-      expect(await statusValues(tx)).toEqual(["pending", "successful", "declined", "unresolved"]);
-    });
-  });
-
-  it("legacy attempts are numbered oldest first: webhook_received_at, unanswered last, then id", async () => {
-    await inRolledBackTx(async (tx) => {
-      await tx.unsafe(migrationSql(DOWN));
-      const { order } = await fixtures(tx);
-      await tx`INSERT INTO payments (id, order_id, amount_zar, status, webhook_received_at) VALUES
-        ('a_late', ${order.id}, 3000, 'successful', '2026-10-25T08:05:00+02:00'),
-        ('z_early', ${order.id}, 3000, 'failed', '2026-10-25T08:01:00+02:00'),
-        ('m_none', ${order.id}, 3000, 'pending', NULL)`;
-      await tx.unsafe(migrationSql(UP));
-      const rows = await tx`SELECT id, attempt FROM payments WHERE order_id = ${order.id} ORDER BY attempt`;
-      expect(rows.map((r) => [r.id, r.attempt])).toEqual([["z_early", 1], ["a_late", 2], ["m_none", 3]]);
-    });
-  });
-
-  it("a legacy pre-0035 row survives up: failed → declined, and nothing unknown is invented", async () => {
-    await inRolledBackTx(async (tx) => {
-      await tx.unsafe(migrationSql(DOWN));
-      const { order } = await fixtures(tx);
-      await tx`INSERT INTO payments (id, order_id, amount_zar, status)
-               VALUES ('pay_legacy_1', ${order.id}, 3000, 'failed')`;
-      await tx.unsafe(migrationSql(UP));
-      const [row] = await tx`SELECT * FROM payments WHERE id = 'pay_legacy_1'`;
-      expect(row.status).toBe("declined");
-      expect(row.attempt).toBe(1);
-      expect(row.client_reference).toBe(`legacy:${order.id}:1`);
-      expect(row.webpos_device_id).toBe("legacy:yoco-online-checkout");
-      expect(row.amount_zar).toBe(3000);
-      expect(row.charged_amount_zar).toBeNull();
-      expect(row.fee_zar).toBeNull();
-      expect(row.sent_at).toBeNull();
-      expect(row.tip_zar).toBe(0);
-      expect(new Date(row.at).toISOString()).toBe(new Date(order.placed_at).toISOString());
-    });
-  });
-
-  for (const status of ["refunded", "deferred"]) {
-    it(`up refuses, changing nothing, over a '${status}' row`, async () => {
-      await inRolledBackTx(async (tx) => {
-        await tx.unsafe(migrationSql(DOWN));
-        const { order } = await fixtures(tx);
-        await tx`INSERT INTO payments (order_id, amount_zar, status) VALUES (${order.id}, 3000, ${status})`;
-        await expect(tx.savepoint((sp) => sp.unsafe(migrationSql(UP)))).rejects.toThrow(
-          /AT-201\/0035: payments holds refunded or deferred rows/
-        );
-        expect(await dbShape(tx)).toEqual(snapshotShape(BEFORE));
+      expect({ table: "order_cogs", ...(await dbShape(tx, "order_cogs")) }).toEqual({
+        table: "order_cogs",
+        ...snapshotShape("0035_snapshot.json", "order_cogs"),
       });
-    });
-  }
-
-  it("down refuses over an unresolved row and over a fund top-up", async () => {
-    await inRolledBackTx(async (tx) => {
-      const { order } = await fixtures(tx);
-      await tx`INSERT INTO payments (order_id, attempt, client_reference, webpos_device_id, amount_zar, status)
-               VALUES (${order.id}, 1, 'cu_u:1', 'dev_1', 3000, 'unresolved')`;
-      await expect(tx.savepoint((sp) => sp.unsafe(migrationSql(DOWN)))).rejects.toThrow(
-        /AT-201\/0035 down: payments holds fund top-ups or unresolved rows/
-      );
-    });
-    await inRolledBackTx(async (tx) => {
-      await tx`INSERT INTO payments (fund_topup_id, attempt, client_reference, webpos_device_id, amount_zar)
-               VALUES ('fte_1', 1, 'cu_f:1', 'dev_1', 50000)`;
-      await expect(tx.savepoint((sp) => sp.unsafe(migrationSql(DOWN)))).rejects.toThrow(
-        /AT-201\/0035 down/
-      );
+      expect(snapshotShape("0035_snapshot.json", "orders")).toEqual(snapshotShape("0034_snapshot.json", "orders"));
+      expect(await dbShape(tx, "orders")).toEqual(snapshotShape("0035_snapshot.json", "orders"));
     });
   });
 
-  it("the database refuses what 0035 forbids", async () => {
+  it("down removes order_cogs and its ledger row; up again restores the 0035 shape", async () => {
     await inRolledBackTx(async (tx) => {
-      const { order } = await fixtures(tx);
-      const ok = await tx`
-        INSERT INTO payments (order_id, attempt, client_reference, webpos_device_id, amount_zar)
-        VALUES (${order.id}, 1, 'cu_1:1', 'dev_1', 3000) RETURNING status, tip_zar, fee_zar, at`;
-      expect(ok[0].status).toBe("pending");
-      expect(ok[0].tip_zar).toBe(0);
-      expect(ok[0].fee_zar).toBeNull();
-      expect(ok[0].at).not.toBeNull();
+      const ledgerBefore = await ledgerHas0035(tx);
+      if (ledgerBefore !== null) expect(ledgerBefore).toBe(true);
 
-      const refuse = (q: (sp: TransactionSql) => Promise<unknown>, re: RegExp) =>
-        expect(tx.savepoint((sp) => q(sp))).rejects.toThrow(re);
+      await tx.unsafe(migrationSql(DOWN));
+      expect(await tableExists(tx, "order_cogs")).toBe(false);
+      expect(await dbShape(tx, "orders")).toEqual(snapshotShape("0034_snapshot.json", "orders"));
+      if (ledgerBefore !== null) expect(await ledgerHas0035(tx)).toBe(false);
 
-      // Exactly one subject.
-      await refuse((sp) => sp`
-        INSERT INTO payments (attempt, client_reference, webpos_device_id, amount_zar)
-        VALUES (1, 'cu_none:1', 'dev_1', 3000)`, /payments_exactly_one_subject/);
-      await refuse((sp) => sp`
-        INSERT INTO payments (order_id, fund_topup_id, attempt, client_reference, webpos_device_id, amount_zar)
-        VALUES (${order.id}, 'fte_1', 1, 'cu_both:1', 'dev_1', 3000)`, /payments_exactly_one_subject/);
-      // client_reference: NOT NULL and UNIQUE (P3, REQ-027).
-      await refuse((sp) => sp`
-        INSERT INTO payments (order_id, attempt, client_reference, webpos_device_id, amount_zar)
-        VALUES (${order.id}, 2, 'cu_1:1', 'dev_1', 3000)`, /payments_client_reference_unique/);
-      await refuse((sp) => sp`
-        INSERT INTO payments (order_id, attempt, webpos_device_id, amount_zar)
-        VALUES (${order.id}, 2, 'dev_1', 3000)`, /client_reference/);
-      // One row per (order_id, attempt) — a second attempt 1 is refused.
-      await refuse((sp) => sp`
-        INSERT INTO payments (order_id, attempt, client_reference, webpos_device_id, amount_zar)
-        VALUES (${order.id}, 1, 'cu_other:1', 'dev_1', 3000)`, /payments_order_attempt_unique/);
-      // webpos_device_id NOT NULL (REQ-065).
-      await refuse((sp) => sp`
-        INSERT INTO payments (order_id, attempt, client_reference, amount_zar)
-        VALUES (${order.id}, 2, 'cu_1:2', 3000)`, /webpos_device_id/);
-      // No status outside the four — the old values are gone, `voided` never existed.
-      for (const bad of ["failed", "refunded", "deferred", "voided"]) {
-        await refuse((sp) => sp`
-          INSERT INTO payments (order_id, attempt, client_reference, webpos_device_id, amount_zar, status)
-          VALUES (${order.id}, 9, ${"cu_bad_" + bad}, 'dev_1', 3000, ${bad})`, /payment_status/);
-      }
+      await tx.unsafe(migrationSql(UP));
+      expect(await dbShape(tx, "order_cogs")).toEqual(snapshotShape("0035_snapshot.json", "order_cogs"));
+    });
+  });
 
-      // REQ-011: one successful payment per order; a declined attempt is not blocked.
-      await tx`INSERT INTO payments (order_id, attempt, client_reference, webpos_device_id, amount_zar, status)
-               VALUES (${order.id}, 2, 'cu_1:2', 'dev_1', 3000, 'declined')`;
-      await tx`INSERT INTO payments (order_id, attempt, client_reference, webpos_device_id, amount_zar, status)
-               VALUES (${order.id}, 3, 'cu_1:3', 'dev_1', 3000, 'successful')`;
-      await refuse((sp) => sp`
-        INSERT INTO payments (order_id, attempt, client_reference, webpos_device_id, amount_zar, status)
-        VALUES (${order.id}, 4, 'cu_1:4', 'dev_1', 3000, 'successful')`, /payments_one_successful_per_order/);
+  it("after up → down → up, the database refuses what 0035 forbids", async () => {
+    await inRolledBackTx(async (tx) => {
+      await tx.unsafe(migrationSql(DOWN));
+      await tx.unsafe(migrationSql(UP));
+      const { order, item } = await fixtures(tx);
 
-      // COL-5: one successful payment per fund top-up.
-      await tx`INSERT INTO payments (fund_topup_id, attempt, client_reference, webpos_device_id, amount_zar, status)
-               VALUES ('fte_1', 1, 'cu_f:1', 'dev_1', 50000, 'successful')`;
-      await refuse((sp) => sp`
-        INSERT INTO payments (fund_topup_id, attempt, client_reference, webpos_device_id, amount_zar, status)
-        VALUES ('fte_1', 2, 'cu_f:2', 'dev_1', 50000, 'successful')`, /payments_one_successful_per_fund_topup/);
+      // Defaults: no absent item, estimated unknown (NULL — AT-191 sets it).
+      const [row] = await tx`
+        INSERT INTO order_cogs (order_id, cogs_zar) VALUES (${order.id}, 529)
+        RETURNING cogs_zar, absent_item_ids, estimated, tenant_id`;
+      expect(row).toEqual({ cogs_zar: 529, absent_item_ids: [], estimated: null, tenant_id: "hofmi" });
+
+      // PK: one row per order.
+      await expect(
+        tx.savepoint((sp) => sp`INSERT INTO order_cogs (order_id, cogs_zar) VALUES (${order.id}, 1059)`)
+      ).rejects.toThrow(/order_cogs_pkey/);
+
+      // FK: no row for an order that does not exist.
+      await expect(
+        tx.savepoint((sp) => sp`INSERT INTO order_cogs (order_id, cogs_zar) VALUES ('no-such-order', 1)`)
+      ).rejects.toThrow(/order_cogs_order_id_orders_id_fk/);
+
+      // UNAVAILABLE is NULL + the named item; never a fake zero, never a number beside it.
+      const [o2] = await tx`
+        INSERT INTO orders (staff_id, total_zar, revenue_day)
+        SELECT staff_id, 2000, '2026-08-16' FROM orders WHERE id = ${order.id} RETURNING id`;
+      await expect(
+        tx.savepoint((sp) => sp`INSERT INTO order_cogs (order_id, cogs_zar) VALUES (${o2.id}, NULL)`)
+      ).rejects.toThrow(/order_cogs_amount_or_absent/);
+      await expect(
+        tx.savepoint((sp) => sp`
+          INSERT INTO order_cogs (order_id, cogs_zar, absent_item_ids) VALUES (${o2.id}, 0, ${sql.array([item.id])})`)
+      ).rejects.toThrow(/order_cogs_amount_or_absent/);
+      await expect(
+        tx.savepoint((sp) => sp`INSERT INTO order_cogs (order_id, cogs_zar) VALUES (${o2.id}, -1)`)
+      ).rejects.toThrow(/order_cogs_nonnegative/);
+      const [absent] = await tx`
+        INSERT INTO order_cogs (order_id, cogs_zar, absent_item_ids)
+        VALUES (${o2.id}, NULL, ${sql.array([item.id])}) RETURNING cogs_zar, absent_item_ids`;
+      expect(absent).toEqual({ cogs_zar: null, absent_item_ids: [item.id] });
+    });
+  });
+
+  it("a retry never rewrites the row, and a later recost does not restate it", async () => {
+    await inRolledBackTx(async (tx) => {
+      const { order, lot } = await fixtures(tx);
+      await tx`INSERT INTO order_cogs (order_id, cogs_zar) VALUES (${order.id}, 1059)`;
+
+      // The same statement writeOrderCogs issues, retried with another figure.
+      await tx`
+        INSERT INTO order_cogs (order_id, cogs_zar) VALUES (${order.id}, 9999)
+        ON CONFLICT (order_id) DO NOTHING`;
+
+      // Admin recost / closeContainer rewrites the lot's unit cost.
+      await tx`UPDATE inventory_lots SET unit_cost_zar = 876.0000 WHERE id = ${lot.id}`;
+
+      const rows = await tx`SELECT cogs_zar FROM order_cogs WHERE order_id = ${order.id}`;
+      expect(rows).toEqual([{ cogs_zar: 1059 }]);
     });
   });
 });

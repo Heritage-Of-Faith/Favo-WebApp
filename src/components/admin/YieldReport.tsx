@@ -80,7 +80,7 @@ function ProductSection({
             aria-label={`${title} — filter product`}
             value={activeProduct}
             onChange={(e) => setSelected(e.target.value)}
-            className="h-9 rounded-[var(--radius-btn)] border px-2 favo-small bg-[color:var(--color-surface)] transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
+            className="h-11 rounded-[var(--radius-btn)] border px-2 text-base bg-[color:var(--color-surface)] transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
             style={{ color: "var(--color-text-strong)", borderColor: "var(--color-border-subtle)" }}
           >
             {products.map((p) => (

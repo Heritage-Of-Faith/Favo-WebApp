@@ -7,12 +7,12 @@
 // DB CHECK: closed requires admin sig — enforced by migration 0011 (L11).
 // Docs: FAVO_PRD_v3.md §04 §06 §07 · BUSINESS_RULES.md L11
 
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { monthlyReports, orders } from "@db/schema";
-import { revenueOrderScope } from "@/server/reports/revenue-scope";
+import { monthlyReports } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
+import { readPeriodFigures } from "@/server/cogs/period-cogs";
 import type {
   ActionResult,
   MonthlyReport,
@@ -23,31 +23,17 @@ import type { DB } from "@/lib/db";
 const ADMIN_ROLES = ["admin"] as const;
 const READER_ROLES = ["admin"] as const;
 
-// SAST offset for month boundary computation
-const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
-
-/** Parse a YYYY-MM-DD month string into UTC start/end Date objects. */
-function monthBounds(month: string): { start: Date; end: Date } {
-  // month = "YYYY-MM-01" (first of month in SAST)
-  const [year, mon] = month.split("-").map(Number);
-  // SAST midnight of the first day
-  const startSast = new Date(Date.UTC(year, mon - 1, 1, 0, 0, 0, 0));
-  // End = first day of next month SAST midnight
-  const endSast = new Date(Date.UTC(year, mon, 1, 0, 0, 0, 0));
-  return {
-    start: new Date(startSast.getTime() - SAST_OFFSET_MS),
-    end: new Date(endSast.getTime() - SAST_OFFSET_MS),
-  };
-}
-
 function rowToReport(r: {
   id: string;
   month: string;
   revenueZar: number;
-  cogsZar: number;
+  cogsZar: number | null;
   expensesZar: number;
-  grossMarginZar: number;
-  netZar: number;
+  grossMarginZar: number | null;
+  netZar: number | null;
+  costState: MonthlyReport["costState"];
+  cogsAbsentItems: string[];
+  ordersWithoutCost: number;
   status: string;
   adminSig: unknown;
   generatedAt: Date;
@@ -61,11 +47,20 @@ function rowToReport(r: {
     expensesZar: r.expensesZar,
     grossMarginZar: r.grossMarginZar,
     netZar: r.netZar,
+    costState: r.costState,
+    cogsAbsentItems: r.cogsAbsentItems,
+    ordersWithoutCost: r.ordersWithoutCost,
     status: r.status as MonthlyReport["status"],
     adminSig: (r.adminSig as MonthlyReportSig | null) ?? null,
     generatedAt: r.generatedAt.toISOString(),
     closedAt: r.closedAt?.toISOString() ?? null,
   };
+}
+
+/** "2026-08-01" → "2026-08-31": the month's last revenue day. */
+function lastDayOfMonth(month: string): string {
+  const [year, mon] = month.split("-").map(Number);
+  return new Date(Date.UTC(year, mon, 0)).toISOString().slice(0, 10);
 }
 
 // ─── listMonthlyReports ───────────────────────────────────────────────────────
@@ -121,34 +116,17 @@ export async function generateMonthlyPnL(
     };
   }
 
-  const { start, end } = monthBounds(month);
+  const lastDay = lastDayOfMonth(month);
 
-  // ── Revenue ────────────────────────────────────────────────────────────────
-  const [revRow] = await db
-    .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
-    .from(orders)
-    .where(
-      and(
-        revenueOrderScope, // AT-209: a cancelled order keeps its successful payment (L02)
-        gte(orders.placedAt, start),
-        lt(orders.placedAt, end)
-      )
-    );
-  const revenueZar = revRow?.total ?? 0;
-
-  // ── COGS ───────────────────────────────────────────────────────────────────
-  const [cogsRow] = await db.execute<{ total: string | null }>(sql`
-    SELECT ROUND(COALESCE(SUM(-sm.delta::numeric * il.unit_cost_zar), 0))::bigint AS total
-    FROM stock_movements sm
-    JOIN inventory_lots il ON sm.inventory_lot_id = il.id
-    WHERE sm.kind = 'deduction'
-      AND il.unit_cost_zar IS NOT NULL
-      AND sm.at >= ${start} AND sm.at < ${end}
-  `);
-  const cogsZar = parseInt(cogsRow?.total ?? "0", 10) || 0;
-
-  const grossMarginZar = revenueZar - cogsZar;
-  const netZar = grossMarginZar;
+  // Revenue (orders.revenue_day), COGS (Σ order_cogs — never re-rounded, never
+  // filtered: AT-189/AT-190, REQ-106/REQ-109) and expenses over the month's
+  // revenue days, through the same reads and periodFigures arithmetic as the
+  // dashboard, the CSV and the weekly report — so net subtracts expenses here
+  // too (it used to hard-code expenses to 0 and disagree with weekly).
+  const f = await readPeriodFigures(month, lastDay);
+  const { revenueZar, cogsZar, expensesZar, grossMarginZar, netZar, costState } = f;
+  const cogsAbsentItems = f.cogs.absentItemNames;
+  const ordersWithoutCost = f.cogs.ordersWithoutCost;
 
   let reportId!: string;
 
@@ -161,9 +139,12 @@ export async function generateMonthlyPnL(
         month,
         revenueZar,
         cogsZar,
-        expensesZar: 0,
+        expensesZar,
         grossMarginZar,
         netZar,
+        costState,
+        cogsAbsentItems,
+        ordersWithoutCost,
         status: "draft",
       })
       .returning({ id: monthlyReports.id });
@@ -178,7 +159,7 @@ export async function generateMonthlyPnL(
         actorId: session.id,
         actorRole: session.role,
         before: null,
-        after: { month, revenueZar, cogsZar, expensesZar: 0, netZar, status: "draft" },
+        after: { month, revenueZar, cogsZar, expensesZar, netZar, costState, cogsAbsentItems, ordersWithoutCost, status: "draft" },
       },
       txDb
     );

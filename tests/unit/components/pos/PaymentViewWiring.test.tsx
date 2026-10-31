@@ -100,7 +100,7 @@ describe("L28 notification target at ring-up (REQ-046)", () => {
 });
 
 describe("M4 payment view wiring", () => {
-  it("a chargeable order: createOrder's attempt 1 is sent to the machine server-side; no card form, no second begin", async () => {
+  it("REQ-071: a chargeable order — createOrder's attempt 1 is sent to the machine server-side; no card form, no second begin", async () => {
     mockCreateOrder.mockResolvedValue({
       ok: true, data: { orderId: "ord_1", totalZar: 6000, tender: { ok: true, attempt: 1, amountZar: 6000 }, cardCheckout: true },
     });
@@ -110,6 +110,14 @@ describe("M4 payment view wiring", () => {
     expect(screen.getByText(/to the card machine/i)).toBeDefined();
     expect(screen.queryByRole("button", { name: /charge card/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /mark as paid/i })).toBeNull();
+  });
+
+  it("a chargeable order with no attempt from createOrder opens the same payment screen and begins one — no blocking error", async () => {
+    mockCreateOrder.mockResolvedValue({ ok: true, data: { orderId: "ord_3", tender: null, totalZar: 6000 } });
+    await placeOrder();
+    expect(mockBegin).toHaveBeenCalledWith("ord_3");
+    expect(await screen.findByText(/to the card machine/i)).toBeDefined();
+    expect(screen.queryByText(/could not be reached/i)).toBeNull();
   });
 
   it("a refused tender (no machine) is shown as the server said it — nothing is sent", async () => {

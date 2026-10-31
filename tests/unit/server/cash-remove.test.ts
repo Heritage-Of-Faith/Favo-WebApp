@@ -29,6 +29,8 @@ vi.mock("@/server/orders/deduction", () => ({
   deductForOrder: vi.fn().mockResolvedValue(undefined),
   DeductionError: class extends Error {},
 }));
+// AT-188: transitionOrder writes order_cogs after deduction; mocked away like it.
+vi.mock("@/server/orders/order-cogs", () => ({ writeOrderCogs: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/server/queue/notify", () => ({ notifyOrderChange: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/server/push/send", () => ({ sendOrderReadyPush: vi.fn().mockResolvedValue(true) }));
 vi.mock("@/server/push/payload", () => ({ isValidPushSubscription: vi.fn(() => false) }));

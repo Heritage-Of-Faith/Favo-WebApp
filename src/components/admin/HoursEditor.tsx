@@ -42,9 +42,12 @@ export interface HoursEditorProps {
 export default function HoursEditor({ initialHours }: HoursEditorProps) {
   const [rows, setRows] = useState<HoursRow[]>(() => buildRows(initialHours));
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const updateRow = useCallback(
     (dayOfWeek: number, patch: Partial<Omit<HoursRow, "dayOfWeek">>) => {
+      setSaved(false);
       setRows((prev) =>
         prev.map((r) => (r.dayOfWeek === dayOfWeek ? { ...r, ...patch } : r))
       );
@@ -53,6 +56,13 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
   );
 
   const handleSave = useCallback(() => {
+    setError(null);
+    setSaved(false);
+    const bad = rows.find((r) => !r.isClosed && r.closeTime <= r.openTime);
+    if (bad) {
+      setError(`${DAY_NAMES[bad.dayOfWeek]}: closing time must be after opening time.`);
+      return;
+    }
     startTransition(async () => {
       const results = await Promise.all(
         rows.map((r) =>
@@ -67,13 +77,12 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
 
       const failed = results.filter((r) => !r.ok);
       if (failed.length > 0) {
-        toast.error(
-          failed[0] && !failed[0].ok
-            ? failed[0].message
-            : "Failed to save hours."
-        );
+        const msg = failed[0] && !failed[0].ok ? failed[0].message : "Failed to save hours.";
+        toast.error(msg);
+        setError(msg);
       } else {
         toast.success("Operating hours saved.");
+        setSaved(true);
       }
     });
   }, [rows]);
@@ -125,7 +134,7 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
                         updateRow(row.dayOfWeek, { openTime: e.target.value })
                       }
                       aria-label={`${DAY_NAMES[row.dayOfWeek]} opens at`}
-                      className="rounded border border-border-subtle bg-surface px-2 py-1 text-sm text-text-strong disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="min-h-11 rounded border border-border-subtle bg-surface px-2 py-1 text-base text-text-strong disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </td>
 
@@ -139,7 +148,7 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
                         updateRow(row.dayOfWeek, { closeTime: e.target.value })
                       }
                       aria-label={`${DAY_NAMES[row.dayOfWeek]} closes at`}
-                      className="rounded border border-border-subtle bg-surface px-2 py-1 text-sm text-text-strong disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="min-h-11 rounded border border-border-subtle bg-surface px-2 py-1 text-base text-text-strong disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </td>
 
@@ -154,11 +163,11 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
                           updateRow(row.dayOfWeek, { isClosed: e.target.checked })
                         }
                         aria-label={`${DAY_NAMES[row.dayOfWeek]} closed all day`}
-                        className="h-4 w-4 cursor-pointer rounded border-border-subtle accent-[color:var(--color-accent)] disabled:cursor-not-allowed"
+                        className="h-11 w-11 cursor-pointer rounded border-border-subtle accent-[color:var(--color-accent)] disabled:cursor-not-allowed"
                       />
                       <Label
                         htmlFor={`${dayId}-closed`}
-                        className="text-xs text-text-muted cursor-pointer"
+                        className="min-h-11 inline-flex items-center text-xs text-text-muted cursor-pointer"
                       >
                         {row.isClosed ? "Closed" : "Open"}
                       </Label>
@@ -171,9 +180,22 @@ export default function HoursEditor({ initialHours }: HoursEditorProps) {
         </table>
       </div>
 
-      <Button onClick={handleSave} disabled={isPending}>
-        {isPending ? "Saving…" : "Save hours"}
-      </Button>
+      {error && (
+        <p role="alert" className="text-sm" style={{ color: "var(--color-error)" }}>
+          {error}
+        </p>
+      )}
+
+      <div className="flex items-center gap-3">
+        <Button className="min-h-11" onClick={handleSave} disabled={isPending}>
+          {isPending ? "Saving…" : "Save hours"}
+        </Button>
+        {saved && !isPending && (
+          <span role="status" className="text-sm text-text-muted">
+            Saved
+          </span>
+        )}
+      </div>
     </div>
   );
 }
