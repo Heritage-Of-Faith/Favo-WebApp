@@ -349,7 +349,8 @@ record(
 // The old pattern matched retry-deferred's `resolvedBy: "retry_cron"`; that file is
 // gone (#241), and the pattern's quote broke the shell (exit 2 = GATE IS BROKEN).
 // src/server/jobs/ is the scheduler (AT-169); it runs these jobs, so it is held to the same rule.
-const CRON_PATHS = "src/server/crons/ src/server/jobs/";
+// src/server/close/ is closeDaily()'s write-off sweep (AT-207): run by job 2, so held to it too.
+const CRON_PATHS = "src/server/crons/ src/server/jobs/ src/server/close/";
 // Known gaps (code review must cover them): calls split across lines, lowercase or
 // quoted SQL table names, and a cron calling a helper outside these folders.
 mustBeAbsent("no cron writes payments (Drizzle)", "\\(update\\|insert\\|delete\\)( *\\(schema\\.\\)\\?payments *)", CRON_PATHS);

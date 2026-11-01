@@ -160,6 +160,8 @@ function seed(opts: { liveVouchers: number; payments?: Row[] }) {
   }]);
   state.set(orders, [{
     id: "ord_1", state: "ordered", totalZar: 10600 - 3800 * live.length, paymentMode: null, clientUuid: "cu-1",
+    // AT-207: the orders row now carries written_off_at (NULL until the close writes it off).
+    writtenOffAt: null,
   }]);
   state.set(payments, opts.payments ?? []);
   state.set(openingSessions, [{ id: "os_evening", closedAt: null, voucherRedemptionsRecorded: live.length }]);

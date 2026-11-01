@@ -104,7 +104,12 @@ maybe("the collected sweep (AT-194, §9.6.2 job 5)", () => {
 maybe("closeDaily counts revenue by revenue_day (owner decision, Nikao 21 Oct, #260)", () => {
   let sql: Sql;
   // A fresh, long-past revenue day, so no other suite's orders share it.
-  const dayStart = Date.UTC(2011, 0, 1 + Math.floor(Math.random() * 3000)) - 2 * 3_600_000; // 00:00 SAST
+  // AT-207: always a Monday-Friday. These orders carry no payment, and closeDaily
+  // now writes off unpaid Saturday/Sunday orders (so they would leave revenue);
+  // weekday orders are never swept until S7a. A Saturday/Sunday draw moves to Monday.
+  const randomDay = Date.UTC(2011, 0, 1 + Math.floor(Math.random() * 3000));
+  const dow = new Date(randomDay).getUTCDay();
+  const dayStart = randomDay + (dow === 6 ? 2 : dow === 0 ? 1 : 0) * 86_400_000 - 2 * 3_600_000; // 00:00 SAST
   const at = (h: number, m: number) => new Date(dayStart + (h * 60 + m) * 60_000);
 
   beforeAll(() => {

@@ -50,6 +50,12 @@ const COPY = {
   PAYMENT_UNKNOWN: "We'll confirm this one shortly",
 } as const;
 
+/** AT-207: beginTender's and sendToTerminal's refusal of a written-off order. */
+const WRITTEN_OFF_NO_CHARGE = "This order was written off at the daily close and cannot be charged.";
+
+/** AT-207: the audit action of a successful payment attached to a written-off order. */
+export const LATE_SUCCESS_ON_WRITTEN_OFF_ACTION = "payment.late_success_on_written_off";
+
 // ─── small helpers ────────────────────────────────────────────────────────────
 
 type Post = Array<() => Promise<void>>;
@@ -154,6 +160,10 @@ export async function beginTender(
     if (order.state === "cancelled") return reject("VALIDATION", "This order is cancelled.", "order_cancelled");
     // AT-203 / §11.2: beginTender "rejects an order already settled from a fund".
     if (order.fundSettled === true) return reject("ALREADY_RESOLVED", COPY.ALREADY_RESOLVED, "settled_from_fund");
+    // AT-207 / §10.3.3: settled_at and written_off_at are mutually exclusive.
+    if (order.writtenOff === true) {
+      return reject("ORDER_WRITTEN_OFF", WRITTEN_OFF_NO_CHARGE, "order_written_off");
+    }
     if (!Number.isInteger(order.totalZar) || order.totalZar < 0) {
       return reject("VALIDATION", "The order total is not whole cents.", "total_not_integer_cents");
     }
@@ -235,6 +245,20 @@ export async function sendToTerminal(
       return fail("VALIDATION", "No such tender attempt.");
     }
     const p = locked.payment;
+    // AT-207 / §10.3.3: an attempt begun before the close wrote the order off
+    // is never sent afterwards. Refused under the order lock, before the claim;
+    // the attempt stays unsent.
+    if (locked.order.writtenOff === true) {
+      await tx.audit({
+        entityKind: "payment",
+        entityId: p.id,
+        action: "payment.send_rejected",
+        ...actorFields(actor),
+        reason: "order_written_off",
+        after: { code: "ORDER_WRITTEN_OFF", attempt },
+      });
+      return fail("ORDER_WRITTEN_OFF", WRITTEN_OFF_NO_CHARGE);
+    }
     if (p.status !== "pending" || p.sentAt !== null || p.yocoPaymentId !== null) {
       await tx.audit({
         entityKind: "payment",
@@ -478,6 +502,25 @@ async function attachSuccessful(
       ...actorFields(actor),
       reason: "amount_mismatch",
       after: { orderTotalZar: order.totalZar, amountZar: p.amountZar, chargedAmountZar: charged },
+    });
+  }
+  // AT-207: money arrived on an order the close already wrote off. The payment
+  // is recorded exactly as above (setPaymentStatus only) and written_off_at is
+  // left alone — reversing a write-off is REQ-034, AT-207 part 2. This only
+  // records the fact and tells the Admin; the push runs after the commit and a
+  // failed push never undoes the recorded payment (runPost).
+  if (order.writtenOff === true) {
+    const info = { orderId: order.id, paymentId: p.id, attempt: p.attempt, chargedAmountZar: charged, orderTotalZar: order.totalZar };
+    await tx.audit({
+      entityKind: "order",
+      entityId: order.id,
+      action: LATE_SUCCESS_ON_WRITTEN_OFF_ACTION,
+      ...actorFields(actor),
+      reason: "late_success_on_written_off",
+      after: { ...info, via },
+    });
+    post.push(async () => {
+      await deps.notify.lateSuccessOnWrittenOff?.(info);
     });
   }
   // No tip handling (DEC-17): FAVO stores no tip; a stray one surfaces at T10

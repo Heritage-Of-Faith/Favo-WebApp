@@ -279,6 +279,10 @@ export const orders = pgTable("orders", {
   // replay (apply-outbox) and the demo seed do not pass a POS-minted uuid yet
   // (S7b's repeat-submission rule is not built).
   clientUuid: text("client_uuid").default(sql`gen_random_uuid()`).notNull().unique(),
+  // AT-207 / PRD §10.3.3, §6.0.5, S3a: closeDaily()'s write-off. Set once, by
+  // the close sweep, on an order with no successful payment and no fund spend.
+  // The reason lives on the sweep's audit_log row (action `write_off`).
+  writtenOffAt: timestamp("written_off_at", { withTimezone: true }),
 }, () => [
   // PRD §10.3: a row can never claim it will notify someone and carry no customer.
   check(
@@ -776,6 +780,31 @@ export const auditLog = pgTable("audit_log", {
   index("audit_log_entity_idx").on(t.entityKind, t.entityId),
   index("audit_log_actor_idx").on(t.actorId),
   index("audit_log_at_idx").on(t.at),
+]);
+
+// ─── Daily closes (AT-207, PRD §10.2, §6.0.5, §9.6.2 job 2) ──────────────────
+// The close record: one row per closed revenue day, written by closeDaily() in
+// the same transaction as the write-off sweep. A reconciliation mismatch blocks
+// only this record (status `blocked` + reason), never the write-offs.
+
+export const dailyCloses = pgTable("daily_closes", {
+  revenueDay: date("revenue_day").primaryKey(),
+  // Integer cents. The day's written-off orders, count and Σ orders.total_zar.
+  writtenOffCount: integer("written_off_count").default(0).notNull(),
+  writtenOffZar: integer("written_off_zar").default(0).notNull(),
+  reconciliationStatus: text("reconciliation_status", { enum: ["payments_matched", "blocked"] }).notNull(),
+  blockedReason: text("blocked_reason"),
+  closedAt: timestamp("closed_at", { withTimezone: true }).defaultNow().notNull(),
+  wasCatchUp: boolean("was_catch_up").default(false).notNull(),
+}, (t) => [
+  check("daily_closes_written_off_count_nonneg", sql`${t.writtenOffCount} >= 0`),
+  check("daily_closes_written_off_zar_nonneg", sql`${t.writtenOffZar} >= 0`),
+  check("daily_closes_status", sql`${t.reconciliationStatus} IN ('payments_matched', 'blocked')`),
+  // A blocked close names why; a payments_matched one carries no reason.
+  check(
+    "daily_closes_blocked_reason",
+    sql`(${t.reconciliationStatus} = 'blocked') = (${t.blockedReason} IS NOT NULL)`
+  ),
 ]);
 
 // ─── Monthly reports (G15 dual-sign) ─────────────────────────────────────────

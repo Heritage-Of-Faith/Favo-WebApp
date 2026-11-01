@@ -20,6 +20,8 @@ export type TenderOrder = {
   clientUuid: string;
   /** AT-203 / §11.2: settled from a blessing fund (payment_mode='donor_fund') — never tendered. */
   fundSettled?: boolean;
+  /** AT-207 / §10.3.3: written off by closeDaily() — never tendered again. */
+  writtenOff?: boolean;
 };
 
 export type TenderPayment = {
@@ -97,6 +99,18 @@ export interface TenderStore {
 export interface TenderNotifier {
   paymentUnresolved(info: { orderId: string; attempt: number; amountZar: number; cause: string }): Promise<void>;
   duplicateCharge(info: { orderId: string; yocoPaymentIds: string[]; amountZar: number }): Promise<void>;
+  /**
+   * AT-207: a successful payment attached to an order the close wrote off.
+   * Optional: only the order chain's notifier implements it (a fund top-up is
+   * never written off). Amounts are integer cents.
+   */
+  lateSuccessOnWrittenOff?(info: {
+    orderId: string;
+    paymentId: string;
+    attempt: number;
+    chargedAmountZar: number;
+    orderTotalZar: number;
+  }): Promise<void>;
 }
 
 export type TenderActor =
@@ -120,7 +134,9 @@ export type TenderErrorCode =
   | "TERMINAL_UNREACHABLE"
   | "GATEWAY_UNAVAILABLE"
   | "PAYMENT_UNKNOWN"
-  | "PAYMENT_DECLINED";
+  | "PAYMENT_DECLINED"
+  // AT-207: the close wrote this order off; it is not tendered again.
+  | "ORDER_WRITTEN_OFF";
 
 export type TenderFailure = {
   ok: false;

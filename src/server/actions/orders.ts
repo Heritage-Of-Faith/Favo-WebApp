@@ -650,7 +650,7 @@ export async function transitionOrder(
   let pushCustomerId: string | null = null;
 
   try {
-    await db.transaction(async (tx) => {
+    const refused = await db.transaction(async (tx): Promise<ActionResult<Order> | null> => {
       const txDb = tx as unknown as DB;
 
       // ── 0. Lock the row for the duration of this transaction ───────────────
@@ -665,6 +665,25 @@ export async function transitionOrder(
         .for("update");
 
       if (!current) throw new TransitionError("NOT_FOUND", "Order not found.");
+      // AT-207 / §10.3.3: the close wrote this order off; that is its outcome,
+      // and the day's daily_closes figure was taken from it. Returned, not
+      // thrown, so the reject audit commits; nothing else is written.
+      if (current.writtenOffAt) {
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: { attempted: "transition", code: "ORDER_WRITTEN_OFF", state: current.state, toState },
+            reason: "ORDER_WRITTEN_OFF",
+          },
+          txDb
+        );
+        return {
+          ok: false,
+          code: "ORDER_WRITTEN_OFF",
+          message: "This order was written off at the daily close and cannot be moved on.",
+        };
+      }
       if (!canTransition(current.state, toState)) {
         throw new TransitionError(
           "INVALID_TRANSITION",
@@ -744,7 +763,9 @@ export async function transitionOrder(
         },
         txDb
       );
+      return null;
     });
+    if (refused) return refused;
   } catch (err) {
     if (err instanceof TransitionError) {
       return { ok: false, code: err.code, message: err.message };
@@ -887,6 +908,16 @@ export async function cancelOrder(
       const started = STARTED_STATES.includes(current.state);
       if (current.state !== "ordered" && !started) {
         return rejectCancel(txDb, "CONFLICT", `This order is already ${current.state}.`, { state: current.state });
+      }
+
+      // AT-207 / §10.3.3: the close wrote this order off; that is its outcome.
+      // Returned, not thrown, so the reject audit commits.
+      if (current.writtenOffAt) {
+        return rejectCancel(
+          txDb,
+          "ORDER_WRITTEN_OFF",
+          "This order was written off at the daily close and cannot be cancelled."
+        );
       }
 
       // REQ-028 / P4: no cancel while a tender attempt is open (pending, or

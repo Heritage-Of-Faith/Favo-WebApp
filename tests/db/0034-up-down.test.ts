@@ -23,7 +23,7 @@ import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { connect, hasRealDb, migrationSql } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0048 } from "./helpers";
 import { walkInCupsQuery } from "@/server/reports/walk-in-cups";
 
 const maybe = hasRealDb() ? describe : describe.skip;
@@ -121,6 +121,7 @@ maybe("0034 walk_ins: up → down → up, the CHECK, and REQ-116 (AT-209)", () =
         // orders reads as 0033 left it. 0044 (orders.client_uuid) goes first,
         // newest first; 0043 touches payments only, so it stays. AT-209: 0045
         // (the newest; a view and an FK over orders) steps down before 0044.
+        await stepDown0048(tx); // AT-207: 0048 (daily_closes, orders.written_off_at) is newest of all, first
         await tx.unsafe(migrationSql(DOWN_0047)); // AT-202: newer still, before 0046
         await tx.unsafe(migrationSql(DOWN_0046)); // AT-203: newest of all, first
         await tx.unsafe(migrationSql(DOWN_0045));

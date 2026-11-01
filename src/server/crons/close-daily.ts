@@ -1,20 +1,33 @@
 // Daily close reconciliation — task G10
-// Scheduled 00:05 SAST for the completed day (src/server/jobs/registry.ts). Compares order revenue vs confirmed payments
-// for the day. Idempotent per revenue day (AT-193, PRD §9.6.2 job 2): the close
-// record is the `daily_close` audit row — there is no `daily_closes` table yet
-// (deferred, build-plan §5) — and a second close of a closed day writes nothing.
+// Scheduled 00:05 SAST for the completed day (src/server/jobs/registry.ts).
+// AT-207 / PRD §6.0.5, in this normative order, inside one per-day locked
+// transaction: (1) the write-off sweep, first and unconditionally — every
+// unpaid order, never a `free` or fund-settled one (src/server/close/write-offs.ts);
+// (2) the reconciliation: order revenue vs confirmed payments, written-off
+// orders on neither side; (3) the close record — a `daily_closes` row, plus the
+// `daily_close` audit row that closedDays() and the 06:00 watch read. A
+// mismatch blocks only the daily_closes record. Idempotent per revenue day
+// (AT-193, PRD §9.6.2 job 2): a second close of a closed day writes nothing.
 // Pushes an alert to admin staff devices on T01 variance band
 // breach (L09) — this used to page Discord; deletion pass replaced it with
 // Web Push (see docs on the deletion PR) so the alert doesn't vanish.
 // Docs: API.md · BUSINESS_RULES.md L09 T01
 
-import { and, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cancelledWithSuccessfulPayment } from "@/server/reports/revenue-scope";
 import type { DB } from "@/lib/db";
 import { auditLog, orders, staff } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { formatZarField } from "@/lib/format";
+import {
+  buildWriteOffAlert,
+  hasDailyClose,
+  recordDailyClose,
+  sweepWriteOffs,
+  type WrittenOffOrder,
+} from "@/server/close/write-offs";
+import { alertAdmins } from "@/server/push/admin-alert";
 import webpush from "web-push";
 import { initVapid } from "@/server/push/vapid";
 import { isValidPushSubscription } from "@/server/push/payload";
@@ -75,6 +88,10 @@ export type CloseDailyResult =
       paymentsZar: number;
       variancePct: number;
       band: VarianceBand;
+      /** AT-207: the day's written-off orders (count, integer cents). */
+      writtenOffCount: number;
+      writtenOffZar: number;
+      reconciliationStatus: "payments_matched" | "blocked";
     }
   | { date: string; alreadyClosed: true };
 
@@ -118,7 +135,8 @@ export async function closeDaily(
 ): Promise<CloseDailyResult> {
   const { end, date } = dayBounds(referenceDate);
   const wasCatchUp = opts.wasCatchUp ?? false;
-  if (end.getTime() >= (opts.now ?? new Date()).getTime()) {
+  const now = opts.now ?? new Date();
+  if (end.getTime() >= now.getTime()) {
     throw new Error(`Revenue day ${date} is not over yet; closeDaily only closes a completed day.`);
   }
 
@@ -129,6 +147,12 @@ export async function closeDaily(
     // finds the first one's close record.
     await txDb.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`daily_close:${date}`}))`);
     if ((await closedDays([date], txDb)).has(date)) return null;
+    if (await hasDailyClose(txDb, date)) return null;
+
+    // (1) §6.0.5 / REQ-007: settle-or-write-off, first and unconditionally —
+    // never gated on the reconciliation below. It only writes off; it never
+    // settles and never touches a payment.
+    const sweep = await sweepWriteOffs(txDb, date, now);
 
     // Revenue = sum of totalZar for every non-cancelled order of this
     // revenue day, keyed on orders.revenue_day (minted at createOrder, L07 /
@@ -149,7 +173,10 @@ export async function closeDaily(
         and(
           or(ne(orders.state, "cancelled"), cancelledWithSuccessfulPayment),
           eq(orders.revenueDay, date),
-          sql`${orders.paymentMode} IS DISTINCT FROM 'donor_fund'`
+          sql`${orders.paymentMode} IS DISTINCT FROM 'donor_fund'`,
+          // AT-207 / §6.0.5, S2a: a written-off order "contributes nothing to
+          // either" side — it is its own write-off line, not negative revenue.
+          isNull(orders.writtenOffAt)
         )
       );
     const revenueZar = revRow?.total ?? 0;
@@ -162,12 +189,21 @@ export async function closeDaily(
       JOIN orders o ON p.order_id = o.id
       WHERE p.status = 'successful'
         AND o.revenue_day = ${date}::date
+        AND o.written_off_at IS NULL
     `);
     const paymentsZar = parseInt(payRow?.total ?? "0", 10) || 0;
 
     const diffZar = Math.abs(revenueZar - paymentsZar);
     const variancePct = revenueZar > 0 ? (diffZar / revenueZar) * 100 : 0;
     const band = varianceBand(variancePct);
+
+    // (2) REQ-036: a mismatch blocks only the close record. The write-offs
+    // above stand; no order, payment or session is touched.
+    const reconciliationStatus = band === "ok" ? ("payments_matched" as const) : ("blocked" as const);
+    const blockedReason =
+      reconciliationStatus === "blocked"
+        ? `Revenue ${formatZarField(revenueZar)} vs payments ${formatZarField(paymentsZar)} — ${variancePct.toFixed(1)}% variance (${band}).`
+        : null;
 
     await writeAudit(
       {
@@ -182,16 +218,44 @@ export async function closeDaily(
           paymentsZar,
           variancePct: Math.round(variancePct * 100) / 100,
           band,
+          writtenOffCount: sweep.dayCount,
+          writtenOffZar: sweep.dayZar,
+          reconciliationStatus,
         },
         reason: wasCatchUp ? `catch-up on startup: closes revenue day ${date}` : undefined,
       },
       txDb
     );
 
-    return { revenueZar, paymentsZar, variancePct, band };
+    // (3) §10.2: the close record.
+    await recordDailyClose(txDb, {
+      revenueDay: date,
+      writtenOffCount: sweep.dayCount,
+      writtenOffZar: sweep.dayZar,
+      reconciliationStatus,
+      blockedReason,
+      closedAt: now,
+      wasCatchUp,
+    });
+
+    return {
+      revenueZar,
+      paymentsZar,
+      variancePct,
+      band,
+      reconciliationStatus,
+      written: sweep.written,
+      writtenOffCount: sweep.dayCount,
+      writtenOffZar: sweep.dayZar,
+    };
   });
   if (!closed) return { date, alreadyClosed: true };
-  const { revenueZar, paymentsZar, variancePct, band } = closed;
+  const { revenueZar, paymentsZar, variancePct, band, reconciliationStatus, written, writtenOffCount, writtenOffZar } =
+    closed;
+
+  // §6.0.5 "Admin | 00:05": a push naming the count and value written off and
+  // the reason for each. Sent after the commit; never throws (admin-alert.ts).
+  if (written.length > 0) await pushWriteOffs(date, written);
 
   // Only alert on mismatch (L09: "blocks + pages ops on mismatch"). Recipients
   // are admin-tier staff with a saved push subscription — this is an
@@ -215,5 +279,21 @@ export async function closeDaily(
     }
   }
 
-  return { date, alreadyClosed: false, wasCatchUp, revenueZar, paymentsZar, variancePct, band };
+  return {
+    date,
+    alreadyClosed: false,
+    wasCatchUp,
+    revenueZar,
+    paymentsZar,
+    variancePct,
+    band,
+    writtenOffCount,
+    writtenOffZar,
+    reconciliationStatus,
+  };
+}
+
+async function pushWriteOffs(date: string, written: WrittenOffOrder[]): Promise<void> {
+  const { title, body, data } = buildWriteOffAlert(date, written);
+  await alertAdmins(title, body, data);
 }

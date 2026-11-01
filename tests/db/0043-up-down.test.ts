@@ -29,7 +29,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0048 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -115,6 +115,7 @@ maybe("0043 payments as the tender record: up → down → up, and the refusals 
         // any 0043 down (rolled back with everything else). AT-209: 0045's
         // v_daily_revenue reads payments.status, which 0043 down retypes, and
         // 0045 is the newest, so it steps down before 0044.
+        await stepDown0048(tx); // AT-207: 0048 (daily_closes, orders.written_off_at) is newest of all, first
         await tx.unsafe(migrationSql(DOWN_0047)); // AT-202: newer still, before 0046
         await tx.unsafe(migrationSql(DOWN_0046)); // AT-203: newest of all, first
         await tx.unsafe(migrationSql(DOWN_0045));

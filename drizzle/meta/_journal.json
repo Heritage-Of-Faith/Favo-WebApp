@@ -330,6 +330,13 @@
       "when": 1793219600000,
       "tag": "0047_at202_order_item_surcharge",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793219700000,
+      "tag": "0048_at207_daily_closes_writeoffs",
+      "breakpoints": true
     }
   ]
 }

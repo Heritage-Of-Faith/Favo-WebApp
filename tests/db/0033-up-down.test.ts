@@ -23,7 +23,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0048 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -167,9 +167,11 @@ maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () 
         // AT-201 part 2a: 0044 adds orders.client_uuid and is the newest, so
         // it steps down before all of them.
         // AT-209: 0045 rewrites v_daily_revenue over orders.state and
-        // payments.status (which 0043 down retypes); newest, so first of all.
-        await tx.unsafe(migrationSql(DOWN_0047)); // AT-202: newer still, before 0046
-        await tx.unsafe(migrationSql(DOWN_0046)); // AT-203: newest of all, first
+        // payments.status (which 0043 down retypes), so it goes before 0044.
+        // Newest first throughout: 0048, 0047, 0046, 0045, 0044, 0043, 0042, 0036.
+        await stepDown0048(tx); // AT-207: 0048 (daily_closes, orders.written_off_at) is newest of all, first
+        await tx.unsafe(migrationSql(DOWN_0047)); // AT-202: next, before 0046
+        await tx.unsafe(migrationSql(DOWN_0046)); // AT-203: next, before 0045
         await tx.unsafe(migrationSql(DOWN_0045));
         await tx.unsafe(migrationSql(DOWN_0044));
         await tx.unsafe(migrationSql(DOWN_0043));

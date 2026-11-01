@@ -71,6 +71,9 @@ const COPY = {
   ABANDON_NOT_STARTED: "Only a drink that was started can be logged as abandoned. Use Cancel instead.",
   ABANDON_REASON: "Say why the drink was abandoned.",
   VALIDATION: "Invalid input.",
+  /** AT-207: not PRD copy (the PRD gives none for these refusals). */
+  WRITTEN_OFF_COMP: "This order was written off at the daily close and cannot be comped.",
+  WRITTEN_OFF_ABANDON: "This order was written off at the daily close and cannot be logged as abandoned.",
 } as const;
 
 // ─── compOrderLine ───────────────────────────────────────────────────────────
@@ -203,6 +206,11 @@ export async function compOrderLine(
     // start cannot interleave (P4).
     const [order] = await tx.select().from(orders).where(eq(orders.id, found.orderId)).for("update");
     if (!order) return rejectComp(txDb, session, input.orderItemId, "NOT_FOUND", COPY.NOT_FOUND_ORDER);
+    // AT-207 / §10.3.3: the close wrote this order off at its total; a comp
+    // would make that total drift from the day's daily_closes figure.
+    if (order.writtenOffAt) {
+      return rejectComp(txDb, session, input.orderItemId, "ORDER_WRITTEN_OFF", COPY.WRITTEN_OFF_COMP, { orderId: order.id });
+    }
     if (!(COMPABLE_STATES as readonly string[]).includes(order.state)) {
       return rejectComp(txDb, session, input.orderItemId, "STALE_STATE", COPY.COMP_MOVED_ON, { orderId: order.id, state: order.state });
     }
@@ -402,6 +410,8 @@ export async function abandonOrder(
     const txDb = tx as unknown as DB;
     const [order] = await tx.select().from(orders).where(eq(orders.id, input.orderId)).for("update");
     if (!order) return reject(txDb, "NOT_FOUND", COPY.NOT_FOUND_ORDER);
+    // AT-207 / §10.3.3: the close wrote this order off; that is its outcome.
+    if (order.writtenOffAt) return reject(txDb, "ORDER_WRITTEN_OFF", COPY.WRITTEN_OFF_ABANDON);
     if (order.state !== "in_progress" && order.state !== "ready") {
       return reject(txDb, "STALE_STATE", COPY.ABANDON_NOT_STARTED, { state: order.state });
     }
