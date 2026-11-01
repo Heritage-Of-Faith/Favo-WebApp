@@ -20,6 +20,9 @@ vi.mock("@/server/actions/opening", () => ({
   openEventWindow: (...a: unknown[]) => mockStartEvent(...a),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), message: vi.fn() } }));
+// AT-202: a confirmed session re-renders the page so the shot picker reads today's mode.
+const mockRefresh = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mockRefresh }) }));
 
 import OpeningTimePrompt from "@/components/pos/OpeningTimePrompt";
 
@@ -62,6 +65,7 @@ describe("OpeningTimePrompt — NO_SESSION", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^confirm$/i })); });
     expect(mockOpen).toHaveBeenCalledWith({ opensAt: "08:00", confirm: { mode: "weekday" }, sundayOverrideConfirmed: false });
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
   });
 
   it("shows the server's refusal and stays open", async () => {

@@ -46,6 +46,9 @@ const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
 // AT-203: 0046 (the blessing fund; an FK and a UNIQUE on payments) is now the
 // newest migration, so it steps down before 0045.
 const DOWN_0046 = "down/0046_at203_blessing_fund.down.sql";
+// AT-202: 0047 adds order_items.surcharge_zar (and seeds three shot settings)
+// on top of 0046, so it steps down before 0046.
+const DOWN_0047 = "down/0047_at202_order_item_surcharge.down.sql";
 
 type Shape = { columns: string[]; constraints: string[]; indexes: string[] };
 
@@ -112,6 +115,7 @@ maybe("0043 payments as the tender record: up → down → up, and the refusals 
         // any 0043 down (rolled back with everything else). AT-209: 0045's
         // v_daily_revenue reads payments.status, which 0043 down retypes, and
         // 0045 is the newest, so it steps down before 0044.
+        await tx.unsafe(migrationSql(DOWN_0047)); // AT-202: newer still, before 0046
         await tx.unsafe(migrationSql(DOWN_0046)); // AT-203: newest of all, first
         await tx.unsafe(migrationSql(DOWN_0045));
         await tx.unsafe(migrationSql(DOWN_0044));

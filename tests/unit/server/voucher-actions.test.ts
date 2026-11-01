@@ -165,6 +165,23 @@ describe("redeemVoucher (REQ-154, REQ-151, L41)", () => {
     expect(audits().map((a) => a.action)).toEqual(["reject"]);
   });
 
+  it("AT-202 interim: a line carrying an extra-shot surcharge is refused (VOUCHER_NOT_ON_EXTRA_SHOTS), audited, nothing written", async () => {
+    // 2 × Cappuccino R38 at 3 shots: R10 surcharge per unit (order total 2 × R48).
+    given({
+      order: { ...DEFERRED_ORDER, totalZar: 9600 },
+      line: { ...CAPPUCCINO_X2, shots: 3, surchargeZar: 1000 },
+    });
+    const res = await redeemVoucher("oi_1", KIND);
+    expect(res).toEqual({
+      ok: false, code: "VOUCHER_NOT_ON_EXTRA_SHOTS",
+      message: "Vouchers cover up to two shots; take the extra shots off or pay for this drink.",
+    });
+    expect(insertsInto(voucherRedemptions)).toEqual([]);
+    expect(updates).toEqual([]);
+    expect(audits().map((a) => a.action)).toEqual(["reject"]);
+    expect(audits()[0].after).toMatchObject({ attempted: "redeem_voucher", orderItemId: "oi_1", code: "VOUCHER_NOT_ON_EXTRA_SHOTS" });
+  });
+
   it("REQ-155: a weekday session → VOUCHER_NOT_IN_MODE", async () => {
     given({ session: { ...SESSION, mode: "weekday", voucherKindsActive: [], eventWindowId: null } });
     expect(await redeemVoucher("oi_1", KIND)).toMatchObject({ ok: false, code: "VOUCHER_NOT_IN_MODE" });

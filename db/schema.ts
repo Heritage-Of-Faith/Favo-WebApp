@@ -300,12 +300,17 @@ export const orderItems = pgTable("order_items", {
   // AT-181 / PRD §10.3: the shot count is a column, never part of a name.
   // The DB CHECK enforces the outer ceiling (T15 max_shots_per_line = 4).
   shots: integer("shots").default(1).notNull(),
+  // AT-202 / PRD §7.0.2, DEC-16: the extra-shot surcharge for ONE unit,
+  // extra_shot_zar × MAX(0, shots − 2) where in force, else 0 — landed on the
+  // line so revenue stays attributable. Integer cents.
+  surchargeZar: integer("surcharge_zar").default(0).notNull(),
   // AT-181 / PRD §10.3: the one place a line's discount lives (L03 free cup,
   // L33 comp, §6.9 voucher). Integer cents.
   discountZar: integer("discount_zar").default(0).notNull(),
   compReason: compReason("comp_reason"),
 }, () => [
   check("order_items_shots_range", sql`shots BETWEEN 1 AND 4`),
+  check("order_items_surcharge_nonnegative", sql`surcharge_zar >= 0`),
   // DEF-A's floor: a line can never be discounted past its own value.
   check("order_items_discount_within_line", sql`discount_zar <= quantity * (unit_price_zar + mods_zar)`),
   check("order_items_quantity_positive", sql`quantity >= 1`),

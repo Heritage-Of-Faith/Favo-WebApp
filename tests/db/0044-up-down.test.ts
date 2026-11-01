@@ -29,6 +29,8 @@ const WHEN_0044 = 1793210000000; // drizzle/meta/_journal.json, idx 44
 const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
 // AT-203: 0046 (the blessing fund) sits on top of 0045; stepped down first.
 const DOWN_0046 = "down/0046_at203_blessing_fund.down.sql";
+// AT-202: 0047 (order_items.surcharge_zar) sits on top of 0046; stepped down first.
+const DOWN_0047 = "down/0047_at202_order_item_surcharge.down.sql";
 
 async function ledgerHas0044(tx: TransactionSql): Promise<boolean | null> {
   const [reg] = await tx`SELECT to_regclass('drizzle.__drizzle_migrations') AS t`;
@@ -84,6 +86,7 @@ maybe("0044 orders.client_uuid: up → down → up, and the refusals (AT-201, RE
         // AT-209: CI migrates past 0044; 0045 (a view over orders and
         // payments, an FK from waste_log to orders) is the newest, so it steps
         // down first (rolled back with everything else).
+        await tx.unsafe(migrationSql(DOWN_0047)); // AT-202: newer still, before 0046
         await tx.unsafe(migrationSql(DOWN_0046)); // AT-203: newest of all, first
         await tx.unsafe(migrationSql(DOWN_0045));
         await fn(tx);

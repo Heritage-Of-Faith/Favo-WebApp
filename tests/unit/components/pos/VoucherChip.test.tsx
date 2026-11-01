@@ -43,7 +43,7 @@ vi.mock("@/hooks/useOfflineOutbox", () => ({
 }));
 
 import POSWorkspace from "@/components/pos/POSWorkspace";
-import { useDraftOrder } from "@/store/draftOrder";
+import { useDraftOrder, lineKey } from "@/store/draftOrder";
 import { revenueDay } from "@/lib/format";
 
 // The saved draft belongs to this staff member today (main's draft restore,
@@ -57,13 +57,15 @@ const HOT = { menuItemId: "mi_hot", menuItemName: "Hot Chocolate", unitPriceZar:
 const LIVE = { ok: true, data: { available: true, kind: "untracked_hot_drink", kinds: ["untracked_hot_drink"] } };
 const OFF = { ok: true, data: { available: false, kind: null, kinds: [] } };
 
-function seed(items: Array<typeof CAPP & { quantity: number; voucherCount?: number }>) {
+function seed(items: Array<typeof CAPP & { quantity: number; voucherCount?: number; shots?: number; surchargeZar?: number }>) {
   useDraftOrder.getState().reset();
   useDraftOrder.setState({ draftOwner: OWNER });
   for (const i of items) {
     const { voucherCount, ...rest } = i;
     useDraftOrder.getState().addItem(rest);
-    if (voucherCount) useDraftOrder.getState().setVoucherCount(`${i.menuItemId}:`, voucherCount);
+    // CHANGED (AT-202): the line key now carries the shot count (L37), so it is
+    // read from lineKey rather than spelled out.
+    if (voucherCount) useDraftOrder.getState().setVoucherCount(lineKey(rest), voucherCount);
   }
 }
 
@@ -93,6 +95,19 @@ describe("L48 / REQ-146 — the chip is absent when vouchers cannot apply", () =
     seed([{ ...CAPP, quantity: 1 }]);
     await mount();
     expect(screen.queryByRole("button", { name: /voucher/i })).toBeNull();
+  });
+
+  it("AT-202 interim: no chip on a 3-shot line (surcharge > 0); its R30.00 stays the amount charged", async () => {
+    mockVoucherCtx.mockResolvedValue(LIVE);
+    seed([{ ...CAPP, quantity: 1, shots: 3, surchargeZar: 1000 }, { ...HOT, quantity: 1 }]);
+    await mount();
+    // Only the hot chocolate line carries a chip.
+    expect(await screen.findAllByRole("button", { name: /voucher/i })).toHaveLength(1);
+    const triple = screen.getByText("Cappuccino").closest("[data-line]") as HTMLElement;
+    expect(within(triple).queryByRole("button", { name: /voucher/i })).toBeNull();
+    expect(within(triple).getByText(/R\s?30[.,]00/)).toBeDefined();
+    // R30.00 + R20.00, nothing vouchered.
+    expect(screen.getByRole("button", { name: /^charge r/i }).textContent).toMatch(/R\s?50[.,]00/);
   });
 
   it("a voucher kind in force: the chip renders on every line", async () => {
@@ -157,9 +172,10 @@ describe("Place — the createOrder call and the button", () => {
     expect(mockCreateOrder).toHaveBeenCalledWith({
       customerId: undefined,
       notificationTarget: "none",
+      // CHANGED (AT-202): every line now carries its shot count (default 1).
       items: [
-        { menuItemId: "mi_capp", quantity: 1, modifications: [] },
-        { menuItemId: "mi_hot", quantity: 1, modifications: [], voucherCount: 1 },
+        { menuItemId: "mi_capp", quantity: 1, modifications: [], shots: 1 },
+        { menuItemId: "mi_hot", quantity: 1, modifications: [], shots: 1, voucherCount: 1 },
       ],
       voucherKind: "untracked_hot_drink",
     });
@@ -182,7 +198,8 @@ describe("Place — the createOrder call and the button", () => {
     await act(async () => { fireEvent.click(await screen.findByRole("button", { name: "No notification" })); });
     await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /^charge r/i })); });
     expect(mockCreateOrder).toHaveBeenCalledWith({
-      customerId: undefined, notificationTarget: "none", items: [{ menuItemId: "mi_capp", quantity: 1, modifications: [] }],
+      // CHANGED (AT-202): every line now carries its shot count (default 1).
+      customerId: undefined, notificationTarget: "none", items: [{ menuItemId: "mi_capp", quantity: 1, modifications: [], shots: 1 }],
     });
   });
 });

@@ -30,7 +30,7 @@ import {
 } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { writeAudit } from "@/server/audit";
-import { LINE_SURCHARGE_CHARGED_ZAR, decideRedeem, decideRemove } from "@/server/orders/voucher";
+import { decideRedeem, decideRemove } from "@/server/orders/voucher";
 import { lockOpenSession } from "@/server/orders/voucher-session";
 import { pairAlreadyRecorded, pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
 import {
@@ -60,6 +60,8 @@ const idSchema = z.string().trim().min(1);
 type LockedLine = {
   line: {
     id: string; orderId: string; quantity: number; unitPriceZar: number; modsZar: number;
+    /** AT-202: per-unit extra-shot surcharge (0047). > 0 → decideRedeem refuses. */
+    surchargeZar: number;
     discountZar: number; compReason: string | null;
   };
   order: { id: string; state: string; totalZar: number; paymentMode: string | null };
@@ -89,7 +91,7 @@ async function lockLine(tx: Tx, orderItemId: string): Promise<LockedLine | Fail>
   const [line] = await tx
     .select({
       id: orderItems.id, orderId: orderItems.orderId, quantity: orderItems.quantity,
-      unitPriceZar: orderItems.unitPriceZar, modsZar: orderItems.modsZar,
+      unitPriceZar: orderItems.unitPriceZar, modsZar: orderItems.modsZar, surchargeZar: orderItems.surchargeZar,
       discountZar: orderItems.discountZar, compReason: orderItems.compReason,
     })
     .from(orderItems)
@@ -171,7 +173,9 @@ export async function redeemVoucher(
     const decision = decideRedeem({
       session: session ? { mode: session.mode, voucherKindsActive: session.voucherKindsActive } : null,
       kind: k.data,
-      line: { ...line, surchargeZar: LINE_SURCHARGE_CHARGED_ZAR },
+      // AT-202: the line's own surcharge; a surcharge line is refused
+      // (VOUCHER_NOT_ON_EXTRA_SHOTS) and the refusal audited below.
+      line,
       live: { count: live.length, discountZar: live.reduce((sum, r) => sum + r.discountZar, 0) },
     });
     if (decision.status === "refused" || !session) {

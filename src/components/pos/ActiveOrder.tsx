@@ -13,6 +13,8 @@ import { CheckCircle, Loader2, AlertCircle, ChevronRight } from "lucide-react";
 import { transitionOrder, cancelOrder, declineFreeCoffee } from "@/server/actions/orders";
 import FreeCupRow from "@/components/pos/FreeCupRow";
 import { formatZar, formatDate } from "@/lib/format";
+import { computeLineTotalZar } from "@/server/orders/pricing";
+import { shotsLabel } from "@/server/orders/shot-surcharge";
 import type { Order, OrderState } from "@/lib/types";
 
 export type Props = { order: Order };
@@ -144,6 +146,9 @@ export default function ActiveOrder({ order }: Props) {
                   )}
                   {item.menuItemName || `Item #${item.id.slice(-4)}`}
                 </p>
+                {(item.shots ?? 1) > 1 && (
+                  <p className="favo-small text-cool-steel">{shotsLabel(item.shots ?? 1)}</p>
+                )}
                 {item.modifications.length > 0 && (
                   <p className="favo-small text-cool-steel">
                     {item.modifications.map((m) => m.name).join(", ")}
@@ -158,11 +163,8 @@ export default function ActiveOrder({ order }: Props) {
                 )}
               </div>
               <span className="favo-small text-coffee-bean shrink-0 ml-[var(--spacing-m)]">
-                {formatZar(
-                  (item.unitPriceZar +
-                    item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) *
-                    item.quantity
-                )}
+                {/* AT-202: the line price includes the per-unit extra-shot surcharge (§7.0.2). */}
+                {formatZar(computeLineTotalZar(item))}
               </span>
             </li>
           ))}

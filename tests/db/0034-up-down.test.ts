@@ -41,6 +41,9 @@ const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
 // AT-203: 0046 (the blessing fund; an FK and a UNIQUE on payments) is now the
 // newest migration, so it steps down before 0045.
 const DOWN_0046 = "down/0046_at203_blessing_fund.down.sql";
+// AT-202: 0047 adds order_items.surcharge_zar (and seeds three shot settings)
+// on top of 0046, so it steps down before 0046.
+const DOWN_0047 = "down/0047_at202_order_item_surcharge.down.sql";
 
 /** Tables walk_ins points at; 0034 must leave them exactly as 0033 did. */
 const REFERENCED = ["orders", "menu_items", "staff"] as const;
@@ -118,6 +121,7 @@ maybe("0034 walk_ins: up → down → up, the CHECK, and REQ-116 (AT-209)", () =
         // orders reads as 0033 left it. 0044 (orders.client_uuid) goes first,
         // newest first; 0043 touches payments only, so it stays. AT-209: 0045
         // (the newest; a view and an FK over orders) steps down before 0044.
+        await tx.unsafe(migrationSql(DOWN_0047)); // AT-202: newer still, before 0046
         await tx.unsafe(migrationSql(DOWN_0046)); // AT-203: newest of all, first
         await tx.unsafe(migrationSql(DOWN_0045));
         await tx.unsafe(migrationSql(DOWN_0044));

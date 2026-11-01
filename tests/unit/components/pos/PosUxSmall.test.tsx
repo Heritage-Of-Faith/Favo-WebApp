@@ -34,6 +34,12 @@ vi.mock("@/server/actions/containers", () => ({
   closeContainer: (...a: unknown[]) => mockClose(...a),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), message: vi.fn() } }));
+// AT-202: OpeningTimePrompt calls useRouter (router.refresh after a confirm),
+// which needs a mounted app router — a stub router stands in for it here.
+vi.mock("next/navigation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/navigation")>()),
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 import WasteDialog from "@/components/pos/WasteDialog";
 import OpeningTimePrompt from "@/components/pos/OpeningTimePrompt";

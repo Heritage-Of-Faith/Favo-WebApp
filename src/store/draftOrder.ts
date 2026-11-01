@@ -17,18 +17,24 @@ export type DraftItem = {
   modifications: MenuCustomisation[];
   /** §6.9 Untracked vouchers on this line, 0..quantity (L41). Absent = 0. */
   voucherCount?: number;
+  /** AT-202: the shot count picked (§6.2.3c). Absent = 1. */
+  shots?: number;
+  /** AT-202: the extra-shot surcharge for ONE unit, integer cents, as the POS
+   *  priced it for display. The server re-prices; it is never sent. Absent = 0. */
+  surchargeZar?: number;
 };
 
 /**
- * Stable per-line identity key: menuItemId + sorted modifier IDs.
- * Allows the same menu item to appear multiple times with different modifier sets.
+ * Stable per-line identity key: menuItemId + sorted modifier IDs + shots.
+ * L37: one line per distinct configuration — the same menu item at a
+ * different shot count or with different modifiers is a different line.
  */
-export function lineKey(item: Pick<DraftItem, "menuItemId" | "modifications">): string {
+export function lineKey(item: Pick<DraftItem, "menuItemId" | "modifications" | "shots">): string {
   const modPart = item.modifications
     .map((m) => m.id)
     .sort()
     .join(",");
-  return `${item.menuItemId}:${modPart}`;
+  return `${item.menuItemId}:${modPart}:${item.shots ?? 1}`;
 }
 
 export type DraftOrderState = {
@@ -78,7 +84,7 @@ const INITIAL: DraftOrderState = {
 function calcTotal(items: DraftItem[]): number {
   return items.reduce((sum, item) => {
     const modsTotal = item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0);
-    return sum + (item.unitPriceZar + modsTotal) * item.quantity;
+    return sum + (item.unitPriceZar + modsTotal + (item.surchargeZar ?? 0)) * item.quantity;
   }, 0);
 }
 

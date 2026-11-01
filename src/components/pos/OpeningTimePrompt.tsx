@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -57,6 +58,7 @@ const linkClass = "favo-small text-cool-steel underline underline-offset-4 hover
 const inputClass = "w-full rounded-[4px] border border-cool-steel/30 bg-coffee-bean/5 px-3 py-2.5 text-coffee-bean text-lg tabular-nums focus:border-crimson-carrot focus:outline-none min-h-[48px]";
 
 export default function OpeningTimePrompt() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<Step | null>(null);
   const [time, setTime] = useState("");
@@ -130,6 +132,10 @@ export default function OpeningTimePrompt() {
     else toast.message("Session confirmed — already open.");
     setOpen(false);
     announceSessionChange();
+    // AT-202: the session sets today's mode, which decides the shot picker's
+    // segments. Re-render the page's server data; client state (cart,
+    // customer) is kept.
+    router.refresh();
   }
 
   /**

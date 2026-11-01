@@ -14,6 +14,8 @@ export type OfflineOrder = {
     menuItemId: string;
     quantity: number;
     modifications: string[];
+    /** AT-202: the line's shot count. Absent (queued before the picker) = 1. */
+    shots?: number;
   }>;
   paymentMode: "yoco_deferred" | "free";
   clientTotalZar: number;

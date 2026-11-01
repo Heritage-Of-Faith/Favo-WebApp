@@ -13,8 +13,11 @@
 // may not exceed. line_gross = quantity × line_unit_price, where the line unit
 // price is the listed price plus the priced modifications (order_items
 // unit_price_zar + mods_zar — the same sum the DB CHECK
-// order_items_discount_within_line reads). The extra-shot surcharge column is
-// not built yet (AT-202); when it lands it joins the unit price here.
+// order_items_discount_within_line reads). The extra-shot surcharge exists on
+// order_items.surcharge_zar since 0047 (AT-202 part 1) but is NOT part of the
+// comp: a comp leaves the surcharge owed until AT-202 part 2 widens
+// order_items_discount_within_line. (Vouchers are refused outright on a
+// surcharge line until then — voucher.ts, VOUCHER_NOT_ON_EXTRA_SHOTS.)
 
 /** L33's closed list — the comp_reason enum, "the definition of record". */
 export const COMP_REASONS = [
