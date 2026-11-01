@@ -14,6 +14,8 @@ import {
   uuid,
   date,
   primaryKey,
+  foreignKey,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -39,6 +41,8 @@ import {
   eventPaymentPosture,
   eventAudience,
   notificationTarget,
+  donorFundEntryKind,
+  fundingMethod,
 } from "./enums";
 
 const TENANT = "hofmi";
@@ -258,8 +262,10 @@ export const orders = pgTable("orders", {
   yocoPaymentId: text("yoco_payment_id"),
   isStaffDiscount: boolean("is_staff_discount").default(false).notNull(),
   // Tracks how offline orders were tendered. null = normal Yoco flow.
+  // AT-203 / L47: `donor_fund` — settled from a blessing fund (one spend entry
+  // in donor_fund_entries, never a payments row).
   paymentMode: text("payment_mode", {
-    enum: ["yoco", "yoco_deferred", "free"],
+    enum: ["yoco", "yoco_deferred", "free", "donor_fund"],
   }),
   // AT-181 / L07 · REQ-039: the SAST revenue day, from the server's clock at
   // receipt (never the client's). Midnight SAST is the boundary.
@@ -339,8 +345,8 @@ export const payments = pgTable("payments", {
   tenantId: tenantId(),
   // The payment's subject: an order OR a fund top-up, exactly one (CHECK below).
   orderId: text("order_id").references(() => orders.id),
-  // → donor_fund_entries.id once that table exists (§10.2). No FK yet.
-  fundTopupId: text("fund_topup_id"),
+  // → donor_fund_entries.id: a card `top_up` entry (AT-203, §6.10.3, §10.3).
+  fundTopupId: text("fund_topup_id").references((): AnyPgColumn => donorFundEntries.id),
   // 1, 2, 3 … per subject. A re-attempt adds a row; it never overwrites.
   attempt: integer("attempt").notNull(),
   // `client_uuid:attempt` (P3, REQ-027), written BEFORE the send.
@@ -382,8 +388,110 @@ export const payments = pgTable("payments", {
     .where(sql`status = 'successful'`),
   // AT-201 / §10.3.3: attempt is "1, 2, 3 … per order" — one row per attempt.
   unique("payments_order_attempt_unique").on(t.orderId, t.attempt),
+  // AT-203: the same "1, 2, 3 … per subject" for a fund top-up.
+  unique("payments_fund_topup_attempt_unique").on(t.fundTopupId, t.attempt),
   // AT-201 / §10.3: a payment points at exactly one subject.
   check("payments_exactly_one_subject", sql`num_nonnulls(${t.orderId}, ${t.fundTopupId}) = 1`),
+]);
+
+// ─── Blessing funds (AT-203, PRD §6.10, §10.3, L44–L47) ──────────────────────
+// A named, non-refundable balance that pays for other people's coffee. There
+// is NO balance column: the ledger is the truth and the balance is the sum of
+// donor_fund_entries (§6.10.5, §6.10.7). A card top-up counts toward it only
+// while its payment is `successful`.
+
+export const donorFunds = pgTable("donor_funds", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  // `FVO-` + four characters from ABCDEFGHJKMNPQRSTUVWXYZ23456789 (§6.10.3).
+  code: text("code").notNull().unique(),
+  // NULL = an unnamed fund (found by code; an Admin push fires at creation, R22).
+  displayName: text("display_name"),
+  donorCustomerId: text("donor_customer_id").references(() => customers.id, { onDelete: "set null" }),
+  // L45: the non-refundability acknowledgement, recorded on the row. The staff
+  // member who told the donor at intake.
+  nonRefundableAckBy: text("non_refundable_ack_by").notNull().references(() => staff.id),
+  active: boolean("active").default(true).notNull(),
+  createdByStaffId: text("created_by_staff_id").notNull().references(() => staff.id),
+  at: now(),
+}, (t) => [
+  // The target of donor_fund_members' (fund_id, fund_active) foreign key.
+  unique("donor_funds_id_active_unique").on(t.id, t.active),
+  check("donor_funds_code_shape", sql`${t.code} ~ '^FVO-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$'`),
+]);
+
+// Append-only (trigger-enforced in 0046): never UPDATE or DELETE a row (§10.6).
+// Amounts are signed integer cents: top_up > 0; spend and sweep < 0;
+// adjustment > 0 and tied to an order (a cancelled fund-paid order's draw, given back).
+export const donorFundEntries = pgTable("donor_fund_entries", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  fundId: text("fund_id").notNull().references(() => donorFunds.id),
+  kind: donorFundEntryKind("kind").notNull(),
+  amountZar: integer("amount_zar").notNull(),
+  orderId: text("order_id").references(() => orders.id),
+  // §10.3 lists it; a card top-up is linked from payments.fund_topup_id
+  // instead (the entry is written before its payment exists, and is never
+  // updated), so nothing writes this today.
+  paymentId: text("payment_id").references((): AnyPgColumn => payments.id),
+  fundingMethod: fundingMethod("funding_method"),
+  reference: text("reference"),
+  // §6.10.3 step 5: a card top-up mints its own client_uuid, the root of
+  // payments.client_reference (client_uuid:attempt), so S4 can find it.
+  clientUuid: text("client_uuid").unique(),
+  recordedByStaffId: text("recorded_by_staff_id").notNull().references(() => staff.id),
+  reason: text("reason"),
+  at: now(),
+}, (t) => [
+  index("donor_fund_entries_fund_idx").on(t.fundId),
+  check(
+    "donor_fund_entries_sign",
+    sql`(${t.kind} = 'top_up' AND ${t.amountZar} > 0) OR (${t.kind} IN ('spend', 'sweep') AND ${t.amountZar} < 0) OR (${t.kind} = 'adjustment' AND ${t.amountZar} > 0)`
+  ),
+  // An adjustment only gives back a cancelled order's draw (REQ-168): never a
+  // way for money to enter a fund without external proof (L44).
+  check("donor_fund_entries_adjustment_order", sql`${t.kind} <> 'adjustment' OR ${t.orderId} IS NOT NULL`),
+  // A top-up names how the money arrived; nothing else does.
+  check("donor_fund_entries_method", sql`(${t.kind} = 'top_up') = (${t.fundingMethod} IS NOT NULL)`),
+  // Card top-ups carry their own client_uuid; nothing else does.
+  check(
+    "donor_fund_entries_card_uuid",
+    sql`(${t.kind} = 'top_up' AND ${t.fundingMethod} = 'card') = (${t.clientUuid} IS NOT NULL)`
+  ),
+  // L44 / REQ-161: a cash or EFT gift carries its external proof.
+  check(
+    "donor_fund_entries_offline_reference",
+    sql`${t.fundingMethod} IS NULL OR ${t.fundingMethod} = 'card' OR length(btrim(coalesce(${t.reference}, ''))) > 0`
+  ),
+  check("donor_fund_entries_spend_order", sql`${t.kind} <> 'spend' OR ${t.orderId} IS NOT NULL`),
+  check("donor_fund_entries_sweep_reason", sql`${t.kind} <> 'sweep' OR length(btrim(coalesce(${t.reason}, ''))) > 0`),
+  // One draw per order, and at most one compensating entry per order.
+  uniqueIndex("donor_fund_entries_one_spend_per_order").on(t.orderId).where(sql`kind = 'spend'`),
+  uniqueIndex("donor_fund_entries_one_adjustment_per_order")
+    .on(t.orderId)
+    .where(sql`kind = 'adjustment' AND order_id IS NOT NULL`),
+]);
+
+// The linked names. Empty = barista discretion; non-empty gates every draw on
+// the list (§6.10.2). There is no fund-type column — this table is the switch.
+// Personal data: deleted with the customer (§9.4), while the ledger stays.
+export const donorFundMembers = pgTable("donor_fund_members", {
+  fundId: text("fund_id").notNull(),
+  customerId: text("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  // Mirrors donor_funds.active through the composite FK below (ON UPDATE
+  // CASCADE), so the partial unique index can read "over active funds".
+  fundActive: boolean("fund_active").default(true).notNull(),
+  addedByStaffId: text("added_by_staff_id").notNull().references(() => staff.id),
+  at: now(),
+}, (t) => [
+  primaryKey({ name: "donor_fund_members_pkey", columns: [t.fundId, t.customerId] }),
+  foreignKey({
+    name: "donor_fund_members_fund_fk",
+    columns: [t.fundId, t.fundActive],
+    foreignColumns: [donorFunds.id, donorFunds.active],
+  }).onUpdate("cascade"),
+  // L46 / REQ-172: one person, at most one active linked fund — by the DB.
+  uniqueIndex("donor_fund_members_one_active_fund_per_customer").on(t.customerId).where(sql`fund_active`),
 ]);
 
 export const refunds = pgTable("refunds", {

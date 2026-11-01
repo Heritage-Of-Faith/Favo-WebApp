@@ -38,11 +38,14 @@ export const CHECKOUT_EXISTS = {
  */
 export async function lockPaymentForTotalChange(
   tx: Pick<DB, "select">,
-  order: { id: string }
+  order: { id: string; paymentMode?: string | null }
 ): Promise<{
   hasPayments: boolean;
   refusal: typeof ORDER_MOVED_ON | typeof CHECKOUT_EXISTS | null;
 }> {
+  // AT-203 / REQ-167: a fund-settled order's total is frozen exactly as P4
+  // freezes it during a card tender — TENDER_IN_PROGRESS.
+  if (order.paymentMode === "donor_fund") return { hasPayments: false, refusal: CHECKOUT_EXISTS };
   const attempts = await tx
     .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId })
     .from(payments)

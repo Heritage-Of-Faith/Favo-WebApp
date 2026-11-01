@@ -171,6 +171,17 @@ describe("compOrderLine (L33, REQ-059)", () => {
     expect(updates).toEqual([]);
   });
 
+  it("AT-203 / REQ-167: an order settled from a blessing fund is frozen → TENDER_IN_PROGRESS, audited", async () => {
+    givenComp();
+    rows.set(orders, [{ id: "ord-1", state: "ordered", totalZar: 2000, paymentMode: "donor_fund" }]);
+    const r = await compOrderLine("line-1", "wrong_drink");
+    expect(r).toEqual({ ok: false, code: "TENDER_IN_PROGRESS", message: "This order is at the card machine — finish or cancel the payment first" });
+    expect(updates).toEqual([]);
+    expect(inserts).toEqual([]);
+    expect(lastAudit()).toMatchObject({ action: "reject", reason: "TENDER_IN_PROGRESS" });
+    expect(committed).toBe(true);
+  });
+
   it("no session today → NO_SESSION", async () => {
     givenComp({ sessions: [] });
     expect(await compOrderLine("line-1", "goodwill")).toMatchObject({ ok: false, code: "NO_SESSION" });

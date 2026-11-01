@@ -222,6 +222,13 @@ export async function compOrderLine(
         orderId: order.id, openAttempt: open.attempt, openStatus: open.status,
       });
     }
+    // AT-203 / REQ-167: an order settled from a blessing fund is frozen exactly
+    // as P4 freezes it during a card tender — a comp is TENDER_IN_PROGRESS.
+    if (order.paymentMode === "donor_fund") {
+      return rejectComp(txDb, session, input.orderItemId, "TENDER_IN_PROGRESS", COPY.TENDER_IN_PROGRESS, {
+        orderId: order.id, why: "fund_settled",
+      });
+    }
 
     // One barista's comps are counted and written one at a time, so two taps
     // cannot both be "the second comp" (L33's cap).

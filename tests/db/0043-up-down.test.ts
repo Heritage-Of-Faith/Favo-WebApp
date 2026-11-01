@@ -43,6 +43,9 @@ const DOWN_0044 = "down/0044_at201_orders_client_uuid.down.sql";
 // adds FKs from waste_log to orders and audit_log to staff. It is the newest
 // migration, so it steps down before all others (a view blocks ALTER COLUMN TYPE).
 const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
+// AT-203: 0046 (the blessing fund; an FK and a UNIQUE on payments) is now the
+// newest migration, so it steps down before 0045.
+const DOWN_0046 = "down/0046_at203_blessing_fund.down.sql";
 
 type Shape = { columns: string[]; constraints: string[]; indexes: string[] };
 
@@ -109,6 +112,7 @@ maybe("0043 payments as the tender record: up → down → up, and the refusals 
         // any 0043 down (rolled back with everything else). AT-209: 0045's
         // v_daily_revenue reads payments.status, which 0043 down retypes, and
         // 0045 is the newest, so it steps down before 0044.
+        await tx.unsafe(migrationSql(DOWN_0046)); // AT-203: newest of all, first
         await tx.unsafe(migrationSql(DOWN_0045));
         await tx.unsafe(migrationSql(DOWN_0044));
         await fn(tx);

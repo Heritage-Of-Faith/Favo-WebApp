@@ -18,6 +18,8 @@ export type TenderOrder = {
   /** Integer cents. The amount the machine is asked for. */
   totalZar: number;
   clientUuid: string;
+  /** AT-203 / §11.2: settled from a blessing fund (payment_mode='donor_fund') — never tendered. */
+  fundSettled?: boolean;
 };
 
 export type TenderPayment = {

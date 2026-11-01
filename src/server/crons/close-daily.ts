@@ -139,10 +139,19 @@ export async function closeDaily(
     // successful payment also counts — cancelling does not return money, and
     // the payments query below counts that payment, so without it a paid order
     // cancelled after start would raise a false variance.
+    // AT-203 / L47: an order settled from a blessing fund is paid without a
+    // payments row, so it is not card revenue and is left out of this
+    // card-versus-payments reconciliation (it would read as a variance).
     const [revRow] = await txDb
       .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
       .from(orders)
-      .where(and(or(ne(orders.state, "cancelled"), cancelledWithSuccessfulPayment), eq(orders.revenueDay, date)));
+      .where(
+        and(
+          or(ne(orders.state, "cancelled"), cancelledWithSuccessfulPayment),
+          eq(orders.revenueDay, date),
+          sql`${orders.paymentMode} IS DISTINCT FROM 'donor_fund'`
+        )
+      );
     const revenueZar = revRow?.total ?? 0;
 
     // Payments = sum of amountZar for successful payments on orders of the

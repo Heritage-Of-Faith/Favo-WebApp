@@ -171,3 +171,20 @@ export const notificationTarget = pgEnum("notification_target", [
   "customer",
   "none",
 ]);
+
+// AT-203 / PRD §10.3 (donor_fund_entries): every movement on a blessing fund's
+// append-only ledger. The balance is the sum of the entries (§6.10.5).
+export const donorFundEntryKind = pgEnum("donor_fund_entry_kind", [
+  "top_up",
+  "spend",
+  "sweep",
+  "adjustment",
+]);
+
+// AT-203 / PRD §6.10.3, L44: how a top-up's money arrived — a card payment at
+// the counter that Yoco confirms, or a cash/EFT gift an Admin records.
+export const fundingMethod = pgEnum("funding_method", [
+  "card",
+  "cash",
+  "eft",
+]);

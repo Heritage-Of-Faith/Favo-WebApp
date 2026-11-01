@@ -25,6 +25,8 @@ const maybe = hasRealDb() ? describe : describe.skip;
 
 const UP = "0045_at209_comps_cancel_abandon.sql";
 const DOWN = "down/0045_at209_comps_cancel_abandon.down.sql";
+// AT-203: 0046 (the blessing fund) sits on top of 0045; stepped down first.
+const DOWN_0046 = "down/0046_at203_blessing_fund.down.sql";
 const WHEN_0045 = 1793215000000; // drizzle/meta/_journal.json, idx 45
 
 async function ledgerHas0045(tx: TransactionSql): Promise<boolean | null> {
@@ -70,6 +72,9 @@ maybe("0045 comps/cancel/abandon: up → down → up, and the refusal (AT-209)",
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        // AT-203: CI migrates past 0045; 0046 is the newest, so it steps down
+        // first (rolled back with everything else).
+        await tx.unsafe(migrationSql(DOWN_0046));
         await fn(tx);
         throw new Rollback();
       });
