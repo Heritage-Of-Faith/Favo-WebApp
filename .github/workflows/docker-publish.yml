@@ -57,6 +57,7 @@ jobs:
             NEXT_PUBLIC_SUPABASE_URL=${{ github.event_name == 'push' && vars.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.invalid' }}
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ github.event_name == 'push' && vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
             NEXT_PUBLIC_VAPID_PUBLIC_KEY=${{ vars.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
+            IMAGE_SHA=${{ github.sha }}
           tags: |
             ghcr.io/heritage-of-faith/favo-webapp:latest
             ghcr.io/heritage-of-faith/favo-webapp:${{ github.sha }}
@@ -65,12 +66,18 @@ jobs:
       # attached, so catch-up fails loudly in the log — the assertion is only
       # that instrumentation.ts runs in the standalone server and registers the
       # jobs. TZ is reported, not gated: the scheduler applies UTC+2 itself.
+      # The entrypoint runs the migrator first and refuses to start without
+      # DATABASE_URL_SESSION (AT-170), and there is no database here, so the
+      # migrator is skipped with the documented one-shot SKIP_MIGRATIONS=<image
+      # SHA> (the image gets IMAGE_SHA from the build arg above).
       - name: Smoke-test the scheduler boots in the image
         if: github.event_name == 'pull_request'
         run: |
           docker run -d --name favo-smoke \
             -e SCHEDULER_ENABLED=true -e AUTH_SECRET=smoke \
             -e DATABASE_URL=postgresql://none:none@127.0.0.1:1/none \
+            -e DATABASE_URL_SESSION=postgresql://none:none@127.0.0.1:1/none \
+            -e SKIP_MIGRATIONS=${{ github.sha }} \
             ghcr.io/heritage-of-faith/favo-webapp:${{ github.sha }}
           for i in $(seq 1 30); do
             docker logs favo-smoke 2>&1 | grep -q '\[scheduler\] started' && break

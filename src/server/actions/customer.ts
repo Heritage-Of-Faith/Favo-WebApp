@@ -34,6 +34,9 @@ type CustomerOrderItemRow = {
   quantity: number;
   unitPriceZar: number;
   modifications: unknown;
+  /** AT-202: shot count and per-unit extra-shot surcharge, so a line priced from this adds up to the total. */
+  shots: number;
+  surchargeZar: number;
 };
 
 // ─── Session guard ────────────────────────────────────────────────────────────
@@ -114,6 +117,8 @@ export async function listCustomerOrders(limit = 10): Promise<ActionResult<Custo
         quantity: orderItems.quantity,
         unitPriceZar: orderItems.unitPriceZar,
         modifications: orderItems.modifications,
+        shots: orderItems.shots,
+        surchargeZar: orderItems.surchargeZar,
       })
       .from(orderItems)
       .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
@@ -146,6 +151,8 @@ export async function listCustomerOrders(limit = 10): Promise<ActionResult<Custo
       quantity: i.quantity,
       unitPriceZar: i.unitPriceZar,
       modifications: (i.modifications as { id: string; name: string; priceDeltaZar: number }[]) ?? [],
+      shots: i.shots,
+      surchargeZar: i.surchargeZar,
     })),
   }));
 

@@ -83,6 +83,20 @@ describe("LoginForm", () => {
     expect(getDigitButton("1")).toBeDisabled();
   });
 
+  // QA R4-1: the PRD's PIN is 4–6 digits (§10 loginWithPin, glossary), so a
+  // 5th and 6th digit must be typeable and submitted only by the GO button.
+  it("accepts a 6-digit PIN and submits it only on GO (no auto-submit at 4)", async () => {
+    mockLoginWithPin.mockResolvedValue({ ok: true, data: { staffId: "s1", name: "Alice", role: "barista" } });
+    render(<LoginForm />);
+    pressDigits("1","2","3","4");
+    expect(getDigitButton("5")).not.toBeDisabled();
+    expect(mockLoginWithPin).not.toHaveBeenCalled();
+    pressDigits("5","6");
+    expect(screen.getByRole("status")).toHaveAccessibleName("6 digits entered");
+    fireEvent.click(getSubmitButton());
+    await waitFor(() => expect(mockLoginWithPin).toHaveBeenCalledWith("123456"));
+  });
+
   it("delete button removes the last entered digit", () => {
     render(<LoginForm />);
     pressDigits("1","2","3","4");

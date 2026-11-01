@@ -166,6 +166,36 @@ describe("closeDaily — reconciliation", () => {
     const auditCall = vi.mocked(writeAudit).mock.calls[0][0];
     expect(auditCall.action).toBe("daily_close");
   });
+
+  // AT-209 / L02: a paid order cancelled after start keeps its money. Revenue
+  // adds the cancelled-with-successful-payment case to the non-cancelled rule
+  // (#260), so it covers the same orders as the payments query and that order
+  // raises no variance alert.
+  it("revenue also counts a cancelled order holding a successful payment; no false alert", async () => {
+    const { db } = await import("@db/index");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const { CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL } = await import("@/server/reports/revenue-scope");
+    vi.mocked(db.transaction).mockImplementation(((fn: (tx: unknown) => unknown) => fn(db)) as never);
+    vi.mocked(db.execute).mockResolvedValueOnce([] as unknown as Awaited<ReturnType<typeof db.execute>>); // lock
+    vi.mocked(db.select).mockReturnValueOnce(selectResolving([])); // no close record yet
+    let whereArg: unknown;
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn((w: unknown) => { whereArg = w; return Promise.resolve([{ total: 3000 }]); }),
+      }),
+    } as unknown as ReturnType<typeof db.select>);
+    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "3000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
+
+    const { closeDaily } = await import("@/server/crons/close-daily");
+    const result = await closeDaily(DAY);
+
+    const rendered = new PgDialect().sqlToQuery(whereArg as import("drizzle-orm").SQL).sql;
+    expect(rendered).toContain(`"orders"."state" <> $`);
+    expect(rendered).toContain(` or ${CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL}`);
+    expect(rendered).toContain(`"orders"."revenue_day" = $`);
+    expect(result).toMatchObject({ alreadyClosed: false, band: "ok" });
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
 });
 
 // ─── closeDaily — AT-193: idempotent, completed days only, catch-up recorded ─

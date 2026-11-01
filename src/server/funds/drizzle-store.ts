@@ -53,11 +53,20 @@ function makeTx(tx: DB): FundTx {
   return {
     async lockOrder(orderId) {
       const [o] = await tx
-        .select({ id: orders.id, state: orders.state, totalZar: orders.totalZar, paymentMode: orders.paymentMode, customerId: orders.customerId })
+        .select({
+          id: orders.id,
+          state: orders.state,
+          totalZar: orders.totalZar,
+          paymentMode: orders.paymentMode,
+          customerId: orders.customerId,
+          writtenOffAt: orders.writtenOffAt,
+        })
         .from(orders)
         .where(eq(orders.id, orderId))
         .for("update");
-      return o ?? null;
+      if (!o) return null;
+      const { writtenOffAt, ...order } = o;
+      return { ...order, writtenOff: writtenOffAt !== null };
     },
     async orderAttempts(orderId) {
       return tx

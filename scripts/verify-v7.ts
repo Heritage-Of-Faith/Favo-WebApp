@@ -24,6 +24,7 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { unmarkedRiskyMigrations } from "../src/server/deploy/migration-approval";
 
 type Severity = "FAIL" | "WARN";
 type Result = { name: string; ok: boolean; severity: Severity; detail: string };
@@ -183,6 +184,25 @@ mustBePresent("the offline outbox itself survives", "outboxLog\\|outbox_log", "d
 mustBePresent("deductForOrder is still modification-aware (0027)", "substitutesInventoryItemId", "src/server/orders/deduction.ts");
 mustBePresent("opening_sessions keeps UNIQUE(session_date, opens_at)", "session_date.*opens_at\\|sessionDate.*opensAt", "db/schema.ts drizzle/0029_at134_opening_sessions.sql");
 
+// Owner decision (Nikao, 21 Oct 2026, AT-170): risky migrations need an
+// explicit opt-in at deploy, so each must carry the approval marker. Same
+// check as the blocking CI step (scripts/check-migration-approval.ts).
+{
+  const journal: { idx: number; tag: string }[] = JSON.parse(
+    readFileSync("drizzle/meta/_journal.json", "utf8"),
+  ).entries;
+  const offenders = unmarkedRiskyMigrations(
+    journal.map((e) => ({ idx: e.idx, tag: e.tag, sql: readFileSync(`drizzle/${e.tag}.sql`, "utf8") })),
+  );
+  record(
+    "risky migrations carry -- favo:requires-approval",
+    offenders.length === 0,
+    offenders.length === 0
+      ? "no unmarked risky migrations"
+      : offenders.map((o) => `drizzle/${o.tag}.sql: ${o.reasons.join(", ")}`).join("\n      "),
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. MONEY SHAPE — REQ-101, REQ-106, REQ-109
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,6 +251,16 @@ mustBePresent("REQ-106: an order_cogs column/field exists", "order_cogs\\|orderC
     silentDrop === "" ? "no IS NOT NULL filter on cost" : silentDrop,
   );
 }
+
+// REQ-104 / REQ-136 (DEC-16, T09): the surcharge is extra_shot_zar × MAX(0, shots − 2).
+// T09 renames config.double_shot_surcharge_zar → extra_shot_zar because "the old
+// name is what would keep the old rule alive in the code". This gate checks only
+// that the old name is gone; the arithmetic is asserted by the shot-pricing
+// fixture in tests/unit/server/shot-surcharge.test.ts, never by a grep.
+mustBeAbsent(
+  "REQ-136: the superseded double-shot surcharge name is gone (DEC-16)",
+  "double_shot_surcharge\\|doubleShotSurcharge"
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. THE THREE RENDER STATES — REQ-110, REQ-129, REQ-131
@@ -290,8 +320,8 @@ mustBePresent(
 // ─────────────────────────────────────────────────────────────────────────────
 fileMustContain("staff sessions have an explicit maxAge", "auth.ts", "maxAge");
 mustBePresent(
-  "loginWithPin is rate limited",
-  "checkRateLimit",
+  "loginWithPin throttles failed PINs (till: delay only, admin: cooldown; PRD L36 / §9.5.3)",
+  "cooldownSecsLeft",
   "src/server/actions/auth.ts"
 );
 {

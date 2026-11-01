@@ -10,6 +10,7 @@ import { Wifi, WifiOff, Loader2, RefreshCw, Coffee, LogOut } from "lucide-react"
 import { useOrderStream } from "@/hooks/useOrderStream";
 import { formatDate } from "@/lib/format";
 import { signOut } from "@/server/actions/auth";
+import { clearDraftOnSignOut } from "@/store/draftOrder";
 import type { OrderState } from "@/lib/types";
 
 const STATE_LABEL: Record<OrderState, string> = {
@@ -43,6 +44,7 @@ export default function QueueBoard() {
 
   const handleSignOut = useCallback(async () => {
     setSigningOut(true);
+    clearDraftOnSignOut();
     await signOut();
     router.push("/pos");
   }, [router]);
@@ -92,7 +94,7 @@ export default function QueueBoard() {
       {activeOrders.length > 0 && (
         <ul className="flex-1 overflow-y-auto space-y-[var(--spacing-s)]">
           {activeOrders
-            .sort((a, b) => a.lastUpdatedAt.localeCompare(b.lastUpdatedAt))
+            .sort((a, b) => a.lastUpdatedAt.localeCompare(b.lastUpdatedAt) || a.orderId.localeCompare(b.orderId))
             .map((order) => (
               <li key={order.orderId}>
                 <button

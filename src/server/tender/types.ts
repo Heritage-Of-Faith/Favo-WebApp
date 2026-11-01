@@ -33,7 +33,7 @@ export type TenderPayment = {
   webposDeviceId: string;
   amountZar: number;
   chargedAmountZar: number | null;
-  tipZar: number;
+  // No tip (DEC-17): a stray tip is a T10 variance at reconciliation, never stored.
   status: PaymentStatus;
   sentAt: Date | null;
   lastCheckedAt: Date | null;
@@ -55,7 +55,6 @@ export type PaymentPatch = Partial<{
   sentAt: Date | null;
   lastCheckedAt: Date;
   chargedAmountZar: number;
-  tipZar: number;
 }>;
 
 export type TenderAudit = {
@@ -100,6 +99,18 @@ export interface TenderStore {
 export interface TenderNotifier {
   paymentUnresolved(info: { orderId: string; attempt: number; amountZar: number; cause: string }): Promise<void>;
   duplicateCharge(info: { orderId: string; yocoPaymentIds: string[]; amountZar: number }): Promise<void>;
+  /**
+   * AT-207: a successful payment attached to an order the close wrote off.
+   * Optional: only the order chain's notifier implements it (a fund top-up is
+   * never written off). Amounts are integer cents.
+   */
+  lateSuccessOnWrittenOff?(info: {
+    orderId: string;
+    paymentId: string;
+    attempt: number;
+    chargedAmountZar: number;
+    orderTotalZar: number;
+  }): Promise<void>;
 }
 
 export type TenderActor =

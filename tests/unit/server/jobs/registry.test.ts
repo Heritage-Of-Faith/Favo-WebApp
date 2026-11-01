@@ -12,7 +12,9 @@ vi.mock("@/server/crons/collected-sweep", () => ({ sweepCollected: vi.fn(async (
 vi.mock("@/server/jobs/close-watch", () => ({ checkMissingCloses: vi.fn(async () => ({})) }));
 vi.mock("@/server/crons/generate-weekly-pnl", async (orig) => ({
   ...(await orig<typeof import("@/server/crons/generate-weekly-pnl")>()),
-  generateWeeklyPnL: vi.fn(async () => ({})),
+  // CHANGED (AT-206): the run now goes through runWeeklyPnLJob, which pushes
+  // only for a newly written report; "already exists" keeps this test push-free.
+  generateWeeklyPnL: vi.fn(async () => ({ reportId: "wr", alreadyExists: true })),
   hasWeeklyReport: vi.fn(async (weekStarting: string) => weekStarting === "2026-10-12"),
 }));
 

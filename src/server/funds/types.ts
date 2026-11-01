@@ -57,6 +57,8 @@ export type FundOrder = {
   totalZar: number;
   paymentMode: string | null;
   customerId: string | null;
+  /** AT-207 / §10.3.3: written off by closeDaily() — never drawn on. */
+  writtenOff?: boolean;
 };
 
 export type NewDonorFund = {
@@ -145,7 +147,9 @@ export type FundErrorCode =
   | "FUND_UNAVAILABLE"
   | "TENDER_IN_PROGRESS"
   | "ALREADY_RESOLVED"
-  | "TERMINAL_UNREACHABLE";
+  | "TERMINAL_UNREACHABLE"
+  // AT-207: the close wrote this order off; no fund pays it.
+  | "ORDER_WRITTEN_OFF";
 
 export type FundFailure = { ok: false; code: FundErrorCode; message: string };
 

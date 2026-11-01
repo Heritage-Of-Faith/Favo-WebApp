@@ -7,14 +7,15 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { canAccessAdmin } from "@/server/auth/rbac";
-import { buildReportRows, rowsToCsv } from "@/server/reports/export-csv";
+import { buildReportRows, reportFigure, reportPct, rowsToCsv } from "@/server/reports/export-csv";
 import { buildSalesCsv } from "@/server/reports/sales-csv";
 import { buildInventoryCsv } from "@/server/reports/inventory-csv";
 import { buildMonthlyPnlCsv } from "@/server/reports/monthly-pnl-csv";
 import { renderPdfHtml, type PdfReportKind } from "@/server/reports/pdf-renderer";
 import { writeAudit } from "@/server/audit";
+import { daysInclusive, isCalendarDate } from "@/server/http/request-guards";
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_RANGE_DAYS = 366; // one (leap) year
 
 const VALID_KINDS = ["sales", "cogs", "inventory", "monthly_pnl"] as const;
 type ExportKind = typeof VALID_KINDS[number];
@@ -40,9 +41,16 @@ export async function GET(req: NextRequest) {
       { status: 400 }
     );
   }
-  if (!DATE_RE.test(from) || !DATE_RE.test(to) || to < from) {
+  if (!isCalendarDate(from) || !isCalendarDate(to) || to < from) {
     return NextResponse.json(
       { error: "Provide valid from= and to= dates in YYYY-MM-DD format (from ≤ to)." },
+      { status: 400 }
+    );
+  }
+  // SEC-5: cap the range — 0001-01-01..9999-12-31 used to reach the database.
+  if (daysInclusive(from, to) > MAX_RANGE_DAYS) {
+    return NextResponse.json(
+      { error: `The date range can be at most ${MAX_RANGE_DAYS} days.` },
       { status: 400 }
     );
   }
@@ -112,9 +120,13 @@ export async function GET(req: NextRequest) {
       rows = reportRows.map((r) => ({
         Date: r.date,
         "Revenue (ZAR)": r.revenueZar,
-        "COGS (ZAR)": r.cogsZar,
-        "Gross Margin (ZAR)": r.grossMarginZar,
-        "Gross Margin %": r.grossMarginPct,
+        // NULL = UNAVAILABLE — the word, never a blank or 0 (REQ-109).
+        "COGS (ZAR)": reportFigure(r.cogsZar, r),
+        "Gross Margin (ZAR)": reportFigure(r.grossMarginZar, r),
+        "Gross Margin %": reportPct(r),
+        "Expenses (ZAR)": r.expensesZar,
+        "Net (ZAR)": reportFigure(r.netZar, r),
+        "Cost status": r.costStatus,
       }));
       break;
     }
@@ -140,7 +152,8 @@ export async function GET(req: NextRequest) {
   return new NextResponse(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Disposition": `inline; filename="favo-${kind}-${from}-to-${to}.pdf"`,
+      // HTML, not PDF — name it .html so the saved file opens correctly.
+      "Content-Disposition": `inline; filename="favo-${kind}-${from}-to-${to}.html"`,
     },
   });
 }
@@ -153,7 +166,10 @@ function csvToRows(csv: string): Record<string, string | null>[] {
   if (lines.length < 2) return [];
   const headers = lines[0]!.split(",").map((h) => h.replace(/^"|"$/g, "").replace(/""/g, '"'));
   return lines.slice(1).map((line) => {
-    const cells = line.split(",").map((c) => c.replace(/^"|"$/g, "").replace(/""/g, '"'));
+    // Undo the SEC-8 formula guard (src/server/reports/csv.ts) — HTML is not a spreadsheet.
+    const cells = line.split(",").map((c) =>
+      c.replace(/^"|"$/g, "").replace(/""/g, '"').replace(/^'(?=[=+\-@\t\r])/, "")
+    );
     const row: Record<string, string | null> = {};
     headers.forEach((h, i) => { row[h] = cells[i] ?? null; });
     return row;

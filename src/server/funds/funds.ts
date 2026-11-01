@@ -209,6 +209,15 @@ export async function drawFromDonorFund(
 
     const order = await tx.lockOrder(orderId);
     if (!order) return reject("VALIDATION", "Order not found.", "order_not_found");
+    // AT-207 / §10.3.3: the close wrote this order off; refused under the
+    // order lock, before any entry is written.
+    if (order.writtenOff === true) {
+      return reject(
+        "ORDER_WRITTEN_OFF",
+        "This order was written off at the daily close and cannot be paid from a fund.",
+        "order_written_off"
+      );
+    }
     if (order.paymentMode === "donor_fund") {
       return reject("FUND_UNAVAILABLE", "This order is already paid from a blessing fund.", "already_fund_settled");
     }

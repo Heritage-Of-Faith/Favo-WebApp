@@ -13,16 +13,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { deactivateStaff, reactivateStaff } from "@/server/actions/staff";
+import { deactivateStaff } from "@/server/actions/staff";
 import type { Staff } from "@/lib/types";
 
 export type Props = {
   staff: Staff[];
   onResetPin: (member: Staff) => void;
+  /** Opens the PIN dialog in reactivate mode (a new PIN is required). */
+  onReactivate: (member: Staff) => void;
   onChanged: () => void;
 };
 
-export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
+export default function StaffTable({ staff, onResetPin, onReactivate, onChanged }: Props) {
   // Per-id set so concurrent row actions don't clobber each other's busy state.
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const markBusy = (id: string) =>
@@ -50,21 +52,10 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
     }
   }
 
-  async function handleReactivate(member: Staff) {
-    markBusy(member.id);
-    try {
-      const res = await reactivateStaff(member.id);
-      if (!res.ok) {
-        toast.error(res.message);
-        return;
-      }
-      toast.success(`${member.name} reactivated.`);
-      onChanged();
-    } catch {
-      toast.error("Failed to reactivate staff member. Please try again.");
-    } finally {
-      clearBusy(member.id);
-    }
+  // Switching back on always sets a new PIN (opens the PIN dialog), so a PIN given to
+  // someone else meanwhile can never end up shared.
+  function handleReactivate(member: Staff) {
+    onReactivate(member);
   }
 
   if (staff.length === 0) {
@@ -117,6 +108,7 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
                 <Button
                   variant="outline"
                   size="default"
+                  className="min-h-11"
                   onClick={() => onResetPin(member)}
                 >
                   Reset PIN
@@ -125,6 +117,7 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
                   <Button
                     variant="destructive"
                     size="default"
+                  className="min-h-11"
                     disabled={busyIds.has(member.id)}
                     onClick={() => handleDeactivate(member)}
                   >
@@ -134,6 +127,7 @@ export default function StaffTable({ staff, onResetPin, onChanged }: Props) {
                   <Button
                     variant="outline"
                     size="default"
+                  className="min-h-11"
                     disabled={busyIds.has(member.id)}
                     onClick={() => handleReactivate(member)}
                   >

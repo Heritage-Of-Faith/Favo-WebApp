@@ -76,6 +76,18 @@ export function duplicateChargeAlert(orderRef: string, info: { orderId: string; 
   };
 }
 
+/** AT-207: money arrived on an order the daily close already wrote off. */
+export function lateSuccessOnWrittenOffAlert(
+  orderRef: string,
+  info: { orderId: string; paymentId: string; attempt: number; chargedAmountZar: number; orderTotalZar: number }
+): AdminAlert {
+  return {
+    title: `Paid after write-off — order ${orderRef}`,
+    body: `${formatZar(info.chargedAmountZar)} was charged on attempt ${info.attempt} of an order the daily close wrote off. The payment is recorded; the write-off still stands.`,
+    data: { ...info },
+  };
+}
+
 function orderRef(orderId: string): string {
   return orderId.slice(0, 8);
 }
@@ -146,6 +158,10 @@ export function createAdminTenderNotifier(now: () => Date = () => new Date()): T
     },
     async duplicateCharge(info) {
       const a = duplicateChargeAlert(orderRef(info.orderId), info);
+      await alertAdmins(a.title, a.body, a.data);
+    },
+    async lateSuccessOnWrittenOff(info) {
+      const a = lateSuccessOnWrittenOffAlert(orderRef(info.orderId), info);
       await alertAdmins(a.title, a.body, a.data);
     },
   };

@@ -78,6 +78,30 @@ describe("getRecipe — RBAC", () => {
   });
 });
 
+// QA R2-SEC-1: the till's stock badges read listRecipes on every barista page load.
+describe("listRecipes — RBAC", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("is readable by a barista (no FORBIDDEN on the till)", async () => {
+    const { authorize } = await import("@/server/auth/guard");
+    vi.mocked(authorize).mockResolvedValue({
+      ok: true, session: { id: "staff_barista_sam", name: "Sam", role: "barista" },
+    });
+    const { listRecipes } = await import("@/server/actions/recipes");
+    const result = await listRecipes();
+    expect(result.ok).toBe(true);
+    expect(vi.mocked(authorize)).toHaveBeenCalledWith("barista", "admin");
+  });
+
+  it("recipe edits stay admin-only", async () => {
+    const { authorize } = await import("@/server/auth/guard");
+    vi.mocked(authorize).mockResolvedValue(ADMIN_SESSION);
+    const { updateRecipeIngredient } = await import("@/server/actions/recipes");
+    await updateRecipeIngredient("ing_1", { quantity: 0 });
+    expect(vi.mocked(authorize)).toHaveBeenCalledWith("admin");
+  });
+});
+
 // ─── getRecipe — not found / no recipe ───────────────────────────────────────
 
 describe("getRecipe — not found paths", () => {
@@ -160,6 +184,19 @@ describe("updateRecipeIngredient — validation", () => {
     const result = await updateRecipeIngredient("ing_1", { quantity: -1 });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("INVALID_INPUT");
+  });
+
+  // QA R2-7: 0 silently dropped the ingredient; 1 000 000 000 was saved.
+  it.each([0, Number.NaN, 1001, 1_000_000_000])("rejects quantity %s", async (quantity) => {
+    const { authorize } = await import("@/server/auth/guard");
+    vi.mocked(authorize).mockResolvedValue(ADMIN_SESSION);
+    const { updateRecipeIngredient } = await import("@/server/actions/recipes");
+    const result = await updateRecipeIngredient("ing_1", { quantity });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("INVALID_INPUT");
+      expect(result.message).toBe("Quantity must be a whole number from 1 to 1000.");
+    }
   });
 
   it("rejects tolerancePct > 100", async () => {

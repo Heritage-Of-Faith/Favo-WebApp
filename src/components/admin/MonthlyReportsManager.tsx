@@ -67,7 +67,7 @@ export default function MonthlyReportsManager({
               value={month}
               max={defaultMonth}
               onChange={(e) => setMonth(e.target.value)}
-              className="h-10 rounded-[var(--radius-btn)] border px-2 favo-small focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]"
+              className="h-11 rounded-[var(--radius-btn)] border px-2 favo-small focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent)]"
               style={{ background: "var(--color-surface)", color: "var(--color-text-strong)", borderColor: "var(--color-border-subtle)" }}
             />
           </div>
@@ -75,7 +75,7 @@ export default function MonthlyReportsManager({
             type="button"
             onClick={generate}
             disabled={generating || !month}
-            className="min-h-10 rounded-[var(--radius-btn)] px-4 favo-cta disabled:opacity-50"
+            className="min-h-11 rounded-[var(--radius-btn)] px-4 favo-cta disabled:opacity-50"
             style={{ background: "var(--color-accent)", color: "var(--color-text-inverse)" }}
           >
             {generating ? "Generating…" : "Generate draft"}

@@ -39,6 +39,8 @@ const ALLOWED = new Set([
   "src/server/funds/runtime.ts",
   "src/server/actions/funds.ts", // staff-authorised server actions
   "src/server/actions/orders.ts", // POS-authorised: createOrder's draw, cancelOrder's adjustment
+  "src/server/orders/payment-lock.ts", // reads payment_mode: a fund-settled total is frozen (REQ-167)
+  "src/server/actions/write-downs.ts", // POS-authorised compOrderLine: refuses a fund-settled order (REQ-167)
   "src/server/tender/drizzle-store.ts", // the top-up's payments rows (the tender chain)
   "src/server/tender/types.ts",
   "src/server/tender/tender.ts",

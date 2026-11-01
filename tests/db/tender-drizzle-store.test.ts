@@ -5,7 +5,7 @@
 // before the send, status/charged/sent_at persist, and the audit rows are
 // written in the same transaction.
 //
-// Runs against the CI test DB at 0036, inside one transaction that is always
+// Runs against the CI test DB at 0044, inside one transaction that is always
 // rolled back. Requires a real Postgres (see tests/db/helpers.ts) — skips when none.
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";

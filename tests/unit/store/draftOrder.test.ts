@@ -131,4 +131,54 @@ describe("draftOrder store", () => {
     expect(s.step).toBe("customer");
     expect(s.totalZar).toBe(0);
   });
+
+  it("caps a line at 99 cups (add and +)", () => {
+    store().addItem({ ...item1, quantity: 98 });
+    store().addItem({ ...item1, quantity: 5 });
+    expect(store().items[0].quantity).toBe(99);
+    store().updateQuantity(lineKey(item1), 150);
+    expect(store().items[0].quantity).toBe(99);
+    expect(store().totalZar).toBe(99 * 4500);
+  });
+
+  it("persists the draft to sessionStorage and survives a rehydrate", async () => {
+    store().setCustomer({ id: "c1", name: "Louis" });
+    store().addItem({ ...item1, quantity: 2 });
+    const raw = sessionStorage.getItem("favo-pos-draft");
+    expect(raw).toBeTruthy();
+    useDraftOrder.setState({ customer: null, items: [], totalZar: 0 });
+    sessionStorage.setItem("favo-pos-draft", raw!); // setState re-persisted the empty draft
+    await useDraftOrder.persist.rehydrate();
+    expect(store().customer?.name).toBe("Louis");
+    expect(store().items[0].quantity).toBe(2);
+    expect(store().totalZar).toBe(9000);
+  });
+});
+
+// AT-202 / L37: one line per distinct configuration — menu item + shots +
+// modifications. PRD fixture: a R20.00 cappuccino at 3 shots on a Sunday is
+// R30.00; a quantity-2 line at 3 shots is R60.00 (the surcharge is per unit).
+describe("draftOrder store — shots (AT-202)", () => {
+  beforeEach(() => useDraftOrder.getState().reset());
+  const capp = { menuItemId: "mi-capp", menuItemName: "Cappuccino", unitPriceZar: 2000, modifications: [] };
+
+  it("the same drink at different shot counts stays two lines", () => {
+    store().addItem({ ...capp, shots: 2, surchargeZar: 0 });
+    store().addItem({ ...capp, shots: 3, surchargeZar: 1000 });
+    expect(store().items).toHaveLength(2);
+    expect(store().totalZar).toBe(2000 + 3000);
+  });
+
+  it("the same drink at the same shot count is one line; the surcharge counts per unit", () => {
+    store().addItem({ ...capp, shots: 3, surchargeZar: 1000 });
+    store().addItem({ ...capp, shots: 3, surchargeZar: 1000 });
+    expect(store().items).toHaveLength(1);
+    expect(store().items[0].quantity).toBe(2);
+    expect(store().totalZar).toBe(6000);
+  });
+
+  it("lineKey distinguishes shots; an item with no shots reads as 1", () => {
+    expect(lineKey({ ...capp, shots: 3 })).not.toBe(lineKey({ ...capp, shots: 2 }));
+    expect(lineKey(capp)).toBe(lineKey({ ...capp, shots: 1 }));
+  });
 });

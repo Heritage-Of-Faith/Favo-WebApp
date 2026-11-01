@@ -13,8 +13,9 @@
 // Web Push (see docs on the deletion PR) so the alert doesn't vanish.
 // Docs: API.md · BUSINESS_RULES.md L09 T01
 
-import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { cancelledWithSuccessfulPayment } from "@/server/reports/revenue-scope";
 import type { DB } from "@/lib/db";
 import { auditLog, orders, staff } from "@db/schema";
 import { writeAudit } from "@/server/audit";
@@ -158,16 +159,20 @@ export async function closeDaily(
     // REQ-039), whatever its state. Owner decision, Nikao 21 Oct (#260): the
     // close no longer depends on an order having reached `collected`, so an
     // order Done at 23:50 and swept at 00:10 is in its own day's close.
+    // AT-209 (L02, §11.3 cancelOrder): a cancelled order that holds a
+    // successful payment also counts — cancelling does not return money, and
+    // the payments query below counts that payment, so without it a paid order
+    // cancelled after start would raise a false variance.
+    // AT-203 / L47: an order settled from a blessing fund is paid without a
+    // payments row, so it is not card revenue and is left out of this
+    // card-versus-payments reconciliation (it would read as a variance).
     const [revRow] = await txDb
       .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
       .from(orders)
       .where(
         and(
-          ne(orders.state, "cancelled"),
+          or(ne(orders.state, "cancelled"), cancelledWithSuccessfulPayment),
           eq(orders.revenueDay, date),
-          // AT-203 / L47: an order settled from a blessing fund is paid without a
-          // payments row, so it is not card revenue and is left out of this
-          // card-versus-payments reconciliation (it would read as a variance).
           sql`${orders.paymentMode} IS DISTINCT FROM 'donor_fund'`,
           // AT-207 / §6.0.5, S2a: a written-off order "contributes nothing to
           // either" side — it is its own write-off line, not negative revenue.

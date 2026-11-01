@@ -21,7 +21,7 @@ export default function WasteStandalone() {
           type="button"
           onClick={back}
           aria-label="Back to POS"
-          className="flex h-9 w-9 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
+          className="flex h-11 w-11 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
         >
           <ArrowLeft size={18} strokeWidth={2} />
         </button>

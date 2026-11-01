@@ -14,6 +14,8 @@ describe("MonthlyReportTemplate", () => {
     cogs_zar: 320000,     // R3,200.00
     expenses_zar: 180000, // R1,800.00
     net_zar: 345000,      // R3,450.00
+    // CHANGED (AT-191/AT-192): cost_state is now a required prop.
+    cost_state: "final" as const,
     approvers: [
       { name: "Mia van Zyl", role: "Finance Manager", at: "2026-06-01T09:00:00+02:00" },
       { name: "Gian du Plessis", role: "Operations Lead", at: "2026-06-01T10:15:00+02:00" },
@@ -78,6 +80,37 @@ describe("MonthlyReportTemplate", () => {
     // Net loss of R300.00 — formatZar(-30000) → "−R3,00" or similar negative
     // We just check the row label is present and component doesn't crash
     expect(screen.getByText(/Net Profit/)).toBeInTheDocument();
+  });
+
+  // AT-191/AT-192 (PRD §7.0.1b, REQ-110, REQ-129).
+  it("final costs: positive net in the profit colour (dark teal)", () => {
+    render(<MonthlyReportTemplate {...SAMPLE_PROPS} />);
+    expect(screen.getByText(/3.450,00/).style.color).toBe("var(--color-dark-teal)");
+  });
+
+  it("estimated costs: positive net in --status-warn, labelled provisional, never teal", () => {
+    render(<MonthlyReportTemplate {...SAMPLE_PROPS} cost_state="provisional" />);
+    const net = screen.getByText(/3.450,00/);
+    expect(net.style.color).toBe("var(--status-warn)");
+    expect(net.style.color).not.toBe("var(--color-dark-teal)");
+    expect(net.textContent).toContain("provisional");
+  });
+
+  it("an absent cost input: COGS, gross profit and net show the named UNAVAILABLE, never R0,00", () => {
+    render(
+      <MonthlyReportTemplate
+        {...SAMPLE_PROPS}
+        cogs_zar={null}
+        net_zar={null}
+        cost_state="unavailable"
+        cogs_absent_items={["Oat Milk"]}
+        orders_without_cost={2}
+      />
+    );
+    const cells = screen.getAllByText("UNAVAILABLE — Oat Milk, 2 orders with no recorded cost");
+    expect(cells).toHaveLength(3);
+    expect(cells.every((c) => c.style.color === "var(--status-unavailable)")).toBe(true);
+    expect(screen.queryByText(/^UNAVAILABLE$/)).toBeNull();
   });
 
   it("renders the document as an article element", () => {

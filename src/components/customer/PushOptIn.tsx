@@ -6,6 +6,8 @@
 // Retained to avoid breaking Nikao's tests — cleanup tracked separately.
 
 import { useState, useEffect } from "react";
+import { detectInstallRequired } from "@/lib/push/install-step";
+import InstallStep from "./InstallStep";
 
 interface PushOptInProps {
   customerId: string;
@@ -115,8 +117,13 @@ export default function PushOptIn({ customerId, serverHasSubscription }: PushOpt
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hiddenByFlag, setHiddenByFlag] = useState(false);
+  const [installRequired, setInstallRequired] = useState(false);
 
   useEffect(() => {
+    if (detectInstallRequired()) {
+      setInstallRequired(true);
+      return;
+    }
     if (!window.Notification || !("serviceWorker" in navigator)) {
       setPermission("unsupported");
       return;
@@ -217,6 +224,15 @@ export default function PushOptIn({ customerId, serverHasSubscription }: PushOpt
     }
   }
 
+  // REQ-048: uninstalled iPhone — install requirement only, never a subscribed state.
+  if (installRequired) {
+    return (
+      <div style={S.wrap}>
+        <p style={S.eyebrow}>Order notifications</p>
+        <InstallStep />
+      </div>
+    );
+  }
   if (permission === "unsupported") return null;
   if (permission === "default" && hiddenByFlag) return null;
 

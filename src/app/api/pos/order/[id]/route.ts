@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, orderItems, menuItems, customers, payments } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
+import { liveVoucherCountsByLine } from "@/server/orders/voucher-session";
 import { summarisePayments } from "@/server/tender/summary";
 import { NextResponse } from "next/server";
 import type { Order } from "@/lib/types";
@@ -23,7 +24,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const [row] = await db.select().from(orders).where(eq(orders.id, id));
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const [items, customerRow, paymentRow] = await Promise.all([
+  const [items, customerRow, paymentRow, vouchersByLine] = await Promise.all([
     db
       .select({
         id: orderItems.id,
@@ -33,6 +34,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         unitPriceZar: orderItems.unitPriceZar,
         discountZar: orderItems.discountZar,
         modifications: orderItems.modifications,
+        shots: orderItems.shots,
+        surchargeZar: orderItems.surchargeZar,
       })
       .from(orderItems)
       .innerJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
@@ -48,6 +51,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       .from(payments)
       .where(eq(payments.orderId, id))
       .orderBy(payments.attempt), // one row per attempt: the LATEST decides (§10.3.3)
+    liveVoucherCountsByLine(db, id),
   ]);
   const payState = summarisePayments(paymentRow);
 
@@ -71,8 +75,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       quantity: i.quantity,
       unitPriceZar: i.unitPriceZar,
       discountZar: i.discountZar,
+      voucherCount: vouchersByLine.get(i.id) ?? 0,
       modifications:
         (i.modifications as { id: string; name: string; priceDeltaZar: number }[]) ?? [],
+      shots: i.shots,
+      surchargeZar: i.surchargeZar,
     })),
   };
 

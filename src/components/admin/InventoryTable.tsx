@@ -77,7 +77,7 @@ export default function InventoryTable({ items, onOpenLots, onThresholdSaved }: 
                 <button
                   type="button"
                   onClick={() => onOpenLots(item)}
-                  className="min-h-10 rounded-[var(--radius-btn)] border px-3 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
+                  className="min-h-11 rounded-[var(--radius-btn)] border px-3 favo-small transition-colors hover:bg-[color:var(--color-porcelain-soft)]"
                   style={{ borderColor: "var(--color-border-subtle)", color: "var(--color-text-strong)" }}
                 >
                   View lots

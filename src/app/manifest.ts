@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { SITE_DESCRIPTION } from "@/lib/site";
 
 // PWA metadata requires literal hex — maps to var(--color-coffee-bean)
 const COFFEE_BEAN = "#1C0501";
@@ -7,12 +8,14 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "FAVO Café",
     short_name: "FAVO",
-    description: "Order coffee. Earn rewards. Every visit counts.",
-    start_url: "/customer",
+    // SEC-7: same true description as the site metadata.
+    description: SITE_DESCRIPTION,
+    start_url: "/customer", // one manifest serves both apps; staff add the icon from /staff/login
     display: "standalone",
     background_color: COFFEE_BEAN,
     theme_color: COFFEE_BEAN,
-    orientation: "portrait",
+    orientation: "any", // phones and iPads, either way up
+
     icons: [
       // SVG first (crisp where supported), then PNG fallbacks for installability.
       {

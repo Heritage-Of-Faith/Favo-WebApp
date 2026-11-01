@@ -8,6 +8,13 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("next/image", () => ({ default: (p: Record<string, unknown>) => <span data-src={String(p.src ?? "")} /> }));
 vi.mock("next/script", () => ({ default: () => null }));
 vi.mock("@/server/actions/orders", () => ({ createOrder: vi.fn(), transitionOrder: vi.fn(), cancelOrder: vi.fn() }));
+// AT-201 part 2b: the Take-payment dialog runs the card tender through server
+// actions. They never settle here, so the dialog stays on its first step.
+vi.mock("@/server/actions/tender", () => ({
+  beginTender: vi.fn(() => new Promise(() => {})),
+  sendToTerminal: vi.fn(() => new Promise(() => {})),
+  pollTenderResult: vi.fn(() => new Promise(() => {})),
+}));
 vi.mock("@/server/actions/auth", () => ({ signOut: vi.fn() }));
 vi.mock("@/server/actions/favo", () => ({ getFavo: vi.fn().mockResolvedValue({ ok: true, data: { favo: null } }), setFavo: vi.fn(), clearFavo: vi.fn() }));
 vi.mock("@/server/actions/customers", () => ({ searchCustomer: vi.fn() }));
@@ -72,7 +79,7 @@ describe("queue payment gate (L01)", () => {
     await expandCard();
     expect(await screen.findByRole("button", { name: /take payment/i })).toBeDefined();
     expect(screen.queryByRole("button", { name: /start making/i })).toBeNull();
-    expect(screen.getByText(/unpaid/i)).toBeDefined();
+    expect(screen.getByText(/^pending$/i)).toBeDefined();
   });
 
   it("paid order shows Start Making and no Take payment", async () => {
@@ -81,6 +88,17 @@ describe("queue payment gate (L01)", () => {
     expect(await screen.findByRole("button", { name: /start making/i })).toBeDefined();
     expect(screen.queryByRole("button", { name: /take payment/i })).toBeNull();
     expect(screen.getByText(/paid/i)).toBeDefined();
+  });
+
+  it("free-cup Decline hides on the queue card while its Take-payment dialog is open", async () => {
+    const o = fullOrder("pending");
+    const withCup = { order: { ...o.order, isStaffDiscount: true, items: o.order.items.map(i => ({ ...i, discountZar: 0 })) } };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => withCup }) as unknown as typeof fetch;
+    await expandCard();
+    expect(await screen.findByRole("button", { name: "Decline" })).toBeDefined();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /take payment/i })); });
+    expect(screen.getByRole("dialog", { name: /take payment/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
   });
 
   it("REQ-008 / S4: a SENT attempt that ended unresolved does not hold the drink back — Start Making shows", async () => {

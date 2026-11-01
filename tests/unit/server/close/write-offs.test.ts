@@ -1,7 +1,7 @@
 // AT-207 — the close's write-off sweep and the one definition of "unpaid".
 // Spec: PRD v7.0 §6.0.5 T4, S3a, S4 step 5, L47; REQ-007, REQ-035, REQ-166.
 //
-// The SQL is exercised against real Postgres in tests/db/0047-up-down.test.ts.
+// The SQL is exercised against real Postgres in tests/db/0048-up-down.test.ts.
 // Here a fake client stands in for it: it answers the facts read with rows
 // and applies the UPDATE's own guard (written_off_at IS NULL), so the sweep's
 // decisions — what is written off, under which reason, with which actor, and

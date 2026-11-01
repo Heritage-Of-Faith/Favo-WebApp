@@ -50,6 +50,12 @@ const COPY = {
   PAYMENT_UNKNOWN: "We'll confirm this one shortly",
 } as const;
 
+/** AT-207: beginTender's and sendToTerminal's refusal of a written-off order. */
+const WRITTEN_OFF_NO_CHARGE = "This order was written off at the daily close and cannot be charged.";
+
+/** AT-207: the audit action of a successful payment attached to a written-off order. */
+export const LATE_SUCCESS_ON_WRITTEN_OFF_ACTION = "payment.late_success_on_written_off";
+
 // ─── small helpers ────────────────────────────────────────────────────────────
 
 type Post = Array<() => Promise<void>>;
@@ -156,7 +162,7 @@ export async function beginTender(
     if (order.fundSettled === true) return reject("ALREADY_RESOLVED", COPY.ALREADY_RESOLVED, "settled_from_fund");
     // AT-207 / §10.3.3: settled_at and written_off_at are mutually exclusive.
     if (order.writtenOff === true) {
-      return reject("ORDER_WRITTEN_OFF", "This order was written off at the daily close and cannot be charged.", "order_written_off");
+      return reject("ORDER_WRITTEN_OFF", WRITTEN_OFF_NO_CHARGE, "order_written_off");
     }
     if (!Number.isInteger(order.totalZar) || order.totalZar < 0) {
       return reject("VALIDATION", "The order total is not whole cents.", "total_not_integer_cents");
@@ -239,6 +245,20 @@ export async function sendToTerminal(
       return fail("VALIDATION", "No such tender attempt.");
     }
     const p = locked.payment;
+    // AT-207 / §10.3.3: an attempt begun before the close wrote the order off
+    // is never sent afterwards. Refused under the order lock, before the claim;
+    // the attempt stays unsent.
+    if (locked.order.writtenOff === true) {
+      await tx.audit({
+        entityKind: "payment",
+        entityId: p.id,
+        action: "payment.send_rejected",
+        ...actorFields(actor),
+        reason: "order_written_off",
+        after: { code: "ORDER_WRITTEN_OFF", attempt },
+      });
+      return fail("ORDER_WRITTEN_OFF", WRITTEN_OFF_NO_CHARGE);
+    }
     if (p.status !== "pending" || p.sentAt !== null || p.yocoPaymentId !== null) {
       await tx.audit({
         entityKind: "payment",
@@ -436,7 +456,6 @@ async function attachSuccessful(
   const patch = {
     ...(p.yocoPaymentId === null ? { yocoPaymentId: pay.yocoPaymentId } : {}),
     chargedAmountZar: charged,
-    tipZar: pay.tipZar,
   };
   const others = (await tx.listPayments(order.id)).filter((x) => x.id !== p.id && x.status === "successful");
   if (others.length > 0) {
@@ -485,17 +504,27 @@ async function attachSuccessful(
       after: { orderTotalZar: order.totalZar, amountZar: p.amountZar, chargedAmountZar: charged },
     });
   }
-  if (pay.tipZar !== 0) {
-    flags.push("tip_variance");
+  // AT-207: money arrived on an order the close already wrote off. The payment
+  // is recorded exactly as above (setPaymentStatus only) and written_off_at is
+  // left alone — reversing a write-off is REQ-034, AT-207 part 2. This only
+  // records the fact and tells the Admin; the push runs after the commit and a
+  // failed push never undoes the recorded payment (runPost).
+  if (order.writtenOff === true) {
+    const info = { orderId: order.id, paymentId: p.id, attempt: p.attempt, chargedAmountZar: charged, orderTotalZar: order.totalZar };
     await tx.audit({
-      entityKind: "payment",
-      entityId: p.id,
-      action: "payment.flagged",
+      entityKind: "order",
+      entityId: order.id,
+      action: LATE_SUCCESS_ON_WRITTEN_OFF_ACTION,
       ...actorFields(actor),
-      reason: "tip_variance",
-      after: { tipZar: pay.tipZar },
+      reason: "late_success_on_written_off",
+      after: { ...info, via },
+    });
+    post.push(async () => {
+      await deps.notify.lateSuccessOnWrittenOff?.(info);
     });
   }
+  // No tip handling (DEC-17): FAVO stores no tip; a stray one surfaces at T10
+  // reconciliation (REQ-120), not here.
   return { status: "successful", flags };
 }
 
@@ -568,7 +597,7 @@ export async function recordTenderResult(
 
     if (result.kind === "read" && result.payment.status === "successful") {
       const charged = result.payment.chargedAmountZar;
-      if (charged === null || !Number.isInteger(charged) || !Number.isInteger(result.payment.tipZar)) {
+      if (charged === null || !Number.isInteger(charged)) {
         return reject("payment", p.id, "charged_amount_not_integer_cents");
       }
       const r = await attachSuccessful(tx, actor, order, p, [result.payment], "poll", deps, post);
@@ -700,7 +729,7 @@ export async function resolveTenderByLookup(
         (x) => x.clientReference === p.clientReference && (p.yocoPaymentId === null || x.yocoPaymentId === p.yocoPaymentId)
       );
       const usable = matched.filter(
-        (x) => x.status !== "successful" || (x.chargedAmountZar !== null && Number.isInteger(x.chargedAmountZar) && Number.isInteger(x.tipZar))
+        (x) => x.status !== "successful" || (x.chargedAmountZar !== null && Number.isInteger(x.chargedAmountZar))
       );
       const successes = usable.filter((x) => x.status === "successful");
 

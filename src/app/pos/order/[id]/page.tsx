@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { orders, orderItems, menuItems, payments } from "@db/schema";
 import { getSession } from "@/lib/auth/session";
 import ActiveOrder from "@/components/pos/ActiveOrder";
+import { liveVoucherCountsByLine } from "@/server/orders/voucher-session";
 import { summarisePayments } from "@/server/tender/summary";
 import type { Order } from "@/lib/types";
 
@@ -23,7 +24,7 @@ export default async function ActiveOrderPage({ params }: Props) {
   const [row] = await db.select().from(orders).where(eq(orders.id, id));
   if (!row) notFound();
 
-  const [itemRows, paymentRow] = await Promise.all([
+  const [itemRows, paymentRow, vouchersByLine] = await Promise.all([
     db
       .select({
         id: orderItems.id,
@@ -33,6 +34,8 @@ export default async function ActiveOrderPage({ params }: Props) {
         unitPriceZar: orderItems.unitPriceZar,
         discountZar: orderItems.discountZar,
         modifications: orderItems.modifications,
+        shots: orderItems.shots,
+        surchargeZar: orderItems.surchargeZar,
       })
       .from(orderItems)
       .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
@@ -42,6 +45,7 @@ export default async function ActiveOrderPage({ params }: Props) {
       .from(payments)
       .where(eq(payments.orderId, id))
       .orderBy(payments.attempt), // one row per attempt: the LATEST decides (§10.3.3)
+    liveVoucherCountsByLine(db, id),
   ]);
   const payState = summarisePayments(paymentRow);
 
@@ -65,8 +69,11 @@ export default async function ActiveOrderPage({ params }: Props) {
       quantity: i.quantity,
       unitPriceZar: i.unitPriceZar,
       discountZar: i.discountZar,
+      voucherCount: vouchersByLine.get(i.id) ?? 0,
       modifications:
         (i.modifications as { id: string; name: string; priceDeltaZar: number }[]) ?? [],
+      shots: i.shots,
+      surchargeZar: i.surchargeZar,
     })),
   };
 
