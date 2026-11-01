@@ -84,18 +84,17 @@ async function checkLoki(): Promise<CheckResult> {
   }
 }
 
-// AT-170: without DATABASE_URL_SESSION the SSE brokers serve heartbeats only and
-// the POS queue goes stale, so the instance must not report healthy. The
-// entrypoint already refuses to start without it; this catches an instance
-// started some other way.
+// AT-170: if the SSE brokers have no connection URL they serve heartbeats only
+// and the POS queue goes stale, so the instance must not report healthy. Since
+// AT-168 they LISTEN on the single DATABASE_URL. The entrypoint already refuses
+// to start without it; this catches an instance started some other way.
 //
-// Configuration only: it proves DATABASE_URL_SESSION is set, NOT that LISTEN
+// Configuration only: it proves DATABASE_URL is set, NOT that LISTEN
 // connected — src/server/queue/broker.ts swallows LISTEN failures, so a wrong
 // URL still reports ok here. Hence the name.
 function checkSseConfig(): CheckResult {
-  return missingDatabaseEnv(process.env).includes("DATABASE_URL_SESSION")
-    ? { ok: false, reason: "DATABASE_URL_SESSION not set" }
-    : { ok: true };
+  const missing = missingDatabaseEnv(process.env);
+  return missing.length > 0 ? { ok: false, reason: `${missing.join(", ")} not set` } : { ok: true };
 }
 
 export async function GET() {

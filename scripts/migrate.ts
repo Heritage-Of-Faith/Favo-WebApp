@@ -11,10 +11,11 @@
 // Exit 0 = schema is current. Any failure exits 1 with one "[migrate] FATAL"
 // line, and the entrypoint does not start the server.
 //
-// - Env: DATABASE_URL and DATABASE_URL_SESSION must both be set.
+// - Env: DATABASE_URL must be set, and the retired DATABASE_URL_SESSION must
+//   not be (AT-168: one direct connection, PRD §9.2).
 // - Never twice at once: a session advisory lock, held on the one connection
-//   that runs the migrations. That is why it uses DATABASE_URL_SESSION — an
-//   advisory lock is not reliable through the 6543 transaction pooler.
+//   that runs the migrations (DATABASE_URL is a direct connection, so the
+//   lock holds for the whole session).
 // - Journal drift (the 0027 incident) aborts before any SQL runs.
 // - Risky migrations need an opt-in (owner decision, Nikao, 21 Oct 2026): a
 //   pending file marked `-- favo:requires-approval` (or, from GATED_FROM_IDX on,
@@ -39,6 +40,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import {
   findJournalDrift,
   missingDatabaseEnv,
+  retiredDatabaseEnv,
   skipMigrationsDecision,
   type AppliedMigration,
   type JournalEntry,
@@ -64,7 +66,14 @@ function fatal(message: string): never {
 const missing = missingDatabaseEnv(process.env);
 if (missing.length > 0) {
   fatal(
-    `${missing.join(", ")} not set. Refusing to start: without DATABASE_URL_SESSION the live order queue (SSE) degrades to heartbeats while the app looks healthy.`,
+    `${missing.join(", ")} not set. Refusing to start.`,
+  );
+}
+
+const retired = retiredDatabaseEnv(process.env);
+if (retired.length > 0) {
+  fatal(
+    `${retired.join(", ")} is still set, but FAVO now uses one direct DATABASE_URL (AT-168). Remove it from Infisical so a stale pooler config cannot linger.`,
   );
 }
 
@@ -76,7 +85,7 @@ const journal: (JournalEntry & { idx: number })[] = JSON.parse(
   readFileSync(join(MIGRATIONS_FOLDER, "meta", "_journal.json"), "utf8"),
 ).entries;
 
-const sql = postgres(process.env.DATABASE_URL_SESSION!, {
+const sql = postgres(process.env.DATABASE_URL!, {
   max: 1, // the lock, the drift check and the migrator all share this one session
   connect_timeout: 10,
   onnotice: () => {}, // "schema already exists, skipping" etc.

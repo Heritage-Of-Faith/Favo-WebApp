@@ -2,9 +2,8 @@
 // Streams order-change events to the POS via Server-Sent Events, with a periodic
 // heartbeat. Auth: barista+. Docs: docs/API.md → GET /api/queue/stream
 //
-// LISTEN/NOTIFY requires a persistent Session pooler connection (port 5432).
-// The Transaction pooler (DATABASE_URL, port 6543) does not support LISTEN.
-// Set DATABASE_URL_SESSION to the Supabase Session pooler URL.
+// LISTEN/NOTIFY runs on DATABASE_URL, a direct connection to the co-located
+// Postgres (PRD §9.2, AT-168).
 //
 // The actual LISTEN connection is shared across every connected client (see
 // @/server/queue/broker) — this route only holds its own lightweight stream
@@ -44,9 +43,9 @@ export async function GET() {
         controller.enqueue(encoder.encode(encodeSSE(heartbeat(at))));
       }, HEARTBEAT_MS);
 
-      // Shared LISTEN → SSE bridge (see @/server/queue/broker). Without
-      // DATABASE_URL_SESSION configured, subscribers just get heartbeats and
-      // the POS falls back to polling on reconnect.
+      // Shared LISTEN → SSE bridge (see @/server/queue/broker). If the LISTEN
+      // fails, subscribers just get heartbeats and the POS falls back to
+      // polling on reconnect.
       unsubscribe = orderChangesBroker.subscribe((_channel, payload) => {
         try {
           const event = JSON.parse(payload) as QueueEvent;

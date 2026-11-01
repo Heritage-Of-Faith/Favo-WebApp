@@ -84,8 +84,6 @@ jobs:
       # safe: "Migration approval markers" above fails the job when a risky
       # migration is NOT marked, so nothing risky slips through unmarked.
       - name: Migrate test DB (release migrator, concurrent + re-run)
-        env:
-          DATABASE_URL_SESSION: postgresql://favo:favo@localhost:5432/favo_test
         run: |
           FAVO_APPROVE_MIGRATION="$(grep -l 'favo:requires-approval' drizzle/*.sql | xargs -r -n1 basename | sed 's/\.sql$//' | paste -sd, -)"
           export FAVO_APPROVE_MIGRATION
