@@ -447,6 +447,8 @@ export const wasteLog = pgTable("waste_log", {
   reason: text("reason"),
   byStaffId: text("by_staff_id").notNull().references(() => staff.id),
   at: now(),
+  // AT-209 / PRD §10.3, T6 step 2b: the order an `abandoned` row records.
+  orderId: text("order_id").references(() => orders.id),
 });
 
 export const purchases = pgTable(
@@ -654,6 +656,9 @@ export const auditLog = pgTable("audit_log", {
   before: jsonb("before"),
   after: jsonb("after"),
   reason: text("reason"),
+  // AT-209 / PRD §10.3.2, §6.0.7, REQ-040, REQ-063: the overriding admin, where
+  // an admin PIN authorised a barista's action. NULL otherwise.
+  onBehalfOfStaffId: text("on_behalf_of_staff_id").references(() => staff.id),
 }, (t) => [
   index("audit_log_entity_idx").on(t.entityKind, t.entityId),
   index("audit_log_actor_idx").on(t.actorId),

@@ -37,6 +37,10 @@ const WHEN_0035 = 1792752696811; // drizzle/meta/_journal.json, idx 35
 const DOWN_0042 = "down/0042_l28_notification_target.down.sql";
 // AT-201 part 2a: 0044 adds orders.client_uuid and is newer still; stepped down before 0042.
 const DOWN_0044 = "down/0044_at201_orders_client_uuid.down.sql";
+// AT-209: 0045 re-creates v_daily_revenue over orders and payments.status, and
+// adds FKs from waste_log to orders and audit_log to staff. It is the newest
+// migration, so it steps down before all others (a view blocks ALTER COLUMN TYPE).
+const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
 
 type Shape = { columns: string[]; constraints: string[]; indexes: string[] };
 
@@ -107,7 +111,9 @@ maybe("0035 order_cogs: up → down → up, and the refusals (AT-188)", () => {
       await sql.begin(async (tx) => {
         // CI now migrates past 0042, which adds a column to orders. Step it
         // back (rolled back with everything else) so orders reads as 0035 left it.
-        // 0044 (orders.client_uuid) goes first, newest first.
+        // 0044 (orders.client_uuid) goes first, newest first. AT-209: 0045
+        // (the newest; a view and an FK over orders) steps down before 0044.
+        await tx.unsafe(migrationSql(DOWN_0045));
         await tx.unsafe(migrationSql(DOWN_0044));
         await tx.unsafe(migrationSql(DOWN_0042));
         await fn(tx);

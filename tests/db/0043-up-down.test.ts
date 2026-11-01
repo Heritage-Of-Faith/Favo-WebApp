@@ -39,6 +39,10 @@ const AT = "0043_snapshot.json";
 const BEFORE = "0042_snapshot.json";
 // AT-201 part 2a: 0044 (orders.client_uuid) sits on top of this; stepped down first.
 const DOWN_0044 = "down/0044_at201_orders_client_uuid.down.sql";
+// AT-209: 0045 re-creates v_daily_revenue over orders and payments.status, and
+// adds FKs from waste_log to orders and audit_log to staff. It is the newest
+// migration, so it steps down before all others (a view blocks ALTER COLUMN TYPE).
+const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
 
 type Shape = { columns: string[]; constraints: string[]; indexes: string[] };
 
@@ -102,7 +106,10 @@ maybe("0043 payments as the tender record: up → down → up, and the refusals 
       await sql.begin(async (tx) => {
         // CI migrates past 0043: 0044 adds orders.client_uuid. It does not touch
         // payments, but migrations step down newest first, so it goes before
-        // any 0043 down (rolled back with everything else).
+        // any 0043 down (rolled back with everything else). AT-209: 0045's
+        // v_daily_revenue reads payments.status, which 0043 down retypes, and
+        // 0045 is the newest, so it steps down before 0044.
+        await tx.unsafe(migrationSql(DOWN_0045));
         await tx.unsafe(migrationSql(DOWN_0044));
         await fn(tx);
         throw new Rollback();

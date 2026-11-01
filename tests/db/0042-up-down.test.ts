@@ -31,6 +31,10 @@ const DOWN = "down/0042_l28_notification_target.down.sql";
 const WHEN_0042 = 1793200000000; // drizzle/meta/_journal.json, idx 42
 // AT-201 part 2a: 0044 adds orders.client_uuid on top of this; stepped down first.
 const DOWN_0044 = "down/0044_at201_orders_client_uuid.down.sql";
+// AT-209: 0045 re-creates v_daily_revenue over orders and payments.status, and
+// adds FKs from waste_log to orders and audit_log to staff. It is the newest
+// migration, so it steps down before all others (a view blocks ALTER COLUMN TYPE).
+const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
 
 async function ledgerHas0042(tx: TransactionSql): Promise<boolean | null> {
   const [reg] = await tx`SELECT to_regclass('drizzle.__drizzle_migrations') AS t`;
@@ -92,7 +96,9 @@ maybe("0042 orders.notification_target: up → down → up, and the refusals (L2
       await sql.begin(async (tx) => {
         // CI migrates past 0042: 0044 adds a column to orders. Step it back
         // (rolled back with everything else) so orders reads as 0042 left it.
-        // 0043 touches payments only, so it stays.
+        // 0043 touches payments only, so it stays. AT-209: 0045 (the newest;
+        // a view and an FK over orders) steps down before 0044.
+        await tx.unsafe(migrationSql(DOWN_0045));
         await tx.unsafe(migrationSql(DOWN_0044));
         await fn(tx);
         throw new Rollback();

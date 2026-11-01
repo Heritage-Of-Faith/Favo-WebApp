@@ -25,6 +25,8 @@ const maybe = hasRealDb() ? describe : describe.skip;
 const UP = "0044_at201_orders_client_uuid.sql";
 const DOWN = "down/0044_at201_orders_client_uuid.down.sql";
 const WHEN_0044 = 1793210000000; // drizzle/meta/_journal.json, idx 44
+// AT-209: 0045 sits on top of this; stepped down first (newest first).
+const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
 
 async function ledgerHas0044(tx: TransactionSql): Promise<boolean | null> {
   const [reg] = await tx`SELECT to_regclass('drizzle.__drizzle_migrations') AS t`;
@@ -77,6 +79,10 @@ maybe("0044 orders.client_uuid: up → down → up, and the refusals (AT-201, RE
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        // AT-209: CI migrates past 0044; 0045 (a view over orders and
+        // payments, an FK from waste_log to orders) is the newest, so it steps
+        // down first (rolled back with everything else).
+        await tx.unsafe(migrationSql(DOWN_0045));
         await fn(tx);
         throw new Rollback();
       });

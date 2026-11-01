@@ -11,6 +11,7 @@ import { db as defaultDb, type DB } from "@/lib/db";
 import { ministryRollup, type MinistryDay, type MinistryRollup } from "@/lib/ministry-rollup";
 import type { SessionMode } from "@/lib/session-mode";
 import { EMPTY_PERIOD_COGS, readDailyCogs, readDailyExpenses, readDailyRevenue } from "@/server/cogs/period-cogs";
+import { revenueOrderScope } from "@/server/reports/revenue-scope";
 
 // PRD L3411's Expenses empty-state wording ("reads COGS only until one is")
 // contradicts REQ-114 (UNAVAILABLE, never COGS-only); the expenses screen must not ship it.
@@ -31,12 +32,12 @@ async function readDayModes(from: string, to: string, db: DB): Promise<Map<strin
 /** Counted orders with a successful payment, per revenue day. */
 async function readSettledOrders(from: string, to: string, db: DB): Promise<Map<string, number>> {
   const rows = await db.execute<{ revenue_day: string; n: string | number }>(sql`
-    SELECT TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day, COUNT(DISTINCT o.id) AS n
-    FROM orders o
-    JOIN payments p ON p.order_id = o.id AND p.status = 'successful'
-    WHERE o.state IN ('in_progress', 'ready', 'collected')
-      AND o.revenue_day >= ${from}::date
-      AND o.revenue_day <= ${to}::date
+    SELECT TO_CHAR(orders.revenue_day, 'YYYY-MM-DD') AS revenue_day, COUNT(DISTINCT orders.id) AS n
+    FROM orders
+    JOIN payments p ON p.order_id = orders.id AND p.status = 'successful'
+    WHERE ${revenueOrderScope}
+      AND orders.revenue_day >= ${from}::date
+      AND orders.revenue_day <= ${to}::date
     GROUP BY 1
   `);
   return new Map([...rows].map((r) => [r.revenue_day, Number(r.n) || 0]));

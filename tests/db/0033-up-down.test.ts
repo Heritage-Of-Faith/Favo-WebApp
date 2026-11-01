@@ -37,6 +37,10 @@ const DOWN_0042 = "down/0042_l28_notification_target.down.sql";
 const DOWN_0043 = "down/0043_at201_tender_payments.down.sql";
 // AT-201 part 2a: 0044 (orders.client_uuid) is newer still; it steps down first.
 const DOWN_0044 = "down/0044_at201_orders_client_uuid.down.sql";
+// AT-209: 0045 re-creates v_daily_revenue over orders and payments.status, and
+// adds FKs from waste_log to orders and audit_log to staff. It is the newest
+// migration, so it steps down before all others (a view blocks ALTER COLUMN TYPE).
+const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
 
 const TOUCHED = [
   "customers",
@@ -156,6 +160,9 @@ maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () 
         // 0043 down, then 0042 down, then 0036 down → 0033.
         // AT-201 part 2a: 0044 adds orders.client_uuid and is the newest, so
         // it steps down before all of them.
+        // AT-209: 0045 rewrites v_daily_revenue over orders.state and
+        // payments.status (which 0043 down retypes); newest, so first of all.
+        await tx.unsafe(migrationSql(DOWN_0045));
         await tx.unsafe(migrationSql(DOWN_0044));
         await tx.unsafe(migrationSql(DOWN_0043));
         await tx.unsafe(migrationSql(DOWN_0042));

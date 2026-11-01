@@ -14,6 +14,7 @@ import { sql } from "drizzle-orm";
 import { db as defaultDb, type DB } from "@/lib/db";
 import { periodFigures, rollupOrderCogs, type CostRollup, type PeriodFigures } from "@/lib/cost-state";
 import { dayMode, marginByShot, type ShotMargin } from "@/lib/margin-by-shot";
+import { revenueOrderScope } from "@/server/reports/revenue-scope";
 
 export type PeriodCogs = CostRollup & {
   /** Display names of absentItemIds, same order. Unknown ids fall back to the id. */
@@ -122,7 +123,12 @@ export async function readPeriodExpenses(from: string, to: string, db: DB = defa
 
 /**
  * Σ orders.total_zar per revenue_day (L07), from..to inclusive, in the same
- * states and the same day bucket as the COGS read — the ONE revenue read.
+ * day bucket as the COGS read — the ONE revenue read. AT-209: its scope is the
+ * shared revenue rule (src/server/reports/revenue-scope.ts) — the started
+ * states, plus a cancelled order that holds a successful payment (L02, §11.3
+ * cancelOrder: cancelling does not return money). The COGS read keeps the
+ * started states only: a started order cancelled with an admin PIN has its
+ * stock reversed by compensating rows (REQ-040).
  */
 export async function readDailyRevenue(from: string, to: string, db: DB = defaultDb): Promise<Map<string, number>> {
   const rows = await db.execute<{ revenue_day: string; revenue_zar: string | number }>(sql`
@@ -130,7 +136,7 @@ export async function readDailyRevenue(from: string, to: string, db: DB = defaul
       TO_CHAR(revenue_day, 'YYYY-MM-DD') AS revenue_day,
       SUM(total_zar)::bigint AS revenue_zar
     FROM orders
-    WHERE state IN ('in_progress', 'ready', 'collected')
+    WHERE ${revenueOrderScope}
       AND revenue_day >= ${from}::date
       AND revenue_day <= ${to}::date
     GROUP BY revenue_day
