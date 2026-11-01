@@ -1,6 +1,6 @@
 {
-  "id": "37ee4e2c-2dfa-4324-a9aa-170c2ce74123",
-  "prevId": "05720012-7457-476d-9fb6-a8b4e870c9c7",
+  "id": "9248cb41-df44-4406-94ed-647d9c78b921",
+  "prevId": "aec32b25-1149-4209-9551-58a3e2ce6823",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -38,8 +38,8 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "app_config_pkey": {
-          "name": "app_config_pkey",
+        "app_config_tenant_id_key_pk": {
+          "name": "app_config_tenant_id_key_pk",
           "columns": [
             "tenant_id",
             "key"
@@ -276,6 +276,253 @@
       },
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.event_profiles": {
+      "name": "event_profiles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'hofmi'"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recurrence": {
+          "name": "recurrence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "default_start": {
+          "name": "default_start",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "default_end": {
+          "name": "default_end",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "menu_scope": {
+          "name": "menu_scope",
+          "type": "event_menu_scope",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_posture": {
+          "name": "payment_posture",
+          "type": "event_payment_posture",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumes_cup_lid": {
+          "name": "consumes_cup_lid",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "audience": {
+          "name": "audience",
+          "type": "event_audience",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extra_shot_surcharge": {
+          "name": "extra_shot_surcharge",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "voucher_kinds": {
+          "name": "voucher_kinds",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.event_windows": {
+      "name": "event_windows",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'hofmi'"
+        },
+        "event_profile_id": {
+          "name": "event_profile_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ends_at": {
+          "name": "ends_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "menu_scope": {
+          "name": "menu_scope",
+          "type": "event_menu_scope",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_posture": {
+          "name": "payment_posture",
+          "type": "event_payment_posture",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumes_cup_lid": {
+          "name": "consumes_cup_lid",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "audience": {
+          "name": "audience",
+          "type": "event_audience",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extra_shot_surcharge": {
+          "name": "extra_shot_surcharge",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "voucher_kinds": {
+          "name": "voucher_kinds",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "price_overrides": {
+          "name": "price_overrides",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_staff_id": {
+          "name": "created_by_staff_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "event_windows_event_profile_id_event_profiles_id_fk": {
+          "name": "event_windows_event_profile_id_event_profiles_id_fk",
+          "tableFrom": "event_windows",
+          "tableTo": "event_profiles",
+          "columnsFrom": [
+            "event_profile_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "event_windows_created_by_staff_id_staff_id_fk": {
+          "name": "event_windows_created_by_staff_id_staff_id_fk",
+          "tableFrom": "event_windows",
+          "tableTo": "staff",
+          "columnsFrom": [
+            "created_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "event_windows_max_24h": {
+          "name": "event_windows_max_24h",
+          "value": "\"event_windows\".\"ends_at\" > \"event_windows\".\"starts_at\" AND \"event_windows\".\"ends_at\" - \"event_windows\".\"starts_at\" <= interval '24 hours'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.expenses": {
@@ -1050,9 +1297,58 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "event_window_id": {
+          "name": "event_window_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "voucher_slips_counted": {
+          "name": "voucher_slips_counted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "voucher_redemptions_recorded": {
+          "name": "voucher_redemptions_recorded",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "voucher_kinds_active": {
+          "name": "voucher_kinds_active",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "opening_sessions_one_open": {
+          "name": "opening_sessions_one_open",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "closed_at IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "opening_sessions_created_by_staff_id_staff_id_fk": {
           "name": "opening_sessions_created_by_staff_id_staff_id_fk",
@@ -1060,6 +1356,19 @@
           "tableTo": "staff",
           "columnsFrom": [
             "created_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "opening_sessions_event_window_id_event_windows_id_fk": {
+          "name": "opening_sessions_event_window_id_event_windows_id_fk",
+          "tableFrom": "opening_sessions",
+          "tableTo": "event_windows",
+          "columnsFrom": [
+            "event_window_id"
           ],
           "columnsTo": [
             "id"
@@ -1138,6 +1447,81 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.order_cogs": {
+      "name": "order_cogs",
+      "schema": "",
+      "columns": {
+        "order_id": {
+          "name": "order_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'hofmi'"
+        },
+        "cogs_zar": {
+          "name": "cogs_zar",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "absent_item_ids": {
+          "name": "absent_item_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "estimated": {
+          "name": "estimated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "computed_at": {
+          "name": "computed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "order_cogs_order_id_orders_id_fk": {
+          "name": "order_cogs_order_id_orders_id_fk",
+          "tableFrom": "order_cogs",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "order_cogs_amount_or_absent": {
+          "name": "order_cogs_amount_or_absent",
+          "value": "(cogs_zar IS NULL) = (cardinality(absent_item_ids) > 0)"
+        },
+        "order_cogs_nonnegative": {
+          "name": "order_cogs_nonnegative",
+          "value": "cogs_zar >= 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.order_items": {
@@ -1341,20 +1725,6 @@
           "type": "date",
           "primaryKey": false,
           "notNull": true
-        },
-        "notification_target": {
-          "name": "notification_target",
-          "type": "notification_target",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_uuid": {
-          "name": "client_uuid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
         }
       },
       "indexes": {},
@@ -1387,22 +1757,9 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "orders_client_uuid_unique": {
-          "name": "orders_client_uuid_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "client_uuid"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "orders_notification_target_customer": {
-          "name": "orders_notification_target_customer",
-          "value": "(notification_target = 'customer') = (customer_id IS NOT NULL)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.outbox_log": {
@@ -1526,24 +1883,6 @@
           "name": "order_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
-        },
-        "fund_topup_id": {
-          "name": "fund_topup_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempt": {
-          "name": "attempt",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_reference": {
-          "name": "client_reference",
-          "type": "text",
-          "primaryKey": false,
           "notNull": true
         },
         "yoco_checkout_id": {
@@ -1558,48 +1897,11 @@
           "primaryKey": false,
           "notNull": false
         },
-        "webpos_device_id": {
-          "name": "webpos_device_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "amount_zar": {
           "name": "amount_zar",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
-        },
-        "charged_amount_zar": {
-          "name": "charged_amount_zar",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fee_zar": {
-          "name": "fee_zar",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tip_zar": {
-          "name": "tip_zar",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "receipt_no": {
-          "name": "receipt_no",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "settlement_ref": {
-          "name": "settlement_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "status": {
           "name": "status",
@@ -1608,25 +1910,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'pending'"
-        },
-        "sent_at": {
-          "name": "sent_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_checked_at": {
-          "name": "last_checked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "at": {
-          "name": "at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         },
         "webhook_received_at": {
           "name": "webhook_received_at",
@@ -1641,22 +1924,6 @@
           "columns": [
             {
               "expression": "order_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "status = 'successful'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "payments_one_successful_per_fund_topup": {
-          "name": "payments_one_successful_per_fund_topup",
-          "columns": [
-            {
-              "expression": "fund_topup_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1686,36 +1953,16 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "payments_client_reference_unique": {
-          "name": "payments_client_reference_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "client_reference"
-          ]
-        },
         "payments_yoco_payment_id_unique": {
           "name": "payments_yoco_payment_id_unique",
           "nullsNotDistinct": false,
           "columns": [
             "yoco_payment_id"
           ]
-        },
-        "payments_order_attempt_unique": {
-          "name": "payments_order_attempt_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "order_id",
-            "attempt"
-          ]
         }
       },
       "policies": {},
-      "checkConstraints": {
-        "payments_exactly_one_subject": {
-          "name": "payments_exactly_one_subject",
-          "value": "num_nonnulls(\"payments\".\"order_id\", \"payments\".\"fund_topup_id\") = 1"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.price_history": {
@@ -2606,6 +2853,286 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.voucher_redemptions": {
+      "name": "voucher_redemptions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'hofmi'"
+        },
+        "order_item_id": {
+          "name": "order_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "voucher_kind": {
+          "name": "voucher_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "discount_zar": {
+          "name": "discount_zar",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "redeemed_by_staff_id": {
+          "name": "redeemed_by_staff_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "reversed_at": {
+          "name": "reversed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reversed_by_staff_id": {
+          "name": "reversed_by_staff_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "voucher_redemptions_order_item_idx": {
+          "name": "voucher_redemptions_order_item_idx",
+          "columns": [
+            {
+              "expression": "order_item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "voucher_redemptions_session_idx": {
+          "name": "voucher_redemptions_session_idx",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "voucher_redemptions_order_item_id_order_items_id_fk": {
+          "name": "voucher_redemptions_order_item_id_order_items_id_fk",
+          "tableFrom": "voucher_redemptions",
+          "tableTo": "order_items",
+          "columnsFrom": [
+            "order_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "voucher_redemptions_session_id_opening_sessions_id_fk": {
+          "name": "voucher_redemptions_session_id_opening_sessions_id_fk",
+          "tableFrom": "voucher_redemptions",
+          "tableTo": "opening_sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "voucher_redemptions_redeemed_by_staff_id_staff_id_fk": {
+          "name": "voucher_redemptions_redeemed_by_staff_id_staff_id_fk",
+          "tableFrom": "voucher_redemptions",
+          "tableTo": "staff",
+          "columnsFrom": [
+            "redeemed_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "voucher_redemptions_reversed_by_staff_id_staff_id_fk": {
+          "name": "voucher_redemptions_reversed_by_staff_id_staff_id_fk",
+          "tableFrom": "voucher_redemptions",
+          "tableTo": "staff",
+          "columnsFrom": [
+            "reversed_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "voucher_redemptions_discount_positive": {
+          "name": "voucher_redemptions_discount_positive",
+          "value": "discount_zar > 0"
+        },
+        "voucher_redemptions_reversal_complete": {
+          "name": "voucher_redemptions_reversal_complete",
+          "value": "(reversed_at IS NULL) = (reversed_by_staff_id IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.walk_ins": {
+      "name": "walk_ins",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'hofmi'"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "menu_item_id": {
+          "name": "menu_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "category": {
+          "name": "category",
+          "type": "menu_category",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "logged_by_staff_id": {
+          "name": "logged_by_staff_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "walk_ins_order_id_orders_id_fk": {
+          "name": "walk_ins_order_id_orders_id_fk",
+          "tableFrom": "walk_ins",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "walk_ins_menu_item_id_menu_items_id_fk": {
+          "name": "walk_ins_menu_item_id_menu_items_id_fk",
+          "tableFrom": "walk_ins",
+          "tableTo": "menu_items",
+          "columnsFrom": [
+            "menu_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "walk_ins_logged_by_staff_id_staff_id_fk": {
+          "name": "walk_ins_logged_by_staff_id_staff_id_fk",
+          "tableFrom": "walk_ins",
+          "tableTo": "staff",
+          "columnsFrom": [
+            "logged_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "walk_ins_quantity_positive": {
+          "name": "walk_ins_quantity_positive",
+          "value": "quantity >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.waste_log": {
       "name": "waste_log",
       "schema": "",
@@ -2798,6 +3325,34 @@
         "church_member"
       ]
     },
+    "public.event_audience": {
+      "name": "event_audience",
+      "schema": "public",
+      "values": [
+        "office_staff",
+        "church_member",
+        "both",
+        "nobody"
+      ]
+    },
+    "public.event_menu_scope": {
+      "name": "event_menu_scope",
+      "schema": "public",
+      "values": [
+        "full",
+        "coffee_only",
+        "custom"
+      ]
+    },
+    "public.event_payment_posture": {
+      "name": "event_payment_posture",
+      "schema": "public",
+      "values": [
+        "free",
+        "standard",
+        "override"
+      ]
+    },
     "public.expense_category": {
       "name": "expense_category",
       "schema": "public",
@@ -2859,14 +3414,6 @@
         "other"
       ]
     },
-    "public.notification_target": {
-      "name": "notification_target",
-      "schema": "public",
-      "values": [
-        "customer",
-        "none"
-      ]
-    },
     "public.order_state": {
       "name": "order_state",
       "schema": "public",
@@ -2884,8 +3431,9 @@
       "values": [
         "pending",
         "successful",
-        "declined",
-        "unresolved"
+        "failed",
+        "refunded",
+        "deferred"
       ]
     },
     "public.purchase_kind": {

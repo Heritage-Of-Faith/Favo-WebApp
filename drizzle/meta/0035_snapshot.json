@@ -1,6 +1,6 @@
 {
-  "id": "ebaa6cea-81a7-47fa-ba48-97200dfba7c0",
-  "prevId": "3f239735-1503-4528-80d0-b9bfb9ecaa0e",
+  "id": "3fa4b4c7-9333-4bc9-ba25-4750085de122",
+  "prevId": "e5c2dfa6-5369-426d-9797-210015a6b3ae",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1093,6 +1093,81 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.order_cogs": {
+      "name": "order_cogs",
+      "schema": "",
+      "columns": {
+        "order_id": {
+          "name": "order_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'hofmi'"
+        },
+        "cogs_zar": {
+          "name": "cogs_zar",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "absent_item_ids": {
+          "name": "absent_item_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "estimated": {
+          "name": "estimated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "computed_at": {
+          "name": "computed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "order_cogs_order_id_orders_id_fk": {
+          "name": "order_cogs_order_id_orders_id_fk",
+          "tableFrom": "order_cogs",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "order_cogs_amount_or_absent": {
+          "name": "order_cogs_amount_or_absent",
+          "value": "(cogs_zar IS NULL) = (cardinality(absent_item_ids) > 0)"
+        },
+        "order_cogs_nonnegative": {
+          "name": "order_cogs_nonnegative",
+          "value": "cogs_zar >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.order_items": {
       "name": "order_items",
       "schema": "",
@@ -1294,13 +1369,6 @@
           "type": "date",
           "primaryKey": false,
           "notNull": true
-        },
-        "notification_target": {
-          "name": "notification_target",
-          "type": "notification_target",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
         }
       },
       "indexes": {},
@@ -1335,12 +1403,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "orders_notification_target_customer": {
-          "name": "orders_notification_target_customer",
-          "value": "(notification_target = 'customer') = (customer_id IS NOT NULL)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.outbox_log": {
@@ -1464,24 +1527,6 @@
           "name": "order_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
-        },
-        "fund_topup_id": {
-          "name": "fund_topup_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempt": {
-          "name": "attempt",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_reference": {
-          "name": "client_reference",
-          "type": "text",
-          "primaryKey": false,
           "notNull": true
         },
         "yoco_checkout_id": {
@@ -1496,48 +1541,11 @@
           "primaryKey": false,
           "notNull": false
         },
-        "webpos_device_id": {
-          "name": "webpos_device_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "amount_zar": {
           "name": "amount_zar",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
-        },
-        "charged_amount_zar": {
-          "name": "charged_amount_zar",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fee_zar": {
-          "name": "fee_zar",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tip_zar": {
-          "name": "tip_zar",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "receipt_no": {
-          "name": "receipt_no",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "settlement_ref": {
-          "name": "settlement_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "status": {
           "name": "status",
@@ -1546,25 +1554,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'pending'"
-        },
-        "sent_at": {
-          "name": "sent_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_checked_at": {
-          "name": "last_checked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "at": {
-          "name": "at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         },
         "webhook_received_at": {
           "name": "webhook_received_at",
@@ -1579,22 +1568,6 @@
           "columns": [
             {
               "expression": "order_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "status = 'successful'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "payments_one_successful_per_fund_topup": {
-          "name": "payments_one_successful_per_fund_topup",
-          "columns": [
-            {
-              "expression": "fund_topup_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1624,21 +1597,6 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "payments_order_attempt_unique": {
-          "name": "payments_order_attempt_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "order_id",
-            "attempt"
-          ]
-        },
-        "payments_client_reference_unique": {
-          "name": "payments_client_reference_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "client_reference"
-          ]
-        },
         "payments_yoco_payment_id_unique": {
           "name": "payments_yoco_payment_id_unique",
           "nullsNotDistinct": false,
@@ -1648,12 +1606,7 @@
         }
       },
       "policies": {},
-      "checkConstraints": {
-        "payments_exactly_one_subject": {
-          "name": "payments_exactly_one_subject",
-          "value": "num_nonnulls(\"payments\".\"order_id\", \"payments\".\"fund_topup_id\") = 1"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.price_history": {
@@ -2544,6 +2497,117 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.walk_ins": {
+      "name": "walk_ins",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'hofmi'"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "menu_item_id": {
+          "name": "menu_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "category": {
+          "name": "category",
+          "type": "menu_category",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "logged_by_staff_id": {
+          "name": "logged_by_staff_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "walk_ins_order_id_orders_id_fk": {
+          "name": "walk_ins_order_id_orders_id_fk",
+          "tableFrom": "walk_ins",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "walk_ins_menu_item_id_menu_items_id_fk": {
+          "name": "walk_ins_menu_item_id_menu_items_id_fk",
+          "tableFrom": "walk_ins",
+          "tableTo": "menu_items",
+          "columnsFrom": [
+            "menu_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "walk_ins_logged_by_staff_id_staff_id_fk": {
+          "name": "walk_ins_logged_by_staff_id_staff_id_fk",
+          "tableFrom": "walk_ins",
+          "tableTo": "staff",
+          "columnsFrom": [
+            "logged_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "walk_ins_quantity_positive": {
+          "name": "walk_ins_quantity_positive",
+          "value": "quantity >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.waste_log": {
       "name": "waste_log",
       "schema": "",
@@ -2797,14 +2861,6 @@
         "other"
       ]
     },
-    "public.notification_target": {
-      "name": "notification_target",
-      "schema": "public",
-      "values": [
-        "customer",
-        "none"
-      ]
-    },
     "public.order_state": {
       "name": "order_state",
       "schema": "public",
@@ -2822,8 +2878,9 @@
       "values": [
         "pending",
         "successful",
-        "declined",
-        "unresolved"
+        "failed",
+        "refunded",
+        "deferred"
       ]
     },
     "public.purchase_kind": {

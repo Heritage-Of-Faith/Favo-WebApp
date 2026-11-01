@@ -5,14 +5,8 @@ import { and, gte, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { monthlyReports } from "@db/schema";
 import { formatZar } from "@/lib/format";
-
-function csvCell(value: string | number | null | undefined): string {
-  const s = value == null ? "" : String(value);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
+import { costStatusLabel, unavailableText } from "@/lib/cost-state";
+import { csvCell } from "@/server/reports/csv";
 
 function monthFromDate(yyyymmdd: string): string {
   return yyyymmdd.slice(0, 7); // "YYYY-MM"
@@ -33,6 +27,7 @@ export async function buildMonthlyPnlCsv(from: string, to: string): Promise<stri
     "COGS (ZAR)",
     "Gross Margin (ZAR)",
     "Net (ZAR)",
+    "Cost status",
     "Status",
     "Admin Signed",
   ];
@@ -40,13 +35,18 @@ export async function buildMonthlyPnlCsv(from: string, to: string): Promise<stri
 
   for (const r of rows) {
     const adminSig = r.adminSig as { signerName?: string; at?: string } | null;
+    // The named refusal — "UNAVAILABLE — Oat Milk", never a bare word (REQ-109).
+    const refusal = unavailableText(r.cogsAbsentItems, r.ordersWithoutCost);
     lines.push(
       [
         r.month,
         formatZar(r.revenueZar),
-        formatZar(r.cogsZar),
-        formatZar(r.grossMarginZar),
-        formatZar(r.netZar),
+        // NULL = UNAVAILABLE (REQ-109), never 0; the status column marks
+        // provisional (estimated) figures in the export too (REQ-131).
+        r.cogsZar === null ? refusal : formatZar(r.cogsZar),
+        r.grossMarginZar === null ? refusal : formatZar(r.grossMarginZar),
+        r.netZar === null ? refusal : formatZar(r.netZar),
+        costStatusLabel({ state: r.costState, absentItemIds: r.cogsAbsentItems, ordersWithoutCost: r.ordersWithoutCost }),
         r.status,
         adminSig ? `${adminSig.signerName ?? "yes"} (${adminSig.at ?? ""})` : "",
       ]

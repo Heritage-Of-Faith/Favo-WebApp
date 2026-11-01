@@ -25,6 +25,8 @@ import {
   inventoryKind,
   inventoryUnit,
   lotState,
+  reportCostState,
+  costSource,
   stockMovementKind,
   stockTakeKind,
   paymentStatus,
@@ -35,6 +37,9 @@ import {
   customerStatus,
   sessionMode,
   compReason,
+  eventMenuScope,
+  eventPaymentPosture,
+  eventAudience,
   notificationTarget,
   donorFundEntryKind,
   fundingMethod,
@@ -170,6 +175,9 @@ export const inventoryLots = pgTable("inventory_lots", {
   // G13 COGS sums (delta × unit_cost_zar) → cast to integer cents at
   // the order level. Admin recosts via A8 after launch (R10 mitigation).
   unitCostZar: numeric("unit_cost_zar", { precision: 10, scale: 4 }),
+  // AT-191 / PRD §7.0.1b: estimate | invoice. Any drink costed from an
+  // 'estimate' lot renders provisional, never green (REQ-110).
+  costSource: costSource("cost_source").default("estimate").notNull(),
   // Quantity received when this lot was booked in (in the item's unit).
   // Legacy path only (non-cup items: cups, lids, syrup, powder). Cup-unit
   // container lots (milk & beans) no longer predict a cup yield up front —
@@ -267,7 +275,7 @@ export const orders = pgTable("orders", {
   notificationTarget: notificationTarget("notification_target").notNull(),
   // AT-201 / PRD §10.3, P3, REQ-027: the root of every tender reference —
   // payments.client_reference = client_uuid || ':' || attempt. NOT NULL,
-  // UNIQUE. The DB default stays (migration 0036): createOrder, the offline
+  // UNIQUE. The DB default stays (migration 0044): createOrder, the offline
   // replay (apply-outbox) and the demo seed do not pass a POS-minted uuid yet
   // (S7b's repeat-submission rule is not built).
   clientUuid: text("client_uuid").default(sql`gen_random_uuid()`).notNull().unique(),
@@ -303,6 +311,32 @@ export const orderItems = pgTable("order_items", {
   check("order_items_quantity_positive", sql`quantity >= 1`),
 ]);
 
+// AT-188 · REQ-106 · PRD §7.0.2 L1770 — each order's COGS, frozen at the sale.
+// Written once, in the same transaction as the stock deduction at in_progress
+// (src/server/orders/order-cogs.ts), and never rewritten: a later recost of a
+// lot does not restate the past (owner decision, Nikao 22 Oct 2026). `orders`
+// itself is untouched.
+//   cogs_zar        — round_half_up(Σ line_cogs), integer cents: THE ONE
+//                     ROUNDING POINT. NULL when a consumed ingredient's cost
+//                     was absent (NULL or 0.0000) at the sale — never a
+//                     smaller number (§7.0.2 L1791–1795).
+//   absent_item_ids — the inventory items whose cost was absent; empty when
+//                     cogs_zar is a number. The CHECK keeps the two in step.
+//   estimated       — NULL = unknown. The lot's cost-source field does not
+//                     exist yet (AT-191 adds it), so nothing can say yet
+//                     whether the cost was an estimate; never defaulted (§10.6).
+export const orderCogs = pgTable("order_cogs", {
+  orderId: text("order_id").primaryKey().references(() => orders.id),
+  tenantId: tenantId(),
+  cogsZar: integer("cogs_zar"),
+  absentItemIds: text("absent_item_ids").array().default(sql`'{}'::text[]`).notNull(),
+  estimated: boolean("estimated"),
+  computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+}, () => [
+  check("order_cogs_amount_or_absent", sql`(cogs_zar IS NULL) = (cardinality(absent_item_ids) > 0)`),
+  check("order_cogs_nonnegative", sql`cogs_zar >= 0`),
+]);
+
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
 // AT-201 / PRD §10.3.3: one row per payment ATTEMPT, not per order.
@@ -331,7 +365,7 @@ export const payments = pgTable("payments", {
   chargedAmountZar: integer("charged_amount_zar"),
   // Yoco's actual fee from the daily import — NULL, never 0, while unknown.
   feeZar: integer("fee_zar"),
-  tipZar: integer("tip_zar").default(0).notNull(),
+  // No tip column (DEC-17): a stray tip is a T10 variance, never stored.
   receiptNo: text("receipt_no"),
   settlementRef: text("settlement_ref"),
   status: paymentStatus("status").default("pending").notNull(),
@@ -386,7 +420,7 @@ export const donorFunds = pgTable("donor_funds", {
   check("donor_funds_code_shape", sql`${t.code} ~ '^FVO-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$'`),
 ]);
 
-// Append-only (trigger-enforced in 0045): never UPDATE or DELETE a row (§10.6).
+// Append-only (trigger-enforced in 0046): never UPDATE or DELETE a row (§10.6).
 // Amounts are signed integer cents: top_up > 0; spend and sweep < 0;
 // adjustment > 0 and tied to an order (a cancelled fund-paid order's draw, given back).
 export const donorFundEntries = pgTable("donor_fund_entries", {
@@ -488,6 +522,28 @@ export const staffEntitlementLog = pgTable(
   (t) => [unique().on(t.customerId, t.day)]
 );
 
+// ─── Walk-ins ─────────────────────────────────────────────────────────────────
+
+// AT-209 / PRD §6.5, §10.2, L20, REQ-058: a weekday non-staff visitor's cup,
+// logged for consumption reporting. NO IDENTITY OF ANY KIND — no customer
+// reference, name, email or phone column, ever. One row per order LINE, so
+// §7.0.2's walk_in_cups = Σ quantity counts walk-in cups, not the order's
+// (REQ-116). Never charged, never counted against staff_entitlement_log.
+export const walkIns = pgTable(
+  "walk_ins",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    orderId: text("order_id").notNull().references(() => orders.id),
+    menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
+    quantity: integer("quantity").default(1).notNull(),
+    category: menuCategory("category").notNull(),
+    loggedByStaffId: text("logged_by_staff_id").notNull().references(() => staff.id),
+    at: now(),
+  },
+  () => [check("walk_ins_quantity_positive", sql`quantity >= 1`)]
+);
+
 // ─── Waste + Purchases ────────────────────────────────────────────────────────
 
 export const wasteLog = pgTable("waste_log", {
@@ -499,6 +555,8 @@ export const wasteLog = pgTable("waste_log", {
   reason: text("reason"),
   byStaffId: text("by_staff_id").notNull().references(() => staff.id),
   at: now(),
+  // AT-209 / PRD §10.3, T6 step 2b: the order an `abandoned` row records.
+  orderId: text("order_id").references(() => orders.id),
 });
 
 export const purchases = pgTable(
@@ -552,8 +610,121 @@ export const openingSessions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     /** Set when the customer push for this session was sent — the dedupe record. */
     notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    // AT-204 prerequisite / PRD §10.3 + §6.11.1. The event in force (§6.6).
+    eventWindowId: text("event_window_id").references(() => eventWindows.id),
+    // L43: NULL means nobody counted, distinguishable from zero.
+    voucherSlipsCounted: integer("voucher_slips_counted"),
+    voucherRedemptionsRecorded: integer("voucher_redemptions_recorded").default(0).notNull(),
+    // Snapshotted at open from the session's event window (§6.11.2, §10.4).
+    voucherKindsActive: text("voucher_kinds_active").array().default(sql`'{}'::text[]`).notNull(),
+    // Set by closeSession; the one-open-session index is defined over it.
+    closedAt: timestamp("closed_at", { withTimezone: true }),
   },
-  (t) => [unique("opening_sessions_date_opens_unique").on(t.sessionDate, t.opensAt)]
+  (t) => [
+    // KEEP (CLAUDE.md §3, COL-14): v7.0 retains this; it is not narrowed.
+    unique("opening_sessions_date_opens_unique").on(t.sessionDate, t.opensAt),
+    // §6.11.1 / §10.6: at most one open session across the whole table.
+    uniqueIndex("opening_sessions_one_open")
+      .on(t.tenantId)
+      .where(sql`closed_at IS NULL`),
+  ]
+);
+
+// ─── Event mode (AT-204 prerequisite — PRD §6.6, §10.2, L25–L27) ──────────────
+// A profile is the reusable definition (Path A recurring / Path B one-off).
+// A window is one concrete occurrence; its six switches are snapshotted at
+// open, so editing a profile never rewrites history (REQ-044).
+
+export const eventProfiles = pgTable("event_profiles", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  name: text("name").notNull(),
+  // null = one-off. Stored as an RFC 5545 RRULE, e.g. FREQ=WEEKLY;BYDAY=WE.
+  recurrence: text("recurrence"),
+  defaultStart: text("default_start"), // "18:30" (SAST wall clock)
+  defaultEnd: text("default_end"),     // "20:30"
+  menuScope: eventMenuScope("menu_scope").notNull(),
+  paymentPosture: eventPaymentPosture("payment_posture").notNull(),
+  consumesCupLid: boolean("consumes_cup_lid").notNull(),
+  audience: eventAudience("audience").notNull(),
+  extraShotSurcharge: boolean("extra_shot_surcharge").notNull(),
+  voucherKinds: text("voucher_kinds").array().default(sql`'{}'::text[]`).notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const eventWindows = pgTable(
+  "event_windows",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    eventProfileId: text("event_profile_id").references(() => eventProfiles.id), // null = ad-hoc
+    name: text("name").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(), // L27: mandatory
+    menuScope: eventMenuScope("menu_scope").notNull(),
+    paymentPosture: eventPaymentPosture("payment_posture").notNull(),
+    consumesCupLid: boolean("consumes_cup_lid").notNull(),
+    audience: eventAudience("audience").notNull(),
+    extraShotSurcharge: boolean("extra_shot_surcharge").notNull(),
+    voucherKinds: text("voucher_kinds").array().default(sql`'{}'::text[]`).notNull(),
+    // DEC-03: read snapshot of the price_history override rows, written once at open.
+    priceOverrides: jsonb("price_overrides"),
+    createdByStaffId: text("created_by_staff_id").references(() => staff.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // L27 / REQ-043: an end after the start, and never longer than 24 hours.
+    check(
+      "event_windows_max_24h",
+      sql`${t.endsAt} > ${t.startsAt} AND ${t.endsAt} - ${t.startsAt} <= interval '24 hours'`
+    ),
+  ]
+);
+
+// ─── Vouchers (AT-204 — PRD §6.9, §10.2, §10.4, L41, L43, COL-29) ─────────────
+// One row is one cup: a voucher discounts exactly one unit of one line.
+// Reversed, never deleted — counts and values read live rows (reversed_at IS NULL).
+
+export const voucherRedemptions = pgTable(
+  "voucher_redemptions",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    orderItemId: text("order_item_id").notNull().references(() => orderItems.id),
+    sessionId: text("session_id").notNull().references(() => openingSessions.id),
+    voucherKind: text("voucher_kind").notNull(),
+    // One unit's line_unit_price, snapshotted at redemption. Integer cents.
+    discountZar: integer("discount_zar").notNull(),
+    redeemedByStaffId: text("redeemed_by_staff_id").notNull().references(() => staff.id),
+    at: now(),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+    reversedByStaffId: text("reversed_by_staff_id").references(() => staff.id),
+  },
+  (t) => [
+    check("voucher_redemptions_discount_positive", sql`discount_zar > 0`),
+    // A reversal records both when and who, or neither.
+    check(
+      "voucher_redemptions_reversal_complete",
+      sql`(reversed_at IS NULL) = (reversed_by_staff_id IS NULL)`
+    ),
+    index("voucher_redemptions_order_item_idx").on(t.orderItemId),
+    index("voucher_redemptions_session_idx").on(t.sessionId),
+  ]
+);
+
+// ─── Config (PRD §10.4 — one store, keyed (tenant_id, key), jsonb values) ─────
+// Every write is audited with before/after and a reason; Admin-only.
+
+export const appConfig = pgTable(
+  "app_config",
+  {
+    tenantId: tenantId(),
+    key: text("key").notNull(),
+    value: jsonb("value").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.key] })]
 );
 
 export const operatingHours = pgTable("operating_hours", {
@@ -566,22 +737,6 @@ export const operatingHours = pgTable("operating_hours", {
   note: text("note"),
 });
 
-// ─── Config ───────────────────────────────────────────────────────────────────
-
-// AT-201 part 2b / PRD §10.4: "One app_config table, keyed (tenant_id, key),
-// values typed as jsonb, every write audited with before/after and a reason,
-// Admin-only." First key read: webpos_device_id (§9.10.1), by beginTender only.
-export const appConfig = pgTable(
-  "app_config",
-  {
-    tenantId: tenantId(),
-    key: text("key").notNull(),
-    value: jsonb("value").notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (t) => [primaryKey({ name: "app_config_pkey", columns: [t.tenantId, t.key] })]
-);
-
 // ─── Expenses ─────────────────────────────────────────────────────────────────
 
 export const expenses = pgTable("expenses", {
@@ -591,6 +746,8 @@ export const expenses = pgTable("expenses", {
   amountZar: integer("amount_zar").notNull(),
   incurredAt: timestamp("incurred_at", { withTimezone: true }).defaultNow().notNull(),
   loggedBy: text("logged_by").notNull().references(() => staff.id),
+  // AT-205 / PRD §11.2: logExpense(category, amount_zar, incurred_at, note?).
+  note: text("note"),
 });
 
 // ─── Audit Log (append-only — trigger-enforced) ───────────────────────────────
@@ -607,6 +764,9 @@ export const auditLog = pgTable("audit_log", {
   before: jsonb("before"),
   after: jsonb("after"),
   reason: text("reason"),
+  // AT-209 / PRD §10.3.2, §6.0.7, REQ-040, REQ-063: the overriding admin, where
+  // an admin PIN authorised a barista's action. NULL otherwise.
+  onBehalfOfStaffId: text("on_behalf_of_staff_id").references(() => staff.id),
 }, (t) => [
   index("audit_log_entity_idx").on(t.entityKind, t.entityId),
   index("audit_log_actor_idx").on(t.actorId),
@@ -623,10 +783,17 @@ export const monthlyReports = pgTable(
     /** First day of the month (YYYY-MM-DD). UNIQUE — one report per month. */
     month: text("month").notNull().unique(),
     revenueZar: integer("revenue_zar").notNull(),
-    cogsZar: integer("cogs_zar").notNull(),
+    // AT-189/AT-190 (REQ-106, REQ-109): cogs = Σ order_cogs; NULL = UNAVAILABLE
+    // (an absent cost input, named in cogs_absent_items) — never a smaller number.
+    cogsZar: integer("cogs_zar"),
     expensesZar: integer("expenses_zar").notNull(),
-    grossMarginZar: integer("gross_margin_zar").notNull(),
-    netZar: integer("net_zar").notNull(),
+    grossMarginZar: integer("gross_margin_zar"),
+    netZar: integer("net_zar"),
+    // AT-192 (REQ-129): empty | unavailable | provisional | final — see src/lib/cost-state.ts.
+    costState: reportCostState("cost_state").default("provisional").notNull(),
+    cogsAbsentItems: text("cogs_absent_items").array().default(sql`'{}'::text[]`).notNull(),
+    /** Orders in the month with no order_cogs row — part of the named refusal. */
+    ordersWithoutCost: integer("orders_without_cost").default(0).notNull(),
     /** draft → awaiting_signatures → closed */
     status: text("status", {
       enum: ["draft", "awaiting_signatures", "closed"],
@@ -648,6 +815,7 @@ export const monthlyReports = pgTable(
       "monthly_report_closed_requires_admin_sig",
       sql`status != 'closed' OR admin_sig IS NOT NULL`
     ),
+    check("monthly_report_cogs_or_unavailable", sql`(cogs_zar IS NULL) = (cost_state = 'unavailable')`),
   ]
 );
 
@@ -671,12 +839,18 @@ export const weeklyReports = pgTable("weekly_reports", {
   /** ISO date of Monday that starts the week (SAST). */
   weekStarting: text("week_starting").notNull().unique(),
   revenueZar: integer("revenue_zar").notNull(),
-  cogsZar: integer("cogs_zar").notNull(),
+  // AT-189/AT-190/AT-192: as monthly_reports — NULL cogs = UNAVAILABLE.
+  cogsZar: integer("cogs_zar"),
   expensesZar: integer("expenses_zar").notNull(),
-  grossMarginZar: integer("gross_margin_zar").notNull(),
-  netZar: integer("net_zar").notNull(),
+  grossMarginZar: integer("gross_margin_zar"),
+  netZar: integer("net_zar"),
+  costState: reportCostState("cost_state").default("provisional").notNull(),
+  cogsAbsentItems: text("cogs_absent_items").array().default(sql`'{}'::text[]`).notNull(),
+  ordersWithoutCost: integer("orders_without_cost").default(0).notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, () => [
+  check("weekly_report_cogs_or_unavailable", sql`(cogs_zar IS NULL) = (cost_state = 'unavailable')`),
+]);
 
 // ─── The Favo (AT-142 — one saved order template per customer) ────────────────
 // `items` holds FavoItem[] — the exact shape of CreateOrderInput["items"]

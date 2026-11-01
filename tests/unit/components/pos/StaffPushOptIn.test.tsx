@@ -28,6 +28,16 @@ beforeEach(() => {
   mockEnable.mockResolvedValue({ ok: true });
 });
 
+describe("StaffPushOptIn layout (iPad)", () => {
+  it("is an in-flow banner, never a fixed overlay that can cover a primary button", async () => {
+    setPermission("default");
+    render(<StaffPushOptIn />);
+    const card = (await screen.findByText(/get stock & order alerts/i)).closest("[data-pos-push-banner]");
+    expect(card).not.toBeNull();
+    expect(card!.className).not.toMatch(/\bfixed\b/);
+  });
+});
+
 describe("StaffPushOptIn", () => {
   it("shows the card when permission is default and not asked before", async () => {
     setPermission("default");

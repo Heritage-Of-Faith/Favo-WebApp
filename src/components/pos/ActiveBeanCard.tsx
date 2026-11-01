@@ -43,7 +43,6 @@ export default function ActiveBeanCard({ refreshKey = 0 }: Props) {
   const fresh = roast ? freshness(roast) : null;
   const days = roast ? daysSinceRoast(roast) : null;
   const origin = lot.origin ?? lot.sourceName ?? "Espresso";
-  const batch = lot.batchNumber;
 
   return (
     <div
@@ -53,11 +52,11 @@ export default function ActiveBeanCard({ refreshKey = 0 }: Props) {
       <Coffee size={16} strokeWidth={2.25} className="text-cool-steel shrink-0" />
       <div className="min-w-0">
         <p className="text-coffee-bean font-semibold leading-tight truncate" style={{ fontSize: 12 }}>
-          {origin}
+          Espresso beans
         </p>
-        <p className="text-cool-steel leading-tight truncate" style={{ fontSize: 10 }}>
-          {batch ? `${batch} · ` : ""}
-          {days !== null ? `${days}d post-roast` : "roast date n/a"}
+        <p className="text-cool-steel leading-tight truncate" style={{ fontSize: 12 }}>
+          <span>{origin}</span>
+          {days !== null ? ` · ${days}d post-roast` : ""}
         </p>
       </div>
       {fresh && fresh !== "fresh" && (

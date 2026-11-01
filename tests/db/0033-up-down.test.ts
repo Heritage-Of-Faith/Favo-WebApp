@@ -29,13 +29,21 @@ const maybe = hasRealDb() ? describe : describe.skip;
 
 const UP = "0033_at181_day5_substrate.sql";
 const DOWN = "down/0033_at181_day5_substrate.down.sql";
-// AT-201: 0036 (orders.client_uuid) sits on top of 0035 (payments), which sits
-// on top of 0034 (notification_target, PR #284), which sits on top of 0033.
-// AT-203: 0045 (the blessing fund) sits on top of all of them; step it down first.
-const DOWN_0045 = "down/0045_at203_blessing_fund.down.sql";
-const DOWN_0036 ="down/0036_at201_orders_client_uuid.down.sql";
-const DOWN_0035 = "down/0035_at201_tender_payments.down.sql";
-const DOWN_0034 = "down/0034_l28_notification_target.down.sql";
+// CHANGED (AT-204 prerequisite): the later migration's down, applied first.
+const LATER_DOWN = "down/0036_at204_event_sessions.down.sql";
+// L28: 0042 (orders.notification_target) also sits on top of 0033.
+const DOWN_0042 = "down/0042_l28_notification_target.down.sql";
+// AT-201: 0043 (payments as the tender record) is the newest; it steps down first.
+const DOWN_0043 = "down/0043_at201_tender_payments.down.sql";
+// AT-201 part 2a: 0044 (orders.client_uuid) is newer still; it steps down first.
+const DOWN_0044 = "down/0044_at201_orders_client_uuid.down.sql";
+// AT-209: 0045 re-creates v_daily_revenue over orders and payments.status, and
+// adds FKs from waste_log to orders and audit_log to staff. It is the newest
+// migration, so it steps down before all others (a view blocks ALTER COLUMN TYPE).
+const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
+// AT-203: 0046 (the blessing fund; an FK and a UNIQUE on payments) is now the
+// newest migration, so it steps down before 0045.
+const DOWN_0046 = "down/0046_at203_blessing_fund.down.sql";
 
 const TOUCHED = [
   "customers",
@@ -143,18 +151,26 @@ class Rollback extends Error {}
 maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () => {
   let sql: Sql;
 
-  /**
-   * Run `fn` in a transaction that is always rolled back. `bun db:migrate`
-   * brings the CI DB to 0036, so each case first steps 0036, 0035 and 0034
-   * down (inside the same rolled-back transaction) to start from 0033.
-   */
+  /** Run `fn` in a transaction that is always rolled back. */
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        // CHANGED (AT-204 prerequisite): CI now migrates past 0033, and 0036
+        // adds columns to opening_sessions. Step back to 0033 first (rolled
+        // back with everything else) so this suite still tests 0033 alone.
+        // L28: 0042 adds a column to orders; step it down first (newest first).
+        // AT-201: 0043 rebuilds payments and is newer still, so it goes first:
+        // 0043 down, then 0042 down, then 0036 down → 0033.
+        // AT-201 part 2a: 0044 adds orders.client_uuid and is the newest, so
+        // it steps down before all of them.
+        // AT-209: 0045 rewrites v_daily_revenue over orders.state and
+        // payments.status (which 0043 down retypes); newest, so first of all.
+        await tx.unsafe(migrationSql(DOWN_0046)); // AT-203: newest of all, first
         await tx.unsafe(migrationSql(DOWN_0045));
-        await tx.unsafe(migrationSql(DOWN_0036));
-        await tx.unsafe(migrationSql(DOWN_0035));
-        await tx.unsafe(migrationSql(DOWN_0034));
+        await tx.unsafe(migrationSql(DOWN_0044));
+        await tx.unsafe(migrationSql(DOWN_0043));
+        await tx.unsafe(migrationSql(DOWN_0042));
+        await tx.unsafe(migrationSql(LATER_DOWN));
         await fn(tx);
         throw new Rollback();
       });

@@ -37,7 +37,6 @@ function toTenderPayment(r: PaymentRow): TenderPayment {
     webposDeviceId: r.webposDeviceId,
     amountZar: r.amountZar,
     chargedAmountZar: r.chargedAmountZar,
-    tipZar: r.tipZar,
     status: r.status,
     sentAt: r.sentAt,
     lastCheckedAt: r.lastCheckedAt,

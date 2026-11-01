@@ -31,7 +31,7 @@ export type TenderPayment = {
   webposDeviceId: string;
   amountZar: number;
   chargedAmountZar: number | null;
-  tipZar: number;
+  // No tip (DEC-17): a stray tip is a T10 variance at reconciliation, never stored.
   status: PaymentStatus;
   sentAt: Date | null;
   lastCheckedAt: Date | null;
@@ -53,7 +53,6 @@ export type PaymentPatch = Partial<{
   sentAt: Date | null;
   lastCheckedAt: Date;
   chargedAmountZar: number;
-  tipZar: number;
 }>;
 
 export type TenderAudit = {

@@ -19,6 +19,14 @@ import { toast } from "sonner";
 import { listInventory } from "@/server/actions/inventory";
 import { listLots } from "@/server/actions/inventory";
 import { logWaste, type LogWasteInput } from "@/server/actions/waste";
+import {
+  wasteQuantityError,
+  WASTE_MAX_QTY,
+  WASTE_REASON_MAX,
+  NO_STOCK_TO_WASTE,
+  isWasteableLotState,
+  lotStateRefusalMessage,
+} from "@/lib/pos/waste-validation";
 import type { InventoryItemStatus, InventoryLot } from "@/lib/types";
 
 const CATEGORIES: { value: LogWasteInput["category"]; label: string }[] = [
@@ -49,12 +57,16 @@ export default function WasteDialog({
   const [items, setItems] = useState<InventoryItemStatus[]>([]);
   const [itemsLoading, setItemsLoading] = useState(true);
   const [itemId, setItemId] = useState<string>(preselectItemId ?? "");
+  const [allLots, setAllLots] = useState<InventoryLot[]>([]);
   const [lots, setLots] = useState<InventoryLot[]>([]);
   const [lotId, setLotId] = useState<string>("");
+  // Item whose lots are loaded; until then "no lots" is unknown, not empty.
+  const [lotsLoadedFor, setLotsLoadedFor] = useState<string>("");
   const [category, setCategory] = useState<LogWasteInput["category"]>(defaultCategory);
   const [quantity, setQuantity] = useState<string>("1");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [qtyError, setQtyError] = useState<string | null>(null);
 
   const selectedItem = items.find((i) => i.id === itemId);
 
@@ -75,25 +87,44 @@ export default function WasteDialog({
   // Load lots whenever the selected item changes; auto-select active lot
   useEffect(() => {
     if (!itemId) {
+      setAllLots([]);
       setLots([]);
       setLotId("");
       return;
     }
     listLots(itemId).then((r) => {
       if (r.ok) {
-        setLots(r.data.lots);
-        const active = r.data.lots.find((l) => l.state === "active") ?? r.data.lots[0];
+        setLotsLoadedFor(itemId);
+        setAllLots(r.data.lots);
+        // Only lots logWaste accepts are offered (QA R4 barista P2-1); a lot
+        // with nothing left (remaining <= 0) is refused too (QA R6 barista P3-1).
+        const usable = r.data.lots.filter(
+          (l) => isWasteableLotState(l.state) && l.quantityRemaining > 0
+        );
+        setLots(usable);
+        const active = usable.find((l) => l.state === "active") ?? usable[0];
         setLotId(active?.id ?? "");
       }
     });
   }, [itemId]);
 
+  // No lot can take waste: say why, and do not fall back to a lot-less waste row
+  // (that would bypass the lot rule). An open container points to Close; no lots
+  // or only closed/expired ones is simply "no stock" (QA R5 barista #2).
+  const noWasteableLot = lotsLoadedFor === itemId && itemId !== "" && lots.length === 0;
+  const blockedMessage = noWasteableLot
+    ? allLots.some((l) => l.state === "open")
+      ? lotStateRefusalMessage("open")
+      : NO_STOCK_TO_WASTE
+    : null;
+
   const handleSubmit = useCallback(async () => {
-    const qty = Number(quantity);
-    if (!Number.isInteger(qty) || qty <= 0) {
-      toast.warning("Quantity must be a whole number greater than 0.");
-      return;
-    }
+    const problem = wasteQuantityError(quantity);
+    if (submitting || noWasteableLot) return;
+    if (problem) { setQtyError(problem); return; }
+    if (!itemId) { setQtyError("Choose the item that was wasted."); return; }
+    setQtyError(null);
+    const qty = Number(quantity.trim());
     setSubmitting(true);
     try {
       const r = await logWaste({
@@ -107,14 +138,14 @@ export default function WasteDialog({
         onLogged?.();
         onClose();
       } else {
-        toast.error(r.message ?? "Could not log waste.");
+        toast.error(r.message ?? "Could not log waste.", { id: "waste-error" });
       }
     } catch {
-      toast.error("Something went wrong logging waste.");
+      toast.error("Something went wrong logging waste.", { id: "waste-error" });
     } finally {
       setSubmitting(false);
     }
-  }, [quantity, category, lotId, reason, onLogged, onClose]);
+  }, [quantity, category, lotId, reason, onLogged, onClose, submitting, noWasteableLot, itemId]);
 
   return (
     <div
@@ -135,7 +166,7 @@ export default function WasteDialog({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-9 w-9 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
+            className="flex h-11 w-11 items-center justify-center rounded-[4px] text-cool-steel hover:bg-porcelain/10 hover:text-porcelain"
           >
             <X size={16} strokeWidth={2} />
           </button>
@@ -155,11 +186,12 @@ export default function WasteDialog({
                 id="waste-item"
                 value={itemId}
                 onChange={(e) => setItemId(e.target.value)}
-                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 bg-porcelain/10 px-3 text-porcelain favo-small focus:border-crimson-carrot focus:outline-none"
+                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 bg-porcelain/10 px-3 text-porcelain text-base focus:border-crimson-carrot focus:outline-none"
               >
                 {items.map((i) => (
                   <option key={i.id} value={i.id} className="bg-dark-teal">
-                    {i.name}
+                    {/* Unit shown so "Espresso Beans" (g) and "(bag)" (cup) can be told apart (QA B3). */}
+                    {i.name} · {i.unit}
                   </option>
                 ))}
               </select>
@@ -172,7 +204,7 @@ export default function WasteDialog({
                     id="waste-lot"
                     value={lotId}
                     onChange={(e) => setLotId(e.target.value)}
-                    className="min-h-[44px] rounded-[4px] border border-cool-steel/30 bg-porcelain/10 px-3 text-porcelain favo-small focus:border-crimson-carrot focus:outline-none"
+                    className="min-h-[44px] rounded-[4px] border border-cool-steel/30 bg-porcelain/10 px-3 text-porcelain text-base focus:border-crimson-carrot focus:outline-none"
                   >
                     {lots.map((l) => (
                       <option key={l.id} value={l.id} className="bg-dark-teal">
@@ -182,6 +214,9 @@ export default function WasteDialog({
                   </select>
                 </>
               )}
+              {blockedMessage && (
+                <p className="favo-small text-porcelain" role="note">{blockedMessage}</p>
+              )}
 
               {/* Category */}
               <label className="favo-label text-cool-steel" htmlFor="waste-category">Category</label>
@@ -189,7 +224,7 @@ export default function WasteDialog({
                 id="waste-category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value as LogWasteInput["category"])}
-                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 bg-porcelain/10 px-3 text-porcelain favo-small focus:border-crimson-carrot focus:outline-none"
+                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 bg-porcelain/10 px-3 text-porcelain text-base focus:border-crimson-carrot focus:outline-none"
               >
                 {CATEGORIES.map((c) => (
                   <option key={c.value} value={c.value} className="bg-dark-teal">
@@ -206,11 +241,14 @@ export default function WasteDialog({
                 id="waste-qty"
                 type="number"
                 min={1}
+                max={WASTE_MAX_QTY}
                 step={1}
                 value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 bg-porcelain/10 px-3 text-porcelain favo-small focus:border-crimson-carrot focus:outline-none"
+                onChange={(e) => { setQuantity(e.target.value); setQtyError(null); }}
+                aria-invalid={qtyError ? true : undefined}
+                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 bg-porcelain/10 px-3 text-porcelain text-base focus:border-crimson-carrot focus:outline-none"
               />
+              {qtyError && <p className="favo-small text-[var(--color-error)]" role="alert">{qtyError}</p>}
 
               {/* Reason */}
               <label className="favo-label text-cool-steel" htmlFor="waste-reason">Reason (optional)</label>
@@ -218,9 +256,10 @@ export default function WasteDialog({
                 id="waste-reason"
                 type="text"
                 value={reason}
+                maxLength={WASTE_REASON_MAX}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="e.g. knocked over on the bar"
-                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 bg-porcelain/10 px-3 text-porcelain placeholder:text-cool-steel favo-small focus:border-crimson-carrot focus:outline-none"
+                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 bg-porcelain/10 px-3 text-porcelain placeholder:text-cool-steel text-base focus:border-crimson-carrot focus:outline-none"
               />
             </>
           )}
@@ -238,7 +277,7 @@ export default function WasteDialog({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting || itemsLoading}
+            disabled={submitting || itemsLoading || noWasteableLot}
             className="flex min-h-[44px] items-center gap-2 rounded-[4px] bg-crimson-carrot px-5 transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
             style={{
               color: "var(--color-porcelain)",
