@@ -82,8 +82,9 @@ export function shotCeiling(mode: ShotMode | "event", config: ShotConfig): numbe
  *  - every session `weekday` → weekday: ceiling 2, no surcharge.
  *  - every session `sunday`  → sunday: ceiling 4, surcharge in force.
  *  - none, `event`, or mixed → unresolved: weekday ceiling, no surcharge.
- *    `event` cannot be created on this base (defaultSessionMode never returns
- *    it); its per-event switch is AT-202 part 2.
+ *    An `event` session can be opened (AT-204), but the till does not read
+ *    its extra_shot switch yet (session-mode.ts SWITCHES_IN_TILL); reading
+ *    it is AT-202 part 2.
  */
 export function resolveShotPolicy(modes: readonly string[], config: ShotConfig): ShotPolicy {
   let mode: ShotMode = "unresolved";

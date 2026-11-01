@@ -58,7 +58,7 @@ describe("YocoWebPosPort fake — send outcomes (REQ-010, REQ-029)", () => {
     expect(found).toEqual({
       kind: "found",
       payments: [
-        { yocoPaymentId: "pay_t", clientReference: "cu_4:1", status: "successful", chargedAmountZar: 3000, tipZar: 0 },
+        { yocoPaymentId: "pay_t", clientReference: "cu_4:1", status: "successful", chargedAmountZar: 3000 },
       ],
     });
   });
@@ -79,11 +79,11 @@ describe("YocoWebPosPort fake — fetch outcomes (§6.8.4, REQ-008, REQ-030)", (
     await port.sendPayment({ deviceId: DEVICE, amountZar: R30, clientReference: "cu_6:1" });
     expect(await port.fetchPayment("pay_s")).toEqual({
       kind: "found",
-      payment: { yocoPaymentId: "pay_s", clientReference: "cu_6:1", status: "pending", chargedAmountZar: null, tipZar: 0 },
+      payment: { yocoPaymentId: "pay_s", clientReference: "cu_6:1", status: "pending", chargedAmountZar: null },
     });
     expect(await port.fetchPayment("pay_s")).toEqual({
       kind: "found",
-      payment: { yocoPaymentId: "pay_s", clientReference: "cu_6:1", status: "successful", chargedAmountZar: 3000, tipZar: 0 },
+      payment: { yocoPaymentId: "pay_s", clientReference: "cu_6:1", status: "successful", chargedAmountZar: 3000 },
     });
     // The last scripted step is sticky.
     expect((await port.fetchPayment("pay_s")).kind).toBe("found");
@@ -92,12 +92,11 @@ describe("YocoWebPosPort fake — fetch outcomes (§6.8.4, REQ-008, REQ-030)", (
 
   it("successful at a different charged amount is reported as charged, never as asked", async () => {
     const port = new FakeYocoWebPosPort({
-      sends: [{ outcome: "sent", yocoPaymentId: "pay_v", fetches: [{ status: "successful", chargedAmountZar: 3300, tipZar: 300 }] }],
+      sends: [{ outcome: "sent", yocoPaymentId: "pay_v", fetches: [{ status: "successful", chargedAmountZar: 3300 }] }],
     });
     await port.sendPayment({ deviceId: DEVICE, amountZar: R30, clientReference: "cu_7:1" });
     const res = await port.fetchPayment("pay_v");
     expect(res.kind === "found" && res.payment.chargedAmountZar).toBe(3300);
-    expect(res.kind === "found" && res.payment.tipZar).toBe(300);
   });
 
   it("failed: a declined card is Yoco's `failed`, not a FAVO status", async () => {
@@ -151,7 +150,7 @@ describe("YocoWebPosPort fake — fetch outcomes (§6.8.4, REQ-008, REQ-030)", (
     await port.sendPayment({ deviceId: DEVICE, amountZar: R30, clientReference: "cu_11:1" });
     const res = await port.fetchPayment("pay_k");
     expect(res.kind === "found" && Object.keys(res.payment).sort()).toEqual(
-      ["chargedAmountZar", "clientReference", "status", "tipZar", "yocoPaymentId"]
+      ["chargedAmountZar", "clientReference", "status", "yocoPaymentId"]
     );
   });
 });

@@ -97,7 +97,9 @@ describe("AT-202 — shot picker (§6.2.3c, REQ-138, L48)", () => {
     await openDrink(/cappuccino/i);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "3 shots" })); });
     await addToOrder();
-    await openDrink(/cappuccino/i);
+    // Anchored: the draft line's own buttons ("Decrease Cappuccino quantity",
+    // "Remove Cappuccino") also carry the drink's name.
+    await openDrink(/^cappuccino/i);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "2 shots" })); });
     await addToOrder();
 

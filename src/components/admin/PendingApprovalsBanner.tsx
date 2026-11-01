@@ -77,7 +77,7 @@ export default function PendingApprovalsBanner({ canApprove }: PendingApprovalsB
                 type="button"
                 onClick={() => void approve(p.id)}
                 disabled={approving === p.id}
-                className="min-h-9 rounded-[var(--radius-btn)] px-3 favo-cta disabled:opacity-50"
+                className="min-h-11 rounded-[var(--radius-btn)] px-3 favo-cta disabled:opacity-50"
                 style={{ background: "var(--color-warning)", color: "var(--color-text-inverse)" }}
               >
                 {approving === p.id ? "…" : "Approve"}

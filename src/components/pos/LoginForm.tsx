@@ -13,7 +13,9 @@ import { Delete } from "lucide-react";
 import { loginWithPin } from "@/server/actions/auth";
 
 const MIN_PIN = 4;
-const MAX_PIN = 4;
+// PRD §10 loginWithPin: "4–6 digits". Never auto-submits — GO is the only
+// submit, so a 5- or 6-digit PIN is not cut short at 4 (QA R4-1).
+const MAX_PIN = 6;
 
 const PAD_KEYS = [
   "1", "2", "3",
@@ -104,7 +106,7 @@ export default function LoginForm({ redirectTo }: Props) {
         aria-live="polite"
         className="flex h-12 items-center justify-center gap-[var(--spacing-m)]"
       >
-        {Array.from({ length: MAX_PIN }).map((_, i) => (
+        {Array.from({ length: Math.max(MIN_PIN, pin.length) }).map((_, i) => (
           <span
             key={i}
             className={[

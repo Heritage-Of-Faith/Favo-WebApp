@@ -84,6 +84,7 @@ vi.mock("@/lib/db", () => ({
 import { createOrder } from "@/server/actions/orders";
 import { readShotPolicy } from "@/server/orders/shot-policy";
 import { db } from "@/lib/db";
+import { writeAudit } from "@/server/audit";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 const CAPPUCCINO = { id: "menu_cappuccino", name: "Cappuccino", category: "coffee", currentPriceZar: 2000, recipeId: "rec_capp" };
@@ -289,5 +290,33 @@ describe("input validation", () => {
     given({ modes: ["sunday"] });
     await walkIn([capp(3)]);
     expect(insertsInto(payments)).toEqual([]);
+  });
+});
+
+describe("AT-202 interim: no voucher on a line carrying an extra-shot surcharge", () => {
+  it("Sunday 3-shot line + a voucher → VOUCHER_NOT_ON_EXTRA_SHOTS, refused before anything is written, audited", async () => {
+    given({ modes: ["sunday"] });
+    const res = await createOrder({
+      notificationTarget: "none",
+      items: [{ ...capp(1) }, { ...capp(3), voucherCount: 1 }],
+      voucherKind: "untracked_hot_drink",
+    });
+    expect(res).toEqual({
+      ok: false, code: "VOUCHER_NOT_ON_EXTRA_SHOTS",
+      message: "Vouchers cover up to two shots; take the extra shots off or pay for this drink.",
+    });
+    expectNothingWritten();
+    expect(vi.mocked(writeAudit)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(writeAudit).mock.calls[0][0]).toMatchObject({
+      entityKind: "order", action: "reject", reason: "VOUCHER_NOT_ON_EXTRA_SHOTS",
+      after: { attempted: "create_with_vouchers", code: "VOUCHER_NOT_ON_EXTRA_SHOTS", voucherCounts: [0, 1] },
+    });
+  });
+
+  it("the same 3-shot line with no voucher is charged its surcharge as usual (R30.00)", async () => {
+    given({ modes: ["sunday"] });
+    const res = await walkIn([capp(3)]);
+    expect(res.ok && res.data.totalZar).toBe(3000);
+    expect(vi.mocked(writeAudit).mock.calls.map((c) => (c[0] as { action: string }).action)).not.toContain("reject");
   });
 });

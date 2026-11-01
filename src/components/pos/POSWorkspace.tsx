@@ -9,17 +9,22 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { signOut } from "@/server/actions/auth";
-import { searchCustomer } from "@/server/actions/customers";
+import { searchCustomer, resolveCustomer } from "@/server/actions/customers";
 import { getMenu } from "@/server/actions/menu";
 import { getActiveBeanLot } from "@/server/actions/inventory";
 import { createOrder, transitionOrder, cancelOrder, declineFreeCoffee } from "@/server/actions/orders";
 import type { CreateOrderTender } from "@/server/actions/orders";
 import { getFavo } from "@/server/actions/favo";
+import { getVoucherContext } from "@/server/actions/vouchers";
+import {
+  NO_VOUCHERS, SESSION_CHANGED_EVENT, draftLineGrossZar, draftLineNetZar, draftLineTakesVoucher, draftNetZar, nextVoucherCount,
+  type VoucherContext,
+} from "@/lib/pos-vouchers";
 import type { FavoView } from "@/server/favo/schema";
 import FavoPicker from "@/components/favo/FavoPicker";
 import { useOrderStream } from "@/hooks/useOrderStream";
 import { useDraftOrder, lineKey } from "@/store/draftOrder";
-import { formatZar, formatDate } from "@/lib/format";
+import { formatZar, formatDate, revenueDay } from "@/lib/format";
 import { computeLineTotalZar } from "@/server/orders/pricing";
 import { FAIL_CLOSED_POLICY, shotSurchargeZar, shotsLabel, type ShotPolicy } from "@/server/orders/shot-surcharge";
 import { freshness, daysSinceRoast } from "@/lib/status/freshness";
@@ -38,6 +43,9 @@ import WasteDialog from "@/components/pos/WasteDialog";
 import ConnectivityPill from "@/components/pos/ConnectivityPill";
 import SyncDrawer from "@/components/pos/SyncDrawer";
 import OfflineBanner from "@/components/pos/OfflineBanner";
+import PaymentBadge, { paymentBadgeKind } from "@/components/pos/PaymentBadge";
+import DraftLineButton from "@/components/pos/DraftLineButton";
+import { useDraftNotice } from "@/components/pos/useDraftNotice";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import ChargeOrderDialog from "@/components/pos/ChargeOrderDialog";
 import TenderPanel from "@/components/pos/TenderPanel";
@@ -46,7 +54,6 @@ import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
 import type { CustomerSearchResult, MenuItem, MenuCustomisation, Order, OrderState, InventoryLot } from "@/lib/types";
-import WasteLogModal from "@/components/pos/WasteLogModal";
 
 /**
  * AT-145: quantity-based customisations (e.g. Extra Shot) appear once per unit
@@ -124,16 +131,16 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   // AT-202 / §6.2.3c: the shot count picked for the drink being customised. Default 1.
   const [selectedShots, setSelectedShots] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const placingRef = useRef(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [showPayment, setShowPayment] = useState(false);
-  // The tender attempt createOrder began (or why it could not) — the card
-  // tender sends and polls it server-side (AT-201; no card form in the browser).
-  const [placedTender, setPlacedTender] = useState<CreateOrderTender>(null);
-  const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
+  const { notice: orderSuccess, setNotice: setOrderSuccess, clearOnDraft } = useDraftNotice();
   // The order already in `ordered` state that the payment step is settling.
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
   // Connectivity — drives the offline banner gate and the payment-screen swap
-  // between the card tender (online) and the deferred-payment notice (offline).
+  // between the online payment view and the deferred-payment notice (offline).
   const [online, setOnline] = useState(true);
   const deferredGuard = useRef(false);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -143,8 +150,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CustomerSearchResult[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchDone, setSearchDone] = useState(false); // current query has been answered
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const searchSeq = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { customer, items, totalZar, setCustomer, addItem, removeItem, updateQuantity, reset } = useDraftOrder();
+  const draft = useDraftOrder();
+  const { customer, items, totalZar } = draft;
   // L28 / REQ-046: every order binds a notification target before it is placed —
   // the attached customer, or an explicit "No notification" tap. Never defaulted.
   const [noNotification, setNoNotification] = useState(false);
@@ -155,6 +166,38 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   useEffect(() => {
     if (attachedCustomerId) setNoNotification(false);
   }, [attachedCustomerId]);
+  // L28: a reset draft (order sent, paid, abandoned or signed out) binds its own
+  // target next time — the "none" tap never carries over to the next order.
+  const reset = () => { draft.reset(); setNoNotification(false); };
+  // Clear removes the lines only — the attached customer stays (never detached silently).
+  const clearItems = () => { for (const i of items) draft.removeItem(lineKey(i)); };
+  // Starting a new draft drops the previous order's "sent to the queue" message.
+  const setCustomer = clearOnDraft(draft.setCustomer);
+  const addItem = clearOnDraft(draft.addItem);
+  const removeItem = clearOnDraft(draft.removeItem);
+  const updateQuantity = clearOnDraft(draft.updateQuantity);
+  const setVoucherCount = clearOnDraft(draft.setVoucherCount);
+
+  // §6.9.3 / L48: the voucher chip exists only while the open session carries
+  // a voucher kind. Re-read whenever the opening step opens or closes a session.
+  const [voucherCtx, setVoucherCtx] = useState<VoucherContext>(NO_VOUCHERS);
+  useEffect(() => {
+    let stale = false;
+    const read = () => {
+      getVoucherContext()
+        .then(r => { if (!stale) setVoucherCtx(r.ok ? r.data : NO_VOUCHERS); })
+        .catch(() => { if (!stale) setVoucherCtx(NO_VOUCHERS); });
+    };
+    read();
+    window.addEventListener(SESSION_CHANGED_EVENT, read);
+    return () => { stale = true; window.removeEventListener(SESSION_CHANGED_EVENT, read); };
+  }, []);
+  const vouchersLive = voucherCtx.available && voucherCtx.kind !== null;
+  // The draft's net after vouchers (display only — createOrder prices the order).
+  // AT-202 interim: a line with an extra-shot surcharge never carries a voucher.
+  const voucherCountOf = (i: (typeof items)[number]) => (draftLineTakesVoucher(i) ? i.voucherCount ?? 0 : 0);
+  const vouchersOnDraft = vouchersLive && items.some(i => voucherCountOf(i) > 0);
+  const draftDueZar = vouchersOnDraft ? draftNetZar(items) : totalZar;
 
   // AT-144 — the attached customer's Favo (saved usual order) + the Manage
   // Favo blocking modal (wireframe screens 6 + 2a).
@@ -215,6 +258,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   const [placedFreeCup, setPlacedFreeCup] = useState(false);
   // Whether a tender attempt was begun for the order just placed (P4: frozen).
   const [placedCardCheckout, setPlacedCardCheckout] = useState(false);
+  // The tender attempt createOrder began (or why it could not) — the card
+  // tender sends and polls it server-side (AT-201; no card form in the browser).
+  const [placedTender, setPlacedTender] = useState<CreateOrderTender>(null);
   const [declining, setDeclining] = useState<string | null>(null);
   // The server guarantee (owner rule, 12 Oct 2026): declineFreeCoffee and
   // applyFreeCoffee refuse with TENDER_IN_PROGRESS — under the order lock —
@@ -272,16 +318,59 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
     };
   }, []);
 
-  // Customer search debounce
+  // Restore the draft (cart + customer) kept in sessionStorage, so History
+  // navigation or a reload does not lose it. Optional-chained: tests stub the store.
+  // The saved draft only counts for the same staff member on the same SAST day, and
+  // its customer must still exist; otherwise it is dropped, never restored stale.
+  useEffect(() => {
+    const store = useDraftOrder;
+    if (!store.persist) return;
+    let cancelled = false;
+    (async () => {
+      await store.persist.rehydrate();
+      if (cancelled) return;
+      const owner = `${staffId}|${revenueDay()}`;
+      const s = store.getState();
+      if (s.draftOwner !== owner) {
+        s.reset();
+        store.setState({ draftOwner: owner });
+        return;
+      }
+      if (!s.customer) return;
+      try {
+        const r = await resolveCustomer(s.customer.id);
+        if (cancelled) return;
+        if (r.ok) store.setState({ customer: { id: r.data.id, name: r.data.name } });
+        else if (r.code === "NOT_FOUND") store.setState({ customer: null });
+      } catch { /* offline or unavailable: keep what we have */ }
+    })();
+    return () => { cancelled = true; };
+  }, [staffId]);
+
+  // Customer search debounce. Results belong to the query that produced them: they are
+  // cleared the moment the query changes, and a slower older response is dropped.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (query.trim().length < 2) { setSearchResults([]); setSearchOpen(false); return; }
+    const seq = ++searchSeq.current;
+    setSearchDone(false);
+    setActiveIdx(-1);
+    setSearchResults([]);
+    setSearchOpen(false);
+    if (query.trim().length < 2) return;
     debounceRef.current = setTimeout(async () => {
       const r = await searchCustomer(query);
-      if (r.ok) { setSearchResults(r.data); setSearchOpen(true); }
+      if (seq !== searchSeq.current) return; // stale
+      if (r.ok) { setSearchResults(r.data); setSearchOpen(true); setSearchDone(true); }
+      else if (r.code === "RATE_LIMITED") toast.warning(r.message);
     }, 320);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
+
+  function pickCustomer(c: CustomerSearchResult) {
+    setCustomer({ id: c.id, name: c.name });
+    setQuery("");
+    setSearchOpen(false);
+  }
 
   // Fetch full order when expanded
   async function fetchFullOrder(orderId: string) {
@@ -320,15 +409,26 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   // ── Order building ─────────────────────────────────────────────────────────
 
   async function handlePlaceOrder() {
-    if (items.length === 0 || submitting || !notificationTarget) return;
+    // A ref, not just state: a fast double tap fires twice before React re-renders,
+    // and the second tap must be ignored, never create a second order.
+    if (items.length === 0 || submitting || placingRef.current || !notificationTarget) return;
+    placingRef.current = true;
     setSubmitting(true);
     setOrderError(null);
+    try {
+      await placeOrder();
+    } finally {
+      placingRef.current = false;
+      setSubmitting(false);
+    }
+  }
 
+  async function placeOrder() {
+    if (!notificationTarget) return; // L28: no order without a bound target.
     // Offline at place-order — createOrder can't run. Go straight to the payment
     // screen, which (being offline) shows the deferred-payment notice. There's no
     // order in the DB yet, so confirming queues it to the outbox.
     if (!navigator.onLine) {
-      setSubmitting(false);
       setPaymentOrderId(null);
       setPlacedTender(null);
       setShowPayment(true);
@@ -337,20 +437,26 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
     const r = await createOrder({
       customerId: customer?.id,
       notificationTarget,
-      items: items.map(i => ({ menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id), shots: i.shots ?? 1 })),
+      items: items.map(i => ({
+        menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id),
+        shots: i.shots ?? 1,
+        // §6.9: vouchers ride the line they were tapped on (L41) — only while a kind is live.
+        ...(vouchersOnDraft && voucherCountOf(i) > 0 ? { voucherCount: i.voucherCount } : {}),
+      })),
+      ...(vouchersOnDraft && voucherCtx.kind ? { voucherKind: voucherCtx.kind } : {}),
     }).catch(() => ({ ok: false as const, code: "ERR", message: "Failed to place order." }));
-    setSubmitting(false);
     if (r.ok) {
-      // L28: the next order binds its own target.
-      setNoNotification(false);
       // Auto-expand the new order in the queue so barista sees it immediately
       setExpandedId(r.data.orderId);
-      setPlacedTender(r.data.tender ?? null);
       setPaymentOrderId(r.data.orderId);
+      setPlacedTender(r.data.tender ?? null);
       // L03 free cup: the server decided it — show the net total, and tell the
       // barista once (applied, already claimed, not eligible, pick a customer).
       const net = typeof r.data.totalZar === "number" ? r.data.totalZar : null;
-      setPlacedTotalZar(net);
+      // The order exists now. Show its total from component state and empty the saved
+      // draft straight away, so a reload or History trip can never bring back a sent cart.
+      setPlacedTotalZar(net ?? totalZar);
+      reset();
       setPlacedFreeCup(r.data.freeCup?.applied === true);
       setPlacedCardCheckout(r.data.cardCheckout === true);
       if (r.data.freeCup?.message) {
@@ -392,10 +498,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
         });
       }
       reset();
-      setNoNotification(false);
       setShowPayment(false);
       setPaymentOrderId(null);
-      setPlacedTender(null);
       toast.success("Paid in person — order confirmed");
     } catch {
       setOrderError("Failed to save order offline. Please retry.");
@@ -476,8 +580,22 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   }
 
   async function handleSignOut() {
+    // The kept draft must not carry over to whoever signs in next on this tab.
+    reset();
+    useDraftOrder.persist?.clearStorage();
     await signOut();
     router.push("/pos");
+  }
+
+  /** Start a fresh draft after an order was already placed (never restores the sent cart). */
+  function startNewOrder() {
+    reset();
+    setShowPayment(false);
+    setPaymentOrderId(null);
+    setPlacedTotalZar(null);
+    setPlacedFreeCup(false);
+    setPlacedCardCheckout(false);
+    setPlacedTender(null);
   }
 
   // ── Zone A top — customer search/attach panel (Phase 5 wireframe states A1-A4) ──
@@ -489,23 +607,39 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
           <div className="relative">
             <Search size={13} strokeWidth={2} className="absolute left-2 top-1/2 -translate-y-1/2 text-cool-steel pointer-events-none" />
             <input type="search" inputMode="text" autoComplete="off"
-              placeholder="Search name, email, or phone…"
+              placeholder="Search name or phone"
               value={query}
               onChange={e => { setQuery(e.target.value); if (!e.target.value) setCustomer(null); }}
               onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
               onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+              onKeyDown={e => {
+                if (!searchOpen || searchResults.length === 0) return;
+                if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => (i + 1) % searchResults.length); }
+                else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => (i <= 0 ? searchResults.length - 1 : i - 1)); }
+                else if (e.key === "Enter") { e.preventDefault(); pickCustomer(searchResults[activeIdx >= 0 ? activeIdx : 0]); }
+                else if (e.key === "Escape") setSearchOpen(false);
+              }}
+              role="combobox" aria-expanded={searchOpen} aria-controls="customer-search-results" aria-autocomplete="list"
+              aria-activedescendant={activeIdx >= 0 ? `customer-result-${activeIdx}` : undefined}
               className="w-full rounded-[4px] border border-cool-steel/20 bg-coffee-bean/5 pl-7 pr-7 py-1.5 text-coffee-bean placeholder:text-cool-steel text-xs focus:border-crimson-carrot focus:outline-none min-h-[44px]"
             />
+            {searchOpen && searchDone && searchResults.length === 0 && (
+              <p role="status" className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface px-3 py-2 favo-small text-cool-steel shadow-[var(--shadow-2)]">
+                No results
+              </p>
+            )}
             {searchOpen && searchResults.length > 0 && (
-              <ul className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface shadow-[var(--shadow-2)] overflow-hidden">
-                {searchResults.map(c => {
-                  // REQ-142: where two results read alike, show the last four phone digits.
-                  const readsAlike = searchResults.some(o => o.id !== c.id && o.name.trim().toLowerCase() === c.name.trim().toLowerCase());
+              <ul id="customer-search-results" role="listbox" className="absolute z-50 left-0 right-0 top-full mt-1 rounded-[2px] border border-cool-steel/20 bg-surface shadow-[var(--shadow-2)] overflow-hidden">
+                {searchResults.map((c, idx) => {
+                  // REQ-142 / DEF-F: the surname always renders beside the given
+                  // name; where two results still read alike, show the last four phone digits.
+                  const label = (r: CustomerSearchResult) => (r.surname ? `${r.name} ${r.surname}` : r.name);
+                  const readsAlike = searchResults.some(o => o.id !== c.id && label(o).trim().toLowerCase() === label(c).trim().toLowerCase());
                   return (
-                  <li key={c.id}>
-                    <button type="button" onMouseDown={() => { setCustomer({ id: c.id, name: c.name }); setQuery(""); setSearchOpen(false); }}
-                      className="flex w-full items-center justify-between px-3 py-2 min-h-[44px] hover:bg-coffee-bean/8 text-left">
-                      <span className="favo-small text-coffee-bean font-semibold">{c.name}</span>
+                  <li key={c.id} id={`customer-result-${idx}`} role="option" aria-selected={idx === activeIdx}>
+                    <button type="button" tabIndex={-1} onMouseDown={() => pickCustomer(c)}
+                      className={["flex w-full items-center justify-between px-3 py-2 min-h-[44px] hover:bg-coffee-bean/8 text-left", idx === activeIdx ? "bg-coffee-bean/10" : ""].join(" ")}>
+                      <span className="favo-small text-coffee-bean font-semibold">{label(c)}</span>
                       {readsAlike && c.phoneLast4 && (
                         <span className="favo-caption text-cool-steel tabular-nums">…{c.phoneLast4}</span>
                       )}
@@ -563,7 +697,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   function renderCustomisationPanel() {
     if (!modTarget) {
       return (
-        <div className="zone flex-1 flex items-center justify-center p-3 min-h-0">
+        <div className="zone hidden lg:flex flex-1 items-center justify-center p-3 min-h-0">
           <p className="favo-small text-cool-steel/60 text-center">Tap an item to customise</p>
         </div>
       );
@@ -640,10 +774,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                     prev.some(m => m.id === mod.id) ? prev.filter(m => m.id !== mod.id) : [...prev, mod]
                   )} aria-pressed={on}
                     className={["flex w-full items-center justify-between rounded-[2px] border px-3 py-2 min-h-[44px] transition-colors",
-                      on ? "border-crimson-carrot bg-crimson-carrot/10 text-coffee-bean" : "border-cool-steel/30 bg-coffee-bean/5 text-coffee-bean hover:bg-coffee-bean/8"
+                      on ? "border-2 border-crimson-carrot bg-crimson-carrot text-porcelain" : "border-cool-steel/30 bg-coffee-bean/5 text-coffee-bean hover:bg-coffee-bean/8"
                     ].join(" ")}>
-                    <span className="favo-small font-semibold">{mod.name}</span>
-                    {mod.priceDeltaZar !== 0 && <span className="favo-caption text-cool-steel">+{formatZar(mod.priceDeltaZar)}</span>}
+                    <span className="favo-small font-semibold">{on ? "✓ " : ""}{mod.name}</span>
+                    {mod.priceDeltaZar !== 0 && <span className={["favo-caption", on ? "text-porcelain" : "text-cool-steel"].join(" ")}>+{formatZar(mod.priceDeltaZar)}</span>}
                   </button>
                 </li>
               );
@@ -682,19 +816,34 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
           <p className="favo-small text-cool-steel/60">No items yet</p>
         ) : (
           <div className="space-y-1.5 overflow-y-auto">
-            {items.map(item => (
-              <div key={lineKey(item)} className="flex items-center gap-2">
+            {items.map(item => {
+              const m = vouchersLive ? Math.min(voucherCountOf(item), item.quantity) : 0;
+              const grossZar = draftLineGrossZar(item);
+              return (
+              <div key={lineKey(item)} data-line className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
-                  <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity - 1)}
-                    className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
+                  <DraftLineButton onClick={() => updateQuantity(lineKey(item), item.quantity - 1)} aria-label={`Decrease ${item.menuItemName} quantity`}
+                    className="rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
                     <Minus size={12} strokeWidth={2} />
-                  </button>
+                  </DraftLineButton>
                   <span className="favo-small text-coffee-bean w-5 text-center">{item.quantity}</span>
-                  <button type="button" onClick={() => updateQuantity(lineKey(item), item.quantity + 1)}
-                    className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
+                  <DraftLineButton onClick={() => updateQuantity(lineKey(item), item.quantity + 1)} aria-label={`Increase ${item.menuItemName} quantity`}
+                    className="rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
                     <Plus size={12} strokeWidth={2} />
-                  </button>
+                  </DraftLineButton>
                 </div>
+                {/* §6.9.3 voucher chip — rendered only while a kind is live (L48 / REQ-146).
+                    One tap, no confirm: the struck-through line is the confirmation. */}
+                {/* AT-202 interim: no chip on a line with an extra-shot surcharge (VOUCHER_NOT_ON_EXTRA_SHOTS). */}
+                {vouchersLive && grossZar > 0 && draftLineTakesVoucher(item) && (
+                  <button type="button" aria-pressed={m > 0}
+                    onClick={() => setVoucherCount(lineKey(item), nextVoucherCount({ quantity: item.quantity, voucherCount: m }))}
+                    className={["flex h-11 min-w-11 items-center justify-center rounded-[999px] border px-3 favo-caption transition-colors",
+                      m > 0 ? "border-crimson-carrot bg-crimson-carrot/10 text-coffee-bean font-semibold" : "border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8",
+                    ].join(" ")}>
+                    voucher
+                  </button>
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="favo-small text-coffee-bean truncate">{item.menuItemName}</p>
                   {(item.shots !== undefined || item.modifications.length > 0) && (
@@ -703,17 +852,24 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                         .filter(Boolean).join(" · ")}
                     </p>
                   )}
+                  {/* REQ-147: m of n, so a partly vouchered line never reads as fully vouchered. */}
+                  {m > 0 && <p className="favo-caption text-cool-steel">{`${m} of ${item.quantity}`}</p>}
                 </div>
-                <span className="favo-small text-coffee-bean shrink-0">
-                  {/* AT-202: surcharge-inclusive (§7.0.2), per unit × quantity. */}
-                  {formatZar(computeLineTotalZar(item))}
-                </span>
-                <button type="button" onClick={() => removeItem(lineKey(item))}
-                  className="flex h-11 w-11 items-center justify-center text-cool-steel hover:text-[var(--color-error)]">
+                {m > 0 ? (
+                  <span className="favo-small text-coffee-bean shrink-0 flex flex-col items-end">
+                    <s className="favo-caption text-cool-steel">{formatZar(grossZar)}</s>
+                    <span>{formatZar(draftLineNetZar({ ...item, voucherCount: m }))}</span>
+                  </span>
+                ) : (
+                  <span className="favo-small text-coffee-bean shrink-0">{formatZar(grossZar)}</span>
+                )}
+                <DraftLineButton onClick={() => removeItem(lineKey(item))} aria-label={`Remove ${item.menuItemName}`}
+                  className="text-cool-steel hover:text-[var(--color-error)]">
                   <Trash2 size={12} strokeWidth={2} />
-                </button>
+                </DraftLineButton>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {orderError && <p className="favo-small text-[var(--color-error)]" role="alert">{orderError}</p>}
@@ -726,9 +882,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="favo-label text-cool-steel">Total</p>
-            <p className="favo-subhead text-coffee-bean">{formatZar(totalZar)}</p>
+            <p className="favo-subhead text-coffee-bean">{formatZar(draftDueZar)}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
               onClick={() => setShowWasteModal(true)}
@@ -738,15 +894,32 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
               <Trash2 size={12} strokeWidth={2} aria-hidden />
               <span>Waste</span>
             </button>
-            <button type="button" onClick={() => { reset(); setNoNotification(false); }} disabled={items.length === 0}
-              className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel hover:bg-coffee-bean/8 min-h-[44px] disabled:opacity-40">
-              Clear
-            </button>
-            <button type="button" onClick={handlePlaceOrder} disabled={submitting || items.length === 0 || !notificationTarget}              className="flex items-center gap-2 rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
+            {confirmClear && items.length > 0 ? (
+              <span className="flex items-center gap-1" role="group" aria-label="Clear the order?">
+                <span className="favo-small text-coffee-bean whitespace-nowrap">Clear {items.length} {items.length === 1 ? "item" : "items"}?</span>
+                <button type="button" onClick={() => { clearItems(); setConfirmClear(false); }}
+                  className="rounded-[4px] border border-[var(--color-error)]/50 px-3 py-2 favo-small text-[var(--color-error)] min-h-[44px]">
+                  Yes, clear
+                </button>
+                <button type="button" onClick={() => setConfirmClear(false)}
+                  className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel min-h-[44px]">
+                  Keep
+                </button>
+              </span>
+            ) : (
+              <button type="button" onClick={() => setConfirmClear(true)} disabled={items.length === 0}
+                className="rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-cool-steel hover:bg-coffee-bean/8 min-h-[44px] disabled:opacity-40">
+                Clear
+              </button>
+            )}
+            <button type="button" onClick={handlePlaceOrder} disabled={submitting || items.length === 0 || !notificationTarget}
+              className="flex items-center gap-2 whitespace-nowrap rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
               style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
               {submitting
                 ? <Loader2 size={14} strokeWidth={2} className="animate-spin" />
-                : `Charge ${formatZar(totalZar)}`}
+                : vouchersOnDraft && draftDueZar === 0
+                  ? "Send to queue" /* L42: nothing owed, no tender */
+                  : `Charge ${formatZar(draftDueZar)}`}
             </button>
           </div>
         </div>
@@ -763,12 +936,18 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       {/* ════════ OUT-OF-STOCK BANNER (M9) ════════ */}
       <StockBanner outOfStockItems={outOfStockItems} />
 
+      {/* ════════ STAFF PUSH OPT-IN (M10) — in-flow, never overlays a button ════════ */}
+      <StaffPushOptIn />
+
       {/* ════════ TOP BAR ════════ */}
-      <div className="flex items-center gap-3 px-3 py-2 border-b border-cool-steel/20 shrink-0">
+      <div data-pos-header className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 border-b border-cool-steel/20 shrink-0">
         <Image src="/brand/logos/logo-monogram.svg" alt="FAVO" width={24} height={24} className="opacity-80 shrink-0" />
-        <span className="favo-h3 text-coffee-bean mr-auto">FAVO · POS</span>
-        <div className="shrink-0 hidden lg:block"><ActiveBeanCard /></div>
-        <div className="shrink-0 hidden lg:block"><OpenContainersCard /></div>
+        <span className="favo-h3 text-coffee-bean mr-auto whitespace-nowrap shrink-0">FAVO · POS</span>
+        {/* Own row (scrolls sideways inside itself) until 2xl, so it can never push Sign out off-screen. */}
+        <div data-pos-strip className="flex order-last basis-full min-w-0 max-w-full items-center gap-3 overflow-x-auto 2xl:order-none 2xl:basis-auto">
+          <div className="shrink-0"><ActiveBeanCard /></div>
+          <div className="shrink-0"><OpenContainersCard /></div>
+        </div>
         <span className="favo-small text-cool-steel shrink-0 hidden lg:block">{staffName}</span>
         {/* M15 — connectivity pill; tap opens the sync drawer */}
         <ConnectivityPill
@@ -787,7 +966,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
             Admin
           </a>
         )}
-        <button type="button" onClick={handleSignOut} aria-label="Sign out"
+        <button type="button" onClick={() => (items.length > 0 ? setConfirmSignOut(true) : handleSignOut())} aria-label="Sign out"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
           <LogOut size={16} strokeWidth={2} />
         </button>
@@ -826,13 +1005,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       {!showPayment ? (
         <>
         {/* ════════ ZONE A — CUSTOMER + CUSTOMISATION ════════ */}
-        <div className="flex flex-col border-r border-cool-steel/20 min-h-0" style={{ width: "24%" }}>
+        <div className="flex flex-col border-r border-cool-steel/20 min-h-0 min-w-0 w-[28%] lg:w-[24%]">
           {renderCustomerPanel()}
           {renderCustomisationPanel()}
         </div>
 
         {/* ════════ ZONE B — ORDER BUILDER + RUNNING ORDER ════════ */}
-        <div className="flex flex-col border-r border-cool-steel/20 min-h-0" style={{ width: "44%" }}>
+        <div className="flex flex-col border-r border-cool-steel/20 min-h-0 min-w-0 w-[40%] lg:w-[44%]">
           <div className="flex-1 overflow-y-auto px-3 pt-2 pb-2 min-h-0">
             {menuLoading ? (
               <div className="flex items-center justify-center h-32 text-cool-steel gap-2">
@@ -840,7 +1019,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                 <span className="favo-small">Loading…</span>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                 {menu.map(item => {
                   const stock = menuItemStock(item.id);
                   const oos = stock === "out";
@@ -873,18 +1052,21 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
             // Free only when nothing is owed — no tender, confirm directly (REQ-153).
             const isFree = amountDueZar === 0;
 
-            const clearPayment = () => {
+            // After the order is paid (or free-confirmed): clear everything.
+            const finishPayment = () => {
               reset();
               setShowPayment(false);
-              setPlacedTender(null);
               setPaymentOrderId(null);
               setPlacedTotalZar(null);
               setPlacedFreeCup(false);
+              setPlacedTender(null);
+              setOrderSuccess("Order paid — sent to the queue.");
+              setTimeout(() => setOrderSuccess(null), 4000);
             };
-            // After the order is paid (or free-confirmed): clear everything.
-            const finishPayment = () => {
-              if (paymentOrderId && !isFree) handleOrderPaid(paymentOrderId);
-              clearPayment();
+            // The card tender settled the order (the server read `successful`).
+            const finishCardPayment = () => {
+              if (paymentOrderId) handleOrderPaid(paymentOrderId);
+              startNewOrder();
               setOrderSuccess("Order paid — sent to the queue.");
               setTimeout(() => setOrderSuccess(null), 4000);
             };
@@ -894,7 +1076,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
             const finishUnresolved = () => {
               const id = paymentOrderId;
               if (id) setFullOrders(prev => { const n = { ...prev }; delete n[id]; return n; });
-              clearPayment();
+              startNewOrder();
             };
 
             // Offline on the payment screen (R2 — Yoco outage): take payment on
@@ -905,7 +1087,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                 <DeferredPaymentNotice
                   totalZar={amountDueZar}
                   onConfirmDeferred={handleDeferredConfirm}
-                  onBack={() => { setShowPayment(false); setPaymentOrderId(null); setPlacedTender(null); }}
+                  onBack={() => {
+                    // Order already created: the cart was sent, so start fresh — never restore it.
+                    if (paymentOrderId) { startNewOrder(); return; }
+                    setShowPayment(false); setPaymentOrderId(null);
+                  }}
                 />
               );
             }
@@ -917,7 +1103,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                   <p className="favo-label text-cool-steel mb-1">Amount due</p>
                   <p className="favo-h2 text-coffee-bean">{formatZar(amountDueZar)}</p>
                   <p className="favo-small text-cool-steel mt-1">
-                    Tap or insert the customer's card
+                    Tap or insert the customer&apos;s card
                   </p>
                   {placedFreeCup && paymentOrderId && !placedCardCheckout && (
                     <FreeCupRow
@@ -929,17 +1115,19 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
 
                 <div className="flex flex-col gap-3 w-full max-w-[320px]">
                   {isFree ? (
-                    /* Free order — one tap to confirm and send to the queue. */
-                    <button type="button" onClick={finishPayment}
+                    /* Free order. Once it exists it is already in the queue, so this is
+                       not a second send: it only starts the next order. */
+                    <button type="button" onClick={paymentOrderId ? startNewOrder : finishPayment}
                       className="flex w-full items-center justify-center gap-2 rounded-[4px] py-4 min-h-[52px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-porcelain"
                       style={{ background: "var(--color-success)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
                       <CheckCircle size={16} strokeWidth={2} className="mr-1" />
-                      Confirm — send to queue
+                      {paymentOrderId ? "New order" : "Confirm — send to queue"}
                     </button>
                   ) : paymentOrderId ? (
                     /* The card tender: the amount is pushed to the machine and the
-                       outcome fetched server-side (T2 steps 3–5). The order is in
-                       the queue either way; Done leaves it there unpaid. */
+                       outcome fetched server-side (T2 steps 3–5). No Yoco key,
+                       SDK or card form is in the browser (REQ-071). The order is
+                       in the queue either way; Done leaves it there unpaid. */
                     <div className="flex flex-col gap-2">
                       <TenderPanel
                         key={paymentOrderId}
@@ -947,11 +1135,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                         amountZar={amountDueZar}
                         attempt={placedTender?.ok ? placedTender.attempt : undefined}
                         initialFailure={placedTender && !placedTender.ok ? placedTender : undefined}
-                        onPaid={finishPayment}
+                        onPaid={finishCardPayment}
                         onUnresolved={finishUnresolved}
                       />
                       <button type="button"
-                        onClick={clearPayment}
+                        onClick={startNewOrder}
                         className="favo-small rounded-[4px] border border-cool-steel/30 px-3 py-2 min-h-[44px] text-coffee-bean hover:bg-coffee-bean/8">
                         Done — back to the till
                       </button>
@@ -963,10 +1151,19 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                     </p>
                   )}
 
-                  <button type="button" onClick={() => setShowPayment(false)}
-                    className="favo-small text-cool-steel underline underline-offset-2 hover:text-coffee-bean transition-colors min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
-                    ← Back to order
-                  </button>
+                  {/* With an order already created, "Back to order" would restore the
+                      cart that was just sent (duplicate orders). Offer a fresh draft instead. */}
+                  {paymentOrderId ? (!isFree && (
+                    <button type="button" onClick={startNewOrder}
+                      className="favo-small text-cool-steel underline underline-offset-2 hover:text-coffee-bean transition-colors min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
+                      New order
+                    </button>
+                  )) : (
+                    <button type="button" onClick={() => setShowPayment(false)}
+                      className="favo-small text-cool-steel underline underline-offset-2 hover:text-coffee-bean transition-colors min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot">
+                      ← Back to order
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -975,7 +1172,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       )}
 
       {/* ════════ ZONE C — OPEN ORDERS BOARD ════════ */}
-      <div className="flex flex-col" style={{ width: "32%" }}>
+      <div className="flex flex-col min-w-0 w-[32%]">
 
         {/* Queue header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-cool-steel/20 shrink-0">
@@ -1028,20 +1225,21 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                 {/* Card header — always visible, tap to expand */}
                 <button type="button" onClick={() => toggleExpand(o.orderId)}
                   className="w-full flex items-center justify-between px-3 py-3 min-h-[60px] hover:bg-coffee-bean/5 transition-colors text-left">
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <span className={["block h-2 w-2 rounded-full shrink-0", STATE_DOT[o.state]].join(" ")} />
-                    <div>
-                      <p className="favo-small text-coffee-bean font-semibold leading-tight">
+                    <div className="min-w-0">
+                      {/* Wraps to two lines (name, then id) so a portrait iPad never shows "Thabo Mokoe…". */}
+                      <p className="favo-small text-coffee-bean font-semibold leading-tight break-words">
                         {o.customerName ?? "Walk-in"}
-                        <span className="favo-caption text-cool-steel font-normal ml-1.5">
+                        <span className="favo-caption text-cool-steel font-normal block">
                           #{o.orderId.slice(-6).toUpperCase()}
                         </span>
                       </p>
                       <p className="favo-caption text-cool-steel">{formatDate(new Date(o.lastUpdatedAt))}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={["favo-caption rounded-[999px] px-2 py-0.5", STATE_BADGE[o.state]].join(" ")}>
+                  <div className="flex shrink-0 items-center gap-2 pl-2">
+                    <span className={["favo-caption whitespace-nowrap rounded-[999px] px-2 py-0.5", STATE_BADGE[o.state]].join(" ")}>
                       {STATE_LABEL[o.state]}
                     </span>
                     {isExpanded
@@ -1082,7 +1280,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                                 {item.modifications.length > 0 && (
                                   <p className="favo-caption text-cool-steel">{formatModifications(item.modifications)}</p>
                                 )}
-                                {(item.discountZar ?? 0) > 0 && (
+                                {(item.voucherCount ?? 0) > 0 ? (
+                                  <p className="favo-caption text-cool-steel">
+                                    {`Voucher · ${item.voucherCount} of ${item.quantity}`} −{formatZar(item.discountZar ?? 0)}
+                                  </p>
+                                ) : (item.discountZar ?? 0) > 0 && (
                                   <p className="favo-caption text-cool-steel">Free cup −{formatZar(item.discountZar ?? 0)}</p>
                                 )}
                               </div>
@@ -1102,15 +1304,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                         {!isDone && (
                           <div className="flex justify-between items-center">
                             <span className="favo-caption text-cool-steel">PAYMENT</span>
-                            {needsPayment ? (
-                              <span className="favo-caption rounded-[999px] px-2 py-0.5" style={{ background: "color-mix(in srgb, var(--color-warning) 16%, transparent)", color: "var(--color-warning)" }}>
-                                Unpaid
-                              </span>
-                            ) : (
-                              <span className="favo-caption rounded-[999px] px-2 py-0.5 flex items-center gap-1" style={{ background: "color-mix(in srgb, var(--color-success) 16%, transparent)", color: "var(--color-success)" }}>
-                                <CheckCircle size={10} strokeWidth={2.5} /> Paid
-                              </span>
-                            )}
+                            <PaymentBadge kind={paymentBadgeKind(full.totalZar, full.paymentStatus, paidLocally.has(o.orderId))} />
                           </div>
                         )}
                       </>
@@ -1202,9 +1396,29 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       </div>
       </div>{/* end flex flex-1 row */}
 
-      {/* ════════ WASTE LOG MODAL (M8) ════════ */}
+      {/* ════════ SIGN-OUT WITH A FULL CART — ask first ════════ */}
+      {confirmSignOut && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-coffee-bean/60 px-4"
+          role="alertdialog" aria-modal="true" aria-label="Sign out with an order in progress">
+          <div className="w-full max-w-[380px] rounded-[var(--radius-card)] bg-porcelain p-5 flex flex-col gap-3">
+            <p className="favo-small text-coffee-bean">
+              There {items.length === 1 ? "is 1 item" : `are ${items.length} items`} in the order that has not been sent.
+              Signing out will throw it away.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setConfirmSignOut(false)}
+                className="min-h-[44px] rounded-[4px] border border-cool-steel/30 px-4 favo-small text-coffee-bean">Stay signed in</button>
+              <button type="button" onClick={() => { setConfirmSignOut(false); void handleSignOut(); }}
+                className="min-h-[44px] rounded-[4px] px-4 favo-small font-bold"
+                style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)" }}>Sign out anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════ WASTE (M8) — item picker, validated quantity ════════ */}
       {showWasteModal && (
-        <WasteLogModal
+        <WasteDialog
           onClose={() => setShowWasteModal(false)}
           onLogged={() => setShowWasteModal(false)}
         />
@@ -1217,9 +1431,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
           onClose={() => { setWasteOpen(false); setWasteCategory("spilled"); }}
         />
       )}
-
-      {/* ════════ STAFF PUSH OPT-IN (M10) ════════ */}
-      <StaffPushOptIn />
 
       {/* ════════ MANAGE FAVO (AT-144, wireframe 2a) — full blocking modal ════════
           The scrim is deliberately inert: tapping it does nothing, so mid-edit

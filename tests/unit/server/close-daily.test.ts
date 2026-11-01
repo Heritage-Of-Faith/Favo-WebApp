@@ -61,12 +61,8 @@ describe("dayBounds", () => {
 // ─── closeDaily — DB integration (mocked) ────────────────────────────────────
 
 vi.mock("@db/index", () => {
-  return {
-    db: {
-      select: vi.fn(),
-      execute: vi.fn(),
-    },
-  };
+  const db = { select: vi.fn(), execute: vi.fn(), transaction: vi.fn() };
+  return { db };
 });
 
 vi.mock("@/server/audit", () => ({
@@ -86,102 +82,154 @@ vi.mock("@/server/push/payload", () => ({
   isValidPushSubscription: (x: unknown) => x != null,
 }));
 
+const DAY = new Date("2026-06-08T10:00:00Z");
+const ADMIN = { id: "staff-admin-1", pushSubscription: { endpoint: "https://push.example/1", keys: { p256dh: "x", auth: "y" } } };
+
+/** db.select().from().where() resolving to `rows`. */
+const selectResolving = (rows: unknown[]) =>
+  ({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(rows) }) }) as unknown as ReturnType<typeof import("@db/index").db.select>;
+
+/**
+ * Queue the DB reads of one close, in order: inside the transaction the
+ * advisory lock, the close-record check, revenue and payments; then, only on a
+ * mismatch, the admin lookup for the push.
+ */
+async function mockClose(o: { closed?: boolean; revenue?: number; payments?: number; admins?: unknown[] }) {
+  const { db } = await import("@db/index");
+  vi.mocked(db.transaction).mockImplementation(((fn: (tx: unknown) => unknown) => fn(db)) as never);
+  vi.mocked(db.execute).mockResolvedValueOnce([] as unknown as Awaited<ReturnType<typeof db.execute>>); // lock
+  vi.mocked(db.select).mockReturnValueOnce(selectResolving(o.closed ? [{ day: "2026-06-08" }] : []));
+  if (o.closed) return;
+  vi.mocked(db.select).mockReturnValueOnce(selectResolving([{ total: o.revenue ?? 0 }]));
+  vi.mocked(db.execute).mockResolvedValueOnce([{ total: String(o.payments ?? 0) }] as unknown as Awaited<ReturnType<typeof db.execute>>);
+  if (o.admins) vi.mocked(db.select).mockReturnValueOnce(selectResolving(o.admins));
+}
+
 describe("closeDaily — reconciliation", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns ok band when revenue matches payments", async () => {
-    const { db } = await import("@db/index");
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ total: 100000 }]),
-      }),
-    } as unknown as ReturnType<typeof db.select>);
-    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "100000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
-
+    await mockClose({ revenue: 100000, payments: 100000 });
     const { closeDaily } = await import("@/server/crons/close-daily");
-    const result = await closeDaily(new Date("2026-06-08T10:00:00Z"));
+    const result = await closeDaily(DAY);
 
-    expect(result.band).toBe("ok");
-    expect(result.variancePct).toBe(0);
+    expect(result).toMatchObject({ alreadyClosed: false, band: "ok", variancePct: 0 });
   });
 
   it("returns critical band on >10% mismatch and pushes an alert to admin staff", async () => {
-    const { db } = await import("@db/index");
-    vi.mocked(db.select)
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ total: 100000 }]),
-        }),
-      } as unknown as ReturnType<typeof db.select>)
-      // Admin-staff lookup for the push alert
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([
-            { id: "staff-admin-1", pushSubscription: { endpoint: "https://push.example/1", keys: { p256dh: "x", auth: "y" } } },
-          ]),
-        }),
-      } as unknown as ReturnType<typeof db.select>);
     // Payments only 80% of revenue → 20% variance
-    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "80000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
-
+    await mockClose({ revenue: 100000, payments: 80000, admins: [ADMIN] });
     const { closeDaily } = await import("@/server/crons/close-daily");
-    const result = await closeDaily(new Date("2026-06-08T10:00:00Z"));
+    const result = await closeDaily(DAY);
 
-    expect(result.band).toBe("critical");
+    expect(result).toMatchObject({ band: "critical" });
     expect(sendNotification).toHaveBeenCalledOnce();
   });
 
   it("does NOT push an alert when band is ok", async () => {
-    const { db } = await import("@db/index");
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ total: 50000 }]),
-      }),
-    } as unknown as ReturnType<typeof db.select>);
-    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "50000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
-
+    await mockClose({ revenue: 50000, payments: 50000 });
     const { closeDaily } = await import("@/server/crons/close-daily");
-    await closeDaily(new Date("2026-06-08T10:00:00Z"));
+    await closeDaily(DAY);
 
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
   it("returns investigate band on 7% mismatch", async () => {
-    const { db } = await import("@db/index");
-    vi.mocked(db.select)
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ total: 100000 }]),
-        }),
-      } as unknown as ReturnType<typeof db.select>)
-      // No admin recipients — the alert path just no-ops.
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
-      } as unknown as ReturnType<typeof db.select>);
-    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "93000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
-
+    // No admin recipients — the alert path just no-ops.
+    await mockClose({ revenue: 100000, payments: 93000, admins: [] });
     const { closeDaily } = await import("@/server/crons/close-daily");
-    const result = await closeDaily(new Date("2026-06-08T10:00:00Z"));
+    const result = await closeDaily(DAY);
 
-    expect(result.band).toBe("investigate");
-    expect(result.variancePct).toBeCloseTo(7, 0);
+    expect(result).toMatchObject({ band: "investigate" });
+    expect(result.alreadyClosed === false && result.variancePct).toBeCloseTo(7, 0);
   });
 
   it("writes an audit row on every run", async () => {
-    const { db } = await import("@db/index");
-    vi.mocked(db.select).mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ total: 0 }]),
-      }),
-    } as unknown as ReturnType<typeof db.select>);
-    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "0" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
-
+    await mockClose({});
     const { closeDaily } = await import("@/server/crons/close-daily");
-    await closeDaily(new Date("2026-06-08T10:00:00Z"));
+    await closeDaily(DAY);
 
     const { writeAudit } = await import("@/server/audit");
     expect(vi.mocked(writeAudit)).toHaveBeenCalledOnce();
     const auditCall = vi.mocked(writeAudit).mock.calls[0][0];
     expect(auditCall.action).toBe("daily_close");
+  });
+
+  // AT-209 / L02: a paid order cancelled after start keeps its money. Revenue
+  // adds the cancelled-with-successful-payment case to the non-cancelled rule
+  // (#260), so it covers the same orders as the payments query and that order
+  // raises no variance alert.
+  it("revenue also counts a cancelled order holding a successful payment; no false alert", async () => {
+    const { db } = await import("@db/index");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const { CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL } = await import("@/server/reports/revenue-scope");
+    vi.mocked(db.transaction).mockImplementation(((fn: (tx: unknown) => unknown) => fn(db)) as never);
+    vi.mocked(db.execute).mockResolvedValueOnce([] as unknown as Awaited<ReturnType<typeof db.execute>>); // lock
+    vi.mocked(db.select).mockReturnValueOnce(selectResolving([])); // no close record yet
+    let whereArg: unknown;
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn((w: unknown) => { whereArg = w; return Promise.resolve([{ total: 3000 }]); }),
+      }),
+    } as unknown as ReturnType<typeof db.select>);
+    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "3000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
+
+    const { closeDaily } = await import("@/server/crons/close-daily");
+    const result = await closeDaily(DAY);
+
+    const rendered = new PgDialect().sqlToQuery(whereArg as import("drizzle-orm").SQL).sql;
+    expect(rendered).toContain(`"orders"."state" <> $`);
+    expect(rendered).toContain(` or ${CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL}`);
+    expect(rendered).toContain(`"orders"."revenue_day" = $`);
+    expect(result).toMatchObject({ alreadyClosed: false, band: "ok" });
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+});
+
+// ─── closeDaily — AT-193: idempotent, completed days only, catch-up recorded ─
+
+describe("closeDaily — one close per revenue day (AT-193, §9.6.2 job 2)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("a second close of a closed day writes nothing and pushes nothing", async () => {
+    await mockClose({ closed: true });
+    const { closeDaily } = await import("@/server/crons/close-daily");
+    const result = await closeDaily(DAY);
+
+    expect(result).toEqual({ date: "2026-06-08", alreadyClosed: true });
+    const { writeAudit } = await import("@/server/audit");
+    expect(vi.mocked(writeAudit)).not.toHaveBeenCalled();
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("takes the per-day lock before checking for a close record", async () => {
+    await mockClose({});
+    const { closeDaily } = await import("@/server/crons/close-daily");
+    await closeDaily(DAY);
+
+    const { db } = await import("@db/index");
+    const lockQuery = JSON.stringify(vi.mocked(db.execute).mock.calls[0][0]);
+    expect(lockQuery).toContain("pg_advisory_xact_lock");
+    expect(lockQuery).toContain("daily_close:2026-06-08");
+  });
+
+  it("refuses a day that is not over yet, before touching the DB", async () => {
+    const { closeDaily } = await import("@/server/crons/close-daily");
+    await expect(closeDaily(DAY, { now: new Date("2026-06-08T21:59:00Z") })).rejects.toThrow(/not over yet/);
+    const { db } = await import("@db/index");
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("a catch-up close is recorded as one, naming the revenue day it closed", async () => {
+    await mockClose({});
+    const { closeDaily } = await import("@/server/crons/close-daily");
+    const result = await closeDaily(DAY, { wasCatchUp: true });
+
+    expect(result).toMatchObject({ alreadyClosed: false, wasCatchUp: true });
+    const { writeAudit } = await import("@/server/audit");
+    const row = vi.mocked(writeAudit).mock.calls[0][0];
+    expect(row).toMatchObject({ entityKind: "system", entityId: "2026-06-08", actorRole: "system" });
+    expect(row.after).toMatchObject({ revenueDay: "2026-06-08", wasCatchUp: true });
+    expect(row.reason).toMatch(/catch-up.*2026-06-08/);
   });
 });

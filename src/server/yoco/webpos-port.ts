@@ -46,8 +46,7 @@ export type WebPosPayment = {
   status: WebPosPaymentStatus;
   /** What the machine actually charged, integer cents. NULL until known. */
   chargedAmountZar: number | null;
-  /** Integer cents. FAVO suppresses tips; a non-zero value is a variance. */
-  tipZar: number;
+  // No tip field: DEC-17, there is no tip column and a stray tip is not stored.
 };
 
 export type WebPosFetchResult =

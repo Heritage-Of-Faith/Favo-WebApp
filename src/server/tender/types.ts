@@ -18,6 +18,8 @@ export type TenderOrder = {
   /** Integer cents. The amount the machine is asked for. */
   totalZar: number;
   clientUuid: string;
+  /** AT-203 / §11.2: settled from a blessing fund (payment_mode='donor_fund') — never tendered. */
+  fundSettled?: boolean;
 };
 
 export type TenderPayment = {
@@ -29,7 +31,7 @@ export type TenderPayment = {
   webposDeviceId: string;
   amountZar: number;
   chargedAmountZar: number | null;
-  tipZar: number;
+  // No tip (DEC-17): a stray tip is a T10 variance at reconciliation, never stored.
   status: PaymentStatus;
   sentAt: Date | null;
   lastCheckedAt: Date | null;
@@ -51,7 +53,6 @@ export type PaymentPatch = Partial<{
   sentAt: Date | null;
   lastCheckedAt: Date;
   chargedAmountZar: number;
-  tipZar: number;
 }>;
 
 export type TenderAudit = {

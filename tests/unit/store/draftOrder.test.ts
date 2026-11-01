@@ -131,6 +131,28 @@ describe("draftOrder store", () => {
     expect(s.step).toBe("customer");
     expect(s.totalZar).toBe(0);
   });
+
+  it("caps a line at 99 cups (add and +)", () => {
+    store().addItem({ ...item1, quantity: 98 });
+    store().addItem({ ...item1, quantity: 5 });
+    expect(store().items[0].quantity).toBe(99);
+    store().updateQuantity(lineKey(item1), 150);
+    expect(store().items[0].quantity).toBe(99);
+    expect(store().totalZar).toBe(99 * 4500);
+  });
+
+  it("persists the draft to sessionStorage and survives a rehydrate", async () => {
+    store().setCustomer({ id: "c1", name: "Louis" });
+    store().addItem({ ...item1, quantity: 2 });
+    const raw = sessionStorage.getItem("favo-pos-draft");
+    expect(raw).toBeTruthy();
+    useDraftOrder.setState({ customer: null, items: [], totalZar: 0 });
+    sessionStorage.setItem("favo-pos-draft", raw!); // setState re-persisted the empty draft
+    await useDraftOrder.persist.rehydrate();
+    expect(store().customer?.name).toBe("Louis");
+    expect(store().items[0].quantity).toBe(2);
+    expect(store().totalZar).toBe(9000);
+  });
 });
 
 // AT-202 / L37: one line per distinct configuration — menu item + shots +

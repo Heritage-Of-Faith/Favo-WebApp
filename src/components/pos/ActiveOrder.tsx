@@ -154,7 +154,11 @@ export default function ActiveOrder({ order }: Props) {
                     {item.modifications.map((m) => m.name).join(", ")}
                   </p>
                 )}
-                {(item.discountZar ?? 0) > 0 && (
+                {(item.voucherCount ?? 0) > 0 ? (
+                  <p className="favo-small text-cool-steel">
+                    {`Voucher · ${item.voucherCount} of ${item.quantity}`} −{formatZar(item.discountZar ?? 0)}
+                  </p>
+                ) : (item.discountZar ?? 0) > 0 && (
                   <p className="favo-small text-cool-steel">Free cup −{formatZar(item.discountZar ?? 0)}</p>
                 )}
               </div>

@@ -152,6 +152,8 @@ export async function beginTender(
     const order = await tx.lockOrder(orderId);
     if (!order) return reject("VALIDATION", "Order not found.", "order_not_found");
     if (order.state === "cancelled") return reject("VALIDATION", "This order is cancelled.", "order_cancelled");
+    // AT-203 / §11.2: beginTender "rejects an order already settled from a fund".
+    if (order.fundSettled === true) return reject("ALREADY_RESOLVED", COPY.ALREADY_RESOLVED, "settled_from_fund");
     if (!Number.isInteger(order.totalZar) || order.totalZar < 0) {
       return reject("VALIDATION", "The order total is not whole cents.", "total_not_integer_cents");
     }
@@ -430,7 +432,6 @@ async function attachSuccessful(
   const patch = {
     ...(p.yocoPaymentId === null ? { yocoPaymentId: pay.yocoPaymentId } : {}),
     chargedAmountZar: charged,
-    tipZar: pay.tipZar,
   };
   const others = (await tx.listPayments(order.id)).filter((x) => x.id !== p.id && x.status === "successful");
   if (others.length > 0) {
@@ -479,17 +480,8 @@ async function attachSuccessful(
       after: { orderTotalZar: order.totalZar, amountZar: p.amountZar, chargedAmountZar: charged },
     });
   }
-  if (pay.tipZar !== 0) {
-    flags.push("tip_variance");
-    await tx.audit({
-      entityKind: "payment",
-      entityId: p.id,
-      action: "payment.flagged",
-      ...actorFields(actor),
-      reason: "tip_variance",
-      after: { tipZar: pay.tipZar },
-    });
-  }
+  // No tip handling (DEC-17): FAVO stores no tip; a stray one surfaces at T10
+  // reconciliation (REQ-120), not here.
   return { status: "successful", flags };
 }
 
@@ -562,7 +554,7 @@ export async function recordTenderResult(
 
     if (result.kind === "read" && result.payment.status === "successful") {
       const charged = result.payment.chargedAmountZar;
-      if (charged === null || !Number.isInteger(charged) || !Number.isInteger(result.payment.tipZar)) {
+      if (charged === null || !Number.isInteger(charged)) {
         return reject("payment", p.id, "charged_amount_not_integer_cents");
       }
       const r = await attachSuccessful(tx, actor, order, p, [result.payment], "poll", deps, post);
@@ -694,7 +686,7 @@ export async function resolveTenderByLookup(
         (x) => x.clientReference === p.clientReference && (p.yocoPaymentId === null || x.yocoPaymentId === p.yocoPaymentId)
       );
       const usable = matched.filter(
-        (x) => x.status !== "successful" || (x.chargedAmountZar !== null && Number.isInteger(x.chargedAmountZar) && Number.isInteger(x.tipZar))
+        (x) => x.status !== "successful" || (x.chargedAmountZar !== null && Number.isInteger(x.chargedAmountZar))
       );
       const successes = usable.filter((x) => x.status === "successful");
 
