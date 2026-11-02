@@ -19,7 +19,8 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.event.label.name == 'release-candidate')
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which Playwright cannot install chromium on.
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
