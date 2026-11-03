@@ -87,24 +87,28 @@ describe("POSWorkspace — free cup at ring-up", () => {
     expect(screen.getByRole("button", { name: /^new order$/i })).toBeDefined(); // R0 → no card
     expect(screen.queryByRole("button", { name: /send to queue/i })).toBeNull();
 
-    mockDecline.mockResolvedValue({ ok: true, data: { totalZar: 3000 } });
+    // CHANGED (AT-212, L19 / DEC-18): a free cup only exists on a weekday, where
+    // declining leaves the order R0 — nobody pays (was: totalZar 3000).
+    mockDecline.mockResolvedValue({ ok: true, data: { totalZar: 0 } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Decline" })); });
     expect(mockDecline).toHaveBeenCalledWith("ord_1");
     expect(screen.queryByText("Free cup applied")).toBeNull();
+    expect(screen.getByRole("button", { name: /^new order$/i })).toBeDefined(); // still free, no card
+    expect(mockBegin).not.toHaveBeenCalled();
   });
 
-  it("ENTITLEMENT_USED: the barista is told once and the order goes on as paid", async () => {
-    mockCreateOrder.mockResolvedValue({
-      ok: true,
-      data: {
-        orderId: "ord_2", tender: { ok: true, attempt: 1, amountZar: 3000 }, cardCheckout: true, totalZar: 3000,
-        freeCup: { applied: false, code: "ENTITLEMENT_USED", message: "Free cup already claimed today", discountZar: 0 },
-      },
-    });
+  // CHANGED (AT-212): was "ENTITLEMENT_USED: … the order goes on as paid". DEC-18
+  // reverses that: "`ENTITLEMENT_USED` refuses the drink by default, reversing
+  // v7.0's 'continues as paid'", and DEC-19 offers "Give another free cup".
+  it("ENTITLEMENT_USED: the barista is told once, the drink is refused, nothing is charged, and 'Give another free cup' is offered", async () => {
+    mockCreateOrder.mockResolvedValue({ ok: false, code: "ENTITLEMENT_USED", message: "Free cup already claimed today" });
     await placeOrder();
-    expect(toast.message).toHaveBeenCalledTimes(1);
-    expect(toast.message).toHaveBeenCalledWith("Free cup already claimed today");
+    expect(screen.getAllByText("Free cup already claimed today")).toHaveLength(1);
     expect(screen.queryByText("Free cup applied")).toBeNull();
+    expect(screen.getByRole("button", { name: "Give another free cup" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /^new order$/i })).toBeNull(); // no order was created
+    expect(mockBegin).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
   });
 
   it("the card step begins on Place: createOrder's attempt 1 is sent and no Decline is offered (P4 — round-2 item 2)", async () => {
@@ -191,5 +195,63 @@ describe("ActiveOrder — free cup", () => {
     // Line (2 × R30,00) and total both read R60,00; the "Free cup −R30,00" note is gone.
     expect(screen.getAllByText(/60,00/)).toHaveLength(2);
     expect(screen.queryByText(/30,00/)).toBeNull();
+  });
+});
+
+// ─── AT-212: weekday orders never take a payment (L19, DEC-18, DEC-19) ───────
+describe("POSWorkspace — weekday mode has no payment step (AT-212)", () => {
+  const WEEKDAY = { mode: "weekday" as const, maxShots: 2, surchargeInForce: false, extraShotZar: 1000 };
+  function renderWeekday() {
+    render(<POSWorkspace staffName="Louis" staffId="staff_louis" role="barista" shotPolicy={WEEKDAY} />);
+  }
+
+  it("the Place button reads 'Send to queue' — no 'Charge' on a weekday", async () => {
+    renderWeekday();
+    expect(await screen.findByRole("button", { name: /^send to queue$/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /^charge/i })).toBeNull();
+  });
+
+  it("a placed weekday order (R0, no tender) shows no card step and sends nothing to the machine", async () => {
+    mockCreateOrder.mockResolvedValue({
+      ok: true,
+      data: {
+        orderId: "ord_w1", tender: null, cardCheckout: false, totalZar: 0,
+        freeCup: { applied: true, code: null, message: "Free cup applied", discountZar: 3000 },
+      },
+    });
+    renderWeekday();
+    await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /^send to queue$/i })); });
+    expect(screen.getByRole("button", { name: /^new order$/i })).toBeDefined();
+    expect(screen.queryByText(/tap or insert the customer/i)).toBeNull();
+    expect(mockBegin).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("ENTITLEMENT_USED refuses the drink; 'Give another free cup' re-places it in one tap with extraFreeCup (DEC-19)", async () => {
+    mockCreateOrder.mockResolvedValueOnce({ ok: false, code: "ENTITLEMENT_USED", message: "Free cup already claimed today" });
+    renderWeekday();
+    await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /^send to queue$/i })); });
+    expect(screen.getByRole("alert").textContent).toBe("Free cup already claimed today");
+    expect(mockCreateOrder.mock.calls[0][0]).not.toHaveProperty("extraFreeCup");
+
+    mockCreateOrder.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        orderId: "ord_w2", tender: null, cardCheckout: false, totalZar: 0, extraFreeCup: true,
+        freeCup: { applied: false, code: null, message: null, discountZar: 0 },
+      },
+    });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Give another free cup" })); });
+    expect(mockCreateOrder).toHaveBeenCalledTimes(2);
+    expect(mockCreateOrder.mock.calls[1][0]).toMatchObject({ customerId: "cust_thabo", extraFreeCup: true });
+    expect(mockBegin).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("no 'Give another free cup' for any other refusal", async () => {
+    mockCreateOrder.mockResolvedValueOnce({ ok: false, code: "OUT_OF_STOCK", message: "Americano is unavailable right now — out of Beans." });
+    renderWeekday();
+    await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /^send to queue$/i })); });
+    expect(screen.queryByRole("button", { name: "Give another free cup" })).toBeNull();
   });
 });

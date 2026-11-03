@@ -138,3 +138,55 @@ describe("applyOutboxItem — shots (AT-202)", () => {
     expect(outboxItemSchema.safeParse(entry(4, 4000)).success).toBe(true);
   });
 });
+
+// ─── AT-212 / S7a: 'free' wins over deferred ────────────────────────────────
+// "createOrder writes 'free' on weekday mode … and 'yoco_deferred' when the
+// till is deferred. 'free' wins." An order queued as 'yoco_deferred' and
+// replayed on a weekday-mode day is written 'free', every line zeroed by
+// discount_zar (DEC-18), total R0 — never a phantom write-off at the close.
+describe("applyOutboxItem — weekday + deferred → free (S7a, AT-212)", () => {
+  it("a R20.00 cappuccino queued 'yoco_deferred', replayed on a weekday → payment_mode 'free', total R0, line zeroed", async () => {
+    vi.setSystemTime(MONDAY);
+    given(["weekday"]);
+    const res = await applyOutboxItem(entry(1, 2000));
+    expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 0 });
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "free", totalZar: 0 });
+    expect((insertsInto(orderItems)[0] as Row[])[0]).toMatchObject({ unitPriceZar: 2000, discountZar: 2000 });
+  });
+
+  // The till's 'free' is never trusted: off a weekday-free day it is owed.
+  const queuedFree = () => ({ ...entry(1, 2000), paymentMode: "free" as const });
+  const SATURDAY = new Date("2026-10-10T09:00:00+02:00");
+
+  it("a queued 'free' entry replayed on a weekday → 'free', R0, line zeroed", async () => {
+    vi.setSystemTime(MONDAY);
+    given(["weekday"]);
+    const res = await applyOutboxItem(queuedFree());
+    expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 0 });
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "free", totalZar: 0 });
+    expect((insertsInto(orderItems)[0] as Row[])[0]).toMatchObject({ unitPriceZar: 2000, discountZar: 2000 });
+  });
+
+  it.each([
+    ["a Sunday", SUNDAY, ["sunday"]],
+    ["a Saturday event", SATURDAY, ["event"]],
+    ["a weekday with an event session", MONDAY, ["event"]],
+    ["a weekday with a weekday and an event session", MONDAY, ["weekday", "event"]],
+    ["a weekday with no session", MONDAY, []],
+  ] as const)("a queued 'free' entry replayed on %s → 'yoco_deferred' at the server total R20.00, line not zeroed", async (_l, now, modes) => {
+    vi.setSystemTime(now);
+    given([...modes]);
+    const res = await applyOutboxItem(queuedFree());
+    expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 2000 });
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "yoco_deferred", totalZar: 2000 });
+    expect((insertsInto(orderItems)[0] as Row[])[0]).not.toHaveProperty("discountZar");
+  });
+
+  it("the same entry replayed on a Sunday stays 'yoco_deferred' at R20.00 (unchanged)", async () => {
+    given(["sunday"]);
+    const res = await applyOutboxItem(entry(1, 2000));
+    expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 2000 });
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "yoco_deferred", totalZar: 2000 });
+    expect((insertsInto(orderItems)[0] as Row[])[0]).not.toHaveProperty("discountZar");
+  });
+});

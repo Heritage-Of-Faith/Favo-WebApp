@@ -27,6 +27,7 @@ import { useDraftOrder, lineKey } from "@/store/draftOrder";
 import { formatZar, formatDate, revenueDay } from "@/lib/format";
 import { computeLineTotalZar } from "@/server/orders/pricing";
 import { FAIL_CLOSED_POLICY, shotSurchargeZar, shotsLabel, type ShotPolicy } from "@/server/orders/shot-surcharge";
+import { FREE_CUP_COPY } from "@/server/orders/free-coffee";
 import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, Plus, Minus, Trash2, ChevronDown, ChevronUp,
@@ -135,6 +136,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  // AT-212 / DEC-19: createOrder refused a second weekday drink (ENTITLEMENT_USED);
+  // the till offers one control, "Give another free cup", and nothing else.
+  const [entitlementRefused, setEntitlementRefused] = useState(false);
+  // AT-212 / L19: on a weekday no order has a payment step — no Charge, no card.
+  // The page reads today's mode with the shot policy; the server decides.
+  const weekdayFree = shotPolicy.mode === "weekday";
   const [showPayment, setShowPayment] = useState(false);
   const { notice: orderSuccess, setNotice: setOrderSuccess, clearOnDraft } = useDraftNotice();
   // The order already in `ordered` state that the payment step is settling.
@@ -165,6 +172,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   const attachedCustomerId = customer?.id ?? null;
   useEffect(() => {
     if (attachedCustomerId) setNoNotification(false);
+    setEntitlementRefused(false); // the override belongs to the refused customer only
   }, [attachedCustomerId]);
   // L28: a reset draft (order sent, paid, abandoned or signed out) binds its own
   // target next time — the "none" tap never carries over to the next order.
@@ -408,22 +416,23 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
 
   // ── Order building ─────────────────────────────────────────────────────────
 
-  async function handlePlaceOrder() {
+  async function handlePlaceOrder(extraFreeCup = false) {
     // A ref, not just state: a fast double tap fires twice before React re-renders,
     // and the second tap must be ignored, never create a second order.
     if (items.length === 0 || submitting || placingRef.current || !notificationTarget) return;
     placingRef.current = true;
     setSubmitting(true);
     setOrderError(null);
+    setEntitlementRefused(false);
     try {
-      await placeOrder();
+      await placeOrder(extraFreeCup);
     } finally {
       placingRef.current = false;
       setSubmitting(false);
     }
   }
 
-  async function placeOrder() {
+  async function placeOrder(extraFreeCup = false) {
     if (!notificationTarget) return; // L28: no order without a bound target.
     // Offline at place-order — createOrder can't run. Go straight to the payment
     // screen, which (being offline) shows the deferred-payment notice. There's no
@@ -444,6 +453,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
         ...(vouchersOnDraft && voucherCountOf(i) > 0 ? { voucherCount: i.voucherCount } : {}),
       })),
       ...(vouchersOnDraft && voucherCtx.kind ? { voucherKind: voucherCtx.kind } : {}),
+      ...(extraFreeCup ? { extraFreeCup: true } : {}),
     }).catch(() => ({ ok: false as const, code: "ERR", message: "Failed to place order." }));
     if (r.ok) {
       // Auto-expand the new order in the queue so barista sees it immediately
@@ -469,6 +479,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       setShowPayment(true);
     } else {
       setOrderError(r.message);
+      // DEC-18: refused, never charged — the draft stays, and DEC-19's one
+      // control can give it free (weekday, customer attached).
+      setEntitlementRefused(r.code === "ENTITLEMENT_USED");
     }
   }
 
@@ -477,7 +490,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   //    in `ordered` state and advances normally — nothing to queue.
   //  • Order never created (offline at place-order): queue it to the outbox so it
   //    syncs when the connection returns.
-  async function handleDeferredConfirm() {
+  // AT-212 / S7a: on a weekday the offline order is queued 'free' — nobody
+  // pays (L19); the server re-decides the mode on replay either way.
+  async function handleDeferredConfirm(paymentMode: "yoco_deferred" | "free" = "yoco_deferred") {
     if (deferredGuard.current) return;
     deferredGuard.current = true;
     try {
@@ -492,7 +507,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
             modifications: i.modifications.map(m => m.id),
             shots: i.shots ?? 1,
           })),
-          paymentMode: "yoco_deferred",
+          paymentMode,
           clientTotalZar: totalZar,
           clientTimestamp: new Date().toISOString(),
         });
@@ -500,7 +515,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       reset();
       setShowPayment(false);
       setPaymentOrderId(null);
-      toast.success("Paid in person — order confirmed");
+      toast.success(paymentMode === "free" ? "Order saved offline — it syncs when the connection returns" : "Paid in person — order confirmed");
     } catch {
       setOrderError("Failed to save order offline. Please retry.");
     } finally {
@@ -574,9 +589,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
     setFullOrders(prev => {
       const o = prev[orderId];
       if (!o) return prev;
-      return { ...prev, [orderId]: { ...o, totalZar: r.data.totalZar, isStaffDiscount: false, items: o.items.map(i => ({ ...i, discountZar: 0 })) } };
+      // AT-212: a weekday decline leaves every line zeroed (the total stays R0).
+      const items = r.data.totalZar === 0 ? o.items : o.items.map(i => ({ ...i, discountZar: 0 }));
+      return { ...prev, [orderId]: { ...o, totalZar: r.data.totalZar, isStaffDiscount: false, items } };
     });
-    toast.message("Free cup declined — the order is charged in full.");
+    // AT-212 / L19: on a weekday the order stays R0 — nothing is charged.
+    toast.message(r.data.totalZar === 0 ? "Free cup declined." : "Free cup declined — the order is charged in full.");
   }
 
   async function handleSignOut() {
@@ -873,6 +891,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
           </div>
         )}
         {orderError && <p className="favo-small text-[var(--color-error)]" role="alert">{orderError}</p>}
+        {/* AT-212 / DEC-19: one tap, no PIN, no reason, no second screen. */}
+        {entitlementRefused && customer && (
+          <button type="button" onClick={() => handlePlaceOrder(true)} disabled={submitting || items.length === 0}
+            className="self-start rounded-[4px] border border-cool-steel/30 px-3 py-2 min-h-[44px] favo-small text-coffee-bean hover:bg-coffee-bean/8 disabled:opacity-40">
+            {FREE_CUP_COPY.giveExtraCup}
+          </button>
+        )}
         {orderSuccess && (
           <p className="favo-small rounded px-3 py-2" role="status" aria-live="polite"
             style={{ background: "color-mix(in srgb, var(--color-success) 15%, transparent)", color: "var(--color-success)" }}>
@@ -912,13 +937,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                 Clear
               </button>
             )}
-            <button type="button" onClick={handlePlaceOrder} disabled={submitting || items.length === 0 || !notificationTarget}
+            <button type="button" onClick={() => handlePlaceOrder()} disabled={submitting || items.length === 0 || !notificationTarget}
               className="flex items-center gap-2 whitespace-nowrap rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
               style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
               {submitting
                 ? <Loader2 size={14} strokeWidth={2} className="animate-spin" />
-                : vouchersOnDraft && draftDueZar === 0
-                  ? "Send to queue" /* L42: nothing owed, no tender */
+                : (vouchersOnDraft && draftDueZar === 0) || weekdayFree
+                  ? "Send to queue" /* L42: nothing owed, no tender · L19: no weekday payment step */
                   : `Charge ${formatZar(draftDueZar)}`}
             </button>
           </div>
@@ -1048,7 +1073,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
           {(() => {
             // The server's net total once the order exists (L03 free cup taken
             // off); the draft total only while offline with no order yet.
-            const amountDueZar = paymentOrderId && placedTotalZar !== null ? placedTotalZar : totalZar;
+            // AT-212 / DEC-18: offline on a weekday the order will be written R0.
+            const amountDueZar = paymentOrderId && placedTotalZar !== null ? placedTotalZar : weekdayFree ? 0 : totalZar;
             // Free only when nothing is owed — no tender, confirm directly (REQ-153).
             const isFree = amountDueZar === 0;
 
@@ -1086,7 +1112,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
               return (
                 <DeferredPaymentNotice
                   totalZar={amountDueZar}
-                  onConfirmDeferred={handleDeferredConfirm}
+                  onConfirmDeferred={() => handleDeferredConfirm()}
                   onBack={() => {
                     // Order already created: the cart was sent, so start fresh — never restore it.
                     if (paymentOrderId) { startNewOrder(); return; }
@@ -1102,9 +1128,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                 <div className="text-center">
                   <p className="favo-label text-cool-steel mb-1">Amount due</p>
                   <p className="favo-h2 text-coffee-bean">{formatZar(amountDueZar)}</p>
-                  <p className="favo-small text-cool-steel mt-1">
-                    Tap or insert the customer&apos;s card
-                  </p>
+                  {/* REQ-153 / L19: nothing owed, no card step. */}
+                  {!isFree && (
+                    <p className="favo-small text-cool-steel mt-1">
+                      Tap or insert the customer&apos;s card
+                    </p>
+                  )}
                   {placedFreeCup && paymentOrderId && !placedCardCheckout && (
                     <FreeCupRow
                       busy={declining === paymentOrderId}
@@ -1117,7 +1146,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                   {isFree ? (
                     /* Free order. Once it exists it is already in the queue, so this is
                        not a second send: it only starts the next order. */
-                    <button type="button" onClick={paymentOrderId ? startNewOrder : finishPayment}
+                    <button type="button"
+                      onClick={paymentOrderId ? startNewOrder
+                        // AT-212: offline on a weekday — queue it 'free' (S7a), never deferred.
+                        : weekdayFree && !online ? () => handleDeferredConfirm("free")
+                        : finishPayment}
                       className="flex w-full items-center justify-center gap-2 rounded-[4px] py-4 min-h-[52px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-porcelain"
                       style={{ background: "var(--color-success)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
                       <CheckCircle size={16} strokeWidth={2} className="mr-1" />

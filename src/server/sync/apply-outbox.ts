@@ -17,8 +17,10 @@ import {
   orders,
   orderItems,
   menuItems,
+  openingSessions,
 } from "@db/schema";
 import { writeAudit } from "@/server/audit";
+import { isFreeCupWeekday, weekdayLineDiscountZar } from "@/server/orders/free-coffee";
 import { computeOrderTotalZar } from "@/server/orders/pricing";
 import { shotSurchargeZar, type ShotPolicy } from "@/server/orders/shot-surcharge";
 import { readShotPolicy, readCoffeeRecipeIds } from "@/server/orders/shot-policy";
@@ -148,6 +150,26 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     return { outcome: "rejected", reason: "amount_mismatch" };
   }
 
+  // ── AT-212 / S7a: 'free' wins over deferred ────────────────────────────────
+  // On the server's receipt day in weekday mode (mode='weekday' AND Mon–Fri
+  // SAST, L03) nobody pays (L19): the order is written 'free' whatever the
+  // client queued, every line zeroed by discount_zar (DEC-18), total R0 — so
+  // the close never writes it off as a phantom loss (S3a).
+  const receivedAt = new Date();
+  const sessionRows = await db
+    .select({ mode: openingSessions.mode })
+    .from(openingSessions)
+    .where(eq(openingSessions.sessionDate, revenueDay(receivedAt)));
+  const weekdayFree = isFreeCupWeekday(sessionRows.map((r) => r.mode), receivedAt);
+  const lineDiscountZar = (idx: number) => (weekdayFree ? weekdayLineDiscountZar(lines[idx]) : 0);
+  const orderTotalZar = weekdayFree ? 0 : serverTotalZar;
+  // The till's 'free' is never trusted: only the server's own weekday read
+  // (or its own R0 total, REQ-153) makes an order free. A 'free' entry replayed
+  // on any other day (an outage crossing into Saturday/Sunday, an event
+  // session, no session) is written as the paying mode — owed, at the server
+  // total, and swept at the close (S3a) — so the money can never vanish.
+  const paymentMode = weekdayFree || orderTotalZar === 0 ? "free" : "yoco_deferred";
+
   // ── Create the order ───────────────────────────────────────────────────────
   const orderId = crypto.randomUUID();
 
@@ -160,10 +182,10 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     // offline, the target is `none`). Matches the §10.3 CHECK.
     notificationTarget: item.customerId ? "customer" : "none",
     state: "ordered",
-    totalZar: serverTotalZar,
-    paymentMode: item.paymentMode,
+    totalZar: orderTotalZar,
+    paymentMode,
     // REQ-039: the server's receipt time decides the revenue day, never the client's.
-    revenueDay: revenueDay(),
+    revenueDay: revenueDay(receivedAt),
   });
 
   await db.insert(orderItems).values(
@@ -175,6 +197,7 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
       modifications: i.modifications.map((id) => ({ id })),
       shots: shotsOf(i),
       surchargeZar: lines[idx].surchargeZar,
+      ...(weekdayFree ? { discountZar: lineDiscountZar(idx) } : {}),
     }))
   );
 
@@ -190,10 +213,10 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     action: "order.sync_applied",
     entityKind: "order",
     entityId: orderId,
-    after: { clientUuid: item.clientUuid, paymentMode: item.paymentMode, totalZar: serverTotalZar },
+    after: { clientUuid: item.clientUuid, paymentMode, totalZar: orderTotalZar },
   });
 
-  return { outcome: "applied", orderId, serverTotalZar };
+  return { outcome: "applied", orderId, serverTotalZar: orderTotalZar };
 }
 
 // ─── Helper ───────────────────────────────────────────────────────────────────

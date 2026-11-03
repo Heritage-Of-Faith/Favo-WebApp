@@ -177,59 +177,53 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
     expect(res.data.totalZar).toBe(0);
   });
 
-  it("2. second order the same day → ENTITLEMENT_USED; the order continues PAID; refusal audited 'reject'", async () => {
+  // CHANGED (AT-212, DEC-18 revised 29 Oct 2026 / REQ-025): the second drink is
+  // now REFUSED and never charged (was: "the order continues PAID" with a tender).
+  it("2. second order the same day → ENTITLEMENT_USED; the drink is REFUSED, nothing written but the 'reject' audit (DEC-18)", async () => {
     given({ customer: OFFICE, claimedToday: true });
     const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)] });
 
-    expect(res.ok).toBe(true); // not blocked
-    if (!res.ok) return;
-    expect(res.data.freeCup).toEqual({
-      applied: false, code: "ENTITLEMENT_USED", message: "Free cup already claimed today", discountZar: 0,
-    });
-    expect(res.data.totalZar).toBe(3000); // not zeroed
-    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 3000, isStaffDiscount: false });
-    expect(insertsInto(staffEntitlementLog)).toEqual([]);
-    expect(auditActions()).toContain("reject");
-    // The reject audit is written inside the order's transaction, which COMMITS
-    // (the order is created) — it is never discarded by a rollback. Then the
-    // tender begins on the committed order (createOrder writes no payments row).
+    expect(res).toEqual({ ok: false, code: "ENTITLEMENT_USED", message: "Free cup already claimed today" });
+    expect(inserts).toEqual([]); // no order, no items, no entitlement row
+    expect(updates).toEqual([]);
     expect(insertsInto(payments)).toEqual([]);
-    expect(mockStartTender).toHaveBeenCalledWith({ kind: "staff", staffId: "staff_louis", role: "barista" }, res.data.orderId);
-    expectOrderCommittedBeforeTender();
+    expect(mockStartTender).not.toHaveBeenCalled(); // never charged
+    expect(auditActions()).toEqual(["reject"]);
+    const audit = mockWriteAudit.mock.calls[0][0] as { after: Row; reason: string };
+    expect(audit.reason).toBe("ENTITLEMENT_USED");
+    expect(audit.after).toMatchObject({ code: "ENTITLEMENT_USED", beneficiaryCustomerId: "cust_thabo", day: "2026-10-08" });
   });
 
-  it("2b. lost UNIQUE(customer_id, day) race → paid; the tender begins only after the order's final total commits (round-2 item 1)", async () => {
+  // CHANGED (AT-212, DEC-18): a lost race is a second drink too — refused, not paid.
+  it("2b. lost UNIQUE(customer_id, day) race → ENTITLEMENT_USED; the transaction rolls back; the reject audit is written outside it", async () => {
     given({ customer: OFFICE });
     entitlementConflict = true; // the pre-check saw nothing; the DB said no
     const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)] });
 
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.data.freeCup.code).toBe("ENTITLEMENT_USED");
-    expect(res.data.totalZar).toBe(3000);
-    expect(updatesOf(orderItems)).toContainEqual({ discountZar: 0 });
-    expect(updatesOf(orders)).toContainEqual({ totalZar: 3000, isStaffDiscount: false, paymentMode: null });
-    // beginTender reads orders.total_zar under the order lock, so it can only
-    // see this committed 3000: it runs once, after the commit (REQ-026).
+    expect(res).toEqual({ ok: false, code: "ENTITLEMENT_USED", message: "Free cup already claimed today" });
+    expect(seq).not.toContain("commit"); // the transaction threw: everything in it rolls back
     expect(insertsInto(payments)).toEqual([]);
-    expect(mockStartTender).toHaveBeenCalledTimes(1);
-    expectOrderCommittedBeforeTender();
-    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 3000 });
-    expect(auditActions()).toContain("reject");
+    expect(mockStartTender).not.toHaveBeenCalled();
+    // Whatever was audited inside the transaction rolled back with it; the one
+    // audit written with the plain db handle (so it commits) is the reject.
+    const outsideTx = mockWriteAudit.mock.calls.filter((c) => c[1] !== client).map((c) => (c[0] as { action: string }).action);
+    expect(outsideTx).toEqual(["reject"]);
   });
 
-  it("3. church_member → NOT_ELIGIBLE; the order continues normally (and is charged as before)", async () => {
+  // CHANGED (AT-212, L19 / DEC-18): on a weekday nobody pays (was: charged R30,00 with a tender).
+  it("3. church_member → NOT_ELIGIBLE for the cup; on a weekday the order is still free (L19), no tender", async () => {
     given({ customer: CHURCH });
     const res = await createOrder({ notificationTarget: "customer", customerId: CHURCH.id, items: [one(AMERICANO.id)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.freeCup).toMatchObject({ applied: false, code: "NOT_ELIGIBLE", message: "Not eligible for the free cup" });
-    expect(res.data.totalZar).toBe(3000);
+    expect(res.data.totalZar).toBe(0);
     expect(insertsInto(staffEntitlementLog)).toEqual([]);
-    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: null, totalZar: 3000 });
-    expect(mockStartTender).toHaveBeenCalledTimes(1);
-    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 3000 }); // R30,00, charged in full
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "free", totalZar: 0, isStaffDiscount: false });
+    expect(insertsInto(orderItems)[0]).toEqual([expect.objectContaining({ unitPriceZar: 3000, discountZar: 3000 })]);
+    expect(mockStartTender).not.toHaveBeenCalled();
+    expect(res.data.tender).toBeNull();
   });
 
   it("4. sunday mode or event mode → NOT_ELIGIBLE (weekday mode only)", async () => {
@@ -259,7 +253,8 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
     expect(auditActions()).toContain("reject");
   });
 
-  it("5. no customer bound → no entitlement; barista told to pick the customer; order continues", async () => {
+  // CHANGED (AT-212, L19 / DEC-18): weekday walk-in is free (was: total 3000).
+  it("5. no customer bound → no entitlement; barista told to pick the customer; on a weekday the order is free", async () => {
     given({ customer: null });
     const res = await createOrder({ notificationTarget: "none", items: [one(AMERICANO.id)] });
 
@@ -268,21 +263,31 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
     expect(res.data.freeCup).toEqual({
       applied: false, code: "NOT_ELIGIBLE", message: FREE_CUP_COPY.noCustomer, discountZar: 0,
     });
-    expect(res.data.totalZar).toBe(3000);
+    expect(res.data.totalZar).toBe(0);
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "free", totalZar: 0 });
     expect(insertsInto(staffEntitlementLog)).toEqual([]);
+    expect(mockStartTender).not.toHaveBeenCalled();
   });
 
-  it("6. two coffees → ONE unit free, the second still charged (never the whole order)", async () => {
+  // CHANGED (AT-212, DEC-18): "discount_zar zeroes each line, so orders.total_zar
+  // is R0" (was: the second unit charged R30,00). The entitlement is still ONE
+  // row worth ONE unit (REQ-115).
+  it("6. two coffees on one line → one entitlement row worth one unit; discount_zar zeroes the line; total R0", async () => {
     given({ customer: OFFICE });
     const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id, 2)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.data.totalZar).toBe(3000); // 2 × 3000 − 3000
-    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 3000, paymentMode: null });
+    expect(res.data.totalZar).toBe(0);
+    expect(res.data.freeCup).toMatchObject({ applied: true, discountZar: 3000 }); // one unit, never more
+    expect(insertsInto(staffEntitlementLog)).toHaveLength(1);
+    expect(insertsInto(orderItems)[0]).toEqual([expect.objectContaining({ quantity: 2, unitPriceZar: 3000, discountZar: 6000 })]);
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 0, paymentMode: "free" });
+    expect(mockStartTender).not.toHaveBeenCalled();
   });
 
-  it("7. discount_zar on exactly one eligible line = that line's unit_price_zar; total = Σ qty×unit − Σ discount", async () => {
+  // CHANGED (AT-212, DEC-18): every weekday line zeroed (was: [3800, 0], R60,00 on the machine).
+  it("7. weekday: every line keeps its menu price and discount_zar zeroes it; total R0; nothing on the machine", async () => {
     given({ customer: OFFICE, menu: [CAPPUCCINO, AMERICANO] });
     const res = await createOrder({
       notificationTarget: "customer",
@@ -293,24 +298,131 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     const lines = insertsInto(orderItems)[0] as Row[];
-    expect(lines.map((l) => l.discountZar)).toEqual([3800, 0]); // first eligible line, one unit
-    // 1×3800 + 2×3000 − 3800 = 6000
-    expect(res.data.totalZar).toBe(6000);
-    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 6000 });
-    expect(mockStartTender).toHaveBeenCalledTimes(1);
-    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 6000 }); // R60,00 on the machine
+    expect(lines.map((l) => l.unitPriceZar)).toEqual([3800, 3000]);
+    expect(lines.map((l) => l.discountZar)).toEqual([3800, 6000]); // 1×3800, 2×3000
+    expect(res.data.totalZar).toBe(0);
+    expect(res.data.freeCup).toMatchObject({ applied: true, discountZar: 3800 }); // the entitlement: one unit
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 0, paymentMode: "free" });
+    expect(mockStartTender).not.toHaveBeenCalled();
+    expect(res.data.tender).toBeNull();
   });
 
-  it("9. only coffee is eligible: a non-coffee-only order → NOT_ELIGIBLE, no entitlement, audited", async () => {
+  // CHANGED (AT-212, L19): the order is free on a weekday (was: total 3500).
+  it("9. only coffee is eligible: a non-coffee-only order → NOT_ELIGIBLE, no entitlement, audited; still free on a weekday", async () => {
     given({ customer: OFFICE, menu: [CHAI] });
     const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(CHAI.id)] });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.freeCup).toMatchObject({ applied: false, code: "NOT_ELIGIBLE" });
-    expect(res.data.totalZar).toBe(3500);
+    expect(res.data.totalZar).toBe(0);
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 0, paymentMode: "free" });
     expect(insertsInto(staffEntitlementLog)).toEqual([]);
     expect(auditActions()).toContain("reject");
+    expect(mockStartTender).not.toHaveBeenCalled();
+  });
+});
+
+// ─── AT-212: weekday orders never take a payment (L19, S7a, DEC-18, DEC-19) ───
+describe("AT-212: weekday orders never take a payment", () => {
+  // R38,00 and R45,00, both coffee.
+  const MOCHA = { id: "menu_mocha", name: "Mocha", category: "coffee", currentPriceZar: 4500, recipeId: null };
+
+  it("R38 + R45 for a first-time office_staff person → payment_mode 'free', total R0, no payments row, no tender", async () => {
+    given({ customer: OFFICE, menu: [CAPPUCCINO, MOCHA] });
+    const res = await createOrder({
+      notificationTarget: "customer", customerId: OFFICE.id, items: [one(CAPPUCCINO.id), one(MOCHA.id)],
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.totalZar).toBe(0);
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 0, paymentMode: "free", isStaffDiscount: true });
+    expect(insertsInto(orderItems)[0]).toEqual([
+      expect.objectContaining({ unitPriceZar: 3800, discountZar: 3800 }),
+      expect.objectContaining({ unitPriceZar: 4500, discountZar: 4500 }),
+    ]);
+    expect(insertsInto(staffEntitlementLog)).toEqual([
+      { customerId: "cust_thabo", appliedByStaffId: "staff_louis", orderId: res.data.orderId, day: "2026-10-08" },
+    ]);
+    expect(insertsInto(payments)).toEqual([]);
+    expect(mockStartTender).not.toHaveBeenCalled();
+    expect(res.data.tender).toBeNull();
+    expect(res.data.cardCheckout).toBe(false);
+  });
+
+  it("DEC-19 override: 'Give another free cup' → an R0 order, NO second entitlement row, ONE audit row 'extra_free_cup'", async () => {
+    given({ customer: OFFICE, menu: [CAPPUCCINO], claimedToday: true });
+    const res = await createOrder({
+      notificationTarget: "customer", customerId: OFFICE.id, items: [one(CAPPUCCINO.id)], extraFreeCup: true,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.extraFreeCup).toBe(true);
+    expect(res.data.totalZar).toBe(0);
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 0, paymentMode: "free", isStaffDiscount: false });
+    expect(insertsInto(orderItems)[0]).toEqual([expect.objectContaining({ unitPriceZar: 3800, discountZar: 3800 })]);
+    expect(insertsInto(staffEntitlementLog)).toEqual([]);
+    expect(insertsInto(payments)).toEqual([]);
+    expect(mockStartTender).not.toHaveBeenCalled();
+    const extra = mockWriteAudit.mock.calls.map((c) => c[0] as { action: string; actorId: string; after: Row })
+      .filter((a) => a.action === "extra_free_cup");
+    expect(extra).toHaveLength(1);
+    expect(extra[0].actorId).toBe("staff_louis");
+    expect(extra[0].after).toMatchObject({
+      baristaStaffId: "staff_louis", beneficiaryCustomerId: "cust_thabo",
+      orderId: res.data.orderId, day: "2026-10-08", grossZar: 3800,
+    });
+    expect(auditActions()).not.toContain("reject");
+  });
+
+  it("DEC-19: the override is weekday-only and needs a customer → MODE_FORBIDDEN, nothing written", async () => {
+    vi.setSystemTime(SUNDAY);
+    given({ customer: OFFICE, modes: ["sunday"] });
+    const sunday = await createOrder({
+      notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)], extraFreeCup: true,
+    });
+    expect(sunday).toMatchObject({ ok: false, code: "MODE_FORBIDDEN" });
+
+    vi.setSystemTime(THURSDAY);
+    given({ customer: null });
+    const noCustomer = await createOrder({ notificationTarget: "none", items: [one(AMERICANO.id)], extraFreeCup: true });
+    expect(noCustomer).toMatchObject({ ok: false, code: "MODE_FORBIDDEN" });
+
+    expect(inserts).toEqual([]);
+    expect(mockStartTender).not.toHaveBeenCalled();
+  });
+
+  it("Sunday behaviour unchanged: an R38 order is charged — the order commits, then ONE tender begins", async () => {
+    vi.setSystemTime(SUNDAY);
+    given({ customer: null, menu: [CAPPUCCINO], modes: ["sunday"] });
+    const res = await createOrder({ notificationTarget: "none", items: [one(CAPPUCCINO.id)] });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 3800, paymentMode: null });
+    expect(mockStartTender).toHaveBeenCalledTimes(1);
+    expectOrderCommittedBeforeTender();
+    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 3800 });
+  });
+
+  it("declining the cup on a weekday gives the entitlement back but the order stays R0 'free' (L19)", async () => {
+    rows = new Map<unknown, Row[]>([
+      [orders, [{
+        id: "ord_w", state: "ordered", totalZar: 0, customerId: OFFICE.id, isStaffDiscount: true,
+        paymentMode: "free", revenueDay: "2026-10-08", placedAt: THURSDAY,
+      }]],
+      [orderItems, [{ id: "oi_w", quantity: 1, unitPriceZar: 3000, discountZar: 3000 }]],
+      [staffEntitlementLog, [{ id: "ent_1", customerId: OFFICE.id, day: "2026-10-08" }]],
+      [openingSessions, [{ mode: "weekday" }]],
+      [payments, []],
+    ]);
+    const res = await declineFreeCoffee("ord_w");
+    expect(res).toEqual({ ok: true, data: { totalZar: 0 } });
+    expect(deletes.map((d) => d.table)).toEqual([staffEntitlementLog]);
+    expect(updatesOf(orderItems)).toEqual([]); // the line stays zeroed
+    expect(updatesOf(orders)).toEqual([{ isStaffDiscount: false }]); // total and payment_mode untouched
+    expect(insertsInto(payments)).toEqual([]);
+    expect(mockStartTender).not.toHaveBeenCalled();
+    expect(auditActions()).toEqual(["decline_free_cup"]);
   });
 });
 
@@ -329,8 +441,11 @@ describe("REQ-153: a net-R0 order writes no payments row and sends nothing (roun
     expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "free" });
   });
 
+  // CHANGED (AT-212, L19): the three tender cases below now run on a SUNDAY —
+  // a weekday order has no tender at all. Their assertions are unchanged.
   it("a non-R0 order: the order commits, then ONE tender begins on it; createOrder writes no payments row itself (REQ-026)", async () => {
-    given({ customer: null });
+    vi.setSystemTime(SUNDAY);
+    given({ customer: null, modes: ["sunday"] });
     const res = await createOrder({ notificationTarget: "none", items: [one(AMERICANO.id)] });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -344,7 +459,8 @@ describe("REQ-153: a net-R0 order writes no payments row and sends nothing (roun
   });
 
   it("a refused tender (no machine configured) is returned beside the committed order, never thrown", async () => {
-    given({ customer: null });
+    vi.setSystemTime(SUNDAY);
+    given({ customer: null, modes: ["sunday"] });
     mockStartTender.mockResolvedValueOnce({
       ok: false, code: "TERMINAL_UNREACHABLE",
       message: "Card machine not responding — check it's on and on the wifi, or switch to deferred",
@@ -361,7 +477,8 @@ describe("REQ-153: a net-R0 order writes no payments row and sends nothing (roun
   });
 
   it("an exception inside beginTender (e.g. a DB outage) → TENDER_NOT_BEGUN with a retry, beside the committed order — never STALE_STATE or PAYMENT_UNKNOWN", async () => {
-    given({ customer: null });
+    vi.setSystemTime(SUNDAY);
+    given({ customer: null, modes: ["sunday"] });
     mockStartTender.mockRejectedValueOnce(new Error("connection refused"));
     const res = await createOrder({ notificationTarget: "none", items: [one(AMERICANO.id)] });
     expect(res.ok).toBe(true);
@@ -404,23 +521,25 @@ describe("B1: the free cup discounts unit_price_zar + mods_zar (oat milk)", () =
     expect(line).toMatchObject({ unitPriceZar: 3800, modsZar: 800, discountZar: 4600 });
   });
 
-  it("two oat Cappuccinos → one unit free (4600), the second still charged 4600", async () => {
+  // CHANGED (AT-212, DEC-18): the whole weekday line is zeroed, R0 (was: second
+  // unit charged R46,00). The entitlement itself is still one unit (4600).
+  it("two oat Cappuccinos → the entitlement is one unit (4600); discount_zar zeroes the line (9200); total R0", async () => {
     givenOat();
     const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [oatCappuccino(2)] });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     const [line] = insertsInto(orderItems)[0] as Row[];
-    // Never more than one unit's (unit_price + mods) price.
-    expect(line).toMatchObject({ quantity: 2, unitPriceZar: 3800, modsZar: 800, discountZar: 4600 });
-    expect(res.data.totalZar).toBe(4600); // 2 × 4600 − 4600
-    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 4600, paymentMode: null });
-    expect(mockStartTender).toHaveBeenCalledTimes(1);
-    if (res.ok) expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 4600 }); // R46,00
-    expectOrderCommittedBeforeTender();
+    expect(line).toMatchObject({ quantity: 2, unitPriceZar: 3800, modsZar: 800, discountZar: 9200 });
+    expect(res.data.freeCup).toMatchObject({ applied: true, discountZar: 4600 }); // never more than one unit
+    expect(res.data.totalZar).toBe(0);
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 0, paymentMode: "free" });
+    expect(mockStartTender).not.toHaveBeenCalled();
   });
 
+  // CHANGED (AT-212): run on a Sunday, where no weekday discount applies (intent unchanged).
   it("a plain line snapshots mods_zar = 0", async () => {
-    given({ customer: null, menu: [CAPPUCCINO] });
+    vi.setSystemTime(SUNDAY);
+    given({ customer: null, menu: [CAPPUCCINO], modes: ["sunday"] });
     const res = await createOrder({ notificationTarget: "none", items: [one(CAPPUCCINO.id)] });
     expect(res.ok).toBe(true);
     const [line] = insertsInto(orderItems)[0] as Row[];
