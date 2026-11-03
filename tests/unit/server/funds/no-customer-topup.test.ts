@@ -46,6 +46,7 @@ const ALLOWED = new Set([
   "src/server/tender/tender.ts",
   "src/server/crons/close-daily.ts", // reads payment_mode to leave fund-paid orders out of the card reconciliation
   "src/server/close/write-offs.ts", // AT-207 / REQ-166: reads spend entries so a fund-paid order is never written off
+  "src/server/reports/revenue-scope.ts", // AT-203 follow-up: the revenue predicate reads spend/adjustment entries (read only; POS/admin readers)
 ]);
 
 describe("REQ-160 / REQ-165: no customer-reachable code reaches a fund", () => {

@@ -59,9 +59,20 @@ export function migrationSql(file: string): string {
 }
 
 /**
+ * Step 0050 (AT-203 follow-up: v_daily_revenue also counts an abandoned
+ * fund-paid order) down inside the caller's always-rolled-back transaction.
+ * It restores 0045's view text, which no longer reads donor_fund_entries, so
+ * 0046 down can drop that table. It is the newest migration, so it steps down
+ * before 0049.
+ */
+export async function stepDown0050(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
+  await tx.unsafe(migrationSql("down/0050_at203_fund_abandon_revenue.down.sql"));
+}
+
+/**
  * Step 0049 (AT-174: refunds + refund_status dropped) down inside the caller's
  * always-rolled-back transaction. It recreates the empty table and enum, and
- * is the newest migration, so it steps down before 0048.
+ * steps down before 0048 (after 0050).
  */
 export async function stepDown0049(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
   await tx.unsafe(migrationSql("down/0049_at174_drop_refunds.down.sql"));
