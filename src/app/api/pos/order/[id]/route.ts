@@ -6,6 +6,7 @@ import { orders, orderItems, menuItems, customers, payments } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { liveVoucherCountsByLine } from "@/server/orders/voucher-session";
 import { summarisePayments } from "@/server/tender/summary";
+import { isFundSettled } from "@/server/orders/payment-lock";
 import { NextResponse } from "next/server";
 import type { Order } from "@/lib/types";
 
@@ -66,8 +67,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     totalZar: row.totalZar,
     isStaffDiscount: row.isStaffDiscount,
     paymentStatus: payState.paymentStatus,
-    cardCheckout: payState.totalFrozen,
+    // AT-203 / REQ-167: a fund-settled total is frozen too, and nothing is owed.
+    cardCheckout: payState.totalFrozen || isFundSettled(row.paymentMode),
     paymentAwaitingLookup: payState.awaitingLookup,
+    fundSettled: isFundSettled(row.paymentMode),
     items: items.map((i) => ({
       id: i.id,
       menuItemId: i.menuItemId,

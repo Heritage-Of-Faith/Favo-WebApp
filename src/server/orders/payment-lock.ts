@@ -10,6 +10,15 @@ import { payments } from "@db/schema";
 import type { DB } from "@/lib/db";
 import { isAttemptOpen } from "@/server/tender/tender";
 
+/**
+ * AT-203 / L47: an order settled from a blessing fund (payment_mode
+ * 'donor_fund') is paid — it holds no payments row, so the queue's payment
+ * gate reads this instead of a `successful` attempt.
+ */
+export function isFundSettled(paymentMode: string | null): boolean {
+  return paymentMode === "donor_fund";
+}
+
 export const ORDER_MOVED_ON = {
   ok: false as const,
   code: "ALREADY_RESOLVED",

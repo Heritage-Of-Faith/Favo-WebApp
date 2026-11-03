@@ -20,7 +20,10 @@ import * as rules from "@/server/funds/funds";
 import { getFundDeps, getTopupTenderDeps } from "@/server/funds/runtime";
 import { pollTenderResult, resolveTenderByLookup, sendToTerminal, type LookupOutcome } from "@/server/tender/tender";
 import type { PaymentStatus } from "@/server/tender/types";
-import type { FundBalanceView, FundOptions } from "@/server/funds/funds";
+import type { AdminFundView, FundBalanceView, FundOptions } from "@/server/funds/funds";
+import { inArray } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { customers } from "@db/schema";
 
 type Failure = { ok: false; code: string; message: string; retryOffered?: boolean };
 type Result<T> = { ok: true; data: T } | Failure;
@@ -131,6 +134,28 @@ export async function fundOptionsForOrder(input: { customerId: string | null; ne
   const parsed = z.object({ customerId: id.nullable(), netZar: z.number().int().min(0) }).safeParse(input);
   if (!parsed.success) return INVALID;
   return { ok: true, data: await rules.fundOptions(getFundDeps(), parsed.data) };
+}
+
+export type AdminFundListItem = AdminFundView & { members: { id: string; name: string }[] };
+
+/**
+ * §13.9 /admin/funds: every fund's balance, ledger, member list and last draw.
+ * §10.7: the ledger, draws and member list are Admin only — a barista reads a
+ * balance through readFundBalance and nothing more.
+ */
+export async function listFundsForAdmin(): Promise<Result<{ funds: AdminFundListItem[] }>> {
+  const a = await staffActor(ADMIN_ROLES);
+  if (!a.ok) return a;
+  const funds = await rules.adminFundsView(getFundDeps());
+  const ids = [...new Set(funds.flatMap((f) => f.memberIds))];
+  const rows = ids.length
+    ? await db.select({ id: customers.id, name: customers.name, surname: customers.surname }).from(customers).where(inArray(customers.id, ids))
+    : [];
+  const nameOf = new Map(rows.map((r) => [r.id, r.surname ? `${r.name} ${r.surname}` : r.name]));
+  return {
+    ok: true,
+    data: { funds: funds.map((f) => ({ ...f, members: f.memberIds.map((id) => ({ id, name: nameOf.get(id) ?? id })) })) },
+  };
 }
 
 export async function topUpDonorFund(input: rules.TopUpInput): Promise<Result<{ entryId: string; balanceZar: number }>> {

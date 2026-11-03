@@ -51,6 +51,8 @@ import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
 import ChargeOrderDialog from "@/components/pos/ChargeOrderDialog";
 import TenderPanel from "@/components/pos/TenderPanel";
 import FreeCupRow from "@/components/pos/FreeCupRow";
+import FundChips from "@/components/pos/FundChips";
+import type { FundOptions } from "@/server/funds/funds";
 import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
@@ -119,9 +121,11 @@ type Props = {
   /** AT-202: today's shot ceiling and surcharge, read by the page (T09, T15).
    *  Absent = fail closed: weekday ceiling, no surcharge. The server re-checks. */
   shotPolicy?: ShotPolicy;
+  /** AT-203 / §6.10.6: fundOptionsForOrder, passed by the page. Absent = no fund chips. */
+  fundOptions?: (input: { customerId: string | null; netZar: number }) => Promise<{ ok: true; data: FundOptions } | { ok: false; code: string; message: string }>;
 };
 
-export default function POSWorkspace({ staffName, staffId, role, initialOrders, yocoConfigured = false, shotPolicy = FAIL_CLOSED_POLICY }: Props) {
+export default function POSWorkspace({ staffName, staffId, role, initialOrders, yocoConfigured = false, shotPolicy = FAIL_CLOSED_POLICY, fundOptions }: Props) {
   const router = useRouter();
 
   // ── Left panel ─────────────────────────────────────────────────────────────
@@ -206,6 +210,43 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   const voucherCountOf = (i: (typeof items)[number]) => (draftLineTakesVoucher(i) ? i.voucherCount ?? 0 : 0);
   const vouchersOnDraft = vouchersLive && items.some(i => voucherCountOf(i) > 0);
   const draftDueZar = vouchersOnDraft ? draftNetZar(items) : totalZar;
+
+  // AT-203 / §6.10.6 — the footer's fund chips. L48: an order with no net
+  // charge (a weekday order, or one vouchered to R0) offers no fund at all, so
+  // options are not even asked for. The linked fund arrives lit (REQ-164);
+  // `fundPick` is the barista's tap: undefined = no tap yet, null = the card.
+  const fundNetZar = weekdayFree || !online ? 0 : draftDueZar;
+  const [fundOpts, setFundOpts] = useState<FundOptions | null>(null);
+  const [fundPick, setFundPick] = useState<string | null | undefined>(undefined);
+  // REQ-164: a bound person's linked fund is applied without a tap — so until
+  // their options have loaded, "no fund applies" is unknown, never assumed.
+  const [fundCheck, setFundCheck] = useState<"idle" | "loading" | "loaded" | "failed">("idle");
+  const [fundRetry, setFundRetry] = useState(0);
+  useEffect(() => {
+    setFundOpts(null);
+    if (!fundOptions || fundNetZar <= 0) { setFundCheck("idle"); return; }
+    setFundCheck("loading");
+    let stale = false;
+    fundOptions({ customerId: attachedCustomerId, netZar: fundNetZar })
+      .then(r => {
+        if (stale) return;
+        setFundOpts(r.ok ? r.data : null);
+        setFundCheck(r.ok ? "loaded" : "failed");
+      })
+      .catch(() => { if (!stale) { setFundOpts(null); setFundCheck("failed"); } });
+    return () => { stale = true; };
+  }, [fundOptions, attachedCustomerId, fundNetZar, fundRetry]);
+  // Only a bound person can have a fund applied without a tap; a stranger's
+  // open fund needs an explicit tap, so their order is never held back.
+  const fundCheckBlocksPlace = attachedCustomerId !== null && (fundCheck === "loading" || fundCheck === "failed");
+  // A new person bound to the order: their own fund decides again (REQ-164).
+  useEffect(() => { setFundPick(undefined); }, [attachedCustomerId]);
+  const tappableFundIds = [
+    ...(fundOpts?.linked?.canCover ? [fundOpts.linked.fundId] : []),
+    ...(fundOpts?.open ? [fundOpts.open.fundId] : []),
+  ];
+  const wantedFundId = fundPick === undefined ? (fundOpts?.linked?.lit ? fundOpts.linked.fundId : null) : fundPick;
+  const selectedFundId = wantedFundId !== null && tappableFundIds.includes(wantedFundId) ? wantedFundId : null;
 
   // AT-144 — the attached customer's Favo (saved usual order) + the Manage
   // Favo blocking modal (wireframe screens 6 + 2a).
@@ -419,7 +460,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   async function handlePlaceOrder(extraFreeCup = false) {
     // A ref, not just state: a fast double tap fires twice before React re-renders,
     // and the second tap must be ignored, never create a second order.
-    if (items.length === 0 || submitting || placingRef.current || !notificationTarget) return;
+    if (items.length === 0 || submitting || placingRef.current || !notificationTarget || fundCheckBlocksPlace) return;
     placingRef.current = true;
     setSubmitting(true);
     setOrderError(null);
@@ -454,12 +495,31 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       })),
       ...(vouchersOnDraft && voucherCtx.kind ? { voucherKind: voucherCtx.kind } : {}),
       ...(extraFreeCup ? { extraFreeCup: true } : {}),
+      // AT-203 / L47: the fund is the tender — createOrder draws it, nothing goes to the machine.
+      ...(selectedFundId ? { donorFundId: selectedFundId } : {}),
     }).catch(() => ({ ok: false as const, code: "ERR", message: "Failed to place order." }));
+    if (r.ok && r.data.fundDraw?.ok) {
+      // Paid from the fund: the order is settled and in the queue (REQ-162).
+      setExpandedId(r.data.orderId);
+      handleOrderPaid(r.data.orderId);
+      startNewOrder();
+      setFundPick(undefined);
+      setOrderSuccess("Order paid — sent to the queue.");
+      setTimeout(() => setOrderSuccess(null), 4000);
+      return;
+    }
     if (r.ok) {
       // Auto-expand the new order in the queue so barista sees it immediately
       setExpandedId(r.data.orderId);
       setPaymentOrderId(r.data.orderId);
-      setPlacedTender(r.data.tender ?? null);
+      // AT-203: the fund refused (FUND_INSUFFICIENT, FUND_NOT_LINKED, …). The
+      // order is in the queue, unpaid; the reason is shown and nothing is sent
+      // to the card machine from here.
+      const fundRefused = r.data.fundDraw && !r.data.fundDraw.ok
+        ? { ok: false as const, code: r.data.fundDraw.code, message: r.data.fundDraw.message, retryOffered: false }
+        : null;
+      setPlacedTender(fundRefused ?? r.data.tender ?? null);
+      setFundPick(undefined);
       // L03 free cup: the server decided it — show the net total, and tell the
       // barista once (applied, already claimed, not eligible, pick a customer).
       const net = typeof r.data.totalZar === "number" ? r.data.totalZar : null;
@@ -891,6 +951,22 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
           </div>
         )}
         {orderError && <p className="favo-small text-[var(--color-error)]" role="alert">{orderError}</p>}
+        {/* AT-203 / §6.10.6: who pays — the fund chips, only when a fund applies (L48). */}
+        {fundOpts && items.length > 0 && (
+          <FundChips options={fundOpts} selectedFundId={selectedFundId} onSelect={setFundPick} />
+        )}
+        {/* REQ-164: Place waits until the bound person's fund has been checked. */}
+        {fundCheckBlocksPlace && items.length > 0 && (fundCheck === "loading" ? (
+          <p className="favo-small text-cool-steel" role="status" data-fund-check="loading">Checking the blessing fund…</p>
+        ) : (
+          <div className="flex items-center gap-2" role="alert" data-fund-check="failed">
+            <p className="favo-small text-[var(--color-error)]">Couldn&apos;t check the blessing fund.</p>
+            <button type="button" onClick={() => setFundRetry(n => n + 1)}
+              className="rounded-[4px] border border-cool-steel/30 px-3 py-2 min-h-[44px] favo-small text-coffee-bean hover:bg-coffee-bean/8">
+              Try again
+            </button>
+          </div>
+        ))}
         {/* AT-212 / DEC-19: one tap, no PIN, no reason, no second screen. */}
         {entitlementRefused && customer && (
           <button type="button" onClick={() => handlePlaceOrder(true)} disabled={submitting || items.length === 0}
@@ -937,13 +1013,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                 Clear
               </button>
             )}
-            <button type="button" onClick={() => handlePlaceOrder()} disabled={submitting || items.length === 0 || !notificationTarget}
+            <button type="button" onClick={() => handlePlaceOrder()} disabled={submitting || items.length === 0 || !notificationTarget || fundCheckBlocksPlace}
               className="flex items-center gap-2 whitespace-nowrap rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
               style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
               {submitting
                 ? <Loader2 size={14} strokeWidth={2} className="animate-spin" />
-                : (vouchersOnDraft && draftDueZar === 0) || weekdayFree
-                  ? "Send to queue" /* L42: nothing owed, no tender · L19: no weekday payment step */
+                : (vouchersOnDraft && draftDueZar === 0) || weekdayFree || selectedFundId
+                  ? "Send to queue" /* L42: nothing owed, no tender · L19: no weekday payment step · L47: the fund pays, nothing goes to the machine */
                   : `Charge ${formatZar(draftDueZar)}`}
             </button>
           </div>
@@ -1246,6 +1322,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
               // L03: a free cup discounts one unit only — whatever is left is still owed.
               && full.totalZar > 0
               && full.paymentStatus !== "successful"
+              // AT-203 / L47: paid from a blessing fund — nothing owed.
+              && full.fundSettled !== true
               // REQ-008 / S4: a SENT attempt that ended unresolved does not hold
               // the drink back. A closed-out never-sent one does: still owed.
               && full.paymentAwaitingLookup !== true
