@@ -65,6 +65,10 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
+      # The main test DB keeps this stub only because the DB tests simulate
+      # Supabase (customers_auth_id_fk exists there). Production on Transformate
+      # has no auth schema; 0013 skips the FK when auth.users is absent, and
+      # "Migrate a clean database with no Supabase auth schema" below proves it.
       - name: Create Supabase auth schema stub (CI only)
         run: |
           psql postgresql://favo:favo@localhost:5432/favo_test -c "
@@ -109,6 +113,24 @@ jobs:
       # against the freshly migrated + seeded test DB.
       - name: DB integration tests (trigger · CHECK · RLS isolation)
         run: bun test:db
+
+      # G1 (docs/GO_LIVE_RUNBOOK.md §8): the Transformate database (PRD §9) is a
+      # plain Postgres with no Supabase auth schema. This runs the same release
+      # migrator, the same way, against a second, empty database with NO stub,
+      # and fails the job if any migration errors or the auth FK appears.
+      - name: Migrate a clean database with no Supabase auth schema
+        env:
+          DATABASE_URL: postgresql://favo:favo@localhost:5432/favo_clean
+          DATABASE_URL_SESSION: postgresql://favo:favo@localhost:5432/favo_clean
+        run: |
+          psql postgresql://favo:favo@localhost:5432/favo_test -v ON_ERROR_STOP=1 -c "CREATE DATABASE favo_clean;"
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM pg_namespace WHERE nspname = 'auth'")" = "0"
+          FAVO_APPROVE_MIGRATION="$(grep -l 'favo:requires-approval' drizzle/*.sql | xargs -r -n1 basename | sed 's/\.sql$//' | paste -sd, -)"
+          export FAVO_APPROVE_MIGRATION
+          bun scripts/migrate.ts
+          bun scripts/migrate.ts | tee /tmp/clean-rerun.log
+          grep -q ", 0 pending" /tmp/clean-rerun.log
+          test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM pg_constraint WHERE conname = 'customers_auth_id_fk'")" = "0"
 
       - name: E2E tests (non-blocking signal)
         run: bun test:e2e:ci
