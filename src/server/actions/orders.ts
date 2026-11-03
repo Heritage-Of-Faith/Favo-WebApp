@@ -1444,6 +1444,7 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
     // AT-203 / REQ-167: a fund-settled order is frozen too.
     cardCheckout: payState.totalFrozen || o.paymentMode === "donor_fund",
     paymentAwaitingLookup: payState.awaitingLookup,
+    fundSettled: o.paymentMode === "donor_fund",
     items: itemRows.map((it) => ({
       id: it.id,
       menuItemId: it.menuItemId,

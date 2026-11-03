@@ -101,6 +101,15 @@ describe("queue payment gate (L01)", () => {
     expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
   });
 
+  it("AT-203 / L47: an order paid from a blessing fund (no payments row) is not owed — Start Making shows, no Take payment", async () => {
+    const o = fullOrder("pending");
+    const fundPaid = { order: { ...o.order, paymentStatus: null, cardCheckout: true, fundSettled: true } };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => fundPaid }) as unknown as typeof fetch;
+    await expandCard();
+    expect(await screen.findByRole("button", { name: /start making/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /take payment/i })).toBeNull();
+  });
+
   it("REQ-008 / S4: a SENT attempt that ended unresolved does not hold the drink back — Start Making shows", async () => {
     const o = fullOrder("unresolved");
     const sent = { order: { ...o.order, paymentAwaitingLookup: true } };
