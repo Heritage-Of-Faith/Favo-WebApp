@@ -30,7 +30,6 @@ import {
   stockMovementKind,
   stockTakeKind,
   paymentStatus,
-  refundStatus,
   wasteCategory,
   purchaseKind,
   expenseCategory,
@@ -502,17 +501,6 @@ export const donorFundMembers = pgTable("donor_fund_members", {
   // L46 / REQ-172: one person, at most one active linked fund — by the DB.
   uniqueIndex("donor_fund_members_one_active_fund_per_customer").on(t.customerId).where(sql`fund_active`),
 ]);
-
-export const refunds = pgTable("refunds", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: tenantId(),
-  orderId: text("order_id").notNull().references(() => orders.id),
-  amountZar: integer("amount_zar").notNull(),
-  reason: text("reason").notNull(),
-  requestedBy: text("requested_by").notNull().references(() => staff.id),
-  approvedBy: text("approved_by").references(() => staff.id),
-  status: refundStatus("status").default("pending").notNull(),
-});
 
 // ─── Staff Entitlement ────────────────────────────────────────────────────────
 

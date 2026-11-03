@@ -20,8 +20,6 @@ Server Actions for mutations (`src/server/actions/*`). Route handlers for querie
 | `closeContainer(lotId)` | Server action | barista/admin | Close an open container; leftover cups written off with a COGS-neutral `adjustment`. 404 if the lot doesn't exist; 409 unless open. |
 | `listOpenContainers()` | Server action | barista/admin | Per cup-item: the open container + sealed count. Drives the POS open-containers card. |
 | `checkLowStock()` | Cron 15 m | system | Push to `stock_alert_recipients` when stock ≤ threshold. |
-| `requestRefund(orderId, reason)` | Server action | any staff | Insert pending refund. |
-| `approveRefund(id)` | Server action | admin | Trigger Yoco refund. Full amount only. |
 | `setMenuItemPrice(id, priceZar)` | Server action | admin | Close current `price_history` row; insert new. |
 | `redeemLoyalty(customerId, orderId)` | Server action | barista | Require ≥ 100 pts. Full redemption only — `total_zar = 0`. |
 | `topUpWallet(customerId, amountZar)` | Server action | barista | Yoco intent; webhook credits wallet. |

@@ -59,6 +59,15 @@ export function migrationSql(file: string): string {
 }
 
 /**
+ * Step 0049 (AT-174: refunds + refund_status dropped) down inside the caller's
+ * always-rolled-back transaction. It recreates the empty table and enum, and
+ * is the newest migration, so it steps down before 0048.
+ */
+export async function stepDown0049(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
+  await tx.unsafe(migrationSql("down/0049_at174_drop_refunds.down.sql"));
+}
+
+/**
  * Step 0048 (AT-207: daily_closes + orders.written_off_at) down inside the
  * caller's always-rolled-back transaction. Its down refuses while a close
  * record or a written-off order exists, and tests/db/scheduled-jobs.test.ts

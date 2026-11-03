@@ -65,7 +65,6 @@ ALTER TABLE stock_take_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE waste_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE refunds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE operating_hours ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
@@ -103,14 +102,13 @@ CREATE POLICY barista_customisations_ro ON menu_customisations
   USING (true);
 
 -- ─── Admin role ───────────────────────────────────────────────────────────────
--- Admins: everything barista has + price_history, operating_hours, refund approval
+-- Admins: everything barista has + price_history, operating_hours
 
 CREATE POLICY admin_all ON orders FOR ALL TO admin USING (true) WITH CHECK (true);
 CREATE POLICY admin_customers_all ON customers FOR ALL TO admin USING (true) WITH CHECK (true);
 CREATE POLICY admin_menu_rw ON menu_items FOR ALL TO admin USING (true) WITH CHECK (true);
 CREATE POLICY admin_price_history_rw ON price_history FOR ALL TO admin USING (true) WITH CHECK (true);
 CREATE POLICY admin_operating_hours_rw ON operating_hours FOR ALL TO admin USING (true) WITH CHECK (true);
-CREATE POLICY admin_refunds_rw ON refunds FOR ALL TO admin USING (true) WITH CHECK (true);
 CREATE POLICY admin_staff_rw ON staff FOR ALL TO admin USING (true) WITH CHECK (true);
 CREATE POLICY admin_inventory_rw ON inventory_items FOR ALL TO admin USING (true) WITH CHECK (true);
 CREATE POLICY admin_lots_rw ON inventory_lots FOR ALL TO admin USING (true) WITH CHECK (true);
@@ -123,7 +121,6 @@ CREATE POLICY admin_audit_ro ON audit_log FOR SELECT TO admin USING (true);
 
 CREATE POLICY finance_orders_ro ON orders FOR SELECT TO finance USING (true);
 CREATE POLICY finance_payments_ro ON payments FOR SELECT TO finance USING (true);
-CREATE POLICY finance_refunds_ro ON refunds FOR SELECT TO finance USING (true);
 CREATE POLICY finance_expenses_ro ON expenses FOR SELECT TO finance USING (true);
 CREATE POLICY finance_audit_ro ON audit_log FOR SELECT TO finance USING (true);
 
@@ -136,6 +133,5 @@ CREATE POLICY owner_all_staff ON staff FOR ALL TO owner USING (true) WITH CHECK 
 CREATE POLICY owner_all_menu ON menu_items FOR ALL TO owner USING (true) WITH CHECK (true);
 CREATE POLICY owner_all_inventory ON inventory_items FOR ALL TO owner USING (true) WITH CHECK (true);
 CREATE POLICY owner_all_payments ON payments FOR ALL TO owner USING (true) WITH CHECK (true);
-CREATE POLICY owner_all_refunds ON refunds FOR ALL TO owner USING (true) WITH CHECK (true);
 CREATE POLICY owner_all_expenses ON expenses FOR ALL TO owner USING (true) WITH CHECK (true);
 CREATE POLICY owner_audit_ro ON audit_log FOR SELECT TO owner USING (true);
