@@ -86,15 +86,12 @@ describe("POSWorkspace — free cup at ring-up", () => {
     // CHANGED (QA r1): the order already exists, so the free screen offers "New order", not a second send.
     expect(screen.getByRole("button", { name: /^new order$/i })).toBeDefined(); // R0 → no card
     expect(screen.queryByRole("button", { name: /send to queue/i })).toBeNull();
-
-    // CHANGED (AT-212, L19 / DEC-18): a free cup only exists on a weekday, where
-    // declining leaves the order R0 — nobody pays (was: totalZar 3000).
-    mockDecline.mockResolvedValue({ ok: true, data: { totalZar: 0 } });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Decline" })); });
-    expect(mockDecline).toHaveBeenCalledWith("ord_1");
-    expect(screen.queryByText("Free cup applied")).toBeNull();
-    expect(screen.getByRole("button", { name: /^new order$/i })).toBeDefined(); // still free, no card
-    expect(mockBegin).not.toHaveBeenCalled();
+    // Off a weekday (no shotPolicy = not weekday mode) the one-tap Decline is offered.
+    expect(screen.getByRole("button", { name: "Decline" })).toBeDefined();
+    // CHANGED (AT-212 follow-up): owner decision, Mia, 3 Nov 2026 — "on a weekday
+    // nobody pays, so the 'Decline free cup' control is REMOVED." The R0
+    // weekday-decline step that was here (decline → still R0, no card) is gone;
+    // the weekday case is now asserted in the AT-212 block below (no Decline).
   });
 
   // CHANGED (AT-212): was "ENTITLEMENT_USED: … the order goes on as paid". DEC-18
@@ -196,6 +193,14 @@ describe("ActiveOrder — free cup", () => {
     expect(screen.getAllByText(/60,00/)).toHaveLength(2);
     expect(screen.queryByText(/30,00/)).toBeNull();
   });
+
+  // AT-212 follow-up (owner decision, Mia, 3 Nov 2026): no Decline on a weekday.
+  it("a weekday free order: 'Free cup applied' is shown, but no Decline control", () => {
+    render(<ActiveOrder order={{ ...ORDER, totalZar: 0, paymentStatus: null }} weekdayFree />);
+    expect(screen.getByText("Free cup applied")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
+    expect(mockDecline).not.toHaveBeenCalled();
+  });
 });
 
 // ─── AT-212: weekday orders never take a payment (L19, DEC-18, DEC-19) ───────
@@ -225,6 +230,10 @@ describe("POSWorkspace — weekday mode has no payment step (AT-212)", () => {
     expect(screen.queryByText(/tap or insert the customer/i)).toBeNull();
     expect(mockBegin).not.toHaveBeenCalled();
     expect(mockSend).not.toHaveBeenCalled();
+    // AT-212 follow-up (owner decision, Mia, 3 Nov 2026): "on a weekday nobody
+    // pays, so the 'Decline free cup' control is REMOVED."
+    expect(screen.getByText("Free cup applied")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
   });
 
   it("ENTITLEMENT_USED refuses the drink; 'Give another free cup' re-places it in one tap with extraFreeCup (DEC-19)", async () => {

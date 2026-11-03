@@ -404,7 +404,12 @@ describe("AT-212: weekday orders never take a payment", () => {
     expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 3800 });
   });
 
-  it("declining the cup on a weekday gives the entitlement back but the order stays R0 'free' (L19)", async () => {
+  // CHANGED (AT-212 follow-up): owner decision, Mia, 3 Nov 2026 — "on a weekday
+  // nobody pays, so the 'Decline free cup' control is REMOVED." Was: a weekday
+  // decline deleted the entitlement row and left the order R0 (which let a
+  // fresh cup be claimed the same day). Now the decline is refused, audited,
+  // and nothing else is written.
+  it("declining the cup on a weekday is REFUSED with MODE_FORBIDDEN: the entitlement row stays, nothing written but the 'reject' audit", async () => {
     rows = new Map<unknown, Row[]>([
       [orders, [{
         id: "ord_w", state: "ordered", totalZar: 0, customerId: OFFICE.id, isStaffDiscount: true,
@@ -416,12 +421,40 @@ describe("AT-212: weekday orders never take a payment", () => {
       [payments, []],
     ]);
     const res = await declineFreeCoffee("ord_w");
-    expect(res).toEqual({ ok: true, data: { totalZar: 0 } });
-    expect(deletes.map((d) => d.table)).toEqual([staffEntitlementLog]);
-    expect(updatesOf(orderItems)).toEqual([]); // the line stays zeroed
-    expect(updatesOf(orders)).toEqual([{ isStaffDiscount: false }]); // total and payment_mode untouched
-    expect(insertsInto(payments)).toEqual([]);
+    expect(res).toEqual({ ok: false, code: "MODE_FORBIDDEN", message: FREE_CUP_COPY.declineNotOnWeekday });
+    expect(deletes).toEqual([]); // the staff_entitlement_log row is never removed
+    expect(updates).toEqual([]); // order total, payment_mode, is_staff_discount and lines untouched
+    expect(inserts).toEqual([]);
     expect(mockStartTender).not.toHaveBeenCalled();
+    expect(auditActions()).toEqual(["reject"]);
+    const audit = mockWriteAudit.mock.calls[0][0] as { after: Row; reason: string };
+    expect(audit.reason).toBe("MODE_FORBIDDEN");
+    expect(audit.after).toMatchObject({
+      attempted: "decline_free_cup", code: "MODE_FORBIDDEN", beneficiaryCustomerId: "cust_thabo", day: "2026-10-08",
+    });
+    // Returned, not thrown: the transaction commits, so the audit row survives.
+    expect(seq).toEqual(["commit"]);
+  });
+
+  // AT-212 follow-up: off a weekday the decline is unchanged — it restores the price.
+  it("off a weekday (Sunday session) the decline is unchanged: the row goes, the line's price comes back", async () => {
+    vi.setSystemTime(SUNDAY);
+    rows = new Map<unknown, Row[]>([
+      [orders, [{
+        id: "ord_s", state: "ordered", totalZar: 0, customerId: OFFICE.id, isStaffDiscount: true,
+        paymentMode: "free", revenueDay: "2026-10-11", placedAt: SUNDAY,
+      }]],
+      [orderItems, [{ id: "oi_s", quantity: 1, unitPriceZar: 3000, discountZar: 3000 }]],
+      [staffEntitlementLog, [{ id: "ent_1", customerId: OFFICE.id, day: "2026-10-11" }]],
+      [openingSessions, [{ mode: "sunday" }]],
+      [payments, []],
+    ]);
+    const res = await declineFreeCoffee("ord_s");
+    expect(res).toEqual({ ok: true, data: { totalZar: 3000 } });
+    expect(deletes.map((d) => d.table)).toEqual([staffEntitlementLog]);
+    expect(updatesOf(orderItems)).toEqual([{ discountZar: 0 }]);
+    expect(updatesOf(orders)).toEqual([{ totalZar: 3000, isStaffDiscount: false, paymentMode: null }]);
+    expect(insertsInto(payments)).toEqual([]);
     expect(auditActions()).toEqual(["decline_free_cup"]);
   });
 });

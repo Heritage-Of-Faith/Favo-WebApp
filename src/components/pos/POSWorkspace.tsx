@@ -589,12 +589,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
     setFullOrders(prev => {
       const o = prev[orderId];
       if (!o) return prev;
-      // AT-212: a weekday decline leaves every line zeroed (the total stays R0).
-      const items = r.data.totalZar === 0 ? o.items : o.items.map(i => ({ ...i, discountZar: 0 }));
+      // AT-212 follow-up: a decline only succeeds off a weekday (the server
+      // refuses it on one), where the line's price comes back.
+      const items = o.items.map(i => ({ ...i, discountZar: 0 }));
       return { ...prev, [orderId]: { ...o, totalZar: r.data.totalZar, isStaffDiscount: false, items } };
     });
-    // AT-212 / L19: on a weekday the order stays R0 — nothing is charged.
-    toast.message(r.data.totalZar === 0 ? "Free cup declined." : "Free cup declined — the order is charged in full.");
+    toast.message("Free cup declined — the order is charged in full.");
   }
 
   async function handleSignOut() {
@@ -1137,7 +1137,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                   {placedFreeCup && paymentOrderId && !placedCardCheckout && (
                     <FreeCupRow
                       busy={declining === paymentOrderId}
-                      onDecline={() => handleDeclineFreeCup(paymentOrderId)}
+                      /* AT-212 follow-up (owner, 3 Nov 2026): no Decline on a weekday — nobody pays. */
+                      onDecline={weekdayFree ? undefined : () => handleDeclineFreeCup(paymentOrderId)}
                     />
                   )}
                 </div>
@@ -1354,7 +1355,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                     {/* L03 free cup — applied automatically at ring-up; one tap to decline */}
                     {full && o.state === "ordered" && full.isStaffDiscount && full.paymentStatus !== "successful" && !full.cardCheckout
                       && chargeOrder?.id !== o.orderId && (
-                      <FreeCupRow busy={declining === o.orderId} onDecline={() => handleDeclineFreeCup(o.orderId)} />
+                      <FreeCupRow busy={declining === o.orderId}
+                        /* AT-212 follow-up (owner, 3 Nov 2026): no Decline on a weekday — nobody pays. */
+                        onDecline={weekdayFree ? undefined : () => handleDeclineFreeCup(o.orderId)} />
                     )}
 
                     {/* Cancel */}
