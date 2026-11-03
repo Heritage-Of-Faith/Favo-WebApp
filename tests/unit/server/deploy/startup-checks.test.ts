@@ -4,23 +4,34 @@ import { describe, it, expect } from "vitest";
 import {
   findJournalDrift,
   missingDatabaseEnv,
+  retiredDatabaseEnv,
   skipMigrationsDecision,
 } from "@/server/deploy/startup-checks";
 
-describe("missingDatabaseEnv", () => {
-  it("passes when both URLs are set", () => {
-    expect(missingDatabaseEnv({ DATABASE_URL: "postgres://a", DATABASE_URL_SESSION: "postgres://b" })).toEqual([]);
+describe("missingDatabaseEnv (AT-168: one direct DATABASE_URL)", () => {
+  it("passes when DATABASE_URL is set", () => {
+    expect(missingDatabaseEnv({ DATABASE_URL: "postgres://a" })).toEqual([]);
   });
 
-  it("names DATABASE_URL_SESSION when it is unset", () => {
-    expect(missingDatabaseEnv({ DATABASE_URL: "postgres://a" })).toEqual(["DATABASE_URL_SESSION"]);
+  it("names DATABASE_URL when it is unset", () => {
+    expect(missingDatabaseEnv({})).toEqual(["DATABASE_URL"]);
   });
 
   it("treats a blank value as unset", () => {
-    expect(missingDatabaseEnv({ DATABASE_URL: "  ", DATABASE_URL_SESSION: "" })).toEqual([
-      "DATABASE_URL",
-      "DATABASE_URL_SESSION",
-    ]);
+    expect(missingDatabaseEnv({ DATABASE_URL: "  " })).toEqual(["DATABASE_URL"]);
+  });
+});
+
+describe("retiredDatabaseEnv", () => {
+  it("flags a lingering DATABASE_URL_SESSION (stale two-URL config)", () => {
+    expect(
+      retiredDatabaseEnv({ DATABASE_URL: "postgres://a", DATABASE_URL_SESSION: "postgres://b" }),
+    ).toEqual(["DATABASE_URL_SESSION"]);
+  });
+
+  it("ignores it when unset or blank", () => {
+    expect(retiredDatabaseEnv({ DATABASE_URL: "postgres://a" })).toEqual([]);
+    expect(retiredDatabaseEnv({ DATABASE_URL_SESSION: "" })).toEqual([]);
   });
 });
 

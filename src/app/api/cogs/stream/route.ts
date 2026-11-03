@@ -6,9 +6,9 @@
 //
 // Admin / owner only. Mirrors the POS queue stream (G6).
 //
-// LISTEN/NOTIFY needs a persistent Session pooler connection (port 5432) via
-// DATABASE_URL_SESSION. Without it the endpoint still emits heartbeats and the
-// client falls back to periodic polling.
+// LISTEN/NOTIFY runs on DATABASE_URL, a direct connection (PRD §9.2, AT-168).
+// If the LISTEN fails the endpoint still emits heartbeats and the client falls
+// back to periodic polling.
 //
 // The actual LISTEN connection is shared across every connected admin tab
 // (see @/server/queue/broker) — this route only holds its own lightweight

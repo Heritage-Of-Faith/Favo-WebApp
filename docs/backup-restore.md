@@ -44,7 +44,7 @@ provisioned + app redeployed + smoke passing).
    - Enter the target timestamp (UTC)
    - Confirm restore — this creates a **new** Supabase project; the original is preserved
 
-4. **Update Infisical / Coolify** with the new project's `DATABASE_URL` and `DATABASE_URL_SESSION`
+4. **Update Infisical / Coolify** with the new database's `DATABASE_URL` (one direct URL since AT-168)
 
 5. **Redeploy** via Coolify → force a fresh container start (picks up new env vars)
 
@@ -92,7 +92,7 @@ psql $DRILL_DATABASE_URL < /tmp/favo-schema.sql
 DATABASE_URL=$DRILL_DATABASE_URL bun db:seed
 
 # 3. Start the app against the drill DB
-DATABASE_URL=$DRILL_DATABASE_URL DATABASE_URL_SESSION=$DRILL_DATABASE_URL bun dev
+DATABASE_URL=$DRILL_DATABASE_URL bun dev
 
 # 4. Run full smoke suite
 PUBLIC_BASE_URL=http://localhost:3000 bun test:e2e:ci tests/e2e/prod-smoke.spec.ts

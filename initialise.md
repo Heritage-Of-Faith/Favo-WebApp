@@ -72,8 +72,7 @@ cp .env.example .env.local
 Then tell the developer: "Open `.env.local` and fill in the values. Ask Gian for the `DATABASE_URL` and `AUTH_SECRET` — these connect to the Supabase database and are required before you can run the app."
 
 The `.env.example` file lists every required variable. The most critical ones are:
-- `DATABASE_URL` — Supabase Transaction pooler connection string (port 6543)
-- `DATABASE_URL_SESSION` — Supabase Session pooler (port 5432, needed for SSE)
+- `DATABASE_URL` — one direct connection (port 5432; never the 6543 transaction pooler — AT-168)
 - `AUTH_SECRET` — Auth.js signing secret
 
 ### Step 4 — Clone the repo if not already inside it

@@ -28,7 +28,7 @@ vi.mock("postgres", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   pgState.instances = [];
-  process.env.DATABASE_URL_SESSION = "postgres://test-session-url";
+  process.env.DATABASE_URL = "postgres://test-url";
 });
 
 describe("queue broker: lazy connect + fan-out + close-when-empty", () => {
@@ -76,8 +76,8 @@ describe("queue broker: lazy connect + fan-out + close-when-empty", () => {
     expect(pgState.instances.length).toBe(2); // fresh connection, not reused
   });
 
-  it("without DATABASE_URL_SESSION configured, subscribe/unsubscribe is a safe no-op", async () => {
-    delete process.env.DATABASE_URL_SESSION;
+  it("without DATABASE_URL configured, subscribe/unsubscribe is a safe no-op", async () => {
+    delete process.env.DATABASE_URL;
     vi.resetModules();
     const { orderChangesBroker } = await import("@/server/queue/broker");
 
