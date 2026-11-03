@@ -47,6 +47,12 @@ const ALLOWED = new Set([
   "src/server/crons/close-daily.ts", // reads payment_mode to leave fund-paid orders out of the card reconciliation
   "src/server/close/write-offs.ts", // AT-207 / REQ-166: reads spend entries so a fund-paid order is never written off
   "src/server/reports/revenue-scope.ts", // AT-203 follow-up: the revenue predicate reads spend/adjustment entries (read only; POS/admin readers)
+  // AT-203 screens — staff surfaces only, every call through the staff-authorised actions:
+  "src/app/admin/(dashboard)/funds/page.tsx", // /admin/funds — admin-gated route; listFundsForAdmin authorises admin
+  "src/components/admin/FundsManager.tsx", // its client UI: create, cash/EFT top-up (admin-only action), ledger
+  "src/app/pos/queue/page.tsx", // the POS page passes fundOptionsForOrder (barista/admin) to the workspace
+  "src/components/pos/POSWorkspace.tsx", // the footer chips: a type import and createOrder's donorFundId
+  "src/components/pos/FundChips.tsx", // the chips themselves: a type import only
 ]);
 
 describe("REQ-160 / REQ-165: no customer-reachable code reaches a fund", () => {
@@ -85,7 +91,7 @@ describe("REQ-160 / REQ-165: no customer-reachable code reaches a fund", () => {
     const exported = [...body.matchAll(/export async function (\w+)\([^]*?\{\n\s+(.*)\n/g)].map((m) => [m[1], m[2]]);
     expect(exported.length).toBeGreaterThanOrEqual(12);
     for (const [, first] of exported) expect(first).toMatch(/^const a = await staffActor\((POS_ROLES|ADMIN_ROLES)\);$/);
-    for (const name of ["topUpDonorFund", "sweepDonorFund", "addFundName", "removeFundName"]) {
+    for (const name of ["topUpDonorFund", "sweepDonorFund", "addFundName", "removeFundName", "listFundsForAdmin"]) {
       expect(exported.find(([n]) => n === name)?.[1]).toContain("ADMIN_ROLES");
     }
   });
@@ -134,6 +140,7 @@ const calls: Record<string, () => Promise<{ ok: boolean; code?: string }>> = {
   sweepDonorFund: () => actions.sweepDonorFund("f1", "x"),
   addFundName: () => actions.addFundName("f1", "c1"),
   removeFundName: () => actions.removeFundName("f1", "c1"),
+  listFundsForAdmin: () => actions.listFundsForAdmin(),
 };
 
 describe("REQ-160: the fund actions refuse a non-staff session, and the Admin-only ones refuse a barista", () => {
@@ -151,7 +158,7 @@ describe("REQ-160: the fund actions refuse a non-staff session, and the Admin-on
 
   it("a barista PIN session on the cash/EFT top-up, the sweep or the names: FORBIDDEN (the admin 403)", async () => {
     session = { id: "staff_louis", role: "barista" };
-    for (const name of ["topUpDonorFund", "sweepDonorFund", "addFundName", "removeFundName"]) {
+    for (const name of ["topUpDonorFund", "sweepDonorFund", "addFundName", "removeFundName", "listFundsForAdmin"]) {
       expect(await calls[name](), name).toMatchObject({ ok: false, code: "FORBIDDEN" });
     }
     expect(getFundDeps).not.toHaveBeenCalled();

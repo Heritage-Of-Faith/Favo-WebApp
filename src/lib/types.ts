@@ -109,6 +109,8 @@ export type Order = {
   cardCheckout?: boolean;
   /** REQ-008 / S4: a SENT attempt ended unresolved — the drink is made while recovery asks Yoco. */
   paymentAwaitingLookup?: boolean;
+  /** AT-203 / L47: paid from a blessing fund — no payments row, nothing owed. */
+  fundSettled?: boolean;
   items: OrderItem[];
 };
 

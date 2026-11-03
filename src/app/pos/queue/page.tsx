@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth/session";
 import POSWorkspace from "@/components/pos/POSWorkspace";
 import OpeningTimePrompt from "@/components/pos/OpeningTimePrompt";
 import { listActiveOrders } from "@/server/actions/orders";
+import { fundOptionsForOrder } from "@/server/actions/funds";
 import { db } from "@/lib/db";
 import { revenueDay } from "@/lib/format";
 import { readShotPolicy } from "@/server/orders/shot-policy";
@@ -28,7 +29,9 @@ export default async function POSWorkspacePage() {
       {/* REQ-071: only a boolean crosses to the client — never a Yoco key. It
           mirrors the server's own payment gate in transitionOrder. */}
       <POSWorkspace staffName={session.name} staffId={session.id} role={session.role} initialOrders={ordersRes.data}
-        yocoConfigured={!!process.env.YOCO_SECRET_KEY} shotPolicy={shotPolicy} />
+        yocoConfigured={!!process.env.YOCO_SECRET_KEY} shotPolicy={shotPolicy}
+        /* AT-203 / §6.10.6: the footer's fund chips read through this staff-authorised action. */
+        fundOptions={fundOptionsForOrder} />
     </>
   );
 }

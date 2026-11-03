@@ -1292,7 +1292,8 @@ export async function applyFreeCoffee(
 
 /**
  * The barista's one tap to decline an automatically applied free cup
- * (REQ-024). Removes the beneficiary's entitlement row for this order — so the
+ * (REQ-024). On a weekday it is refused with MODE_FORBIDDEN and writes only
+ * the reject audit (AT-212 follow-up, owner decision 3 Nov 2026). Removes the beneficiary's entitlement row for this order — so the
  * cup is still available to that person later today — clears the discount on
  * the line it paid for, restores the order total, and audits it. Only while
  * the order is `ordered` and no tender attempt is open (owner rule, P4). If the
@@ -1316,6 +1317,31 @@ export async function declineFreeCoffee(
       const { refusal } = await lockPaymentForTotalChange(tx, current);
       if (refusal) return refusal;
 
+      // AT-212 follow-up (owner decision, Mia, 3 Nov 2026: "on a weekday nobody
+      // pays, so the 'Decline free cup' control is removed"). On a weekday the
+      // decline is refused: the entitlement row is never removed (so no fresh
+      // cup can be claimed the same day), nothing is written but the reject
+      // audit, and it is returned, not thrown, so the audit commits.
+      const sessionRows = await tx
+        .select({ mode: openingSessions.mode })
+        .from(openingSessions)
+        .where(eq(openingSessions.sessionDate, current.revenueDay));
+      if (isFreeCupWeekday(sessionRows.map((r) => r.mode), current.placedAt)) {
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: {
+              attempted: "decline_free_cup", code: "MODE_FORBIDDEN",
+              beneficiaryCustomerId: current.customerId, day: current.revenueDay,
+            },
+            reason: "MODE_FORBIDDEN",
+          },
+          txDb
+        );
+        return { ok: false, code: "MODE_FORBIDDEN", message: FREE_CUP_COPY.declineNotOnWeekday };
+      }
+
       // Pair the cup with its line: the order carries at most one free cup
       // (createOrder applies one; applyFreeCoffee refuses a second), and the
       // free cup is the only mechanism that writes discount_zar today (L41).
@@ -1327,28 +1353,6 @@ export async function declineFreeCoffee(
         entitlements.find((e) => e.customerId === current.customerId) ??
         (entitlements.length === 1 ? entitlements[0] : undefined);
       if (!entitlement) return { ok: false, code: "NOT_FOUND", message: "No free cup on this order." };
-
-      // AT-212 / L19 / DEC-18: on a weekday nobody pays, so declining the cup
-      // only gives the entitlement back — the order stays R0 and 'free', every
-      // line still zeroed, and nothing can go to the card machine.
-      const sessionRows = await tx
-        .select({ mode: openingSessions.mode })
-        .from(openingSessions)
-        .where(eq(openingSessions.sessionDate, current.revenueDay));
-      if (isFreeCupWeekday(sessionRows.map((r) => r.mode), current.placedAt)) {
-        await tx.delete(staffEntitlementLog).where(eq(staffEntitlementLog.id, entitlement.id));
-        await tx.update(orders).set({ isStaffDiscount: false }).where(eq(orders.id, orderId));
-        await writeAudit(
-          {
-            entityKind: "order", entityId: orderId, action: "decline_free_cup",
-            actorId: session.id, actorRole: session.role,
-            before: { totalZar: current.totalZar, beneficiaryCustomerId: entitlement.customerId, day: entitlement.day },
-            after: { totalZar: current.totalZar, paymentMode: current.paymentMode },
-          },
-          txDb
-        );
-        return { ok: true, data: { totalZar: current.totalZar } };
-      }
 
       const lines = await tx
         .select({ id: orderItems.id, unitPriceZar: orderItems.unitPriceZar, discountZar: orderItems.discountZar })
@@ -1444,6 +1448,7 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
     // AT-203 / REQ-167: a fund-settled order is frozen too.
     cardCheckout: payState.totalFrozen || o.paymentMode === "donor_fund",
     paymentAwaitingLookup: payState.awaitingLookup,
+    fundSettled: o.paymentMode === "donor_fund",
     items: itemRows.map((it) => ({
       id: it.id,
       menuItemId: it.menuItemId,

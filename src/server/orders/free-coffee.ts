@@ -31,6 +31,9 @@ export const FREE_CUP_COPY = {
   // Not PRD copy: MODE_FORBIDDEN's "named reason" when the override is called
   // outside weekday mode or without a customer (the till never offers it there).
   extraCupNotHere: "Another free cup is only for a named customer on a weekday.",
+  // Not PRD copy: MODE_FORBIDDEN's reason when declineFreeCoffee is called on a
+  // weekday (AT-212 follow-up, owner decision 3 Nov 2026; the till never offers it).
+  declineNotOnWeekday: "The free cup can't be declined on a weekday — nobody pays on a weekday.",
 } as const;
 
 /**

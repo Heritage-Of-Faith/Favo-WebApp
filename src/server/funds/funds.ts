@@ -709,6 +709,80 @@ export async function readFundBalance(deps: FundDeps, fundId: string): Promise<F
   });
 }
 
+// ─── (9) the Admin's read: /admin/funds (§13.9, §10.7) ────────────────────────
+
+export type AdminFundEntryView = {
+  id: string;
+  kind: FundEntry["kind"];
+  /** Signed integer cents, as on the ledger. */
+  amountZar: number;
+  fundingMethod: FundingMethod | null;
+  reference: string | null;
+  reason: string | null;
+  orderId: string | null;
+  at: string;
+  /** Card top-ups only: the latest attempt's payment status (REQ-173). */
+  status: PaymentStatus | null;
+  /** §10.3: whether the entry counts toward the balance (an open card top-up does not). */
+  counts: boolean;
+};
+
+export type AdminFundView = {
+  fundId: string;
+  code: string;
+  displayName: string | null;
+  balanceZar: number;
+  /** Open card top-ups: visible, worth zero (REQ-173). */
+  pendingTopupsZar: number;
+  /** T14. null = the fund settings are not valid, so dormancy cannot be read. */
+  dormant: boolean | null;
+  lastDrawAt: string | null;
+  memberIds: string[];
+  entries: AdminFundEntryView[];
+};
+
+/**
+ * §13.9 /admin/funds: every active fund with its balance, ledger, member list
+ * and last draw. Admin only (§10.7 "Read a fund's ledger, draws and member
+ * list") — the action authorises. Oldest fund first; the draw-order queue and
+ * depletion estimate (REQ-171) are not computed here.
+ */
+export async function adminFundsView(deps: FundDeps): Promise<AdminFundView[]> {
+  const config = await deps.readConfig();
+  const now = deps.now();
+  return deps.store.transaction(async (tx) => {
+    const funds = await tx.listActiveFunds();
+    const out: AdminFundView[] = [];
+    for (const f of funds) {
+      const [entries, memberIds] = await Promise.all([tx.listEntries(f.id), tx.listMembers(f.id)]);
+      const spends = entries.filter((e) => e.kind === "spend");
+      out.push({
+        fundId: f.id,
+        code: f.code,
+        displayName: f.displayName,
+        balanceZar: fundBalanceZar(entries),
+        pendingTopupsZar: openTopupsZar(entries),
+        dormant: config ? isDormant(f, entries, now, config.dormancyDays) : null,
+        lastDrawAt: spends.length ? spends[spends.length - 1].at.toISOString() : null,
+        memberIds,
+        entries: entries.map((e) => ({
+          id: e.id,
+          kind: e.kind,
+          amountZar: e.amountZar,
+          fundingMethod: e.fundingMethod,
+          reference: e.reference,
+          reason: e.reason,
+          orderId: e.orderId,
+          at: e.at.toISOString(),
+          status: topupStatus(e),
+          counts: countsTowardBalance(e),
+        })),
+      });
+    }
+    return out;
+  });
+}
+
 export type FundChip = { fundId: string; code: string; displayName: string | null; balanceZar: number };
 
 export type FundOptions = {

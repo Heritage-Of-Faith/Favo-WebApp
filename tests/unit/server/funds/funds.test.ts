@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from "vitest";
 import { FakeYocoWebPosPort, type FakeSendScript } from "@/server/yoco/webpos-fake";
 import {
   addFundName,
+  adminFundsView,
   beginFundTender,
   compensateFundDraw,
   createDonorFund,
@@ -461,5 +462,34 @@ describe("fundOptions — oldest unspent gift first, at most two chips (REQ-169,
     const o = await fundOptions(w.deps, { customerId: "cust_thandeka", netZar: 2000 });
     expect(o.open).toBeNull();
     expect(o.linked).toMatchObject({ fundId: "g1", balanceZar: 1000, canCover: false, lit: false });
+  });
+});
+
+// ─── AT-203 screens: the Admin's read for /admin/funds (§13.9, §10.7) ─────────
+
+describe("adminFundsView — balance, pending top-ups, members, last draw and ledger", () => {
+  it("a R500 cash gift less one R20 draw reads R480 (48000); an open R500 card top-up is pending and worth zero (REQ-173)", async () => {
+    const w = world({ sends: [{ outcome: "timeout", createdPaymentId: "yp-late", fetches: [] }] });
+    openFund(w, "f1", 50_000);
+    w.store.addFund({ id: "g1", code: "FVO-9PQR", displayName: "Thandeka's group", at: new Date("2026-10-02T08:00:00Z") }, ["cust_thandeka"]);
+    w.store.addEntry({ fundId: "g1", kind: "top_up", amountZar: 18_000, at: new Date("2026-10-02T08:00:00Z") });
+    w.addOrder("ord-1", 2000);
+    expect(await drawFromDonorFund(w.deps, LOUIS, "ord-1", "f1")).toMatchObject({ ok: true, balanceAfterZar: 48_000 });
+    const t = (await beginFundTender(w.deps, LOUIS, "g1", 50_000)) as { fundTopupId: string };
+    await sendToTerminal(w.topupDeps(), LOUIS, t.fundTopupId, 1);
+
+    const view = await adminFundsView(w.deps);
+    expect(view.map((f) => f.fundId)).toEqual(["f1", "g1"]);
+    const [f1, g1] = view;
+    expect(f1).toMatchObject({ code: "FVO-AAAA", balanceZar: 48_000, pendingTopupsZar: 0, dormant: false, memberIds: [], lastDrawAt: T0.toISOString() });
+    expect(f1.entries.map((e) => [e.kind, e.amountZar, e.counts])).toEqual([["top_up", 50_000, true], ["spend", -2000, true]]);
+    expect(g1).toMatchObject({ displayName: "Thandeka's group", balanceZar: 18_000, pendingTopupsZar: 50_000, memberIds: ["cust_thandeka"], lastDrawAt: null });
+    expect(g1.entries[1]).toMatchObject({ kind: "top_up", fundingMethod: "card", amountZar: 50_000, status: "unresolved", counts: false });
+  });
+
+  it("invalid T13/T14 settings: dormancy reads null rather than a guess", async () => {
+    const w = world({ config: null });
+    openFund(w, "f1", 50_000);
+    expect((await adminFundsView(w.deps))[0]).toMatchObject({ balanceZar: 50_000, dormant: null });
   });
 });

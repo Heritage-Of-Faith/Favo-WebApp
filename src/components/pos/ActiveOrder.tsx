@@ -17,7 +17,12 @@ import { computeLineTotalZar } from "@/server/orders/pricing";
 import { shotsLabel } from "@/server/orders/shot-surcharge";
 import type { Order, OrderState } from "@/lib/types";
 
-export type Props = { order: Order };
+export type Props = {
+  order: Order;
+  /** AT-212 follow-up (owner, 3 Nov 2026): the order's day is weekday mode —
+   *  nobody pays, so no Decline is offered (the server refuses it too). */
+  weekdayFree?: boolean;
+};
 
 type ActionState = "idle" | "loading" | "error";
 
@@ -33,7 +38,7 @@ const ADVANCE_LABEL: Partial<Record<OrderState, string>> = {
   ready:       "Done — collected",
 };
 
-export default function ActiveOrder({ order }: Props) {
+export default function ActiveOrder({ order, weekdayFree = false }: Props) {
   const router = useRouter();
   const [currentOrder, setCurrentOrder] = useState<Order>(order);
   const [actionState, setActionState] = useState<ActionState>("idle");
@@ -96,15 +101,15 @@ export default function ActiveOrder({ order }: Props) {
     try {
       const result = await declineFreeCoffee(currentOrder.id);
       if (result.ok) {
-        // AT-212 / L19: a weekday decline leaves the order R0 and its lines zeroed.
-        const stillFree = result.data.totalZar === 0;
+        // AT-212 follow-up: a decline only succeeds off a weekday (the server
+        // refuses it on one), where the line's price comes back.
         setCurrentOrder((o) => ({
           ...o,
           totalZar: result.data.totalZar,
           isStaffDiscount: false,
-          items: stillFree ? o.items : o.items.map((i) => ({ ...i, discountZar: 0 })),
+          items: o.items.map((i) => ({ ...i, discountZar: 0 })),
         }));
-        setFreeCupMsg(stillFree ? "Free cup declined." : "Free cup declined — the order is charged in full.");
+        setFreeCupMsg("Free cup declined — the order is charged in full.");
       } else {
         setFreeCupMsg(result.message);
       }
@@ -192,7 +197,7 @@ export default function ActiveOrder({ order }: Props) {
           only while no card checkout exists (the server refuses otherwise) ── */}
       {currentOrder.state === "ordered" && currentOrder.isStaffDiscount && currentOrder.paymentStatus !== "successful"
         && !currentOrder.cardCheckout && (
-        <FreeCupRow busy={declining} onDecline={handleDeclineFreeCup} />
+        <FreeCupRow busy={declining} onDecline={weekdayFree ? undefined : handleDeclineFreeCup} />
       )}
       {freeCupMsg && <p className="favo-small text-cool-steel" role="status">{freeCupMsg}</p>}
       {/* ── Cancel (only while ordered) ─────────────────────────────────────── */}

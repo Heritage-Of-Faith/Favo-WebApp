@@ -31,6 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/yield" as Route, label: "Yield" },
   { href: "/admin/reports" as Route, label: "Reports" },
   { href: "/admin/write-downs" as Route, label: "Write-downs" },
+  { href: "/admin/funds" as Route, label: "Blessing funds" },
   { href: "/admin/hours" as Route, label: "Hours" },
   { href: "/admin/menu", label: "Menu" },
   { href: "/admin/staff", label: "Staff" },
