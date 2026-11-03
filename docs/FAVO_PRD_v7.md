@@ -22,7 +22,7 @@ identifier_schemes:
   - "T1–T10 — worked sequences (§6.0) and, separately, T10 the reconciliation control (§12.2)"
   - "D1–D10 — UI requirements (§17.2)"
   - "R1–R25 — risk register (§14)"
-  - "DEC-01…DEC-19 — dated owner decisions (§16.1)"
+  - "DEC-01…DEC-20 — dated owner decisions (§16.1)"
   - "DEF-A…DEF-G — defects found in v6.0 and fixed in v7.0 (§00)"
   - "COL-1…COL-31 — collisions between amendment pack A and v6.0, each resolved in place"
   - "OPEN-08, FACT-1, FACT-2, FEE-1 — what is still open (§16.2)"
@@ -819,7 +819,7 @@ v6.0's §12.2 recorded doubt about its own decision, in its own words: T09 *"fun
 | Untracked hot drink voucher | ~25 per outreach evening · **zero on an ordinary Sunday** | **On the line, only when a voucher kind is live for the session.** On a normal Sunday it does not exist |
 | Blessing fund | A few a day at most | **In the footer, only when an active fund exists and the order has a net charge** |
 | L33 comp | ≤ 2 per barista per session, by rule | Behind the line's `⋯`. Rare by design, and it needs a reason picker anyway |
-| L03 free cup | Every weekday office cup | **No control at all** — auto-applied, one tap only to decline (L03) |
+| L03 free cup | Every weekday office cup | **No control at all** — auto-applied, and it cannot be declined on a weekday (L03, DEC-20) |
 
 > **L48 — a control that cannot apply is not rendered**
 >
@@ -1345,7 +1345,7 @@ Generous members hand over a set amount — cash or EFT — and tell the barista
 | --- | --- | --- |
 | The story | "Here is R500, give coffee to whoever comes" | "I cover these people's coffee; they order all day" — **the group who would otherwise want a tab** |
 | Who may draw | Anyone the barista chooses. Barista discretion, logged — the same posture as a walk-in (§6.5) | **Only a linked person**, matched at ring-up. Anyone else is rejected with `FUND_NOT_LINKED` |
-| Applied how | Explicit tap on the fund chip. There is no signal to key it off — the recipient is usually unregistered | **Auto-applied on a matched name, declined in one tap** (owner, 14 Sep 2026) — L03's posture, for L03's reason: *a standing arrangement should not cost a decision every time.* The chip arrives lit and the state is visible before Place |
+| Applied how | Explicit tap on the fund chip. There is no signal to key it off — the recipient is usually unregistered | **Auto-applied on a matched name, declined in one tap** (owner, 14 Sep 2026; the fund chip keeps its one-tap decline — DEC-20 removes it only from the weekday free cup) — L03's posture, for L03's reason: *a standing arrangement should not cost a decision every time.* The chip arrives lit and the state is visible before Place |
 | May the payer drink from it? | Only by being linked — at which point it is the column to the right | **Yes.** Linking yourself is how the group's payer covers their own coffee, and it is the arrangement they already have |
 | Who sees the breakdown | The Admin, on `/admin/funds`. **There is no donor-facing statement** (§6.10.5) |   |
 
@@ -2835,7 +2835,7 @@ L01–L34 carry forward from v5.2. **L35–L40 are new in v6.0** and carry the d
 
 **L03** — **Free weekday coffee: one cup per office staff member per weekday.** The beneficiary is an **office staff member** — a `customers` row with `status='office_staff'` — *not* a FAVO staff member.
 
-**The entitlement is applied automatically** when the mode is weekday, the matched customer is `office_staff`, and the item is in the eligible-category list — **the barista taps only to *decline* it.** A dedicated claim screen is for exceptions, never the normal path. *v5.0 had the barista apply it manually on a separate screen, which made a free weekday cup cost ~7 interactions and a typed name for a drink nobody pays for, 63 times a day — while §7.4 rejected a lid toggle for costing one tap on 45 Sunday orders. The same arithmetic has to apply to both.*
+**The entitlement is applied automatically** when the mode is weekday, the matched customer is `office_staff`, and the item is in the eligible-category list — **the barista taps nothing: a weekday free cup cannot be declined (DEC-20, 3 Nov 2026; nobody pays on a weekday, L19).** A dedicated claim screen is for exceptions, never the normal path. *v5.0 had the barista apply it manually on a separate screen, which made a free weekday cup cost ~7 interactions and a typed name for a drink nobody pays for, 63 times a day — while §7.4 rejected a lid toggle for costing one tap on 45 Sunday orders. The same arithmetic has to apply to both.*
 
 **One cup means one unit, and this needed saying.** The entitlement zeroes **exactly one unit of one eligible line** — `line_discount = line_unit_price`, applied once — **never a whole line and never a whole order.** Enforced at the DB by `UNIQUE(customer_id, day)` **and** in `applyFreeCoffee` by discounting one unit rather than the line.
 
@@ -3294,6 +3294,7 @@ Dated owner decisions, with the reasoning that produced them. **Where a decision
 | **DEC-17 · Tips** [amended 22 Oct 2026] | **No tips, and no tip column.** Owner decision, Nikao, 22 Oct 2026, *reversing v7.0's `payments.tip_zar` guard column.* Tipping was already a non-goal with the machine's prompt suppressed; the column existed only so a stray tip would reconcile. It is dropped: `net_settled` loses its tip term, FIXTURE-B carries no tip, and **a tip that slips through is a T10 variance for an Admin, never booked revenue** | §7.0.2 · §10.3.3 · §11.2 · §15.1 · REQ-118 · REQ-120 |
 | **DEC-18 · Weekday drinks** [amended 22 Oct, revised 29 Oct 2026] | **A second weekday drink is never charged.** Owner decision, Nikao, 22 Oct 2026; revised 29 Oct to adopt Mia's version. L19 stands: no weekday order has a payment step. **`ENTITLEMENT_USED` refuses the drink by default**, reversing v7.0's "continues as paid" (S1 codes, T-sequence step 4, REQ-025), and **a barista can override the refusal in one step, for anyone** — no leader or pastor marker. The extra cup is logged separately from the entitlement cup and counted on its own in the weekly numbers — *mechanism: DEC-19.* Free weekday orders keep the menu price, and `discount_zar` zeroes each line (total R0) | L03 · L19 · §6.0.1 · §7.3 · REQ-025 · DEC-19 |
 | **DEC-19 · The extra-cup override** [new] | **A barista can give a refused second drink in one tap, and it is logged.** Owner decision, Mia, 24 Oct 2026. After `ENTITLEMENT_USED` the till offers **one control — "Give another free cup"** — and nothing else: no PIN, no reason field, no second screen. Anyone who is refused a second drink, a pastor or team leader included, must never wait on a manager. **The extra cup is not a second entitlement:** no `staff_entitlement_log` row is written, so `UNIQUE(customer_id, day)` still holds for the real cup. It is written as **one audit row, `action='extra_free_cup'`**, carrying the barista, the beneficiary, the order, the day and the drink's gross value, and it is read at `/admin/audit`, so R14's anomaly detection on entitlement claims sees extra cups as well as refusals. Offered **only in weekday mode and only with a customer attached**; never offered elsewhere, never an order-total change (the order is R0 as always). It is a deliberate, easily reversible choice, not a loophole: the cost of one extra cup is small, a refused pastor is not | L03 · DEC-18 · REQ-025 · R14 |
+| **DEC-20 · No decline on a weekday free cup** [new] | **On a weekday the free cup cannot be declined.** Owner decision, Mia, 3 Nov 2026. Nobody pays on a weekday (L19), so there is nothing to decline: **the till shows no "Decline" control on a weekday free cup, and `declineFreeCoffee` on a weekday refuses with `MODE_FORBIDDEN`** — an audited `action='reject'` row, nothing else written, so the `staff_entitlement_log` row can never be removed on a weekday (removing it let a fresh cup be claimed the same day, with no `extra_free_cup` row). **Amends L03, §05's L03 row and REQ-024**, which said the barista "taps only to decline it": the decline applies only outside weekday mode. **Unchanged:** two drinks in one weekday order for one person are both free with no extra-cup log (owner, 3 Nov 2026); the fund chip keeps its own one-tap decline (§6.10.2, REQ-169) — DEC-20 removes the decline from the weekday free cup only. A cup that should not have been free (wrong customer matched) is cancelled and re-rung, which meets `ENTITLEMENT_USED` and DEC-19's override | L03 · L19 · DEC-18 · DEC-19 · REQ-024 · REQ-025 |
 | Timeline | **No fixed date.** Gate zero first, then priority order | §13 |
 
 ### 16.2 Open
@@ -3595,6 +3596,7 @@ mm = css_px × 25.4 / device_logical_ppi
 | 22 Oct 2026 | **DEC-17:** no tips and no `payments.tip_zar` column; `net_settled`, FIXTURE-B, REQ-118 and REQ-120 lose their tip terms, and a stray tip is a T10 variance. **DEC-18:** a second weekday drink is never charged; `ENTITLEMENT_USED` refuses it (REQ-025); free weekday lines are zeroed by `discount_zar` (§16.1) |
 | 24 Oct 2026 | **DEC-19:** the extra-cup override — after a refused second drink the barista can give it in one tap, logged as an `extra_free_cup` audit row and never as a second entitlement row (REQ-025, §16.1) |
 | 29 Oct 2026 | **DEC-18 revised:** the refusal is a default a barista can override in one step, for anyone; the extra cup is logged separately and counted on its own in the weekly numbers (mechanism: DEC-19) |
+| 3 Nov 2026 | **DEC-20:** a weekday free cup cannot be declined — no Decline control, and `declineFreeCoffee` on a weekday refuses with `MODE_FORBIDDEN` (amends L03, §05's L03 row and REQ-024; two drinks in one weekday order stay both free; the fund chip keeps its decline; §16.1) |
 
 ### B.0 — v6.0 → v7.0: amendment pack A, merged [new in v7.0]
 
@@ -3710,7 +3712,7 @@ mm = css_px × 25.4 / device_logical_ppi
 | REQ-021 | S8a | **Given** an order · **When** `transitionOrder('in_progress')` succeeds · **Then** stock deducts **there and only there** — not at `createOrder`, not at `ready`, not twice |
 | REQ-022 | S8b | **Given** a paid order · **When** the `in_progress` deduction fails · **Then** `STOCK_EXHAUSTED_AT_MAKE` is returned with the resolution path, **the money is not reversed** (L02), and **the Admin is pushed immediately** |
 | REQ-023 | S9 | **Given** an order in any state · **When** a backwards or repeated transition is attempted · **Then** it is rejected with `STALE_STATE` and the audit records the rejection |
-| REQ-024 | T1, L03 | **Given** weekday mode and a matched `office_staff` customer with no entitlement today · **When** an eligible item is selected · **Then** the entitlement applies **without a tap**, discounting **one unit** — and the barista taps only to **decline** it |
+| REQ-024 | T1, L03 | **Given** weekday mode and a matched `office_staff` customer with no entitlement today · **When** an eligible item is selected · **Then** the entitlement applies **without a tap**, discounting **one unit** — and **there is no control to decline it** (DEC-20, 3 Nov 2026; `declineFreeCoffee` on a weekday returns `MODE_FORBIDDEN`) |
 | REQ-025 | L03, §05 | **Given** a customer with an entitlement row today · **When** a second is attempted · **Then** `ENTITLEMENT_USED` is returned, **the second drink is refused by default and never charged** (DEC-18; the barista's one-step override is DEC-19), and **the refusal is audited with `action='reject'`**. **When** the barista then taps "Give another free cup" (DEC-19) **Then** an R0 order is created, **no second entitlement row is written**, and **one audit row `action='extra_free_cup'`** records barista, beneficiary, order, day and gross; the control is offered only in weekday mode with a customer attached |
 | REQ-026 | T2, P1 | **Given** a Sunday sale · **When** tender begins · **Then** `orders` → `order_items` → `payments` (`pending`, carrying `client_reference`) are **all written before anything is sent to the machine.** Never the reverse order |
 | REQ-027 | P3, §11.2 | **Given** attempt *n* on an order · **When** `beginTender` runs · **Then** `client_reference = client_uuid:n`, **NOT NULL and UNIQUE**, written **before** the send — and **never reused on a retry** |

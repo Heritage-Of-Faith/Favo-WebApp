@@ -6,7 +6,8 @@ import { redirect, notFound } from "next/navigation";
 import type { Route } from "next";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders, orderItems, menuItems, payments } from "@db/schema";
+import { orders, orderItems, menuItems, payments, openingSessions } from "@db/schema";
+import { isFreeCupWeekday } from "@/server/orders/free-coffee";
 import { getSession } from "@/lib/auth/session";
 import ActiveOrder from "@/components/pos/ActiveOrder";
 import { liveVoucherCountsByLine } from "@/server/orders/voucher-session";
@@ -24,7 +25,7 @@ export default async function ActiveOrderPage({ params }: Props) {
   const [row] = await db.select().from(orders).where(eq(orders.id, id));
   if (!row) notFound();
 
-  const [itemRows, paymentRow, vouchersByLine] = await Promise.all([
+  const [itemRows, paymentRow, vouchersByLine, sessionRows] = await Promise.all([
     db
       .select({
         id: orderItems.id,
@@ -46,8 +47,11 @@ export default async function ActiveOrderPage({ params }: Props) {
       .where(eq(payments.orderId, id))
       .orderBy(payments.attempt), // one row per attempt: the LATEST decides (§10.3.3)
     liveVoucherCountsByLine(db, id),
+    // AT-212 follow-up: the same weekday test declineFreeCoffee applies.
+    db.select({ mode: openingSessions.mode }).from(openingSessions).where(eq(openingSessions.sessionDate, row.revenueDay)),
   ]);
   const payState = summarisePayments(paymentRow);
+  const weekdayFree = isFreeCupWeekday(sessionRows.map((r) => r.mode), row.placedAt);
 
   const order: Order = {
     id: row.id,
@@ -79,7 +83,7 @@ export default async function ActiveOrderPage({ params }: Props) {
 
   return (
     <main className="flex h-screen flex-col p-[var(--spacing-m)]">
-      <ActiveOrder order={order} />
+      <ActiveOrder order={order} weekdayFree={weekdayFree} />
     </main>
   );
 }
