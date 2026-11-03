@@ -344,6 +344,13 @@
       "when": 1793219800000,
       "tag": "0049_at174_drop_refunds",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793219900000,
+      "tag": "0050_at203_fund_abandon_revenue",
+      "breakpoints": true
     }
   ]
 }

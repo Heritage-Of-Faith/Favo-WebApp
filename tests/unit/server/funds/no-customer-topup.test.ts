@@ -46,6 +46,7 @@ const ALLOWED = new Set([
   "src/server/tender/tender.ts",
   "src/server/crons/close-daily.ts", // reads payment_mode to leave fund-paid orders out of the card reconciliation
   "src/server/close/write-offs.ts", // AT-207 / REQ-166: reads spend entries so a fund-paid order is never written off
+  "src/server/reports/revenue-scope.ts", // AT-203 follow-up: the revenue predicate reads spend/adjustment entries (read only; POS/admin readers)
   // AT-203 screens — staff surfaces only, every call through the staff-authorised actions:
   "src/app/admin/(dashboard)/funds/page.tsx", // /admin/funds — admin-gated route; listFundsForAdmin authorises admin
   "src/components/admin/FundsManager.tsx", // its client UI: create, cash/EFT top-up (admin-only action), ledger

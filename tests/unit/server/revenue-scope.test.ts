@@ -3,6 +3,8 @@
 // money". So revenue counts a cancelled order that holds a successful payment,
 // and never a cancelled order without one. Every revenue read uses one
 // predicate; the abandoned waste row is not counted as stock waste.
+// AT-203 follow-up (owner, 3 Nov 2026; §6.10.4, L47, T6): a cancelled order
+// whose fund draw was not given back (abandoned) also counts.
 
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
@@ -25,6 +27,7 @@ vi.mock("@/server/cogs/compute", () => ({ todaySast: vi.fn(() => "2026-10-25") }
 import {
   REVENUE_ORDER_SCOPE_SQL, revenueOrderScope,
   CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL, cancelledWithSuccessfulPayment,
+  CANCELLED_WITH_UNREVERSED_FUND_DRAW_SQL, cancelledWithUnreversedFundDraw,
 } from "@/server/reports/revenue-scope";
 import { getPosToday } from "@/server/actions/pos-summary";
 import { buildReportRows } from "@/server/reports/export-csv";
@@ -34,11 +37,15 @@ const text = (q: SQL) => dialect.sqlToQuery(q).sql.replace(/\s+/g, " ");
 const src = (p: string) => readFileSync(resolve(process.cwd(), p), "utf8");
 
 describe("revenue scope (AT-209)", () => {
-  it("started states, plus a cancelled order only when it holds a successful payment", () => {
+  it("started states, plus a cancelled order only when it holds a successful payment or an unreversed fund draw", () => {
     expect(REVENUE_ORDER_SCOPE_SQL).toBe(
       "(orders.state IN ('in_progress', 'ready', 'collected')" +
       " OR (orders.state = 'cancelled' AND EXISTS (" +
-      "SELECT 1 FROM payments rp WHERE rp.order_id = orders.id AND rp.status = 'successful')))"
+      "SELECT 1 FROM payments rp WHERE rp.order_id = orders.id AND rp.status = 'successful'))" +
+      " OR (orders.state = 'cancelled' AND EXISTS (" +
+      "SELECT 1 FROM donor_fund_entries fs WHERE fs.order_id = orders.id AND fs.kind = 'spend')" +
+      " AND NOT EXISTS (" +
+      "SELECT 1 FROM donor_fund_entries fa WHERE fa.order_id = orders.id AND fa.kind = 'adjustment')))"
     );
   });
 
@@ -48,21 +55,48 @@ describe("revenue scope (AT-209)", () => {
     expect(joined.replace(/\s+/g, " ").trim()).toBe(REVENUE_ORDER_SCOPE_SQL);
   });
 
-  it("the cancelled-with-payment case alone carries exactly its constant's text, and is the scope's second half", () => {
+  it("the cancelled-with-payment case alone carries exactly its constant's text, and is the scope's second part", () => {
     const chunks = cancelledWithSuccessfulPayment.queryChunks as unknown as { value: string[] }[];
     const joined = chunks.map((c) => c.value.join("")).join("");
     expect(joined.replace(/\s+/g, " ").trim()).toBe(CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL);
     expect(REVENUE_ORDER_SCOPE_SQL).toBe(
-      `(orders.state IN ('in_progress', 'ready', 'collected') OR ${CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL})`
+      `(orders.state IN ('in_progress', 'ready', 'collected') OR ${CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL}` +
+      ` OR ${CANCELLED_WITH_UNREVERSED_FUND_DRAW_SQL})`
     );
   });
 
-  it("migration 0045 rewrites v_daily_revenue with the same predicate; its down restores 0004's", () => {
+  it("the fund case alone: a cancelled order with a spend entry and no adjustment (abandoned, not given back)", () => {
+    expect(CANCELLED_WITH_UNREVERSED_FUND_DRAW_SQL).toBe(
+      "(orders.state = 'cancelled' AND EXISTS (" +
+      "SELECT 1 FROM donor_fund_entries fs WHERE fs.order_id = orders.id AND fs.kind = 'spend')" +
+      " AND NOT EXISTS (" +
+      "SELECT 1 FROM donor_fund_entries fa WHERE fa.order_id = orders.id AND fa.kind = 'adjustment'))"
+    );
+    const chunks = cancelledWithUnreversedFundDraw.queryChunks as unknown as { value: string[] }[];
+    const joined = chunks.map((c) => c.value.join("")).join("");
+    expect(joined.replace(/\s+/g, " ").trim()).toBe(CANCELLED_WITH_UNREVERSED_FUND_DRAW_SQL);
+  });
+
+  it("migration 0045 rewrote v_daily_revenue with the card case only; its down restores 0004's", () => {
     const up = src("drizzle/0045_at209_comps_cancel_abandon.sql");
     expect(up).toContain("CREATE OR REPLACE VIEW v_daily_revenue AS");
-    expect(up).toContain(`WHERE ${REVENUE_ORDER_SCOPE_SQL}`);
+    expect(up).toContain(
+      `WHERE (orders.state IN ('in_progress', 'ready', 'collected') OR ${CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL})`
+    );
     const down = src("drizzle/down/0045_at209_comps_cancel_abandon.down.sql");
     expect(down).toContain("WHERE state IN ('in_progress', 'ready', 'collected')");
+  });
+
+  it("migration 0050 rewrites v_daily_revenue with the same predicate; its down restores 0045's", () => {
+    const up = src("drizzle/0050_at203_fund_abandon_revenue.sql");
+    expect(up).toContain("CREATE OR REPLACE VIEW v_daily_revenue AS");
+    expect(up).toContain(`WHERE ${REVENUE_ORDER_SCOPE_SQL}`);
+    const down = src("drizzle/down/0050_at203_fund_abandon_revenue.down.sql");
+    expect(down).toContain("CREATE OR REPLACE VIEW v_daily_revenue AS");
+    expect(down).toContain(
+      `WHERE (orders.state IN ('in_progress', 'ready', 'collected') OR ${CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL})\n`
+    );
+    expect(down).not.toContain("donor_fund_entries");
   });
 
   it("monthly and weekly P&L read revenue through readPeriodFigures, whose one revenue read uses the predicate", () => {

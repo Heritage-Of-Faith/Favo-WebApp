@@ -22,7 +22,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql, stepDown0048, stepDown0049 } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0048, stepDown0049, stepDown0050 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -104,6 +104,7 @@ maybe("0042 orders.notification_target: up → down → up, and the refusals (L2
         // (rolled back with everything else) so orders reads as 0042 left it.
         // 0043 touches payments only, so it stays. AT-209: 0045 (the newest;
         // a view and an FK over orders) steps down before 0044.
+        await stepDown0050(tx); // AT-203 follow-up: 0050 (v_daily_revenue reads donor_fund_entries) is newest of all, before 0049
         await stepDown0049(tx); // AT-174: 0049 (refunds dropped) is newest of all, before 0048
         await stepDown0048(tx); // AT-207: 0048 (daily_closes, orders.written_off_at) is newest of all, first
         await tx.unsafe(migrationSql(DOWN_0047)); // AT-202: newer still, before 0046

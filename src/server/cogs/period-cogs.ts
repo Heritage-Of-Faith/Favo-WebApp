@@ -126,7 +126,8 @@ export async function readPeriodExpenses(from: string, to: string, db: DB = defa
  * day bucket as the COGS read — the ONE revenue read. AT-209: its scope is the
  * shared revenue rule (src/server/reports/revenue-scope.ts) — the started
  * states, plus a cancelled order that holds a successful payment (L02, §11.3
- * cancelOrder: cancelling does not return money). The COGS read keeps the
+ * cancelOrder: cancelling does not return money), or a fund draw that was not
+ * given back (an abandoned fund-paid order, §6.10.4, L47). The COGS read keeps the
  * started states only: a started order cancelled with an admin PIN has its
  * stock reversed by compensating rows (REQ-040).
  */
