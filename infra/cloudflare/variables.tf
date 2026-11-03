@@ -5,7 +5,7 @@ variable "cloudflare_api_token" {
 }
 
 variable "cloudflare_zone_id" {
-  description = "Cloudflare zone ID for favo.hofmi.org"
+  description = "Cloudflare zone ID for favo.hofmi.net"
   type        = string
 }
 
@@ -17,7 +17,7 @@ variable "cloudflare_account_id" {
 variable "domain" {
   description = "Production domain"
   type        = string
-  default     = "favo.hofmi.org"
+  default     = "favo.hofmi.net"
 }
 
 variable "hofmi_sso_team_domain" {
