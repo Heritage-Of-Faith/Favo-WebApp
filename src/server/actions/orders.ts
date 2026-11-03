@@ -32,6 +32,7 @@ import { isWeekdayInSAST } from "@/server/orders/discount";
 import {
   decideFreeCup,
   isFreeCupWeekday,
+  weekdayLineDiscountZar,
   FREE_CUP_COPY,
   type FreeCupDecision,
   type FreeCupRefusalCode,
@@ -83,6 +84,13 @@ export type CreateOrderInput = {
    * card tender — never both (no split tender, §6.10.5).
    */
   donorFundId?: string;
+  /**
+   * AT-212 / DEC-19: the barista tapped "Give another free cup" after this
+   * customer was refused with ENTITLEMENT_USED. Weekday mode with a customer
+   * attached only. Creates an R0 order, writes NO second entitlement row, and
+   * logs one audit row action='extra_free_cup' (REQ-025).
+   */
+  extraFreeCup?: boolean;
 };
 
 const createOrderSchema = z.object({
@@ -103,6 +111,7 @@ const createOrderSchema = z.object({
     )
     .min(1),
   voucherKind: z.string().trim().min(1).optional(),
+  extraFreeCup: z.boolean().optional(),
 }).refine(
   // PRD §10.3 CHECK: (notification_target = 'customer') = (customer_id IS NOT NULL).
   (d) => (d.notificationTarget === "customer") === (d.customerId !== undefined),
@@ -152,6 +161,8 @@ export async function createOrder(
   tender: CreateOrderTender;
   /** Present only when a donorFundId was given. */
   fundDraw?: CreateOrderFundDraw;
+  /** AT-212 / DEC-19: true when this order is an overridden extra free cup. */
+  extraFreeCup?: boolean;
 }>> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
@@ -315,13 +326,20 @@ export async function createOrder(
   // cup decided and its UNIQUE(customer_id, day) row inserted (or refused) —
   // and only then is a tender begun. So the payments row and whatever is
   // sent to the machine always carry exactly the committed total.
-  const outcome = await db.transaction(
-    async (tx): Promise<
-      { totalZar: number; freeCup: FreeCupResult; refusal?: undefined } | { refusal: VoucherRefusal }
-    > => {
+  type CreateOutcome =
+    | { kind: "created"; totalZar: number; freeCup: FreeCupResult; weekdayFree: boolean; extraFreeCup: boolean }
+    | { kind: "voucher_refusal"; refusal: VoucherRefusal }
+    // AT-212 / DEC-18: a second weekday drink — refused, nothing written.
+    | { kind: "entitlement_used" }
+    // AT-212 / DEC-19: the override asked for outside weekday mode or with no customer.
+    | { kind: "extra_cup_forbidden" };
+  let outcome: CreateOutcome;
+  try {
+    outcome = await db.transaction(async (tx): Promise<CreateOutcome> => {
       const txDb = tx as unknown as DB;
 
       let decision: FreeCupDecision;
+      let modes: string[];
       if (!data.customerId) {
         // No customer → nothing to look up. "Weekday" here is the date alone;
         // it only decides whether the pick-a-customer hint is worth showing.
@@ -330,8 +348,16 @@ export async function createOrder(
           weekdayDate: isWeekdayInSAST(receivedAt),
           weekday: isWeekdayInSAST(receivedAt), lines: freeCupLines, alreadyClaimed: false,
         });
+        // AT-212 / L19: the mode decides whether anyone pays, customer or not.
+        // A plain read, as readShotPolicy's: no lock is taken on sessions.
+        const sessionRows = await db
+          .select({ mode: openingSessions.mode })
+          .from(openingSessions)
+          .where(eq(openingSessions.sessionDate, day));
+        modes = sessionRows.map((r) => r.mode);
       } else {
         const ctx = await readFreeCupContext(tx as unknown as FreeCupClient, data.customerId, day);
+        modes = ctx.modes;
         decision = decideFreeCup({
           customer: ctx.customer, customerBound: true, sessionOpen: ctx.modes.length > 0,
           weekdayDate: isWeekdayInSAST(receivedAt),
@@ -341,6 +367,19 @@ export async function createOrder(
       }
       const discountZar = decision.status === "apply" ? decision.discountZar : 0;
 
+      // ── AT-212 / L19 / S7a: weekday mode (mode='weekday' AND Mon–Fri SAST,
+      // the L03 double condition) — no order carries a payment step and
+      // `payment_mode` is 'free', whatever else applies.
+      const weekdayFree = isFreeCupWeekday(modes, receivedAt);
+      // DEC-19: "Offered only in weekday mode and only with a customer attached."
+      if (data.extraFreeCup && (!data.customerId || !weekdayFree)) return { kind: "extra_cup_forbidden" };
+      const entitlementUsed = decision.status === "refused" && decision.code === "ENTITLEMENT_USED";
+      // DEC-19: after ENTITLEMENT_USED the barista gave the drink anyway.
+      const extraCup = weekdayFree && entitlementUsed && data.extraFreeCup === true;
+      // DEC-18 / REQ-025: "the second drink is refused by default and never
+      // charged". Nothing is written; the reject audit is written outside.
+      if (entitlementUsed && !extraCup) return { kind: "entitlement_used" };
+
       // ── §6.9 vouchers — decided before anything is written (L41, L42) ──────
       type PlannedLine = { index: number; perVoucherZar: number[]; lineDiscountZar: number };
       let vouchers: null | {
@@ -348,7 +387,7 @@ export async function createOrder(
       } = null;
       if (vouchersOnOrder > 0) {
         const open = await lockOpenSession(txDb, receivedAt);
-        if (!open) return { refusal: { code: "NO_SESSION", message: "Open the session first." } };
+        if (!open) return { kind: "voucher_refusal", refusal: { code: "NO_SESSION", message: "Open the session first." } };
         const kind = data.voucherKind ?? (open.voucherKindsActive.length === 1 ? open.voucherKindsActive[0] : "");
         const planned: PlannedLine[] = [];
         for (const [i, row] of baseItemRows.entries()) {
@@ -362,14 +401,14 @@ export async function createOrder(
             },
             count: voucherCounts[i],
           });
-          if (plan.status === "refused") return { refusal: { code: plan.code, message: plan.message } };
+          if (plan.status === "refused") return { kind: "voucher_refusal", refusal: { code: plan.code, message: plan.message } };
           planned.push({ index: i, perVoucherZar: plan.perVoucherZar, lineDiscountZar: plan.lineDiscountZar });
         }
         // L41, safest reading: the free cup and a voucher never share an
         // order. Unreachable today — the free cup needs every session today in
         // weekday mode; a voucher needs a non-weekday open session.
         if (decision.status === "apply") {
-          return { refusal: { code: "VALIDATION", message: OTHER_DISCOUNT } };
+          return { kind: "voucher_refusal", refusal: { code: "VALIDATION", message: OTHER_DISCOUNT } };
         }
         vouchers = {
           sessionId: open.id, recorded: open.voucherRedemptionsRecorded, kind, lines: planned,
@@ -378,8 +417,17 @@ export async function createOrder(
       }
       const voucherLineDiscount = (i: number) => vouchers?.lines.find((l) => l.index === i)?.lineDiscountZar ?? 0;
 
+      // AT-212 / DEC-18: on a weekday every line keeps its menu price and
+      // discount_zar zeroes it, so the order is R0.
+      const lineDiscountZar = (i: number) =>
+        weekdayFree
+          ? weekdayLineDiscountZar(baseItemRows[i])
+          : decision.status === "apply" && decision.lineIndex === i ? discountZar : voucherLineDiscount(i);
+
       // Total = Σ lines after discounts (REQ-150: the card sees the paid part only).
-      const totalZar = grossZar - discountZar - (vouchers?.discountZar ?? 0);
+      const totalZar = weekdayFree
+        ? grossZar - baseItemRows.reduce((sum, _, i) => sum + lineDiscountZar(i), 0)
+        : grossZar - discountZar - (vouchers?.discountZar ?? 0);
 
       // INSERT orders first (FK), then items and audit in parallel.
       await tx.insert(orders).values({
@@ -391,7 +439,8 @@ export async function createOrder(
         totalZar,
         isStaffDiscount: decision.status === "apply",
         // REQ-153: a net-R0 order is `free` — it gets no payments row.
-        paymentMode: totalZar === 0 ? "free" : null,
+        // S7a: 'free' on weekday mode, whatever else applies.
+        paymentMode: weekdayFree || totalZar === 0 ? "free" : null,
         placedAt: receivedAt,
         revenueDay: day,
       });
@@ -402,7 +451,8 @@ export async function createOrder(
             ...row,
             // L03: one unit of one eligible line, never the line, never the order.
             // §6.9: a vouchered line carries one unit's price per voucher.
-            discountZar: decision.status === "apply" && decision.lineIndex === i ? discountZar : voucherLineDiscount(i),
+            // DEC-18: on a weekday, every line zeroed.
+            discountZar: lineDiscountZar(i),
           }))
         ),
         writeAudit(
@@ -467,24 +517,32 @@ export async function createOrder(
             txDb
           );
           return {
-            totalZar,
+            kind: "created", totalZar, weekdayFree, extraFreeCup: false,
             freeCup: { applied: true, code: null, message: FREE_CUP_COPY.applied, discountZar },
           };
         }
-        // Lost the UNIQUE(customer_id, day) race: the order continues as paid
-        // (REQ-025). Nothing is thrown, so this audit row commits.
-        await tx.update(orderItems).set({ discountZar: 0 }).where(eq(orderItems.orderId, orderId));
-        await tx
-          .update(orders)
-          .set({ totalZar: grossZar, isStaffDiscount: false, paymentMode: grossZar === 0 ? "free" : null })
-          .where(eq(orders.id, orderId));
-        await writeFreeCupReject(txDb, orderId, session, data.customerId, day, "ENTITLEMENT_USED", "already_claimed");
-        return {
-          totalZar: grossZar,
-          freeCup: {
-            applied: false, code: "ENTITLEMENT_USED",
-            message: FREE_CUP_COPY.ENTITLEMENT_USED, discountZar: 0,
+        // Lost the UNIQUE(customer_id, day) race: this is a second weekday
+        // drink (DEC-18) — refused, so everything above rolls back. The reject
+        // audit is written outside the transaction, so it always commits.
+        throw new EntitlementRaceLost();
+      }
+      if (extraCup && data.customerId) {
+        // DEC-19 / REQ-025: NO second entitlement row; ONE audit row
+        // action='extra_free_cup' with barista, beneficiary, order, day, gross.
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "extra_free_cup",
+            actorId: session.id, actorRole: session.role,
+            after: {
+              baristaStaffId: session.id, beneficiaryCustomerId: data.customerId,
+              orderId, day, grossZar, totalZar,
+            },
           },
+          txDb
+        );
+        return {
+          kind: "created", totalZar, weekdayFree, extraFreeCup: true,
+          freeCup: { applied: false, code: null, message: null, discountZar: 0 },
         };
       }
       if (decision.status === "refused" && decision.audit && data.customerId) {
@@ -493,18 +551,37 @@ export async function createOrder(
         await writeFreeCupReject(txDb, orderId, session, data.customerId, day, decision.code, decision.reason);
       }
       return {
-        totalZar,
+        kind: "created", totalZar, weekdayFree, extraFreeCup: false,
         freeCup:
           decision.status === "apply"
             ? { applied: true, code: null, message: FREE_CUP_COPY.applied, discountZar }
             : { applied: false, code: decision.code, message: decision.message, discountZar: 0 },
       };
-    }
-  );
+    });
+  } catch (err) {
+    if (!(err instanceof EntitlementRaceLost)) throw err;
+    outcome = { kind: "entitlement_used" };
+  }
 
   // A voucher refusal wrote nothing; its audit row is written here, outside
   // the transaction, so it always commits.
-  if (outcome.refusal) return rejectVoucherOrder(orderId, session, outcome.refusal, voucherCounts);
+  if (outcome.kind === "voucher_refusal") return rejectVoucherOrder(orderId, session, outcome.refusal, voucherCounts);
+  // AT-212 / DEC-18 / REQ-025: the second weekday drink is refused and never
+  // charged — no order, no payments row, nothing sent; only the reject audit.
+  // The till then offers "Give another free cup" (DEC-19).
+  if (outcome.kind === "entitlement_used") {
+    await writeFreeCupReject(db, orderId, session, data.customerId as string, day, "ENTITLEMENT_USED", "already_claimed");
+    return { ok: false, code: "ENTITLEMENT_USED", message: FREE_CUP_COPY.ENTITLEMENT_USED };
+  }
+  if (outcome.kind === "extra_cup_forbidden") {
+    await writeAudit({
+      entityKind: "order", entityId: orderId, action: "reject",
+      actorId: session.id, actorRole: session.role,
+      after: { attempted: "extra_free_cup", code: "MODE_FORBIDDEN", beneficiaryCustomerId: data.customerId ?? null, day },
+      reason: "MODE_FORBIDDEN",
+    });
+    return { ok: false, code: "MODE_FORBIDDEN", message: FREE_CUP_COPY.extraCupNotHere };
+  }
 
   // REQ-026 / P1: the order and its items are committed above; ONLY NOW does
   // beginTender write the `pending` payments row (under the order's row lock,
@@ -530,7 +607,8 @@ export async function createOrder(
       console.error("[createOrder] drawFromDonorFund failed", err);
       fundDraw = { ok: false, code: "FUND_UNAVAILABLE", message: "Couldn't pay from the fund — nothing was drawn. Try again." };
     }
-  } else if (outcome.totalZar > 0) {
+  } else if (outcome.totalZar > 0 && !outcome.weekdayFree) {
+    // L19: no weekday order ever sends anything to the card machine.
     // The order is committed: a refusal (NO_SESSION, TERMINAL_UNREACHABLE when
     // no machine is configured, …) is returned beside it, never thrown.
     // An exception inside beginTender (e.g. a database outage) comes back as
@@ -574,8 +652,17 @@ export async function createOrder(
       freeCup: outcome.freeCup,
       tender,
       ...(fundDraw !== undefined ? { fundDraw } : {}),
+      ...(outcome.extraFreeCup ? { extraFreeCup: true } : {}),
     },
   };
+}
+
+/** AT-212: createOrder lost the UNIQUE(customer_id, day) race — roll back, then refuse. */
+class EntitlementRaceLost extends Error {
+  constructor() {
+    super("ENTITLEMENT_USED");
+    this.name = "EntitlementRaceLost";
+  }
 }
 
 /** A createOrder refused for its vouchers: audited action='reject', nothing else written. */
@@ -1240,6 +1327,28 @@ export async function declineFreeCoffee(
         entitlements.find((e) => e.customerId === current.customerId) ??
         (entitlements.length === 1 ? entitlements[0] : undefined);
       if (!entitlement) return { ok: false, code: "NOT_FOUND", message: "No free cup on this order." };
+
+      // AT-212 / L19 / DEC-18: on a weekday nobody pays, so declining the cup
+      // only gives the entitlement back — the order stays R0 and 'free', every
+      // line still zeroed, and nothing can go to the card machine.
+      const sessionRows = await tx
+        .select({ mode: openingSessions.mode })
+        .from(openingSessions)
+        .where(eq(openingSessions.sessionDate, current.revenueDay));
+      if (isFreeCupWeekday(sessionRows.map((r) => r.mode), current.placedAt)) {
+        await tx.delete(staffEntitlementLog).where(eq(staffEntitlementLog.id, entitlement.id));
+        await tx.update(orders).set({ isStaffDiscount: false }).where(eq(orders.id, orderId));
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "decline_free_cup",
+            actorId: session.id, actorRole: session.role,
+            before: { totalZar: current.totalZar, beneficiaryCustomerId: entitlement.customerId, day: entitlement.day },
+            after: { totalZar: current.totalZar, paymentMode: current.paymentMode },
+          },
+          txDb
+        );
+        return { ok: true, data: { totalZar: current.totalZar } };
+      }
 
       const lines = await tx
         .select({ id: orderItems.id, unitPriceZar: orderItems.unitPriceZar, discountZar: orderItems.discountZar })

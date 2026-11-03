@@ -10,6 +10,11 @@
 //
 // The daily cap itself is UNIQUE(customer_id, day) on staff_entitlement_log;
 // this module only decides whether to try, and on which line.
+//
+// AT-212 (DEC-18, revised 29 Oct 2026): on a weekday EVERY order is free (L19)
+// — each line zeroed by discount_zar — and the entitlement row still records
+// the one cup. A second weekday drink (ENTITLEMENT_USED) is refused, never
+// charged, unless the barista gives it with "Give another free cup" (DEC-19).
 
 import { isCoffeeCategory, isWeekdayInSAST } from "@/server/orders/discount";
 
@@ -21,7 +26,24 @@ export const FREE_CUP_COPY = {
   NO_SESSION: "Open today's session first",
   // Not PRD copy (no code exists for it): the order has no customer on it.
   noCustomer: "Pick the customer first — the free cup goes to a named office staff member.",
+  // AT-212 / DEC-19: the till's one control after ENTITLEMENT_USED (PRD literal).
+  giveExtraCup: "Give another free cup",
+  // Not PRD copy: MODE_FORBIDDEN's "named reason" when the override is called
+  // outside weekday mode or without a customer (the till never offers it there).
+  extraCupNotHere: "Another free cup is only for a named customer on a weekday.",
 } as const;
+
+/**
+ * AT-212 / DEC-18 / L19: on a weekday nobody pays. "Every free weekday order
+ * keeps the menu price on each line, and `discount_zar` zeroes each line, so
+ * `orders.total_zar` is R0." The line's discount is its whole priced value —
+ * quantity × (unit_price_zar + mods_zar) — the most the DB CHECK
+ * order_items_discount_within_line allows. The weekday surcharge is always 0
+ * (T09, T15), so this zeroes the line.
+ */
+export function weekdayLineDiscountZar(line: { quantity: number; unitPriceZar: number; modsZar?: number }): number {
+  return line.quantity * (line.unitPriceZar + (line.modsZar ?? 0));
+}
 
 export type FreeCupLine = {
   category: string | null | undefined;

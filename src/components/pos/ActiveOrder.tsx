@@ -96,13 +96,15 @@ export default function ActiveOrder({ order }: Props) {
     try {
       const result = await declineFreeCoffee(currentOrder.id);
       if (result.ok) {
+        // AT-212 / L19: a weekday decline leaves the order R0 and its lines zeroed.
+        const stillFree = result.data.totalZar === 0;
         setCurrentOrder((o) => ({
           ...o,
           totalZar: result.data.totalZar,
           isStaffDiscount: false,
-          items: o.items.map((i) => ({ ...i, discountZar: 0 })),
+          items: stillFree ? o.items : o.items.map((i) => ({ ...i, discountZar: 0 })),
         }));
-        setFreeCupMsg("Free cup declined — the order is charged in full.");
+        setFreeCupMsg(stillFree ? "Free cup declined." : "Free cup declined — the order is charged in full.");
       } else {
         setFreeCupMsg(result.message);
       }

@@ -147,6 +147,11 @@ describe("applyOutboxItem", () => {
       }),
     } as unknown as ReturnType<typeof db.select>);
 
+    // select 3 (AT-212, S7a): today's opening_sessions modes — none here, so not weekday-free
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    } as unknown as ReturnType<typeof db.select>);
+
     // inserts: outbox log, order, order items
     const logInsert = stubInsertReturning([{ id: "log-1" }]);
     const orderInsert = { values: vi.fn().mockResolvedValue([]) };

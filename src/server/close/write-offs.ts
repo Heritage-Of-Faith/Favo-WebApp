@@ -75,6 +75,11 @@ export function isSettled(o: Pick<OrderSettlementFacts, "hasSuccessfulPayment" |
  * (Monday–Friday, per defaultSessionMode — the same rule opening sessions use)
  * is ever unpaid. Saturday (events) and Sunday are swept. Set to false — the
  * one place to change — when S7a lands.
+ *
+ * AT-212: S7a has now landed — createOrder and the offline replay write every
+ * weekday-mode order 'free' at R0. The flag stays TRUE ON PURPOSE (it fails
+ * closed: a weekday order is never written off) until the owner decides to
+ * flip it. Do not flip it without that decision.
  */
 export const WEEKDAY_ORDERS_NEVER_SWEPT_UNTIL_S7A = true;
 

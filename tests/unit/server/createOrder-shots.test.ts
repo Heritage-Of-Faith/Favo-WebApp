@@ -196,11 +196,13 @@ describe("Weekday: ceiling 2, no surcharge (REQ-138, REQ-144, T15)", () => {
     expectNothingWritten();
   });
 
-  it("2 shots is accepted at the listed price (surcharge 0)", async () => {
+  // CHANGED (AT-212, DEC-18): a weekday order keeps the menu price on the line
+  // and discount_zar zeroes it — the order is R0, never charged (was: total 2000).
+  it("2 shots is accepted at the listed price (surcharge 0), zeroed by discount_zar (DEC-18)", async () => {
     given({ modes: ["weekday"] });
     const res = await walkIn([capp(2)]);
-    expect(res.ok && res.data.totalZar).toBe(2000);
-    expect(itemRows()[0]).toMatchObject({ shots: 2, surchargeZar: 0 });
+    expect(res.ok && res.data.totalZar).toBe(0);
+    expect(itemRows()[0]).toMatchObject({ shots: 2, unitPriceZar: 2000, surchargeZar: 0, discountZar: 2000 });
   });
 
   it("the free weekday cup is unaffected: an office cup at 2 shots is free; total 0, no tender", async () => {
