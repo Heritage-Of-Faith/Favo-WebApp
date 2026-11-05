@@ -120,8 +120,9 @@ async function dbShape(tx: TransactionSql, table: string): Promise<Shape> {
  * grepped across drizzle/*.sql for ADD CONSTRAINT / CREATE INDEX; this is the
  * only such object on the six tables. 0033 does not touch it, so it is simply
  * removed from the DB side before comparing.
- *   customers_auth_id_fk — drizzle/0013_loving_gamma_corps.sql:6, FK to
- *   auth.users (Supabase; CI stubs that table).
+ *   customers_auth_id_fk — drizzle/0013_loving_gamma_corps.sql, FK to
+ *   auth.users (Supabase; CI stubs that table). Added only when auth.users
+ *   exists, so on a clean Postgres it is absent and this filter is a no-op.
  */
 const NOT_IN_SNAPSHOTS: Record<string, string[]> = {
   customers: ["customers_auth_id_fk"],
