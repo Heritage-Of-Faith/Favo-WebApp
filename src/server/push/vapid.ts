@@ -3,7 +3,10 @@
 
 import webpush from "web-push";
 
-const VAPID_SUBJECT = "mailto:ops@hofmi.org";
+// The VAPID "subject" is only a contact the push services can use; users never see it.
+// It used to be a mailto: on hofmi.org, a domain that never existed (PRD v7 §9.3). The public
+// URL is a valid subject and needs no mailbox; set VAPID_SUBJECT (https: or mailto:) to override.
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT?.trim() || "https://favo.hofmi.net";
 let configured = false;
 
 /** Configure web-push with the VAPID key pair. Idempotent. Throws if unset. */
