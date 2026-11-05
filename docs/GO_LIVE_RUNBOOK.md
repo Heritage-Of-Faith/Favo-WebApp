@@ -107,7 +107,7 @@ Names only, never values. Found with `grep -rhoE "process\.env\.[A-Z0-9_]+" src 
 
 **Dev / one-off only (not needed in production):** `DEMO_SEED_CONFIRM` (`db/seed/demo-transactions.ts:90`), `VERIFY_TEST_COUNT` (`scripts/verify-v7.ts:381`).
 
-**Unclassified** (listed in `.env.example` but **not read by any code** in `src db auth.ts proxy.ts scripts next.config.ts`; to confirm with Nikao whether to delete them): `YOCO_WEBHOOK_SECRET` (PRD §9.6: no webhook is subscribed), `HOFMI_SSO_CLIENT_ID`, `HOFMI_SSO_CLIENT_SECRET`, `HOFMI_SSO_ISSUER`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT`, `RAINDROP_TOKEN`, `NEXT_PUBLIC_STAGING`. Also `AUTH_TRUST_HOST`, which Auth.js may need behind a proxy; **to confirm with Nikao** (see G6).
+**Unclassified** (resolved: these had no code readers in `src db auth.ts proxy.ts scripts next.config.ts` and were removed from `.env.example`): `YOCO_WEBHOOK_SECRET` (PRD §9.6: no webhook is subscribed), `HOFMI_SSO_CLIENT_ID`, `HOFMI_SSO_CLIENT_SECRET`, `HOFMI_SSO_ISSUER`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT`, `RAINDROP_TOKEN`, `NEXT_PUBLIC_STAGING`. Also `AUTH_TRUST_HOST`, which Auth.js may need behind a proxy; **to confirm with Nikao** (see G6).
 
 ---
 
@@ -171,7 +171,7 @@ These were found by reading the repo. **Reported, not fixed.**
 | G5 | **`YOCO_SECRET_KEY` unset turns the payment gate off.** The order-state change skips the payment check when it is missing ("dev/simulation mode"). If production were started without it, paid orders could advance with no payment. If it is set while the port is `unlinkedWebPosPort`, card sends fail as "no device". Either way Sunday cards stay on the Yoco machine until step 13. | `src/server/actions/orders.ts:786-794` | Nikao |
 | G6 | **No `trustHost` / `AUTH_TRUST_HOST` anywhere in the repo.** Auth.js v5 generally needs one of these (or `AUTH_URL`) when running behind a proxy outside Vercel. Not tested. | grep of `*.ts`, `*.md`, `*.yml` found none | Nikao |
 | G7 | **`docs/backup-restore.md` is out of date.** It describes Supabase point-in-time recovery, RPO 24 h and RTO 2 h. PRD §9.4 says RPO ≤ 5 min, RTO ≤ 4 hours, WAL archiving on Transformate. `docs/deploy-runbook.md` also still describes the older Coolify and Vercel-era flow. Use this page and the PRD instead. | `docs/backup-restore.md`; `docs/deploy-runbook.md` | Nikao |
-| G8 | **The Dockerfile has no `HEALTHCHECK`.** Not a start blocker. Whether Transformate's monitoring polls `/api/healthz` is unconfirmed. | `Dockerfile` | Matt |
+| G8 | **Fixed: the Dockerfile now has a `HEALTHCHECK` on `/api/healthz`.** Still open: whether Transformate's monitoring polls `/api/healthz` is unconfirmed. | `Dockerfile` | Matt |
 | G9 | **Push subject is hard-coded to `mailto:ops@hofmi.org`.** PRD §9.3 says `hofmi.org` has never existed. Some push services may reject or ignore an undeliverable contact. | `src/server/push/vapid.ts:8` | Nikao |
 | G10 | **Jobs 4, 6 and 7 are not wired** (section 5). | `src/server/jobs/registry.ts:6-9` | Nikao |
 | G11 | `docker-entrypoint.sh`, the `migrate.js` bundle and the standalone `server.js` are all copied into the runner stage and the entrypoint is executable. No missing step found there. | `Dockerfile`, `docker-entrypoint.sh` | none |
