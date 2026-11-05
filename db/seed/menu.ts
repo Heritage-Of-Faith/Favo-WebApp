@@ -40,14 +40,17 @@ export const MENU_ITEMS: SeedMenuItem[] = [
   // Coffee (espresso-based) — Americano, Cappuccino, Mocha are the only
   // espresso drinks left in the locked 5-item menu; the rest are inactive.
   { id: "menu_espresso", name: "Espresso", category: "coffee", currentPriceZar: 2500, active: false },
-  { id: "menu_americano", name: "Americano", category: "coffee", currentPriceZar: 3000 },
-  { id: "menu_cappuccino", name: "Cappuccino", category: "coffee", currentPriceZar: 3800 },
+  // Prices below are the owner's, confirmed against Yoco sales on 2026-08-16 (PRD v7 §7.0.1;
+  // Drive "FAVO_Coffee_PRD" Q4). Chai R25 is the Drive PRD price, still marked unconfirmed in
+  // PRD v7 (R20 there): confirm before go-live. Seeded earlier at R30/R38/R45/R40: dev guesses.
+  { id: "menu_americano", name: "Americano", category: "coffee", currentPriceZar: 2000 },
+  { id: "menu_cappuccino", name: "Cappuccino", category: "coffee", currentPriceZar: 2000 },
   { id: "menu_flat_white", name: "Flat White", category: "coffee", currentPriceZar: 4000, active: false },
   { id: "menu_latte", name: "Latte", category: "coffee", currentPriceZar: 4200, active: false },
   { id: "menu_cortado", name: "Cortado", category: "coffee", currentPriceZar: 3500, active: false },
-  { id: "menu_mocha", name: "Mocha", category: "coffee", currentPriceZar: 4500 },
+  { id: "menu_mocha", name: "Mocha", category: "coffee", currentPriceZar: 2500 },
   // Hot Chocolate is new (AT-136/145) — no espresso, macadamia-toggle only.
-  { id: "menu_hot_chocolate", name: "Hot Chocolate", category: "coffee", currentPriceZar: 4000 },
+  { id: "menu_hot_chocolate", name: "Hot Chocolate", category: "coffee", currentPriceZar: 2000 },
   // Chai Latte — 5th item in the locked menu. Chai powder + steamed milk, no
   // espresso (macadamia-toggle only, like Hot Chocolate). Base ingredient
   // confirmed 2026-07-13 (Nikao): chai powder, 3–4 tsp + 200 ml milk.
