@@ -85,7 +85,28 @@ export function sessionStillValid(loginAt: unknown, now: number = Date.now()): b
   return sastDay(loginAt) === sastDay(now);
 }
 
+// Go-live gap G6. Auth.js refuses every request (UntrustedHost) unless the host
+// is trusted. Production runs as `bun server.js` behind Cloudflare, not on
+// Vercel, so trust has to be decided here. In production it is granted only
+// when the fixed public origin is pinned (AUTH_URL=https://favo.hofmi.net, so
+// Auth.js builds every URL from it and ignores Host / X-Forwarded-Host) or an
+// operator sets AUTH_TRUST_HOST=true on purpose. Unlike Auth.js's own default,
+// a bare AUTH_TRUST_HOST of any other value (e.g. "false") and VERCEL/CF_PAGES
+// do not count. Dev and test stay trusted, as before.
+export function resolveTrustHost(env: Record<string, string | undefined> = process.env): boolean {
+  if (env.NODE_ENV !== "production") return true;
+  if (env.AUTH_TRUST_HOST === "true") return true;
+  if (!env.AUTH_URL) return false;
+  try {
+    const { protocol } = new URL(env.AUTH_URL);
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 export const authConfig: NextAuthConfig = {
+  trustHost: resolveTrustHost(),
   providers: [
     Credentials({
       name: "PIN",
