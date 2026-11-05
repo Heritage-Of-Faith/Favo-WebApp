@@ -33,6 +33,8 @@ import {
   dayWriteOffStatus,
   listUnapprovedWriteOffDays,
   listUnpaidOrders,
+  SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE,
+  setSundaySkipForTests,
   sweepWriteOffs,
 } from "@/server/close/write-offs";
 import { connect, hasRealDb, migrationSql } from "./helpers";
@@ -83,8 +85,12 @@ maybe("0048 daily_closes + write-off sweep: up → down → up, and the sweep on
     }
   }
 
-  beforeAll(() => { sql = connect(); });
-  afterAll(async () => { await sql?.end({ timeout: 5 }); });
+  // CHANGED (Sunday skip): DAY is a Sunday, and Sunday orders are never swept
+  // while SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE is true (Nikao, 3 Nov
+  // 2026). This suite proves the sweep's own rules, so it runs with the skip
+  // off; the skip itself is proved in tests/unit/server/close/write-offs.test.ts.
+  beforeAll(() => { sql = connect(); setSundaySkipForTests(false); });
+  afterAll(async () => { setSundaySkipForTests(SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE); await sql?.end({ timeout: 5 }); });
 
   it("down drops daily_closes and orders.written_off_at; up recreates them as the snapshot says", async () => {
     await inRolledBackTx(async (tx) => {
