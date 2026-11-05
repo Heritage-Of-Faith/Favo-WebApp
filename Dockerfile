@@ -58,6 +58,13 @@ EXPOSE 3000
 ARG IMAGE_SHA=""
 ENV IMAGE_SHA=$IMAGE_SHA
 
+# Liveness probe (bun: no curl in the image). /api/healthz returns 503 when
+# Postgres is down, a configured LOKI_URL is unreachable, or DATABASE_URL_SESSION
+# is unset. Yoco is advisory and never fails it. Leave LOKI_URL unset so an
+# observability blip cannot mark a working cafe unhealthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD bun -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 # Migrate, then serve (docker-entrypoint.sh). To migrate one-shot ahead of a
 # container swap: docker run --rm <image> bun migrate.js
 ENTRYPOINT ["./docker-entrypoint.sh"]
