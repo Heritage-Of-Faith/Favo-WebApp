@@ -23,6 +23,7 @@ import { formatZarField } from "@/lib/format";
 import {
   buildWriteOffAlert,
   hasDailyClose,
+  isSundayOutsideFavo,
   recordDailyClose,
   sweepWriteOffs,
   type WrittenOffOrder,
@@ -166,6 +167,14 @@ export async function closeDaily(
     // AT-203 / L47: an order settled from a blessing fund is paid without a
     // payments row, so it is not card revenue and is left out of this
     // card-versus-payments reconciliation (it would read as a variance).
+    // Sunday deferral (Nikao, 3 Nov 2026; SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE
+    // in write-offs.ts): Sunday card sales are taken on the physical Yoco
+    // machine, so a Sunday order with no successful FAVO payment was paid
+    // outside FAVO. The sweep leaves it alone; here it is on neither side.
+    // Reconciled as normal: a Sunday order holding a successful FAVO payment,
+    // and one whose latest attempt was SENT to the terminal (the same test as
+    // isUnpaid; the sweep writes that one off as unresolved_at_close).
+    const sundayOutsideFavo = isSundayOutsideFavo(date);
     const [revRow] = await txDb
       .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
       .from(orders)
@@ -176,7 +185,10 @@ export async function closeDaily(
           sql`${orders.paymentMode} IS DISTINCT FROM 'donor_fund'`,
           // AT-207 / §6.0.5, S2a: a written-off order "contributes nothing to
           // either" side — it is its own write-off line, not negative revenue.
-          isNull(orders.writtenOffAt)
+          isNull(orders.writtenOffAt),
+          sundayOutsideFavo
+            ? sql`(EXISTS (SELECT 1 FROM payments sp WHERE sp.order_id = ${orders.id} AND sp.status = 'successful') OR EXISTS (SELECT 1 FROM (SELECT la.sent_at FROM payments la WHERE la.order_id = ${orders.id} ORDER BY la.attempt DESC LIMIT 1) latest WHERE latest.sent_at IS NOT NULL))`
+            : undefined
         )
       );
     const revenueZar = revRow?.total ?? 0;
@@ -192,6 +204,28 @@ export async function closeDaily(
         AND o.written_off_at IS NULL
     `);
     const paymentsZar = parseInt(payRow?.total ?? "0", 10) || 0;
+
+    // The Sunday orders left out above, named on the close record so the close
+    // never reads as if FAVO had reconciled the day's card takings.
+    let sundayTakenOutsideFavo: { orderCount: number; orderZar: number } | null = null;
+    if (sundayOutsideFavo) {
+      const [outRow] = (await txDb.execute<{ n: number | string; zar: number | string }>(sql`
+        SELECT COUNT(*)::int AS n, COALESCE(SUM(o.total_zar), 0)::bigint AS zar
+        FROM orders o
+        WHERE o.revenue_day = ${date}::date
+          AND o.state <> 'cancelled'
+          AND o.written_off_at IS NULL
+          AND o.payment_mode IS DISTINCT FROM 'donor_fund'
+          AND o.payment_mode IS DISTINCT FROM 'free'
+          AND o.total_zar > 0
+          AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id AND p.status = 'successful')
+          AND NOT EXISTS (
+            SELECT 1 FROM (SELECT la.sent_at FROM payments la WHERE la.order_id = o.id ORDER BY la.attempt DESC LIMIT 1) latest
+            WHERE latest.sent_at IS NOT NULL
+          )
+      `)) as unknown as Array<{ n: number | string; zar: number | string }>;
+      sundayTakenOutsideFavo = { orderCount: Number(outRow?.n ?? 0), orderZar: Number(outRow?.zar ?? 0) };
+    }
 
     const diffZar = Math.abs(revenueZar - paymentsZar);
     const variancePct = revenueZar > 0 ? (diffZar / revenueZar) * 100 : 0;
@@ -221,6 +255,7 @@ export async function closeDaily(
           writtenOffCount: sweep.dayCount,
           writtenOffZar: sweep.dayZar,
           reconciliationStatus,
+          ...(sundayTakenOutsideFavo ? { sundayCardSalesOutsideFavo: sundayTakenOutsideFavo } : {}),
         },
         reason: wasCatchUp ? `catch-up on startup: closes revenue day ${date}` : undefined,
       },
