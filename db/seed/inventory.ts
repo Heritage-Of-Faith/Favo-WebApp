@@ -12,6 +12,8 @@ export type SeedInventoryItem = {
   kind: "bean" | "milk" | "syrup" | "packaging" | "equipment" | "other";
   unit: "g" | "kg" | "ml" | "l" | "unit" | "bag" | "cup";
   lowStockThreshold: number; // in the item's own unit
+  /** REQ-127 / T08: judged against config.variance_bands.lid, not T01. */
+  isLid?: boolean;
 };
 
 // T04 defaults: beans 500g, milks 1–2 L, packaging 50–100 units, powder 200g.
@@ -50,6 +52,7 @@ export const INVENTORY_ITEMS: SeedInventoryItem[] = [
     kind: "packaging",
     unit: "unit",
     lowStockThreshold: 100,
+    isLid: true, // T08 lid variance band (migration 0053 sets it on existing rows)
   },
   {
     id: "inv_item_hot_choc_powder",

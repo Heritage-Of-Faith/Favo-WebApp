@@ -59,6 +59,27 @@ export function migrationSql(file: string): string {
 }
 
 /**
+ * Step 0053 (REQ-127: inventory_items.is_lid, app_config variance_bands, and
+ * v_weekly_variance judging lids against T08) down inside the caller's
+ * always-rolled-back transaction. Its view reads app_config, which 0037 down
+ * drops, so it steps down first. It is the newest migration, before 0052.
+ * PROVISIONAL number — renumbered in merge order.
+ */
+export async function stepDown0053(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
+  await tx.unsafe(migrationSql("down/0053_at127_lid_variance_band.down.sql"));
+}
+
+/**
+ * Step 0052 (REQ-130: price_history.set_by_staff_id) down inside the caller's
+ * always-rolled-back transaction. Its down refuses while any price_history row
+ * exists; no tests/db suite commits one. Steps down after 0053, before 0050.
+ * PROVISIONAL number — renumbered in merge order.
+ */
+export async function stepDown0052(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
+  await tx.unsafe(migrationSql("down/0052_at130_price_history_set_by.down.sql"));
+}
+
+/**
  * Step 0050 (AT-203 follow-up: v_daily_revenue also counts an abandoned
  * fund-paid order) down inside the caller's always-rolled-back transaction.
  * It restores 0045's view text, which no longer reads donor_fund_entries, so

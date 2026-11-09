@@ -420,6 +420,7 @@ function HistoryDialog({
                 <TableHead className="text-right">Price</TableHead>
                 <TableHead>From</TableHead>
                 <TableHead>Until</TableHead>
+                <TableHead>Set by</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -434,6 +435,7 @@ function HistoryDialog({
                       <span className="text-[color:var(--color-success)]">Current</span>
                     )}
                   </TableCell>
+                  <TableCell>{row.setByStaffName}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
