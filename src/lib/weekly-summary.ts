@@ -15,13 +15,6 @@
 import { defaultSessionMode } from "@/lib/session-mode";
 import { combineCostStates, periodFigures, type CostState, type NetTone } from "@/lib/cost-state";
 
-/**
- * REQ-123 / §7.3 ask for a walk-in count beside staff coffees. No walk_ins
- * table exists yet (§6.5), so the count is not recorded anywhere — the screen
- * says so instead of printing a 0 that would read as "no walk-ins".
- */
-export const WALK_IN_NOT_RECORDED = "not recorded yet";
-
 export type ModeKey ="weekday" | "sunday" | "event" | "unassigned";
 
 export type Consumption = { kind: string; unit: string; quantity: number };
@@ -41,6 +34,12 @@ export type SummaryDay = {
   drinks: number;
   /** staff_entitlement_log rows (the free weekday cup, L03) on the day's counted orders. */
   staffCoffees: number;
+  /**
+   * REQ-123 / §7.3: walk-in coffees, the second weekday count. §7.0.2
+   * walk_in_cups = Σ walk_ins.quantity (one row per order line, REQ-116), on
+   * the day's counted orders.
+   */
+  walkInCups: number;
   /** Bean and milk deducted for the day's counted orders, per (kind, unit). */
   consumption: readonly Consumption[];
 };
@@ -61,6 +60,7 @@ export type ModeSection = {
   ordersWithoutCost: number;
   drinks: number;
   staffCoffees: number;
+  walkInCups: number;
   consumption: Consumption[];
 };
 
@@ -83,6 +83,7 @@ function section(mode: ModeKey, days: readonly SummaryDay[]): ModeSection {
   let orderCount = 0;
   let drinks = 0;
   let staffCoffees = 0;
+  let walkInCups = 0;
   const absent = new Set<string>();
   const use = new Map<string, Consumption>();
 
@@ -92,6 +93,7 @@ function section(mode: ModeKey, days: readonly SummaryDay[]): ModeSection {
     ordersWithoutCost += d.cogs.ordersWithoutCost;
     drinks += d.drinks;
     staffCoffees += d.staffCoffees;
+    walkInCups += d.walkInCups;
     if (d.cogs.cogsZar === null) refused = true;
     else cogsSum += d.cogs.cogsZar;
     for (const n of d.cogs.absentItemNames) absent.add(n);
@@ -122,6 +124,7 @@ function section(mode: ModeKey, days: readonly SummaryDay[]): ModeSection {
     ordersWithoutCost,
     drinks,
     staffCoffees,
+    walkInCups,
     consumption: [...use.values()].sort((a, b) => (a.kind + a.unit).localeCompare(b.kind + b.unit)),
   };
 }

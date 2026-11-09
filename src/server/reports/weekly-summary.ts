@@ -17,16 +17,30 @@
 
 import { sql } from "drizzle-orm";
 import { db as defaultDb, type DB } from "@/lib/db";
-import { readDailyFigures, readPeriodFigures, type PeriodCogs } from "@/server/cogs/period-cogs";
+import { readDailyFigures, readMarginByShot, readPeriodFigures, type PeriodCogs, type ShotMarginRow } from "@/server/cogs/period-cogs";
 import type { PeriodFigures } from "@/lib/cost-state";
 import type { StaffRole } from "@/lib/types";
 import { splitByMode, type Consumption, type ModeKey, type ModeSection, type SummaryDay } from "@/lib/weekly-summary";
+import { listUnapprovedWriteOffDays } from "@/server/close/write-offs";
+import { readActiveStaff, readWriteDowns } from "@/server/write-downs/summary";
+import { perBaristaWithVouchers, readVoucherTallies, type BaristaWriteDownLine } from "@/server/write-downs/vouchers";
 
 export type WeeklySummary = {
   weekStarting: string;
   weekEnding: string;
   headline: PeriodFigures & { cogs: PeriodCogs };
   sections: Record<ModeKey, ModeSection>;
+  /**
+   * REQ-139 · §7.1/§7.3: margin by shot count, per mode (readMarginByShot).
+   * Gross figures only: a bucket's expensesZar / netZar are dropped, so no
+   * expenses or net figure reaches a barista through this block.
+   */
+  marginByShot: Omit<ShotMarginRow, "expensesZar" | "netZar">[];
+  /**
+   * REQ-124 · REQ-145 · §7.3.1: the write-down block, per barista — comps,
+   * deferred write-offs, abandoned orders and vouchers (count and value).
+   */
+  writeDowns: BaristaWriteDownLine[];
 };
 
 function addDays(yyyymmdd: string, days: number): string {
@@ -35,17 +49,25 @@ function addDays(yyyymmdd: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** What the screen receives: the week-level block is NULL unless the viewer is an Admin. */
-export type WeeklySummaryForViewer = Omit<WeeklySummary, "headline"> & { headline: WeeklySummary["headline"] | null };
+/** What the screen receives: the week-level block and the write-down block are NULL unless the viewer is an Admin. */
+export type WeeklySummaryForViewer = Omit<WeeklySummary, "headline" | "writeDowns"> & {
+  headline: WeeklySummary["headline"] | null;
+  writeDowns: WeeklySummary["writeDowns"] | null;
+};
 
 /**
  * AT-206 · §7.3 lists revenue, COGS and the profit flag per mode, not the
  * week's expenses or net; §10.7 keeps the other cost figures Admin-only. The
  * week-level block (revenue, COGS, expenses, net) is therefore removed on the
  * server for any non-Admin session — it never reaches a barista's browser.
+ *
+ * The §7.3.1 per-barista write-down block is removed the same way: §10.7
+ * gives /admin/write-downs (the same per-barista figures, §17.4 "the
+ * comps-review surface") to the Admin alone, so no barista session receives
+ * another barista's comps, write-offs or vouchers until that is decided.
  */
 export function summaryForRole(summary: WeeklySummary, role: StaffRole): WeeklySummaryForViewer {
-  return role === "admin" ? summary : { ...summary, headline: null };
+  return role === "admin" ? summary : { ...summary, headline: null, writeDowns: null };
 }
 
 /** Weeks that have a generated report, newest first. */
@@ -60,7 +82,7 @@ export async function readWeeklySummary(weekStarting: string, db: DB = defaultDb
   const from = weekStarting;
   const to = addDays(weekStarting, 6);
 
-  const [headline, daily, sessions, drinks, entitlements, consumption] = await Promise.all([
+  const [headline, daily, sessions, drinks, entitlements, walkIns, consumption] = await Promise.all([
     readPeriodFigures(from, to, db),
     readDailyFigures(from, to, db),
     db.execute<{ session_date: string; mode: string }>(sql`
@@ -77,6 +99,14 @@ export async function readWeeklySummary(weekStarting: string, db: DB = defaultDb
     db.execute<{ revenue_day: string; cups: string | number }>(sql`
       SELECT TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day, COUNT(*)::bigint AS cups
       FROM staff_entitlement_log sel JOIN orders o ON o.id = sel.order_id
+      WHERE o.state IN ('in_progress', 'ready', 'collected')
+        AND o.revenue_day >= ${from}::date AND o.revenue_day <= ${to}::date
+      GROUP BY 1
+    `),
+    // REQ-123 / §7.0.2: walk_in_cups = Σ walk_ins.quantity (one row per line).
+    db.execute<{ revenue_day: string; cups: string | number }>(sql`
+      SELECT TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day, SUM(w.quantity)::bigint AS cups
+      FROM walk_ins w JOIN orders o ON o.id = w.order_id
       WHERE o.state IN ('in_progress', 'ready', 'collected')
         AND o.revenue_day >= ${from}::date AND o.revenue_day <= ${to}::date
       GROUP BY 1
@@ -99,6 +129,7 @@ export async function readWeeklySummary(weekStarting: string, db: DB = defaultDb
   for (const s of sessions) modes.set(s.session_date, [...(modes.get(s.session_date) ?? []), s.mode]);
   const drinksBy = new Map([...drinks].map((r) => [r.revenue_day, Number(r.drinks) || 0]));
   const cupsBy = new Map([...entitlements].map((r) => [r.revenue_day, Number(r.cups) || 0]));
+  const walkInsBy = new Map([...walkIns].map((r) => [r.revenue_day, Number(r.cups) || 0]));
   const useBy = new Map<string, Consumption[]>();
   for (const r of consumption) {
     useBy.set(r.revenue_day, [...(useBy.get(r.revenue_day) ?? []), { kind: r.kind, unit: r.unit, quantity: Number(r.quantity) || 0 }]);
@@ -116,8 +147,27 @@ export async function readWeeklySummary(weekStarting: string, db: DB = defaultDb
     },
     drinks: drinksBy.get(d.date) ?? 0,
     staffCoffees: cupsBy.get(d.date) ?? 0,
+    walkInCups: walkInsBy.get(d.date) ?? 0,
     consumption: useBy.get(d.date) ?? [],
   }));
 
-  return { weekStarting, weekEnding: to, headline, sections: splitByMode(days, modes) };
+  // REQ-139: the dashboard's own margin-by-shot read, for the same Mon..Sun.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const marginByShot = (await readMarginByShot(from, to, db)).map(({ expensesZar, netZar, ...gross }) => gross);
+
+  // §7.3.1 / REQ-124 / REQ-145: the /admin/write-downs reads, plus vouchers.
+  // "unapproved" has one definition — the §6.0.5 approval queue's reader.
+  const unapproved = new Set((await listUnapprovedWriteOffDays(db)).map((d) => d.revenueDay));
+  const writeDownRows = await readWriteDowns(db, from, to, unapproved);
+  const staff = await readActiveStaff(db);
+  const tallies = await readVoucherTallies(db, from, to);
+
+  return {
+    weekStarting,
+    weekEnding: to,
+    headline,
+    sections: splitByMode(days, modes),
+    marginByShot,
+    writeDowns: perBaristaWithVouchers(writeDownRows, staff, tallies),
+  };
 }

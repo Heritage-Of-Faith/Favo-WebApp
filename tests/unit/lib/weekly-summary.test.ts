@@ -9,7 +9,7 @@ import { dayMode, splitByMode, type SummaryDay } from "@/lib/weekly-summary";
 const empty = { state: "empty" as const, cogsZar: 0, absentItemNames: [], ordersWithoutCost: 0, orderCount: 0 };
 
 function day(date: string, over: Partial<SummaryDay> = {}): SummaryDay {
-  return { date, revenueZar: 0, cogs: empty, drinks: 0, staffCoffees: 0, consumption: [], ...over };
+  return { date, revenueZar: 0, cogs: empty, drinks: 0, staffCoffees: 0, walkInCups: 0, consumption: [], ...over };
 }
 
 // Week Mon 10 .. Sun 16 Aug 2026.
@@ -109,6 +109,18 @@ describe("splitByMode — weekday, Sunday and events read separately", () => {
     const sections = [s.weekday, s.sunday, s.event, s.unassigned];
     expect(sections.reduce((t, x) => t + x.revenueZar, 0)).toBe(35000);
     expect(sections.reduce((t, x) => t + x.orderCount, 0)).toBe(14);
+  });
+
+  it("REQ-123 / §7.3: staff coffees and walk-in coffees are two separate weekday counts; zero is 0", () => {
+    const w = splitByMode(
+      [
+        day("2026-08-10", { staffCoffees: 2, walkInCups: 3 }),
+        day("2026-08-12", { staffCoffees: 1, walkInCups: 2 }),
+      ],
+      SESSIONS
+    );
+    expect(w.weekday).toMatchObject({ staffCoffees: 3, walkInCups: 5 });
+    expect(w.sunday.walkInCups).toBe(0);
   });
 
   it("a Sunday whose every lot is invoice-backed may read profit", () => {

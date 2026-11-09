@@ -15,6 +15,29 @@ vi.mock("@db/index", async () => {
       execute: vi.fn().mockImplementation(async (q: Parameters<typeof dialect.sqlToQuery>[0]) => {
         const { sql: text, params } = dialect.sqlToQuery(q);
         queries.push({ sql: text, params });
+        // §7.3.1 / REQ-145: live voucher rows per barista (Louis averages R38 a slip, Thandeka R21).
+        if (text.includes("FROM voucher_redemptions"))
+          return [
+            { staff_id: "staff_louis", staff_name: "Louis", cups: "4", zar: "15200" },
+            { staff_id: "staff_thandeka", staff_name: "Thandeka", cups: "4", zar: "8400" },
+          ];
+        // readWriteDowns: one R20 comp by Louis.
+        if (text.includes("UNION ALL"))
+          return [{ kind: "comp", audit_id: "a1", revenue_day: "2026-08-16", at: "2026-08-16T07:00:00Z", staff_id: "staff_louis", staff_name: "Louis", on_behalf_of_name: null, order_id: "o1", value_zar: "2000", reason: "spillage" }];
+        if (text.includes("written_off_at IS NOT NULL")) return [];
+        if (text.includes("FROM staff WHERE active"))
+          return [
+            { id: "staff_louis", name: "Louis" },
+            { id: "staff_thandeka", name: "Thandeka" },
+            { id: "staff_nkuli", name: "Nkuli" },
+          ];
+        // readMarginByShot: the Sunday's single (R20 − R5,29) and double (R20 − R10,59).
+        if (text.includes("coffee_shots"))
+          return [
+            { total_zar: 2000, cogs_zar: 529, absent_item_ids: [], estimated: false, missing: false, coffee_shots: [1], day_mode: "sunday" },
+            { total_zar: 2000, cogs_zar: 1059, absent_item_ids: [], estimated: false, missing: false, coffee_shots: [2], day_mode: "sunday" },
+          ];
+        if (text.includes("FROM walk_ins")) return [{ revenue_day: "2026-08-10", cups: "3" }];
         if (text.includes("FROM opening_sessions"))
           return [
             { session_date: "2026-08-10", mode: "weekday" },
@@ -65,13 +88,50 @@ describe("readWeeklySummary — week of Mon 10 Aug 2026", () => {
     expect(summaryForRole(s, "admin").headline).toMatchObject({ expensesZar: 1000, netZar: 4060 });
   });
 
-  it("the walk-in count is not recorded anywhere yet, and says so — never 0", async () => {
-    const { WALK_IN_NOT_RECORDED } = await import("@/lib/weekly-summary");
-    expect(WALK_IN_NOT_RECORDED).toBe("not recorded yet");
+  it("REQ-123: the walk-in count is read from walk_ins (Σ quantity), beside the staff coffees — two counts", async () => {
+    const { readWeeklySummary } = await import("@/server/reports/weekly-summary");
+    const s = await readWeeklySummary("2026-08-10");
+    expect(s.sections.weekday).toMatchObject({ staffCoffees: 2, walkInCups: 3 });
+    expect(s.sections.sunday.walkInCups).toBe(0);
+    const q = queries.find((x) => x.sql.includes("FROM walk_ins"))!;
+    expect(q.sql).toContain("SUM(w.quantity)");
+  });
+
+  it("REQ-139: margin by shot count, per mode, for the same Mon..Sun", async () => {
+    const { readWeeklySummary } = await import("@/server/reports/weekly-summary");
+    const s = await readWeeklySummary("2026-08-10");
+    expect(s.marginByShot.map((r) => [r.mode, r.bucket, r.revenueZar, r.cogsZar, r.grossMarginZar, r.tone])).toEqual([
+      ["sunday", 1, 2000, 529, 1471, "positive"],
+      ["sunday", 2, 2000, 1059, 941, "positive"],
+    ]);
+    const q = queries.find((x) => x.sql.includes("coffee_shots"))!;
+    expect(q.params).toEqual(["2026-08-10", "2026-08-16"]);
+  });
+
+  it("REQ-124 / REQ-145: the write-down block names every barista, vouchers as a count AND a value, zero as 0", async () => {
+    const { readWeeklySummary } = await import("@/server/reports/weekly-summary");
+    const s = await readWeeklySummary("2026-08-10");
+    const by = Object.fromEntries(s.writeDowns.map((b) => [b.name, b]));
+    expect(Object.keys(by)).toEqual(["Louis", "Thandeka", "Nkuli"]);
+    expect(by.Louis.comps).toEqual({ count: 1, zar: 2000 });
+    expect(by.Louis.vouchers).toEqual({ count: 4, zar: 15200 });
+    expect(by.Thandeka.vouchers).toEqual({ count: 4, zar: 8400 });
+    expect(by.Nkuli).toMatchObject({ comps: { count: 0, zar: 0 }, abandoned: { count: 0 }, vouchers: { count: 0, zar: 0 } });
+    expect(by.Nkuli.writeOffs).toMatchObject({ count: 0, zar: 0 });
+    const q = queries.find((x) => x.sql.includes("FROM voucher_redemptions"))!;
+    expect(q.params).toEqual(["2026-08-10", "2026-08-16"]);
+  });
+
+  it("a barista session never receives the per-barista write-down block; an Admin does", async () => {
+    const { readWeeklySummary, summaryForRole } = await import("@/server/reports/weekly-summary");
+    const s = await readWeeklySummary("2026-08-10");
+    expect(summaryForRole(s, "barista").writeDowns).toBeNull();
+    expect(JSON.stringify(summaryForRole(s, "barista"))).not.toContain("staff_louis");
+    expect(summaryForRole(s, "admin").writeDowns).toHaveLength(3);
   });
 
   it("the count queries read revenue_day in the counted states, for Mon..Sun", async () => {
-    for (const marker of ["FROM order_items", "FROM staff_entitlement_log", "FROM stock_movements"]) {
+    for (const marker of ["FROM order_items oi JOIN", "FROM staff_entitlement_log", "FROM walk_ins", "FROM stock_movements"]) {
       const q = queries.find((x) => x.sql.includes(marker))!;
       expect(q.sql).toContain("o.revenue_day");
       expect(q.sql).toContain("'in_progress', 'ready', 'collected'");

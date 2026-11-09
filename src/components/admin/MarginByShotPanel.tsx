@@ -23,7 +23,10 @@ export interface MarginByShotPanelProps {
   initialRows?: ShotMarginRow[];
 }
 
-export function MarginByShotTable({ rows }: { rows: readonly ShotMarginRow[] }) {
+/** What the table renders: a bucket's gross figures. It never reads expenses or net. */
+export type ShotMarginView = Omit<ShotMarginRow, "expensesZar" | "netZar">;
+
+export function MarginByShotTable({ rows }: { rows: readonly ShotMarginView[] }) {
   if (rows.length === 0) {
     return (
       <p className="favo-small" style={{ color: "var(--color-text-muted)" }}>
@@ -51,7 +54,7 @@ export function MarginByShotTable({ rows }: { rows: readonly ShotMarginRow[] }) 
 }
 
 /** One mode's buckets — §7.1 reports by mode, never one blended figure. */
-function ModeTable({ mode, rows }: { mode: DayMode; rows: readonly ShotMarginRow[] }) {
+function ModeTable({ mode, rows }: { mode: DayMode; rows: readonly ShotMarginView[] }) {
   return (
     <>
       <h3 className="favo-caption mt-3 mb-1" style={{ color: "var(--color-text-strong)" }}>
