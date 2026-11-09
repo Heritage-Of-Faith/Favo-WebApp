@@ -128,7 +128,7 @@ describe("transitionOrder → order_cogs (AT-188)", () => {
   it("a retried ordered → in_progress on an order already in_progress is refused: no second deduction or row", async () => {
     setOrder({ state: "in_progress" });
     const res = await transitionOrder("ord-1", "in_progress");
-    expect(res).toEqual(expect.objectContaining({ ok: false, code: "INVALID_TRANSITION" }));
+    expect(res).toEqual(expect.objectContaining({ ok: false, code: "STALE_STATE" })); // REQ-023
     expect(deductForOrder).not.toHaveBeenCalled();
     expect(writeOrderCogs).not.toHaveBeenCalled();
   });
