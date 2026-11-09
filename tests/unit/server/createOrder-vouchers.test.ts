@@ -156,7 +156,8 @@ describe("createOrder with vouchers (§6.9, L41, L42)", () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.totalZar).toBe(3800);
-    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 3800, paymentMode: null });
+    // §10.6 / migration 0051: a chargeable order is written 'yoco', never NULL.
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 3800, paymentMode: "yoco" });
     const [items] = insertsInto(orderItems) as Row[][];
     expect(items[0]).toMatchObject({ quantity: 2, unitPriceZar: 3800, discountZar: 3800 });
     expect(insertsInto(payments)).toEqual([]);

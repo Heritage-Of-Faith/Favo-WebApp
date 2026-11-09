@@ -122,7 +122,7 @@ maybe("0048 daily_closes + write-off sweep: up → down → up, and the sweep on
     });
     await inRolledBackTx(async (tx) => {
       const [s] = await tx`INSERT INTO staff (name, role, pin_hash) VALUES ('AT-207 Barista', 'barista', 'x') RETURNING id`;
-      await tx`INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target, written_off_at) VALUES (${s.id}, 2500, ${DAY}, 'none', now())`;
+      await tx`INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target, written_off_at, payment_mode) VALUES (${s.id}, 2500, ${DAY}, 'none', now(), 'yoco')`;
       await expect(tx.savepoint((sp) => sp.unsafe(migrationSql(DOWN)))).rejects.toThrow(/AT-207\/0048 down/);
       expect(await dbColumns(tx, "orders")).toContain("written_off_at");
     });
@@ -153,7 +153,7 @@ maybe("0048 daily_closes + write-off sweep: up → down → up, and the sweep on
         const [louis] = await tx.insert(schema.staff).values({ name: "AT-207 Louis", role: "barista", pinHash: "x" }).returning({ id: schema.staff.id });
         const [nkuli] = await tx.insert(schema.staff).values({ name: "AT-207 Nkuli", role: "barista", pinHash: "x" }).returning({ id: schema.staff.id });
 
-        const mk = async (o: { staffId?: string; totalZar: number; paymentMode: "yoco" | "yoco_deferred" | "free" | "donor_fund" | null; state?: "ordered" | "collected" | "cancelled"; revenueDay?: string }) => {
+        const mk = async (o: { staffId?: string; totalZar: number; paymentMode: "yoco" | "yoco_deferred" | "free" | "donor_fund"; state?: "ordered" | "collected" | "cancelled"; revenueDay?: string }) => {
           const [row] = await tx
             .insert(schema.orders)
             .values({
@@ -231,7 +231,7 @@ maybe("0048 daily_closes + write-off sweep: up → down → up, and the sweep on
 
         // Weekday fail-safe until S7a: a Monday R20 order with no payment is never swept.
         const MON = "2026-10-26";
-        const weekday = await mk({ totalZar: 2000, paymentMode: null, revenueDay: MON });
+        const weekday = await mk({ totalZar: 2000, paymentMode: "yoco", revenueDay: MON });
         expect(await listUnpaidOrders(tx, { revenueDay: MON })).toEqual([]);
         expect((await sweepWriteOffs(tx, MON, new Date("2026-10-26T22:05:00Z"))).written).toEqual([]);
         const [wk] = await tx.select({ w: schema.orders.writtenOffAt }).from(schema.orders).where(eq(schema.orders.id, weekday.id));

@@ -60,8 +60,8 @@ maybe("the collected sweep (AT-194, §9.6.2 job 5)", () => {
     [{ id: staffId }] = await sql`INSERT INTO staff (name, role, pin_hash) VALUES ('Sweep Barista', 'barista', 'x') RETURNING id`;
     const order = async (state: string, completedAt: Date | null) => {
       const [{ id }] = await sql`
-        INSERT INTO orders (staff_id, total_zar, state, completed_at, revenue_day, notification_target)
-        VALUES (${staffId}, 0, ${state}, ${completedAt}, ${revenueDay(now)}, 'none')
+        INSERT INTO orders (staff_id, total_zar, state, completed_at, revenue_day, notification_target, payment_mode)
+        VALUES (${staffId}, 0, ${state}, ${completedAt}, ${revenueDay(now)}, 'none', 'yoco')
         RETURNING id`;
       return id as string;
     };
@@ -126,8 +126,8 @@ maybe("closeDaily counts revenue by revenue_day (owner decision, Nikao 21 Oct, #
 
     const [{ id: staffId }] = await sql`INSERT INTO staff (name, role, pin_hash) VALUES ('Revenue Barista', 'barista', 'x') RETURNING id`;
     const order = (state: string, total: number, completedAt: Date | null) => sql`
-      INSERT INTO orders (staff_id, total_zar, state, placed_at, completed_at, revenue_day, notification_target)
-      VALUES (${staffId}, ${total}, ${state}, ${at(23, 40)}, ${completedAt}, ${date}, 'none')
+      INSERT INTO orders (staff_id, total_zar, state, placed_at, completed_at, revenue_day, notification_target, payment_mode)
+      VALUES (${staffId}, ${total}, ${state}, ${at(23, 40)}, ${completedAt}, ${date}, 'none', 'yoco')
       RETURNING id`;
     const [{ id: lateDone }] = await order("ready", 1000, at(23, 50));
     await order("in_progress", 300, null);

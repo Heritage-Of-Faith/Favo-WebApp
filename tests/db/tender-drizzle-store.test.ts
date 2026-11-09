@@ -43,6 +43,7 @@ maybe("tender chain on Postgres (AT-201 part 2a)", () => {
           .values({
             staffId: staff.id,
             totalZar: 3000,
+            paymentMode: "yoco",
             revenueDay: "2026-10-25",
             notificationTarget: "none",
             clientUuid: "cu-db-1",

@@ -18,7 +18,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql, stepDown0048, stepDown0049, stepDown0050 } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0048, stepDown0049, stepDown0050, stepDown0051 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -86,6 +86,7 @@ maybe("0044 orders.client_uuid: up → down → up, and the refusals (AT-201, RE
         // AT-209: CI migrates past 0044; 0045 (a view over orders and
         // payments, an FK from waste_log to orders) is the newest, so it steps
         // down first (rolled back with everything else).
+        await stepDown0051(tx); // 0051 (orders.payment_mode NOT NULL) is newest of all, before 0050
         await stepDown0050(tx); // AT-203 follow-up: 0050 (v_daily_revenue reads donor_fund_entries) is newest of all, before 0049
         await stepDown0049(tx); // AT-174: 0049 (refunds dropped) is newest of all, before 0048
         await stepDown0048(tx); // AT-207: 0048 (daily_closes, orders.written_off_at) is newest of all, first

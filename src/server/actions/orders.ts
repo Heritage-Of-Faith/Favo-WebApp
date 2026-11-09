@@ -58,6 +58,7 @@ import { notifyOrderChange } from "@/server/queue/notify";
 import { sendOrderReadyPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
 import type { ActionResult, Order, OrderState } from "@/lib/types";
+import { chargeableMode } from "@/lib/payment-mode";
 
 // Docs: docs/API.md · Business rules L01–L06, L14–L15.
 // Roles allowed to operate the POS:
@@ -439,8 +440,9 @@ export async function createOrder(
         totalZar,
         isStaffDiscount: decision.status === "apply",
         // REQ-153: a net-R0 order is `free` — it gets no payments row.
-        // S7a: 'free' on weekday mode, whatever else applies.
-        paymentMode: weekdayFree || totalZar === 0 ? "free" : null,
+        // S7a: 'free' on weekday mode, whatever else applies. Otherwise the
+        // card tender, 'yoco' — never NULL (§10.3 L2499, §10.6; migration 0051).
+        paymentMode: weekdayFree || totalZar === 0 ? "free" : "yoco",
         placedAt: receivedAt,
         revenueDay: day,
       });
@@ -499,7 +501,7 @@ export async function createOrder(
                 orderItemId: baseItemRows[l.index].id, vouchers: l.perVoucherZar.length,
                 lineDiscountZar: l.lineDiscountZar,
               })),
-              discountZar: v.discountZar, totalZar, paymentMode: totalZar === 0 ? "free" : null,
+              discountZar: v.discountZar, totalZar, paymentMode: totalZar === 0 ? "free" : "yoco",
             },
           },
           txDb
@@ -1369,7 +1371,9 @@ export async function declineFreeCoffee(
       await tx.update(orderItems).set({ discountZar: 0 }).where(eq(orderItems.id, line.id));
       await tx
         .update(orders)
-        .set({ totalZar, isStaffDiscount: false, paymentMode: totalZar === 0 ? "free" : null })
+        // A free order that owes money again keeps a tender already chosen
+        // (deferred, fund) and is otherwise the card, 'yoco' — never NULL (§10.6).
+        .set({ totalZar, isStaffDiscount: false, paymentMode: totalZar === 0 ? "free" : chargeableMode(current.paymentMode) })
         .where(eq(orders.id, orderId));
       await writeAudit(
         {

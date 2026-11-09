@@ -255,6 +255,51 @@ export async function readMarginByShot(from: string, to: string, db: DB = defaul
   return margins.map((m) => ({ ...m, absentItemNames: m.absentItemIds.map((id) => names.get(id) ?? id) }));
 }
 
+export type DailyOutreach = { cogsZar: number; unrecordedOrders: number; absentCostOrders: number };
+
+/**
+ * REQ-158 · §7.0.2 L1814–1822 — outreach_cogs per revenue day: live
+ * voucher_redemptions (reversed_at IS NULL) on orders in the same started
+ * states as the COGS read (§6.10.5: "counted as paper, not counted as coffee"
+ * until in_progress). order_cogs holds one integer per order and no per-line
+ * figure, so an order's outreach share is known only when EVERY unit of every
+ * line carries a live redemption: then it is the whole order_cogs, rounded
+ * once with its order (L1821). Any other vouchered order is counted in
+ * unrecordedOrders, a fully vouchered order with no order_cogs figure in
+ * absentCostOrders, and either makes the day's outreach UNAVAILABLE.
+ */
+export async function readDailyOutreach(from: string, to: string, db: DB = defaultDb): Promise<Map<string, DailyOutreach>> {
+  const rows = await db.execute<{ revenue_day: string; cogs_zar: number | string | null; fully_vouchered: boolean }>(sql`
+    SELECT
+      TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day,
+      oc.cogs_zar,
+      BOOL_AND(v.live = oi.quantity) AS fully_vouchered
+    FROM orders o
+    JOIN order_items oi ON oi.order_id = o.id
+    LEFT JOIN order_cogs oc ON oc.order_id = o.id
+    CROSS JOIN LATERAL (
+      SELECT COUNT(*)::int AS live
+      FROM voucher_redemptions vr
+      WHERE vr.order_item_id = oi.id AND vr.reversed_at IS NULL
+    ) v
+    WHERE o.state IN ('in_progress', 'ready', 'collected')
+      AND o.revenue_day >= ${from}::date
+      AND o.revenue_day <= ${to}::date
+    GROUP BY o.id, o.revenue_day, oc.cogs_zar
+    HAVING SUM(v.live) > 0
+  `);
+  const out = new Map<string, DailyOutreach>();
+  for (const r of rows) {
+    const o = out.get(r.revenue_day) ?? { cogsZar: 0, unrecordedOrders: 0, absentCostOrders: 0 };
+    if (r.fully_vouchered !== true) o.unrecordedOrders += 1;
+    // An absent order_cogs (NULL, or no row) is never an outreach cost of 0.
+    else if (r.cogs_zar === null) o.absentCostOrders += 1;
+    else o.cogsZar += Number(r.cogs_zar);
+    out.set(r.revenue_day, o);
+  }
+  return out;
+}
+
 function nextDay(yyyymmdd: string): string {
   const d = new Date(`${yyyymmdd}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 1);

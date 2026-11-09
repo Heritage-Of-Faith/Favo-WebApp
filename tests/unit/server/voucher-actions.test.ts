@@ -212,16 +212,16 @@ describe("redeemVoucher (REQ-154, REQ-151, L41)", () => {
   // tender attempt (pending, or sent and unresolved) freezes the total (P4,
   // REQ-028); "no row" is a normal state, never STALE_STATE.
   it("a chargeable order with NO payments row: the voucher applies, the total changes, no row is written — not STALE_STATE", async () => {
-    given({ order: { ...DEFERRED_ORDER, paymentMode: null } });
+    given({ order: { ...DEFERRED_ORDER, paymentMode: "yoco" } });
     expect(await redeemVoucher("oi_1", KIND)).toEqual({ ok: true, data: { totalZar: 3800, lineDiscountZar: 3800 } });
-    expect(updatesOf(orders)).toEqual([{ totalZar: 3800, paymentMode: null }]);
+    expect(updatesOf(orders)).toEqual([{ totalZar: 3800, paymentMode: "yoco" }]);
     expect(insertsInto(payments)).toEqual([]);
     expect(updatesOf(payments)).toEqual([]);
   });
 
   it("REQ-149 / L42: a chargeable rowless order redeemed to R0 becomes payment_mode='free' with no payments row", async () => {
     given({
-      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
+      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: "yoco" },
       line: { ...CAPPUCCINO_X2, discountZar: 3800 },
       live: [{ id: "vr_1", discountZar: 3800, at: new Date("2026-10-11T18:20:00+02:00"), sessionId: "os_evening" }],
     });
@@ -232,7 +232,7 @@ describe("redeemVoucher (REQ-154, REQ-151, L41)", () => {
   });
 
   it("P4: a PENDING attempt → TENDER_IN_PROGRESS; nothing written, the amount unchanged, the reject audited", async () => {
-    given({ order: { ...DEFERRED_ORDER, paymentMode: null }, payment: attemptRow(1, "pending", false) });
+    given({ order: { ...DEFERRED_ORDER, paymentMode: "yoco" }, payment: attemptRow(1, "pending", false) });
     expect(await redeemVoucher("oi_1", KIND)).toMatchObject({ ok: false, code: "TENDER_IN_PROGRESS" });
     expect(insertsInto(voucherRedemptions)).toEqual([]);
     expect(updates).toEqual([]);
@@ -242,7 +242,7 @@ describe("redeemVoucher (REQ-154, REQ-151, L41)", () => {
   });
 
   it("P4: a SENT attempt that ended unresolved → TENDER_IN_PROGRESS; nothing written, the reject audited", async () => {
-    given({ order: { ...DEFERRED_ORDER, paymentMode: null }, payment: attemptRow(1, "unresolved", true, "p_1") });
+    given({ order: { ...DEFERRED_ORDER, paymentMode: "yoco" }, payment: attemptRow(1, "unresolved", true, "p_1") });
     expect(await redeemVoucher("oi_1", KIND)).toMatchObject({ ok: false, code: "TENDER_IN_PROGRESS" });
     expect(insertsInto(voucherRedemptions)).toEqual([]);
     expect(updates).toEqual([]);
@@ -250,7 +250,7 @@ describe("redeemVoucher (REQ-154, REQ-151, L41)", () => {
   });
 
   it("after a DECLINED attempt the voucher applies (no row written or changed), and the next beginTender is attempt 2 at the new total", async () => {
-    given({ order: { ...DEFERRED_ORDER, paymentMode: null }, payment: attemptRow(1, "declined", true, "p_1") });
+    given({ order: { ...DEFERRED_ORDER, paymentMode: "yoco" }, payment: attemptRow(1, "declined", true, "p_1") });
     const res = await redeemVoucher("oi_1", KIND);
     expect(res).toEqual({ ok: true, data: { totalZar: 3800, lineDiscountZar: 3800 } });
     expect(insertsInto(payments)).toEqual([]);
@@ -277,7 +277,7 @@ describe("redeemVoucher (REQ-154, REQ-151, L41)", () => {
 
   it("a declined attempt still carries a row, so a voucher taking the order to R0 is refused (rows are never deleted)", async () => {
     given({
-      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
+      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: "yoco" },
       line: { ...CAPPUCCINO_X2, discountZar: 3800 },
       live: [{ id: "vr_1", discountZar: 3800, at: new Date("2026-10-11T18:20:00+02:00"), sessionId: "os_evening" }],
       payment: attemptRow(1, "declined", true, "p_1"),
@@ -288,7 +288,7 @@ describe("redeemVoucher (REQ-154, REQ-151, L41)", () => {
   });
 
   it("a successful payment → ALREADY_RESOLVED", async () => {
-    given({ order: { ...DEFERRED_ORDER, paymentMode: null }, payment: attemptRow(1, "successful", true, "p_1") });
+    given({ order: { ...DEFERRED_ORDER, paymentMode: "yoco" }, payment: attemptRow(1, "successful", true, "p_1") });
     expect(await redeemVoucher("oi_1", KIND)).toMatchObject({ ok: false, code: "ALREADY_RESOLVED" });
     expect(updates).toEqual([]);
   });
@@ -333,7 +333,7 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
   // flow): a free order made chargeable gets NO payments row and no Yoco
   // checkout here; the screen's beginTender writes the row at the new total
   // before anything is sent (REQ-026).
-  it("a free (R0) order made chargeable: payment_mode cleared, R38 owed, no payments row, no checkout, no secret", async () => {
+  it("a free (R0) order made chargeable: payment_mode becomes 'yoco' (never NULL, §10.6), R38 owed, no payments row, no checkout, no secret", async () => {
     given({
       order: { ...DEFERRED_ORDER, totalZar: 0, paymentMode: "free" },
       line: { ...CAPPUCCINO_X2, discountZar: 7600 },
@@ -344,7 +344,7 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
     });
     const res = await removeVoucher("oi_1");
     expect(res).toEqual({ ok: true, data: { totalZar: 3800, lineDiscountZar: 3800 } });
-    expect(updatesOf(orders)).toEqual([{ totalZar: 3800, paymentMode: null }]);
+    expect(updatesOf(orders)).toEqual([{ totalZar: 3800, paymentMode: "yoco" }]);
     expect(insertsInto(payments)).toEqual([]);
     expect(updatesOf(payments)).toEqual([]);
     // COL-29: still a reversal, never a delete.
@@ -354,7 +354,7 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
 
   it("a chargeable order with NO payments row: the removal applies (R38 → R76), no row written — not STALE_STATE", async () => {
     given({
-      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
+      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: "yoco" },
       line: { ...CAPPUCCINO_X2, discountZar: 3800 },
       live: [{ id: "vr_1", discountZar: 3800, at: at1, sessionId: "os_evening" }],
     });
@@ -365,7 +365,7 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
 
   it("P4: a PENDING attempt → TENDER_IN_PROGRESS; nothing written, the amount unchanged, the reject audited", async () => {
     given({
-      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
+      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: "yoco" },
       line: { ...CAPPUCCINO_X2, discountZar: 3800 },
       live: [{ id: "vr_1", discountZar: 3800, at: at1, sessionId: "os_evening" }],
       payment: attemptRow(1, "pending", true),
@@ -380,7 +380,7 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
 
   it("P4: a SENT attempt that ended unresolved → TENDER_IN_PROGRESS; nothing written, the reject audited", async () => {
     given({
-      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
+      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: "yoco" },
       line: { ...CAPPUCCINO_X2, discountZar: 3800 },
       live: [{ id: "vr_1", discountZar: 3800, at: at1, sessionId: "os_evening" }],
       payment: attemptRow(1, "unresolved", true, "p_1"),
@@ -392,7 +392,7 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
 
   it("after a DECLINED attempt the removal applies; no payments row written or changed", async () => {
     given({
-      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
+      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: "yoco" },
       line: { ...CAPPUCCINO_X2, discountZar: 3800 },
       live: [{ id: "vr_1", discountZar: 3800, at: at1, sessionId: "os_evening" }],
       payment: attemptRow(1, "declined", true, "p_1"),
@@ -404,7 +404,7 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
 
   it("a successful attempt → ALREADY_RESOLVED; nothing written", async () => {
     given({
-      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: null },
+      order: { ...DEFERRED_ORDER, totalZar: 3800, paymentMode: "yoco" },
       line: { ...CAPPUCCINO_X2, discountZar: 3800 },
       live: [{ id: "vr_1", discountZar: 3800, at: at1, sessionId: "os_evening" }],
       payment: attemptRow(1, "successful", true, "p_1"),
