@@ -73,7 +73,8 @@ export function isSettled(o: Pick<OrderSettlementFacts, "hasSuccessfulPayment" |
  * look unpaid and be written off nightly: the phantom loss S3a forbids. Until
  * the S7a weekday-free rule is built, no order whose revenue day is a weekday
  * (Monday–Friday, per defaultSessionMode — the same rule opening sessions use)
- * is ever unpaid. Saturday (events) and Sunday are swept. Set to false — the
+ * is ever unpaid. Saturday (events) is swept; Sunday is swept only once
+ * SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE below is false. Set to false — the
  * one place to change — when S7a lands.
  *
  * AT-212: S7a has now landed — createOrder and the offline replay write every
@@ -87,9 +88,47 @@ function isWeekdayRevenueDay(revenueDay: string): boolean {
   return defaultSessionMode(revenueDay) === "weekday";
 }
 
+/**
+ * DEFERRED, NOT DONE. Owner decision, Nikao (Slack, 3 Nov 2026 10:46): "You
+ * can skip Sunday card sales FOR NOW. But it is important that you make a note
+ * of this that we do install it later."
+ *
+ * Sunday card sales are taken on the physical Yoco machine, outside FAVO,
+ * until the real Web POS adapter (the YocoWebPosPort live adapter, the AT-201
+ * remainder) is built and drilled. A Sunday FAVO order therefore has no FAVO
+ * payment, and the sweep would write the whole Sunday's takings off every week
+ * as a phantom loss. While this is TRUE, no order whose revenue day is a Sunday
+ * (per defaultSessionMode, the same date rule as the weekday exemption above)
+ * is ever unpaid — unless its latest payment attempt was sent to the terminal,
+ * which keeps the normal rules — so no written_off_at, no write-off audit row. closeDaily() also
+ * leaves those orders out of its card reconciliation (src/server/crons/close-daily.ts).
+ *
+ * Flip this to false — the one place to change — when the live Web POS
+ * adapter is built and drilled. Steps: docs/GO_LIVE_RUNBOOK.md, "Sunday card
+ * sales: deferred until the Web POS is live".
+ */
+export const SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE = true;
+
+let sundaySkipInForce: boolean = SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE;
+
+/** TESTS ONLY: run the sweep as if the flag were `on`. Refuses outside a test run. */
+export function setSundaySkipForTests(on: boolean): void {
+  if (process.env.NODE_ENV !== "test") throw new Error("setSundaySkipForTests is for tests only");
+  sundaySkipInForce = on;
+}
+
+/** True when the revenue day is a Sunday and Sunday card sales are still taken outside FAVO. */
+export function isSundayOutsideFavo(revenueDay: string): boolean {
+  return sundaySkipInForce && defaultSessionMode(revenueDay) === "sunday";
+}
+
 /** S3a: no successful payment, a non-zero amount owed, never `free`, never cancelled, not yet written off. */
 export function isUnpaid(o: OrderSettlementFacts): boolean {
   if (WEEKDAY_ORDERS_NEVER_SWEPT_UNTIL_S7A && isWeekdayRevenueDay(o.revenueDay)) return false;
+  // Not an order whose latest attempt was SENT to the terminal: that one went
+  // through FAVO, so it keeps S3a's rules (S4 step 5: unresolved_at_close,
+  // reported to T10, never silently absorbed).
+  if (isSundayOutsideFavo(o.revenueDay) && !o.latestAttempt?.sent) return false;
   return (
     o.state !== "cancelled" &&
     !o.writtenOff &&

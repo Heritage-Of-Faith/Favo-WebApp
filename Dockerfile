@@ -30,6 +30,10 @@ RUN bun run build
 # The release migration step (AT-170), bundled with drizzle-orm and postgres so
 # the runner needs neither drizzle-kit nor node_modules to run it.
 RUN bun build scripts/migrate.ts --target=bun --outfile=migrate.js
+# The first load of an empty database (go-live gap G3, PRD §13.0): menu,
+# prices, recipes, ingredient costs and the first admin. No opening stock, no
+# dev staff, demo customers or demo transactions. See scripts/first-load.ts.
+RUN bun build scripts/first-load.ts --target=bun --outfile=first-load.js
 
 FROM base AS runner
 ENV NODE_ENV=production
@@ -47,6 +51,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/migrate.js ./migrate.js
+COPY --from=builder --chown=nextjs:nodejs /app/first-load.js ./first-load.js
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
 COPY --chown=nextjs:nodejs --chmod=755 docker-entrypoint.sh ./docker-entrypoint.sh
 
@@ -58,6 +63,18 @@ EXPOSE 3000
 ARG IMAGE_SHA=""
 ENV IMAGE_SHA=$IMAGE_SHA
 
+# Liveness probe (bun: no curl in the image). /api/healthz returns 503 when
+# Postgres is down, a configured LOKI_URL is unreachable, or DATABASE_URL_SESSION
+# is unset. Yoco is advisory and never fails it. Leave LOKI_URL unset so an
+# observability blip cannot mark a working cafe unhealthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD bun -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 # Migrate, then serve (docker-entrypoint.sh). To migrate one-shot ahead of a
 # container swap: docker run --rm <image> bun migrate.js
+# First load, after the first migration on the empty database (safe to re-run
+# until the first order):
+#   read -rs FIRST_ADMIN_PIN; export FIRST_ADMIN_PIN
+#   docker run --rm -e DATABASE_URL -e FIRST_ADMIN_PIN <image> bun first-load.js
+# (-e NAME with no value passes it from the shell, so the PIN is not typed into history.)
 ENTRYPOINT ["./docker-entrypoint.sh"]

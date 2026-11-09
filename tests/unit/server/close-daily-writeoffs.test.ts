@@ -3,7 +3,7 @@
 // daily_closes record. A mismatch blocks only that record.
 // REQ-007, REQ-035, REQ-036.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 
@@ -32,7 +32,14 @@ vi.mock("@/server/close/write-offs", async (importOriginal) => {
 import { db } from "@db/index";
 import { writeAudit } from "@/server/audit";
 import { alertAdmins } from "@/server/push/admin-alert";
-import { hasDailyClose, recordDailyClose, sweepWriteOffs, type SweepResult } from "@/server/close/write-offs";
+import {
+  hasDailyClose,
+  recordDailyClose,
+  setSundaySkipForTests,
+  sweepWriteOffs,
+  SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE,
+  type SweepResult,
+} from "@/server/close/write-offs";
 import { closeDaily } from "@/server/crons/close-daily";
 
 const DAY = new Date("2026-06-08T10:00:00Z");
@@ -184,5 +191,119 @@ describe("closeDaily — write-off first, then reconcile, then daily_closes (AT-
       writtenOffZar: 7000,
       reconciliationStatus: "payments_matched",
     });
+  });
+});
+
+describe("closeDaily — Sunday card sales outside FAVO until the Web POS is live (Nikao, 3 Nov 2026)", () => {
+  const SUN = new Date("2026-06-07T10:00:00Z"); // a Sunday
+  const SUN_NOW = new Date("2026-06-07T22:05:00Z"); // 00:05 SAST on Monday
+
+  /** As mockClose, plus the Sunday-outside-FAVO count after the payments read. */
+  function mockSundayClose(o: { revenue: number; payments: number; outside: { n: number; zar: number }; admins?: unknown[] }) {
+    mockClose({ revenue: o.revenue, payments: o.payments, sweep: NONE });
+    vi.mocked(db.execute).mockResolvedValueOnce([{ n: o.outside.n, zar: String(o.outside.zar) }] as never);
+    if (o.admins) {
+      vi.mocked(db.select).mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(o.admins) }),
+      } as never);
+    }
+  }
+
+  afterEach(() => setSundaySkipForTests(SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE));
+
+  it("flag on: three unpaid FAVO orders (R114.00) with no FAVO payment — nothing written off, no variance, and the close names them as taken outside FAVO", async () => {
+    setSundaySkipForTests(true);
+    // The revenue read now holds only Sunday orders with a successful FAVO payment: none.
+    mockSundayClose({ revenue: 0, payments: 0, outside: { n: 3, zar: 11400 } });
+    const res = await closeDaily(SUN, { now: SUN_NOW });
+
+    const revenueSql = dialect.sqlToQuery(revenueWhere!).sql;
+    expect(revenueSql).toContain("EXISTS (SELECT 1 FROM payments sp WHERE sp.order_id = \"orders\".\"id\" AND sp.status = 'successful')");
+    const outsideSql = dialect.sqlToQuery(vi.mocked(db.execute).mock.calls[2][0] as SQL).sql;
+    expect(outsideSql).toContain("NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id AND p.status = 'successful')");
+    expect(outsideSql).toContain("o.written_off_at IS NULL");
+    expect(outsideSql).toContain("o.payment_mode IS DISTINCT FROM 'donor_fund'");
+    expect(outsideSql).toContain("o.payment_mode IS DISTINCT FROM 'free'");
+
+    expect(res).toMatchObject({ revenueZar: 0, paymentsZar: 0, variancePct: 0, band: "ok", writtenOffCount: 0, writtenOffZar: 0 });
+    expect(vi.mocked(writeAudit).mock.calls[0][0].after).toMatchObject({
+      revenueDay: "2026-06-07",
+      revenueZar: 0,
+      paymentsZar: 0,
+      writtenOffCount: 0,
+      writtenOffZar: 0,
+      sundayCardSalesOutsideFavo: { orderCount: 3, orderZar: 11400 },
+    });
+    expect(vi.mocked(recordDailyClose).mock.calls[0][1]).toMatchObject({ writtenOffCount: 0, writtenOffZar: 0, blockedReason: null });
+    // No phantom variance push, and no write-off push.
+    expect(sendNotification).not.toHaveBeenCalled();
+    expect(alertAdmins).not.toHaveBeenCalled();
+  });
+
+  it("flag on: a Sunday attempt SENT to the terminal and never resolved is not absorbed — swept as unresolved_at_close (R45.00), kept in the revenue read, left out of the outside-FAVO line", async () => {
+    setSundaySkipForTests(true);
+    const SENT_UNRESOLVED: SweepResult = {
+      written: [{ orderId: "o-sun-unres", staffId: "staff-nkuli", valueZar: 4500, placedAt: SUN_NOW, reason: "unresolved_at_close" }],
+      dayCount: 1,
+      dayZar: 4500,
+    };
+    vi.mocked(db.transaction).mockImplementation(((fn: (tx: unknown) => unknown) => fn(db)) as never);
+    vi.mocked(db.execute).mockResolvedValueOnce([] as never); // lock
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    } as never);
+    vi.mocked(sweepWriteOffs).mockResolvedValueOnce(SENT_UNRESOLVED);
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn((w: SQL) => {
+          revenueWhere = w;
+          return Promise.resolve([{ total: 0 }]);
+        }),
+      }),
+    } as never);
+    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "0" }] as never); // payments
+    vi.mocked(db.execute).mockResolvedValueOnce([{ n: 0, zar: "0" }] as never); // outside FAVO
+
+    const res = await closeDaily(SUN, { now: SUN_NOW });
+
+    // Revenue keeps a Sunday order whose latest attempt was sent; the outside line excludes it.
+    expect(dialect.sqlToQuery(revenueWhere!).sql).toContain(
+      "EXISTS (SELECT 1 FROM (SELECT la.sent_at FROM payments la WHERE la.order_id = \"orders\".\"id\" ORDER BY la.attempt DESC LIMIT 1) latest WHERE latest.sent_at IS NOT NULL)"
+    );
+    const outsideSql = dialect.sqlToQuery(vi.mocked(db.execute).mock.calls[2][0] as SQL).sql;
+    expect(outsideSql).toContain("NOT EXISTS (\n            SELECT 1 FROM (SELECT la.sent_at FROM payments la WHERE la.order_id = o.id ORDER BY la.attempt DESC LIMIT 1) latest");
+    // Written off and pushed under its own reason (S4 step 5), on neither side of the reconciliation (S2a).
+    expect(res).toMatchObject({ writtenOffCount: 1, writtenOffZar: 4500 });
+    expect(alertAdmins).toHaveBeenCalledOnce();
+    expect(vi.mocked(alertAdmins).mock.calls[0][1]).toContain("1 unresolved_at_close");
+    expect(vi.mocked(writeAudit).mock.calls[0][0].after).toMatchObject({
+      sundayCardSalesOutsideFavo: { orderCount: 0, orderZar: 0 },
+    });
+  });
+
+  it("flag on: a Sunday FAVO-paid order is still reconciled — R38.00 against R30.00 blocks the close", async () => {
+    setSundaySkipForTests(true);
+    const ADMIN = { id: "a", pushSubscription: { endpoint: "https://push.example/1", keys: { p256dh: "x", auth: "y" } } };
+    mockSundayClose({ revenue: 3800, payments: 3000, outside: { n: 0, zar: 0 }, admins: [ADMIN] });
+    const res = await closeDaily(SUN, { now: SUN_NOW });
+    expect(res).toMatchObject({ revenueZar: 3800, paymentsZar: 3000, band: "critical", reconciliationStatus: "blocked" });
+    expect(sendNotification).toHaveBeenCalledOnce();
+  });
+
+  it("flag off: the Sunday close reads every order, issues no outside-FAVO read and records no outside-FAVO line", async () => {
+    setSundaySkipForTests(false);
+    mockClose({ revenue: 5000, payments: 5000, sweep: TWO_WRITE_OFFS });
+    await closeDaily(SUN, { now: SUN_NOW });
+    expect(dialect.sqlToQuery(revenueWhere!).sql).not.toContain("payments sp");
+    expect(vi.mocked(db.execute).mock.calls.length).toBe(2); // lock + payments read
+    expect(vi.mocked(writeAudit).mock.calls[0][0].after).not.toHaveProperty("sundayCardSalesOutsideFavo");
+  });
+
+  it("flag on: a weekday close is unchanged — no outside-FAVO read", async () => {
+    setSundaySkipForTests(true);
+    mockClose({ revenue: 5000, payments: 5000, sweep: NONE });
+    await closeDaily(DAY, { now: NOW });
+    expect(dialect.sqlToQuery(revenueWhere!).sql).not.toContain("payments sp");
+    expect(vi.mocked(db.execute).mock.calls.length).toBe(2);
   });
 });
