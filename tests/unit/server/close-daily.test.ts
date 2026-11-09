@@ -91,6 +91,9 @@ vi.mock("@/server/close/write-offs", () => ({
   hasDailyClose: vi.fn().mockResolvedValue(false),
   recordDailyClose: vi.fn().mockResolvedValue(undefined),
   buildWriteOffAlert: vi.fn(),
+  // CHANGED (Sunday skip): closeDaily now asks whether the day is a Sunday
+  // taken outside FAVO. DAY is a Monday, so the answer is false; no assertion changed.
+  isSundayOutsideFavo: vi.fn().mockReturnValue(false),
 }));
 vi.mock("@/server/push/admin-alert", () => ({ alertAdmins: vi.fn() }));
 

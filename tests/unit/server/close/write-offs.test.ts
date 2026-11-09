@@ -7,7 +7,7 @@
 // decisions — what is written off, under which reason, with which actor, and
 // that a re-run writes nothing — are asserted without a database.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 
@@ -15,7 +15,10 @@ vi.mock("@/server/audit", () => ({ writeAudit: vi.fn().mockResolvedValue(undefin
 
 import { writeAudit } from "@/server/audit";
 import {
+  SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE,
   WEEKDAY_ORDERS_NEVER_SWEPT_UNTIL_S7A,
+  isSundayOutsideFavo,
+  setSundaySkipForTests,
   WRITE_OFF_REASONS,
   buildWriteOffAlert,
   isSettled,
@@ -110,7 +113,16 @@ const facts = (o: Partial<OrderSettlementFacts>): OrderSettlementFacts => ({
   ...o,
 });
 
-beforeEach(() => vi.clearAllMocks());
+// CHANGED (Sunday skip): DAY is a Sunday, and while
+// SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE is true (Nikao, 3 Nov 2026) no
+// Sunday order is swept. Every suite below except "Sunday card sales outside
+// FAVO" proves the sweep's own rules — the behaviour once the flag is flipped —
+// so it runs with the skip off. No assertion below was changed.
+beforeEach(() => {
+  vi.clearAllMocks();
+  setSundaySkipForTests(false);
+});
+afterEach(() => setSundaySkipForTests(SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE));
 
 // ─── The one definition of unpaid ─────────────────────────────────────────────
 
@@ -294,6 +306,83 @@ describe("weekday fail-safe until S7a (L19, S3a)", () => {
     const owed = (day: string) => isUnpaid(facts({ revenueDay: day, totalZar: 2000, paymentMode: null }));
     expect([owed(FRI), owed(SAT)]).toEqual([false, true]);
     expect([owed(SUN), owed(MON)]).toEqual([true, false]);
+  });
+});
+
+describe("Sunday card sales outside FAVO until the Web POS is live (Nikao, 3 Nov 2026)", () => {
+  const FRI = "2026-10-23";
+  const SAT = "2026-10-24";
+  const SUN = "2026-10-25";
+  const MON = "2026-10-26";
+  // A Sunday cappuccino rung up in FAVO, paid on the physical Yoco machine: R38.00, no FAVO payment.
+  const sundayCappuccino = () => order({ id: "o-sun-cap", total_zar: 3800, payment_mode: "yoco" });
+
+  it("the flag ships ON and lives in one exported constant", () => {
+    expect(SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE).toBe(true);
+  });
+
+  it("flag on: a Sunday R38 order with no payment is neither listed nor written off, and no audit row is written", async () => {
+    setSundaySkipForTests(true);
+    expect(isUnpaid(facts({ revenueDay: SUN, totalZar: 3800 }))).toBe(false);
+    expect(await listUnpaidOrders(fakeClient([sundayCappuccino()], SUN).client, { revenueDay: SUN })).toEqual([]);
+    const f = fakeClient([sundayCappuccino()], SUN);
+    const res = await sweepWriteOffs(f.client, SUN, NOW);
+    expect(res.written).toEqual([]);
+    expect(res.dayCount).toBe(0);
+    expect(res.dayZar).toBe(0);
+    expect(f.orders[0].written_off_at).toBeNull();
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  // CHANGED (Sunday skip, review): an attempt SENT to the terminal keeps S3a's
+  // rules (S4 step 5: unresolved_at_close, reported to T10, never silently
+  // absorbed). Only orders with no sent latest attempt are skipped.
+  it("flag on: an unsent Sunday order is left alone; one whose latest attempt was sent is written off as before", async () => {
+    setSundaySkipForTests(true);
+    const f = fakeClient([
+      order({ id: "o-deferred", total_zar: 3000, payment_mode: "yoco_deferred" }),
+      order({ id: "o-never-sent", total_zar: 2500, latest_status: "unresolved", latest_sent: false }),
+      order({ id: "o-declined", total_zar: 2500, state: "ordered", latest_status: "declined", latest_sent: true }),
+      order({ id: "o-unresolved", total_zar: 4500, latest_status: "unresolved", latest_sent: true, staff_id: "staff-nkuli" }),
+    ], SUN);
+    const res = await sweepWriteOffs(f.client, SUN, NOW);
+    expect(res.written.map((w) => [w.orderId, w.reason]).sort()).toEqual([
+      ["o-declined", "declined_not_retendered"],
+      ["o-unresolved", "unresolved_at_close"],
+    ]);
+    expect(res.dayCount).toBe(2);
+    expect(res.dayZar).toBe(7000);
+    expect(f.orders.find((o) => o.id === "o-deferred")!.written_off_at).toBeNull();
+    expect(f.orders.find((o) => o.id === "o-never-sent")!.written_off_at).toBeNull();
+    expect(isUnpaid(facts({ revenueDay: SUN, latestAttempt: { status: "unresolved", sent: true } }))).toBe(true);
+    expect(isUnpaid(facts({ revenueDay: SUN, latestAttempt: { status: "unresolved", sent: false } }))).toBe(false);
+  });
+
+  it("flag off: the same Sunday R38 order IS listed and written off, with one audit row", async () => {
+    setSundaySkipForTests(false);
+    expect(isUnpaid(facts({ revenueDay: SUN, totalZar: 3800 }))).toBe(true);
+    const f = fakeClient([sundayCappuccino()], SUN);
+    const res = await sweepWriteOffs(f.client, SUN, NOW);
+    expect(res.written.map((w) => w.orderId)).toEqual(["o-sun-cap"]);
+    expect(res.dayCount).toBe(1);
+    expect(res.dayZar).toBe(3800);
+    expect(f.orders[0].written_off_at).toBe(NOW.toISOString());
+    expect(writeAudit).toHaveBeenCalledOnce();
+  });
+
+  it("flag on: Saturday (event) is still swept and weekdays are still never swept — unchanged", async () => {
+    setSundaySkipForTests(true);
+    const owed = (day: string) => isUnpaid(facts({ revenueDay: day, totalZar: 3800 }));
+    expect([owed(FRI), owed(SAT), owed(SUN), owed(MON)]).toEqual([false, true, false, false]);
+    const res = await sweepWriteOffs(fakeClient([sundayCappuccino()], SAT).client, SAT, NOW);
+    expect(res.written.map((w) => w.orderId)).toEqual(["o-sun-cap"]);
+  });
+
+  it("isSundayOutsideFavo is true only for a Sunday, and only while the flag is on", () => {
+    setSundaySkipForTests(true);
+    expect([FRI, SAT, SUN, MON].map(isSundayOutsideFavo)).toEqual([false, false, true, false]);
+    setSundaySkipForTests(false);
+    expect([FRI, SAT, SUN, MON].map(isSundayOutsideFavo)).toEqual([false, false, false, false]);
   });
 });
 

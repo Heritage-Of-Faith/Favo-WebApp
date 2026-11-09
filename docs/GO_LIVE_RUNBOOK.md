@@ -41,7 +41,7 @@ Do the steps in order. A step is done only when its "how to verify" is true.
 | 16 | **Two real trading weekdays (AT-196).** Weekday coffee is free and has no payment step, so this proves the till, stock and day-close without card risk. | Mia, baristas | Both days closed (a `daily_closes` row for each). Stock deductions look right. | Step 15 |
 | 17 | **Friday go/no-go (AT-197).** Written down, both names on it. If the training tests have not passed, the 4-hour queue hold has not been shown that week, the card machine is not proven, or the backup restore is not verified, then Sunday runs on the Yoco app (`build-plan/00-overview-and-roadmap.md`, Phase GL). | Mia and Nikao | A signed note. | All of the above |
 | 18 | **Sunday-sweep decision.** Pending with Nikao. The repo only says the dormant-fund sweep is an Admin action and never a timed job (`build-plan/02-nikao-tasks.md` N5.4.3, §12.3). The exact decision awaited is **to confirm with Nikao**. | Nikao | Decision recorded. | None. Does not gate the order above unless Nikao says so. |
-| 19 | **Sunday card sales move off the Yoco machine** only after steps 13 to 17 pass and the Web POS has been drilled. | Mia and Nikao | First Sunday run supervised, with the Yoco machine kept as fallback. | Step 17 |
+| 19 | **Sunday card sales move off the Yoco machine** only after steps 13 to 17 pass and the Web POS has been drilled. Switch the close's Sunday skip off first (section 9). | Mia and Nikao | First Sunday run supervised, with the Yoco machine kept as fallback. | Step 17 |
 
 ---
 
@@ -179,3 +179,26 @@ These were found by reading the repo. **Reported, not fixed.**
 | G9 | **Push subject is hard-coded to `mailto:ops@hofmi.org`.** PRD §9.3 says `hofmi.org` has never existed. Some push services may reject or ignore an undeliverable contact. | `src/server/push/vapid.ts:8` | Nikao |
 | G10 | **Jobs 4, 6 and 7 are not wired** (section 5). | `src/server/jobs/registry.ts:6-9` | Nikao |
 | G11 | `docker-entrypoint.sh`, the `migrate.js` bundle and the standalone `server.js` are all copied into the runner stage and the entrypoint is executable. No missing step found there. | `Dockerfile`, `docker-entrypoint.sh` | none |
+
+---
+
+## 9. Sunday card sales: deferred until the Web POS is live
+
+**Decision.** Nikao, Slack, 3 Nov 2026 10:46: "You can skip Sunday card sales FOR NOW. But it is important that you make a note of this that we do install it later." This section is that note. It is also listed in `docs/DEFERRED.md`.
+
+**What is skipped.** Until the real Yoco Web POS adapter (the `YocoWebPosPort` live adapter, the AT-201 remainder, step 13) is built and drilled, Sunday card sales are taken on the physical Yoco machine, outside FAVO. A Sunday FAVO order then has no FAVO payment. So the nightly close does two things differently on a Sunday:
+
+- **The write-off sweep leaves Sunday orders alone**, except one whose latest payment attempt was sent to the terminal: that one keeps the normal rules (written off as `unresolved_at_close`, an open item on T10). For the skipped orders: no `written_off_at`, no write-off audit row, nothing on the approval queue, nothing on the unpaid list. Without this, the whole Sunday's takings would be written off every week as a loss that never happened.
+- **The card reconciliation leaves out the same Sunday orders** (no successful FAVO payment, nothing sent to the terminal), on both sides. A Sunday order that holds a FAVO payment, or whose attempt was sent, is still reconciled as normal. The close's audit row records the orders it left out as `sundayCardSalesOutsideFavo: { orderCount, orderZar }`, so the close never reads as if FAVO had checked the day's card takings. FAVO does not check them while this is on: Yoco's own record is the only record of Sunday card money.
+
+Weekdays are unchanged (never swept, `WEEKDAY_ORDERS_NEVER_SWEPT_UNTIL_S7A`). Saturdays (events) are unchanged (swept). A Sunday is decided by the date alone (`defaultSessionMode`), the same rule as the weekday exemption, so an event held on a Sunday is skipped too.
+
+**Where the switch lives.** One constant: `SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE` in `src/server/close/write-offs.ts`. It is `true` today.
+
+**Steps to switch it on later** (after steps 13 to 17 pass, as part of step 19):
+
+1. The live Web POS adapter is merged, and the R1.00 test and the barista drill have passed.
+2. Pick the first Sunday that runs card sales through FAVO. **Every earlier Sunday must already be closed before the flag is flipped** (a `daily_closes` row for each; the 06:00 missing-close watch is quiet). A catch-up close of an older Sunday that runs after the flip would write that Sunday's machine takings off as a loss.
+3. One Tier A PR: set the constant to `false`, and update the test `the flag ships ON` in `tests/unit/server/close/write-offs.test.ts` to match. Say in the first line of the commit that a test and the code changed together.
+4. After the first FAVO Sunday close, check the `daily_close` audit row for that day. It should have no `sundayCardSalesOutsideFavo` line, and the revenue and payments figures should match Yoco's record.
+5. Remove this section and the `docs/DEFERRED.md` entry.
