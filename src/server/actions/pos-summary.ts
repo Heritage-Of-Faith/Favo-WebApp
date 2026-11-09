@@ -4,13 +4,16 @@
 // getPosToday: barista+ readable. Returns today's order count, revenue, and
 // waste count for the SAST revenue day. Revenue reuses the v_daily_revenue
 // view (migration 0004) so the number matches the admin COGS dashboard.
-// Docs: FAVO_PRD_v3.md §07 §09 · BUSINESS_RULES.md L07 (midnight SAST boundary)
+// REQ-128 (PRD v7 §7.5) adds drinks, fee, net, write-offs, comps, entitlement
+// cups and walk-in cups, each read as PRD §7.0.2's DAY block defines it.
+// Docs: BUSINESS_RULES.md L07 (midnight SAST boundary)
 
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { authorize } from "@/server/auth/guard";
 import { todaySast } from "@/server/cogs/compute";
 import { revenueOrderScope } from "@/server/reports/revenue-scope";
+import { feeAndNet } from "@/lib/pos-today";
 import type { ActionResult, PosTodaySummary } from "@/lib/types";
 
 const POS_ROLES = ["barista", "admin"] as const;
@@ -52,7 +55,60 @@ export async function getPosToday(): Promise<ActionResult<PosTodaySummary>> {
   );
   const wasteCount = parseInt(wasteRow?.n ?? "0", 10) || 0;
 
-  return { ok: true, data: { date, orderCount, revenueZar, wasteCount } };
+  // REQ-128 / PRD §7.5: drinks, fee, net, write-offs, comps, entitlement cups
+  // and walk-in cups — each one PRD §7.0.2 DAY term, read for today's revenue
+  // day (orders.revenue_day, L07). Read only: nothing here writes.
+  const [day] = await db.execute<Record<string, string | null>>(
+    sql`SELECT
+      (SELECT COALESCE(SUM(oi.quantity), 0)::text FROM order_items oi
+         JOIN orders ON orders.id = oi.order_id
+        WHERE ${revenueOrderScope} AND orders.revenue_day = ${date}::date) AS drinks,
+      (SELECT COALESCE(SUM(orders.total_zar), 0)::text FROM orders
+        WHERE ${revenueOrderScope} AND orders.revenue_day = ${date}::date
+          AND orders.payment_mode IN ('yoco', 'yoco_deferred')) AS card_gross_zar,
+      (SELECT COALESCE(SUM(p.amount_zar), 0)::text FROM payments p
+        WHERE p.fund_topup_id IS NOT NULL AND p.status = 'successful'
+          AND (p.at AT TIME ZONE 'Africa/Johannesburg')::date = ${date}::date) AS topups_settled_zar,
+      (SELECT COALESCE(SUM(p.fee_zar), 0)::text FROM payments p LEFT JOIN orders o ON o.id = p.order_id
+        WHERE p.status = 'successful'
+          AND (o.revenue_day = ${date}::date
+               OR (p.fund_topup_id IS NOT NULL AND (p.at AT TIME ZONE 'Africa/Johannesburg')::date = ${date}::date))) AS fee_sum_zar,
+      (SELECT COUNT(*)::text FROM payments p LEFT JOIN orders o ON o.id = p.order_id
+        WHERE p.status = 'successful' AND p.fee_zar IS NULL
+          AND (o.revenue_day = ${date}::date
+               OR (p.fund_topup_id IS NOT NULL AND (p.at AT TIME ZONE 'Africa/Johannesburg')::date = ${date}::date))) AS fee_unknown,
+      (SELECT COALESCE(SUM(orders.total_zar), 0)::text FROM orders
+        WHERE orders.revenue_day = ${date}::date AND orders.written_off_at IS NOT NULL) AS written_off_zar,
+      (SELECT COALESCE(SUM(oi.discount_zar), 0)::text FROM order_items oi
+         JOIN orders ON orders.id = oi.order_id
+        WHERE ${revenueOrderScope} AND orders.revenue_day = ${date}::date
+          AND oi.comp_reason IS NOT NULL) AS comps_zar,
+      (SELECT COUNT(*)::text FROM staff_entitlement_log WHERE day = ${date}) AS entitlement_cups,
+      (SELECT COALESCE(SUM(w.quantity), 0)::text FROM walk_ins w
+         JOIN orders ON orders.id = w.order_id
+        WHERE orders.revenue_day = ${date}::date) AS walk_in_cups`
+  );
+  const int = (k: string) => parseInt(day?.[k] ?? "0", 10) || 0;
+  const { feeZar, netSettledZar } = feeAndNet({
+    cardGrossZar: int("card_gross_zar"),
+    topupsSettledZar: int("topups_settled_zar"),
+    feeSumZar: int("fee_sum_zar"),
+    feeUnknownCount: int("fee_unknown"),
+  });
+
+  return {
+    ok: true,
+    data: {
+      date, orderCount, revenueZar, wasteCount,
+      drinks: int("drinks"),
+      feeZar,
+      netSettledZar,
+      writtenOffZar: int("written_off_zar"),
+      compsZar: int("comps_zar"),
+      entitlementCups: int("entitlement_cups"),
+      walkInCups: int("walk_in_cups"),
+    },
+  };
 }
 
 // ─── AT-146 — daily item history ──────────────────────────────────────────────

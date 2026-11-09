@@ -687,7 +687,7 @@ async function rejectVoucherOrder(
 // without leaking exception details across the client boundary.
 class TransitionError extends Error {
   constructor(
-    public readonly code: "NOT_FOUND" | "INVALID_TRANSITION" | "PAYMENT_REQUIRED",
+    public readonly code: "NOT_FOUND" | "PAYMENT_REQUIRED",
     message: string
   ) {
     super(message);
@@ -773,11 +773,20 @@ export async function transitionOrder(
           message: "This order was written off at the daily close and cannot be moved on.",
         };
       }
+      // REQ-023 / S9: a backwards or repeated transition is STALE_STATE (§6.0
+      // error table copy). Returned, not thrown, so the reject audit commits
+      // (CLAUDE.md §5); nothing else is written.
       if (!canTransition(current.state, toState)) {
-        throw new TransitionError(
-          "INVALID_TRANSITION",
-          `Cannot move order from ${current.state} to ${toState}.`
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: { attempted: "transition", code: "STALE_STATE", state: current.state, toState },
+            reason: "STALE_STATE",
+          },
+          txDb
         );
+        return { ok: false, code: "STALE_STATE", message: "This order just changed — reloading" };
       }
 
       // ── Cash-remove guard (AT-122): ordered → in_progress requires a
@@ -810,11 +819,13 @@ export async function transitionOrder(
       }
 
       // ── 1. Update order state ──────────────────────────────────────────────
+      // REQ-047 / S7: completed_at is the moment of Done (→ ready), stamped
+      // once; the sweep and the order-to-cup metric read it, never `collected`.
       await tx
         .update(orders)
         .set({
           state: toState,
-          completedAt: toState === "collected" ? new Date() : current.completedAt,
+          completedAt: toState === "ready" ? (current.completedAt ?? new Date()) : current.completedAt,
         })
         .where(eq(orders.id, orderId));
 

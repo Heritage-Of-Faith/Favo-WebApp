@@ -8,11 +8,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
 
 let forwardedFor: string | null = null;
+// The response cookie jar. loginWithPin only reports success when signIn put a
+// fresh Auth.js session-token cookie in it, so the signIn mock below sets one.
+const jar = new Map<string, string>();
 vi.mock("next/headers", () => ({
   headers: vi.fn(async () => ({
     get: (name: string) => (name.toLowerCase() === "x-forwarded-for" ? forwardedFor : null),
   })),
+  cookies: vi.fn(async () => ({
+    getAll: () => [...jar].map(([name, value]) => ({ name, value })),
+  })),
 }));
+let signInCount = 0;
 
 const ROWS = [
   { id: "staff-olivia", name: "Olivia Owner", role: "admin", pinHash: "h1", active: true },
@@ -36,7 +43,10 @@ vi.mock("@/server/audit", () => ({ writeAudit: vi.fn().mockResolvedValue(undefin
 vi.mock("@/server/push/admin-alert", () => ({ alertAdmins: vi.fn().mockResolvedValue(undefined) }));
 
 vi.mock("../../../auth", () => ({
-  signIn: vi.fn().mockResolvedValue(undefined),
+  signIn: vi.fn(async () => {
+    jar.set("authjs.session-token", `jwt-${++signInCount}`);
+    return "http://localhost:3000/pos";
+  }),
   signOut: vi.fn().mockResolvedValue(undefined),
   mintLoginAttestation: vi.fn(() => "attest"),
 }));
@@ -45,6 +55,7 @@ import { loginWithPin } from "@/server/actions/auth";
 import { timing, _resetAttemptsForTest } from "@/server/auth/attempts";
 import { writeAudit } from "@/server/audit";
 import { alertAdmins } from "@/server/push/admin-alert";
+import { signIn } from "../../../auth";
 
 let sleep: MockInstance<(ms: number) => Promise<void>>;
 
@@ -54,6 +65,7 @@ beforeEach(() => {
   sleep = vi.spyOn(timing, "sleep").mockResolvedValue(undefined);
   forwardedFor = "198.51.100.9";
   delete process.env.TRUSTED_PROXY_HOPS;
+  jar.clear();
 });
 
 afterEach(() => {
@@ -155,5 +167,40 @@ describe("Admin PIN: 5 attempts → 5-minute cooldown + immediate Admin alert", 
     // After the 5-minute cooldown the counter has reset: the admin gets in.
     vi.setSystemTime(t0 + 5 * 60_000 + 1);
     expect((await loginWithPin("1111")).ok).toBe(true);
+  });
+});
+
+describe("login_success is written only when a session really exists", () => {
+  const actions = () => vi.mocked(writeAudit).mock.calls.map((c) => c[0].action);
+  const SIGN_IN_FAILED = { ok: false, code: "AUTH_ERROR", message: "Sign-in failed." };
+
+  it("a right PIN that gets a session cookie: ok, one login_success row", async () => {
+    expect((await loginWithPin("2222")).ok).toBe(true);
+    expect(actions()).toEqual(["login_success"]);
+  });
+
+  it("signIn returns a URL but sets no cookie (UntrustedHost 500, AUTH_URL unset): not ok, no login_success", async () => {
+    vi.mocked(signIn).mockImplementationOnce(async () => "http://localhost:3000/api/auth/callback/credentials");
+    const r = await loginWithPin("2222");
+    expect(r).toEqual(SIGN_IN_FAILED);
+    expect(actions()).not.toContain("login_success");
+    expect(actions()).toEqual(["login_failed"]);
+  });
+
+  it("a stale session cookie from an earlier sign-in does not count as a new session", async () => {
+    jar.set("__Secure-authjs.session-token", "old-jwt");
+    vi.mocked(signIn).mockImplementationOnce(async () => "http://localhost:3000/api/auth/callback/credentials");
+    expect(await loginWithPin("2222")).toEqual(SIGN_IN_FAILED);
+    expect(actions()).not.toContain("login_success");
+  });
+
+  it("signIn throws: not ok, no login_success, and the Auth.js message is never echoed", async () => {
+    vi.mocked(signIn).mockImplementationOnce(async () => {
+      throw new Error("UntrustedHost: Host must be trusted. URL was: https://favo.hofmi.net");
+    });
+    const r = await loginWithPin("2222");
+    expect(r).toEqual(SIGN_IN_FAILED);
+    expect(actions()).toEqual(["login_failed"]);
+    expect(JSON.stringify(vi.mocked(writeAudit).mock.calls)).not.toContain("2222");
   });
 });

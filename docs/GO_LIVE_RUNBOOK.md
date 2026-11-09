@@ -106,7 +106,6 @@ Names only, never values. Found with `grep -rhoE "process\.env\.[A-Z0-9_]+" src 
 | `LOKI_URL` | `src/app/api/healthz/route.ts:63` | Leave **unset**. If set and unreachable, healthz fails (G4) |
 | `TRUSTED_PROXY_HOPS` | `src/server/client-ip.ts:34` | Default 1. Right hop count behind Cloudflare plus Transformate's proxy: **to confirm with Matt** |
 | `TRUST_CF_CONNECTING_IP` | `src/server/client-ip.ts:62` | Only `1` turns it on. Rate-limit key quality: **to confirm with Matt** |
-| `TEST_AUDIT_SECRET` | `src/app/api/admin/audit-coverage/route.ts:10` | Keep **unset** in production (route returns 403) |
 | `NODE_ENV`, `NEXT_RUNTIME` | `next.config.ts:28`, `src/instrumentation.ts:7` | Set by Next and the image |
 
 **Dev / one-off only (not needed in production):** `DEMO_SEED_CONFIRM` (`db/seed/demo-transactions.ts:90`), `VERIFY_TEST_COUNT` (`scripts/verify-v7.ts:381`).

@@ -22,10 +22,18 @@ describe("REQ-148 / L37 — one line per distinct configuration", () => {
     expect(s().items).toHaveLength(2);
   });
 
-  it("the same item with a matching configuration steps that line up and no second line appears", () => {
+  // CHANGED (was: the repeat add itself stepped the line to 2). §15 DEF-E with
+  // REQ-053 / L37: two cappuccinos, one with macadamia, are two lines; a third
+  // matching the first opens no third line and leaves its quantity alone (it
+  // flashes); the stepper then takes that line to quantity 2.
+  it("the same item with a matching configuration opens no new line; the stepper steps that line to 2", () => {
     s().addItem(capp);
     s().addItem({ ...capp, modifications: [macadamia] });
     s().addItem(capp);
+    expect(s().items).toHaveLength(2);
+    expect(s().items.find((i) => i.modifications.length === 0)?.quantity).toBe(1);
+    expect(s().flashKey).toBe(lineKey(capp));
+    s().updateQuantity(lineKey(capp), 2);
     expect(s().items).toHaveLength(2);
     expect(s().items.find((i) => i.modifications.length === 0)?.quantity).toBe(2);
   });
