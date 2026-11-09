@@ -53,6 +53,8 @@ const ALLOWED = new Set([
   "src/app/pos/queue/page.tsx", // the POS page passes fundOptionsForOrder (barista/admin) to the workspace
   "src/components/pos/POSWorkspace.tsx", // the footer chips: a type import and createOrder's donorFundId
   "src/components/pos/FundChips.tsx", // the chips themselves: a type import only
+  // DEC-23: the Admin banners — reads only, every export authorises "admin" first:
+  "src/server/actions/admin-digest.ts", // getFundAlerts / getAdminDigest: dormancy + total balance, no write
 ]);
 
 describe("REQ-160 / REQ-165: no customer-reachable code reaches a fund", () => {

@@ -8,6 +8,9 @@ import { getSession } from "@/lib/auth/session";
 import { getCogsLive, getCogsHistory } from "@/server/actions/cogs";
 import { todaySast } from "@/server/cogs/compute";
 import CogsDashboard from "@/components/admin/CogsDashboard";
+import DailyDigestCard from "@/components/admin/DailyDigestCard";
+import DormancyBanner from "@/components/admin/DormancyBanner";
+import { getAdminDigest } from "@/server/actions/admin-digest";
 
 export const metadata = { title: "Dashboard" };
 
@@ -26,18 +29,31 @@ export default async function AdminDashboardPage() {
   const session = await getSession();
 
   // Try to load COGS. On success, render the dashboard.
-  const [liveRes, historyRes] = await Promise.all([
+  // DEC-23: the daily digest and job 7's dormancy banner are read here, when the
+  // page renders. getAdminDigest authorises "admin"; any other role sees neither.
+  const [liveRes, historyRes, digestRes] = await Promise.all([
     getCogsLive(),
     getCogsHistory({ days: 30 }),
+    getAdminDigest(),
   ]);
+
+  const alerts = digestRes.ok ? (
+    <>
+      <DormancyBanner items={digestRes.data.funds.dormancy} />
+      <DailyDigestCard digest={digestRes.data.digest} />
+    </>
+  ) : null;
 
   if (liveRes.ok && historyRes.ok) {
     return (
-      <CogsDashboard
-        initialToday={liveRes.data}
-        initialHistory={historyRes.data.history}
-        todayDate={todaySast()}
-      />
+      <>
+        {alerts}
+        <CogsDashboard
+          initialToday={liveRes.data}
+          initialHistory={historyRes.data.history}
+          todayDate={todaySast()}
+        />
+      </>
     );
   }
 
@@ -52,6 +68,8 @@ export default async function AdminDashboardPage() {
           Welcome{session ? `, ${session.name}` : ""}. Choose a section to manage.
         </p>
       </header>
+
+      {alerts}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {CARDS.map((card) => (
