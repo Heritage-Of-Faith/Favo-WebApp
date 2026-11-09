@@ -23,7 +23,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { and, eq, inArray } from "drizzle-orm";
@@ -54,7 +54,13 @@ async function ledgerHas0048(tx: TransactionSql): Promise<boolean | null> {
 }
 
 function snapshotColumns(table: string): string[] {
-  const snap = JSON.parse(readFileSync(resolve(process.cwd(), "drizzle", "meta", "0048_snapshot.json"), "utf8")) as {
+  // CHANGED (0051): this suite runs with every migration applied, so it compares the live
+  // columns with the NEWEST snapshot, not 0048's: 0051 made orders.payment_mode NOT NULL,
+  // which 0048's snapshot does not show. daily_closes and the 0048 orders columns are
+  // identical in every later snapshot.
+  const metaDir = resolve(process.cwd(), "drizzle", "meta");
+  const newest = readdirSync(metaDir).filter((f) => /^\d{4}_snapshot\.json$/.test(f)).sort().pop()!;
+  const snap = JSON.parse(readFileSync(resolve(metaDir, newest), "utf8")) as {
     tables: Record<string, { columns: Record<string, { name: string; notNull: boolean }> }>;
   };
   return Object.values(snap.tables[`public.${table}`].columns).map((c) => c.name + (c.notNull ? "!" : "")).sort();
