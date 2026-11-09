@@ -141,6 +141,22 @@ export function isDormant(fund: Pick<DonorFund, "at">, entries: FundEntry[], now
   return now.getTime() - lastActivityAt(fund, entries).getTime() >= dormancyDays * DAY_MS;
 }
 
+/** §9.6.2 job 7 / §6.10.4: the Admin is alerted at T14 minus 30 days (150 of 180). */
+export const DORMANCY_ALERT_LEAD_DAYS = 30;
+
+export type DormancyStage = "ok" | "alert" | "dormant";
+
+/**
+ * DEC-23: job 7 as a read, not a timer. "alert" from T14 − 30 days with no
+ * movement, "dormant" from T14 (the same clock and the same boundary as
+ * isDormant). Writes nothing.
+ */
+export function dormancyStage(fund: Pick<DonorFund, "at">, entries: FundEntry[], now: Date, dormancyDays: number): DormancyStage {
+  if (isDormant(fund, entries, now, dormancyDays)) return "dormant";
+  const idleMs = now.getTime() - lastActivityAt(fund, entries).getTime();
+  return idleMs >= (dormancyDays - DORMANCY_ALERT_LEAD_DAYS) * DAY_MS ? "alert" : "ok";
+}
+
 // ─── small helpers ────────────────────────────────────────────────────────────
 
 function fail(code: FundErrorCode, message: string): FundFailure {
@@ -780,6 +796,47 @@ export async function adminFundsView(deps: FundDeps): Promise<AdminFundView[]> {
       });
     }
     return out;
+  });
+}
+
+// ─── (10) DEC-23: the Admin banners — job 7 and the digest's fund line ─────────
+
+export type FundDormancyAlert = {
+  code: string;
+  displayName: string | null;
+  stage: Exclude<DormancyStage, "ok">;
+  /** Whole days since the fund last moved. */
+  idleDays: number;
+  balanceZar: number;
+};
+
+export type FundAlertsView = {
+  /** §9.6.3 / R24: the total live balance across all active funds, integer cents. */
+  liabilityZar: number;
+  activeFundCount: number;
+  /** Funds at or past T14 − 30 days. null = T14 is not valid, so dormancy cannot be read. */
+  dormancy: FundDormancyAlert[] | null;
+};
+
+/** A read for the Admin screens (DEC-23). No timer, no task row, no ledger write. */
+export async function fundAlertsView(deps: FundDeps): Promise<FundAlertsView> {
+  const config = await deps.readConfig();
+  const now = deps.now();
+  return deps.store.transaction(async (tx) => {
+    const funds = await tx.listActiveFunds();
+    let liabilityZar = 0;
+    const dormancy: FundDormancyAlert[] = [];
+    for (const f of funds) {
+      const entries = await tx.listEntries(f.id);
+      const balanceZar = fundBalanceZar(entries);
+      liabilityZar += balanceZar;
+      if (!config) continue;
+      const stage = dormancyStage(f, entries, now, config.dormancyDays);
+      if (stage === "ok") continue;
+      const idleDays = Math.floor((now.getTime() - lastActivityAt(f, entries).getTime()) / DAY_MS);
+      dormancy.push({ code: f.code, displayName: f.displayName, stage, idleDays, balanceZar });
+    }
+    return { liabilityZar, activeFundCount: funds.length, dormancy: config ? dormancy : null };
   });
 }
 

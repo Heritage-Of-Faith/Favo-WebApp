@@ -119,6 +119,71 @@ describe("getPosToday — zero/null handling", () => {
   });
 });
 
+// ─── getPosToday — REQ-128 / REQ-129 (PRD §7.5, §7.0.2) ───────────────────────
+
+describe("getPosToday — REQ-128: drinks, fee, net, write-offs, comps, entitlement and walk-in cups", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  async function run(day: Record<string, string | null>) {
+    const { db } = await import("@db/index");
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce([{ revenue_zar: "26000" }] as never)
+      .mockResolvedValueOnce([{ n: "13" }] as never)
+      .mockResolvedValueOnce([{ n: "0" }] as never)
+      .mockResolvedValueOnce([day] as never);
+    const { getPosToday } = await import("@/server/actions/pos-summary");
+    const r = await getPosToday();
+    if (!r.ok) throw new Error(r.message);
+    return { data: r.data, sql: vi.mocked(db.execute).mock.calls[3][0] as unknown as { queryChunks: unknown[] } };
+  }
+
+  const DAY = {
+    drinks: "17", card_gross_zar: "26000", topups_settled_zar: "0", fee_sum_zar: "0", fee_unknown: "13",
+    written_off_zar: "2000", comps_zar: "2000", entitlement_cups: "4", walk_in_cups: "2",
+  };
+
+  it("returns every line REQ-128 lists", async () => {
+    const { data } = await run(DAY);
+    expect(data).toMatchObject({
+      orderCount: 13, revenueZar: 26000, drinks: 17,
+      writtenOffZar: 2000, compsZar: 2000, entitlementCups: 4, walkInCups: 2,
+    });
+  });
+
+  it("REQ-129: settled card payments with no fee yet → fee and net are UNAVAILABLE (null), never 0", async () => {
+    const { data } = await run(DAY);
+    expect(data.feeZar).toBeNull();
+    expect(data.netSettledZar).toBeNull();
+  });
+
+  it("every fee known → net = card gross + top-ups − fee", async () => {
+    const { data } = await run({ ...DAY, fee_unknown: "0", fee_sum_zar: "750", topups_settled_zar: "10000" });
+    expect(data.feeZar).toBe(750);
+    expect(data.netSettledZar).toBe(35250);
+  });
+
+  it("REQ-129: a day with no orders shows zeroes", async () => {
+    const zero = Object.fromEntries(Object.keys(DAY).map((k) => [k, "0"]));
+    const { data } = await run(zero);
+    expect(data).toMatchObject({
+      drinks: 0, feeZar: 0, netSettledZar: 0, writtenOffZar: 0, compsZar: 0, entitlementCups: 0, walkInCups: 0,
+    });
+  });
+
+  it("reads each term from the table §7.0.2 names", async () => {
+    const { sql } = await run(DAY);
+    const text = sql.queryChunks
+      .map((c) => (c && typeof c === "object" && "value" in c ? (c as { value: string[] }).value.join("") : ""))
+      .join(" ");
+    expect(text).toContain("comp_reason IS NOT NULL");
+    expect(text).toContain("FROM staff_entitlement_log");
+    expect(text).toContain("FROM walk_ins");
+    expect(text).toContain("written_off_at IS NOT NULL");
+    expect(text).toContain("p.fee_zar IS NULL");
+    expect(text).toContain("payment_mode IN ('yoco', 'yoco_deferred')");
+  });
+});
+
 // ─── getDailyItemHistory (AT-146) ─────────────────────────────────────────────
 
 const MENU = [

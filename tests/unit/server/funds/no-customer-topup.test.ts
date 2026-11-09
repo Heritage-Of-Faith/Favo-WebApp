@@ -47,12 +47,15 @@ const ALLOWED = new Set([
   "src/server/crons/close-daily.ts", // reads payment_mode to leave fund-paid orders out of the card reconciliation
   "src/server/close/write-offs.ts", // AT-207 / REQ-166: reads spend entries so a fund-paid order is never written off
   "src/server/reports/revenue-scope.ts", // AT-203 follow-up: the revenue predicate reads spend/adjustment entries (read only; POS/admin readers)
+  "src/server/actions/pos-summary.ts", // REQ-128: /pos/today reads topups_settled (payments.fund_topup_id) for net_settled — read only, barista/admin-authorised
   // AT-203 screens — staff surfaces only, every call through the staff-authorised actions:
   "src/app/admin/(dashboard)/funds/page.tsx", // /admin/funds — admin-gated route; listFundsForAdmin authorises admin
   "src/components/admin/FundsManager.tsx", // its client UI: create, cash/EFT top-up (admin-only action), ledger
   "src/app/pos/queue/page.tsx", // the POS page passes fundOptionsForOrder (barista/admin) to the workspace
   "src/components/pos/POSWorkspace.tsx", // the footer chips: a type import and createOrder's donorFundId
   "src/components/pos/FundChips.tsx", // the chips themselves: a type import only
+  // DEC-23: the Admin banners — reads only, every export authorises "admin" first:
+  "src/server/actions/admin-digest.ts", // getFundAlerts / getAdminDigest: dormancy + total balance, no write
 ]);
 
 describe("REQ-160 / REQ-165: no customer-reachable code reaches a fund", () => {

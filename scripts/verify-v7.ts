@@ -333,13 +333,18 @@ mustBePresent(
     both ? "BOTH proxy.ts and src/middleware.ts exist — only one runs, and the role check is in proxy.ts" : "single gate",
   );
 }
-record(
-  "the audit-coverage test endpoint is gone from production code",
-  !existsSync("src/app/api/admin/audit-coverage/route.ts"),
-  existsSync("src/app/api/admin/audit-coverage/route.ts")
-    ? "still present — no session check, secret via query param"
-    : "removed",
-  "WARN"
+// The PRD keeps GET /api/admin/audit-coverage as an admin endpoint (§05 reads
+// it; access matrix: admin only). What must never come back is the old gate: no
+// session check, a `?secret=` query param that lands in access logs.
+fileMustContain(
+  "audit-coverage is gated by an admin session",
+  "src/app/api/admin/audit-coverage/route.ts",
+  'authorize\\("admin"\\)'
+);
+fileMustNotContain(
+  "audit-coverage takes no secret (no TEST_AUDIT_SECRET, no ?secret= param)",
+  "src/app/api/admin/audit-coverage/route.ts",
+  "TEST_AUDIT_SECRET|searchParams|[\"']secret[\"']"
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
