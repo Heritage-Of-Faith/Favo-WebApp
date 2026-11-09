@@ -202,3 +202,9 @@ Weekdays are unchanged (never swept, `WEEKDAY_ORDERS_NEVER_SWEPT_UNTIL_S7A`). Sa
 3. One Tier A PR: set the constant to `false`, and update the test `the flag ships ON` in `tests/unit/server/close/write-offs.test.ts` to match. Say in the first line of the commit that a test and the code changed together.
 4. After the first FAVO Sunday close, check the `daily_close` audit row for that day. It should have no `sundayCardSalesOutsideFavo` line, and the revenue and payments figures should match Yoco's record.
 5. Remove this section and the `docs/DEFERRED.md` entry.
+
+---
+
+## 10. Interim free host
+
+`deploy/free-host/` holds an **interim, untested** Docker Compose kit (app, Postgres, optional Cloudflare tunnel) for running FAVO on a free always-on machine for a pilot. It is a stand-in only. The plan of record is unchanged: the Transformate VM per PRD v7 §9, and OPEN-08 is still gate zero. The kit's nightly `pg_dump` does not meet the §9.4 RPO of 5 minutes, and Sunday card sales stay on the Yoco machine.
