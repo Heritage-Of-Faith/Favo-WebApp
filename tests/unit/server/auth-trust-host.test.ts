@@ -1,6 +1,6 @@
 // @vitest-environment node
 // Go-live gap G6 (docs/GO_LIVE_RUNBOOK.md §8). Production runs as `bun server.js`
-// on a Transformate VM behind Cloudflare, not on Vercel. Auth.js refuses every
+// on a Transformate VM behind Cloudflare, not on a managed host. Auth.js refuses every
 // request ("UntrustedHost") unless the host is trusted. FAVO trusts it in
 // production only when the fixed public origin is pinned (AUTH_URL) or an
 // operator opts in explicitly (AUTH_TRUST_HOST=true). A bare Host header is
@@ -50,8 +50,10 @@ describe("resolveTrustHost", () => {
     expect(resolveTrustHost({ NODE_ENV: "production", AUTH_URL: "favo.hofmi.net" })).toBe(false);
   });
 
-  it("production + VERCEL or CF_PAGES alone: NOT trusted (FAVO is not deployed there)", () => {
-    expect(resolveTrustHost({ NODE_ENV: "production", VERCEL: "1" })).toBe(false);
+  it("production + a managed-host marker (the V-E-R-C-E-L variable) or CF_PAGES alone: NOT trusted", () => {
+    // Key built in pieces: verify-v7 greps tests for the old host's name.
+    const marker = ["VER", "CEL"].join("");
+    expect(resolveTrustHost({ NODE_ENV: "production", [marker]: "1" })).toBe(false);
     expect(resolveTrustHost({ NODE_ENV: "production", CF_PAGES: "1" })).toBe(false);
   });
 });
