@@ -4,25 +4,24 @@
 
 import type { CSSProperties } from "react";
 import { formatZar, formatDate } from "@/lib/format";
-import type { CustomerOrder } from "@/lib/customer/contract";
-import type { OrderState } from "@/lib/types";
+import type { CustomerOrder, CustomerVisibleOrderState } from "@/lib/customer/contract";
 
 export interface OrderHistoryListProps {
   orders: CustomerOrder[];
 }
 
-/** Friendly, customer-facing labels for each order state. */
-const STATE_LABEL: Record<string, string> = {
-  ordered: "Ordered",
-  in_progress: "Being made",
+/**
+ * Friendly, customer-facing labels — only for the states a customer may see.
+ * REQ-049 / L23: an in-flight order (ordered / in_progress) never reaches this list.
+ */
+const STATE_LABEL: Record<CustomerVisibleOrderState, string> = {
   ready: "Ready for collection",
   collected: "Collected",
-  completed: "Completed",
   cancelled: "Cancelled",
 };
 
-function stateLabel(state: OrderState): string {
-  return STATE_LABEL[state] ?? String(state);
+function stateLabel(state: CustomerVisibleOrderState): string {
+  return STATE_LABEL[state];
 }
 
 const sectionLabel: CSSProperties = {
