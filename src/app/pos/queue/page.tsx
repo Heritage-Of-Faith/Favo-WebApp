@@ -9,6 +9,7 @@ import { fundOptionsForOrder } from "@/server/actions/funds";
 import { db } from "@/lib/db";
 import { revenueDay } from "@/lib/format";
 import { readShotPolicy } from "@/server/orders/shot-policy";
+import { sundayCardSalesOnMachine } from "@/server/close/write-offs";
 
 export default async function POSWorkspacePage() {
   const session = await getSession();
@@ -26,10 +27,10 @@ export default async function POSWorkspacePage() {
       {/* AT-134 — opening-time prompt, every login. Sibling of the workspace so
           opening/dismissing it can never touch the cart or attached customer. */}
       <OpeningTimePrompt />
-      {/* REQ-071: only a boolean crosses to the client — never a Yoco key. It
-          mirrors the server's own payment gate in transitionOrder. */}
+      {/* DEC-21: only a boolean crosses to the client (REQ-071: never a Yoco key).
+          The card's gate is decidePaymentGate, the same as transitionOrder's. */}
       <POSWorkspace staffName={session.name} staffId={session.id} role={session.role} initialOrders={ordersRes.data}
-        yocoConfigured={!!process.env.YOCO_SECRET_KEY} shotPolicy={shotPolicy}
+        sundayCardOnMachine={sundayCardSalesOnMachine()} shotPolicy={shotPolicy}
         /* AT-203 / §6.10.6: the footer's fund chips read through this staff-authorised action. */
         fundOptions={fundOptionsForOrder} />
     </>

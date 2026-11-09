@@ -23,6 +23,9 @@ import { canTransition } from "@/server/orders/state-machine";
 import { deductForOrder, DeductionError } from "@/server/orders/deduction";
 import { writeOrderCogs } from "@/server/orders/order-cogs";
 import { checkRecipeStock } from "@/server/inventory/lot-picker";
+import { decidePaymentGate } from "@/server/orders/payment-gate";
+import { sundayCardSalesOnMachine } from "@/server/close/write-offs";
+import { STOCK_EXHAUSTED, refuseStockExhaustedAtMake } from "@/server/orders/stock-exhausted";
 import type { DB } from "@/lib/db";
 import {
   computeOrderTotalZar,
@@ -42,7 +45,7 @@ import {
 } from "@/server/orders/shot-surcharge";
 import { readShotPolicy, readCoffeeRecipeIds } from "@/server/orders/shot-policy";
 import { startTender, TENDER_NOT_BEGUN } from "@/server/tender/service";
-import { isAttemptOpen, isUnresolvedNeedingAttention } from "@/server/tender/tender";
+import { isAttemptOpen } from "@/server/tender/tender";
 import { summarisePayments } from "@/server/tender/summary";
 import { compensateFundDraw, drawFromDonorFund } from "@/server/funds/funds";
 import { getFundDeps } from "@/server/funds/runtime";
@@ -257,13 +260,8 @@ export async function createOrder(
     // stock is actually deducted here, this is a read-only availability check).
     if (mi.recipeId) {
       const stock = await checkRecipeStock(mi.recipeId, item.quantity, db);
-      if (!stock.ok) {
-        return {
-          ok: false,
-          code: "OUT_OF_STOCK",
-          message: `${mi.name} is unavailable right now — out of ${stock.itemName}.`,
-        };
-      }
+      // REQ-020 / S8: STOCK_EXHAUSTED, before any tender begins (S1 copy).
+      if (!stock.ok) return { ok: false, ...STOCK_EXHAUSTED };
     }
     const mods = item.modifications.map((id) => ({
       priceDeltaZar: modById.get(id)?.priceDeltaZar ?? 0,
@@ -685,7 +683,7 @@ async function rejectVoucherOrder(
 // without leaking exception details across the client boundary.
 class TransitionError extends Error {
   constructor(
-    public readonly code: "NOT_FOUND" | "INVALID_TRANSITION" | "PAYMENT_REQUIRED",
+    public readonly code: "NOT_FOUND" | "INVALID_TRANSITION",
     message: string
   ) {
     super(message);
@@ -707,7 +705,7 @@ class CancelError extends Error {
  * Move an order through the state machine.
  *
  * On `ordered → in_progress`: deducts stock atomically inside a transaction
- *   (rule L01 / R5). Returns OUT_OF_STOCK if any ingredient lot is empty.
+ *   (rule L01 / R5). Returns STOCK_EXHAUSTED_AT_MAKE if deduction fails (S8b).
  * On `in_progress → ready`:  sends the order-ready push to known customers.
  *
  * All DB mutations (state change + deduction + audit) are wrapped in a single
@@ -784,25 +782,46 @@ export async function transitionOrder(
       // the drink is made" while recovery asks Yoco. A declined, a pending or a
       // never-sent closed-out attempt does not open it. Free orders (totalZar
       // === 0) need no payment row. Every attempt is read (ORDER BY attempt).
-      // Bypass when YOCO_SECRET_KEY is absent (dev/simulation mode — no real Yoco). ──
       // AT-203 / L47: an order settled from a blessing fund is paid — it holds
       // a spend entry and, by design, no payments row.
-      if (
-        toState === "in_progress" &&
-        current.totalZar > 0 &&
-        current.paymentMode !== "donor_fund" &&
-        process.env.YOCO_SECRET_KEY
-      ) {
+      // DEC-26 (Mia, 9 Nov 2026) / DEC-21: no YOCO_SECRET_KEY bypass; a deferred
+      // order starts normally (T3 step 2); a Sunday order may start while its
+      // card sale is expected on the Yoco machine — decidePaymentGate.
+      if (toState === "in_progress" && current.totalZar > 0 && current.paymentMode !== "donor_fund") {
         const attempts = await tx
           .select({ status: payments.status, sentAt: payments.sentAt })
           .from(payments)
           .where(eq(payments.orderId, orderId))
           .orderBy(payments.attempt);
-        const mayMake = attempts.some((p) => p.status === "successful" || isUnresolvedNeedingAttention(p));
-        if (!mayMake) {
-          throw new TransitionError(
-            "PAYMENT_REQUIRED",
-            "Order cannot start — card payment not yet confirmed."
+        const gate = decidePaymentGate(
+          { totalZar: current.totalZar, paymentMode: current.paymentMode, revenueDay: current.revenueDay, attempts },
+          sundayCardSalesOnMachine()
+        );
+        if (gate === "payment_required") {
+          // Returned, not thrown, so the reject audit commits (CLAUDE.md §5).
+          const refusal = { code: "PAYMENT_REQUIRED", message: "Order cannot start — card payment not yet confirmed." };
+          await writeAudit(
+            {
+              entityKind: "order", entityId: orderId, action: "reject",
+              actorId: session.id, actorRole: session.role,
+              after: { attempted: "transition", code: refusal.code, state: current.state, toState },
+              reason: refusal.code,
+            },
+            txDb
+          );
+          return { ok: false, ...refusal };
+        }
+        if (gate === "sunday_machine") {
+          // DEC-21 / DEC-26: FAVO has seen no payment; the card sale is expected
+          // on the Yoco machine, outside FAVO. No money change.
+          await writeAudit(
+            {
+              entityKind: "order", entityId: orderId, action: "sunday_started_without_favo_payment",
+              actorId: session.id, actorRole: session.role,
+              after: { revenueDay: current.revenueDay, totalZar: current.totalZar, rule: "DEC-21" },
+              reason: "card sale expected on the Yoco machine (DEC-21)",
+            },
+            txDb
           );
         }
       }
@@ -858,7 +877,9 @@ export async function transitionOrder(
       return { ok: false, code: err.code, message: err.message };
     }
     if (err instanceof DeductionError) {
-      return { ok: false, code: err.code, message: err.message };
+      // REQ-022 / S8b: the transaction rolled back (order stays `ordered`, no
+      // stock row); audit the refusal, push the Admin, return the S1 code.
+      return refuseStockExhaustedAtMake(orderId, session, err);
     }
     throw err; // Unexpected — let Next.js error boundary handle it
   }

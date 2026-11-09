@@ -112,11 +112,10 @@ function setOrder(overrides: Record<string, unknown> = {}) {
   };
 }
 
-// The payment gate is only active when YOCO_SECRET_KEY is set (dev simulation
-// bypass: when the key is absent the gate is skipped so tests can exercise
-// the full order flow without a real Yoco integration).
-// vi.stubEnv saves the original value and restores it on vi.unstubAllEnvs(),
-// so this is safe even when run alongside other suites that may set the key.
+// The gate no longer depends on YOCO_SECRET_KEY (owner, Mia, 9 Nov 2026); the
+// key is still stubbed so this suite proves the gate with a key set, and
+// transition-gate-stock.test.ts proves it with the key unset. These orders
+// carry no revenueDay, which the gate reads as "not a Sunday" (fails closed).
 beforeAll(() => { vi.stubEnv("YOCO_SECRET_KEY", "test-key"); });
 afterAll(() => { vi.unstubAllEnvs(); });
 
