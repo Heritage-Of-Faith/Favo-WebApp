@@ -219,10 +219,25 @@ function openingMovementId(lotId: string) {
   return `sm_opening_${lotId}`;
 }
 
-export async function seedLots() {
-  console.log(`  → inventory lots (${INVENTORY_LOTS.length})`);
+// The two lots whose items no recipe or customisation uses (PRD §7.0.1b gap 3:
+// "Only lot_espresso_beans_001 and lot_whole_milk_001 are orphaned").
+export const ORPHANED_LOT_IDS: readonly string[] = ["lot_espresso_beans_001", "lot_whole_milk_001"];
 
-  for (const lot of INVENTORY_LOTS) {
+export type SeedLotsOptions = {
+  // false: insert the lot (cost) rows only, no opening restock movement — the
+  // production first load (scripts/first-load.ts), where stock comes from a
+  // physical stock-take. Default true (the dev seed, unchanged).
+  openingStock?: boolean;
+  excludeLotIds?: readonly string[];
+};
+
+export async function seedLots(options: SeedLotsOptions = {}) {
+  const openingStock = options.openingStock ?? true;
+  const exclude = new Set(options.excludeLotIds ?? []);
+  const lots = INVENTORY_LOTS.filter((lot) => !exclude.has(lot.id));
+  console.log(`  → inventory lots (${lots.length})${openingStock ? "" : ", no opening stock"}`);
+
+  for (const lot of lots) {
     // Insert lot — skip if already exists
     await db
       .insert(inventoryLots)
@@ -241,6 +256,8 @@ export async function seedLots() {
         openedAt: lot.state === "open" ? new Date() : null,
       })
       .onConflictDoNothing();
+
+    if (!openingStock) continue;
 
     // Opening restock movement — establishes running-stock for COGS queries
     await db
