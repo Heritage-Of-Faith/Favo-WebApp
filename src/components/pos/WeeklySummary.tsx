@@ -11,9 +11,11 @@ import type { Route } from "next";
 import { ArrowLeft } from "lucide-react";
 import { formatZar } from "@/lib/format";
 import { NET_TONE_COLOR, PROVISIONAL, unavailableText, type CostState, type NetTone } from "@/lib/cost-state";
-import { WALK_IN_NOT_RECORDED, type ModeSection } from "@/lib/weekly-summary";
+import type { ModeSection } from "@/lib/weekly-summary";
 import type { WeeklySummaryForViewer } from "@/server/reports/weekly-summary";
 import { formatWeekEnding } from "@/lib/week-ending";
+import { MarginByShotTable } from "@/components/admin/MarginByShotPanel";
+import WeeklyWriteDowns from "@/components/pos/WeeklyWriteDowns";
 
 function cogsText(cogsZar: number | null, state: CostState, absent: readonly string[], ordersWithoutCost: number): string {
   if (cogsZar === null) return unavailableText(absent, ordersWithoutCost);
@@ -98,8 +100,8 @@ export default function WeeklySummaryView({ summary, weeks }: { summary: WeeklyS
             <section>
               <h2 className="favo-label text-cool-steel mb-2">Weekday</h2>
               <Row label="Staff coffees" value={String(summary.sections.weekday.staffCoffees)} />
-              {/* No walk_ins table exists yet (§6.5): say so — never print 0 for a count nobody records. */}
-              <Row label="Walk-in count" value={WALK_IN_NOT_RECORDED} />
+              {/* §7.3: staff and walk-in coffees as two separate counts (REQ-123, §7.0.2 walk_in_cups). */}
+              <Row label="Walk-in count" value={String(summary.sections.weekday.walkInCups)} />
               <Row label="Drinks made" value={String(summary.sections.weekday.drinks)} />
               {consumptionRows(summary.sections.weekday)}
               <Row
@@ -128,6 +130,18 @@ export default function WeeklySummaryView({ summary, weeks }: { summary: WeeklyS
               />
               <Row label="Revenue" value={formatZar(summary.sections.event.revenueZar)} />
             </section>
+
+            {/* REQ-139 · §7.3/§7.1: margin by shot count, per mode — the dashboard's
+                own read and table; provisional never green, UNAVAILABLE named. */}
+            <section>
+              <h2 className="favo-label text-cool-steel mb-2">Margin by shot count</h2>
+              <div className="text-porcelain">
+                <MarginByShotTable rows={summary.marginByShot} />
+              </div>
+            </section>
+
+            {/* §7.3.1 write-down block (REQ-124, REQ-145). Admin only: summaryForRole strips it server-side. */}
+            {summary.writeDowns !== null && <WeeklyWriteDowns perBarista={summary.writeDowns} />}
 
             {summary.sections.unassigned.orderCount > 0 && (
               <section>
