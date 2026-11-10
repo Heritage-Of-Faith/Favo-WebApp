@@ -58,20 +58,40 @@ beforeEach(() => {
   Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
 });
 
-// L01 gate is only active when Yoco is configured. REQ-071: the page tells the
-// workspace via a server-computed boolean prop — never a client-side Yoco key.
-async function expandCard(yocoConfigured = true) {
-  render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" yocoConfigured={yocoConfigured} />);
+// L01 gate is always on (owner, Mia, 9 Nov 2026: no Yoco-key bypass). DEC-21:
+// the page passes one boolean, Sunday card sales on the Yoco machine — never a
+// client-side Yoco key (REQ-071).
+async function expandCard(sundayCardOnMachine = true) {
+  render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" sundayCardOnMachine={sundayCardOnMachine} />);
   const card = await screen.findByText("#ORD_1");
   await act(async () => { fireEvent.click(card); });
 }
 
 describe("queue payment gate (L01)", () => {
-  it("without Yoco configured, order can start without Take payment", async () => {
+  it("with no Sunday rule passed at all, a weekday unpaid order still shows Take payment (no bypass)", async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => fullOrder("pending") }) as unknown as typeof fetch;
-    await expandCard(false);
+    render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
+    await act(async () => { fireEvent.click(await screen.findByText("#ORD_1")); });
+    expect(await screen.findByRole("button", { name: /take payment/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /start making/i })).toBeNull();
+  });
+
+  it("DEC-21: a Sunday order with its card on the Yoco machine shows Start Making, no Take payment", async () => {
+    const o = fullOrder(null as unknown as string);
+    const sunday = { order: { ...o.order, placedAt: "2026-11-08T07:30:00Z", revenueDay: "2026-11-08" } };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sunday }) as unknown as typeof fetch;
+    await expandCard(true);
     expect(await screen.findByRole("button", { name: /start making/i })).toBeDefined();
     expect(screen.queryByRole("button", { name: /take payment/i })).toBeNull();
+  });
+
+  it("DEC-21 switched off: the same Sunday order shows Take payment", async () => {
+    const o = fullOrder(null as unknown as string);
+    const sunday = { order: { ...o.order, placedAt: "2026-11-08T07:30:00Z", revenueDay: "2026-11-08" } };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sunday }) as unknown as typeof fetch;
+    await expandCard(false);
+    expect(await screen.findByRole("button", { name: /take payment/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /start making/i })).toBeNull();
   });
 
   it("unpaid order shows Take payment and hides Start Making", async () => {

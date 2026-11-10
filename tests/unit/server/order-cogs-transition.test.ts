@@ -106,7 +106,11 @@ describe("transitionOrder → order_cogs (AT-188)", () => {
 
     const res = await transitionOrder("ord-1", "in_progress");
 
-    expect(res).toEqual({ ok: false, code: "OUT_OF_STOCK", message: "No beans left" });
+    // REQ-022 / S8b: the S1 code and copy with the resolution path, not the deduction's own.
+    expect(res).toEqual({
+      ok: false, code: "STOCK_EXHAUSTED_AT_MAKE",
+      message: "Out of beans — this order is paid and cannot be made. Get an admin. An admin cancels it with the admin PIN and comps a later order (no money is returned), or opens a container.",
+    });
     expect(writeOrderCogs).not.toHaveBeenCalled();
   });
 
