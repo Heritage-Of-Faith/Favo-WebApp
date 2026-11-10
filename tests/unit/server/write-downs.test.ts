@@ -72,7 +72,7 @@ function givenComp(o: { lines?: Row[]; payments?: Row[]; priorComps?: number; se
   const lines = o.lines ?? [{ id: "line-1", orderId: "ord-1", quantity: 1, unitPriceZar: 2000, modsZar: 0, discountZar: 0, compReason: null }];
   rows = new Map<unknown, Row[]>([
     [orderItems, lines],
-    [orders, [{ id: "ord-1", state: o.state ?? "ordered", totalZar: o.totalZar ?? 2000, paymentMode: null }]],
+    [orders, [{ id: "ord-1", state: o.state ?? "ordered", totalZar: o.totalZar ?? 2000, paymentMode: "yoco" }]],
     [payments, o.payments ?? []],
     [openingSessions, o.sessions ?? [{ opensAt: "00:00" }]],
     [menuItems, [{ highest: 2500 }]],
@@ -262,7 +262,7 @@ describe("compOrderLine (L33, REQ-059)", () => {
     });
     const r = await compOrderLine("line-1", "spillage");
     expect(r).toMatchObject({ ok: true, data: { totalZar: 2500 } });
-    expect(updates[1]).toEqual({ table: orders, set: { totalZar: 2500, paymentMode: null } });
+    expect(updates[1]).toEqual({ table: orders, set: { totalZar: 2500, paymentMode: "yoco" } });
   });
 });
 

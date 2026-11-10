@@ -69,7 +69,7 @@ maybe("0050 fund-abandon revenue: up → down → up (AT-203 follow-up)", () => 
     const placed = `${day}T08:00:00+02:00`;
     const [s] = await tx`INSERT INTO staff (name, role, pin_hash) VALUES ('AT-203 Barista', 'barista', 'x') RETURNING id`;
     const staffId = s.id as string;
-    const mk = async (state: string, total: number, mode: string | null) => {
+    const mk = async (state: string, total: number, mode: string) => {
       const [o] = await tx`
         INSERT INTO orders (staff_id, state, total_zar, revenue_day, notification_target, placed_at, payment_mode)
         VALUES (${staffId}, ${state}, ${total}, ${day}, 'none', ${placed}, ${mode}) RETURNING id, client_uuid`;
@@ -79,7 +79,7 @@ maybe("0050 fund-abandon revenue: up → down → up (AT-203 follow-up)", () => 
     const cancelledPaid = await mk("cancelled", 3000, "yoco");
     const abandonedFund = await mk("cancelled", 2500, "donor_fund");
     const cancelledFund = await mk("cancelled", 4000, "donor_fund");
-    await mk("cancelled", 5000, null); // neither: never revenue
+    await mk("cancelled", 5000, "yoco"); // neither a payment nor a fund draw: never revenue (0051: never NULL)
     for (const [o, amount] of [[served, 2000], [cancelledPaid, 3000]] as const) {
       await tx`
         INSERT INTO payments (order_id, attempt, client_reference, webpos_device_id, amount_zar, status)

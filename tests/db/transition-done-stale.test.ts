@@ -21,8 +21,8 @@ maybe("transitionOrder: Done time and STALE_STATE (REQ-047, REQ-015, REQ-023)", 
   let sql: Sql;
   const newOrder = async (state: string) => {
     const [{ id }] = await sql`
-      INSERT INTO orders (staff_id, total_zar, state, revenue_day, notification_target)
-      VALUES (${auth.staffId}, 0, ${state}, ${revenueDay(new Date())}, 'none')
+      INSERT INTO orders (staff_id, total_zar, state, revenue_day, notification_target, payment_mode)
+      VALUES (${auth.staffId}, 0, ${state}, ${revenueDay(new Date())}, 'none', 'free')
       RETURNING id`;
     return id as string;
   };

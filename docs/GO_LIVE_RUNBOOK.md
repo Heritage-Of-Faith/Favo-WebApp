@@ -66,9 +66,9 @@ Do the steps in order. A step is done only when its "how to verify" is true.
 
 **Migrations marked `-- favo:requires-approval` right now** (computed with `grep -l 'favo:requires-approval' drizzle/*.sql`):
 
-`0036_at204_event_sessions`, `0042_l28_notification_target`, `0043_at201_tender_payments`, `0044_at201_orders_client_uuid`, `0045_at209_comps_cancel_abandon`, `0046_at203_blessing_fund`, `0047_at202_order_item_surcharge`, `0048_at207_daily_closes_writeoffs`, `0049_at174_drop_refunds`, `0050_at203_fund_abandon_revenue`.
+`0036_at204_event_sessions`, `0042_l28_notification_target`, `0043_at201_tender_payments`, `0044_at201_orders_client_uuid`, `0045_at209_comps_cancel_abandon`, `0046_at203_blessing_fund`, `0047_at202_order_item_surcharge`, `0048_at207_daily_closes_writeoffs`, `0049_at174_drop_refunds`, `0050_at203_fund_abandon_revenue`, `0051_payment_mode_not_null`.
 
-On a brand-new empty database **all ten are pending in one run**, so the first deploy needs `FAVO_APPROVE_MIGRATION` listing all ten tags. CI does the same on its throwaway database. Re-run that `grep` on the release day, because new migrations may have landed. A backup is of an empty database on the first run, so "verified backup" then means the backup tooling works (step 5).
+On a brand-new empty database **all eleven are pending in one run**, so the first deploy needs `FAVO_APPROVE_MIGRATION` listing all eleven tags. CI does the same on its throwaway database. Re-run that `grep` on the release day, because new migrations may have landed. A backup is of an empty database on the first run, so "verified backup" then means the backup tooling works (step 5).
 
 **Emergency only:** `SKIP_MIGRATIONS=<the image's own commit sha>` skips the migrator. Any other value is ignored with a warning, so it expires on the next deploy. Use only against a database repaired by hand.
 
@@ -153,7 +153,8 @@ So **today four of the seven are live**. Jobs 4, 6 and 7 must land before they a
 | Problem | What to do |
 |---|---|
 | **Bad image** | Start the previous image by its **sha tag** (see the GHCR package list). If the database is ahead of that image the migrator allows it with a warning and applies nothing; that older image's code must tolerate the newer schema (`scripts/migrate.ts`). |
-| **A migration needs undoing** | Each migration from `0033` to `0050` has a hand-run down file in `drizzle/down/` (`0040` is absent from the journal and has none; to confirm with Nikao that this is intended). Run it by hand, in a transaction, against a database at that migration. Down files for migrations that drop data cannot bring the data back. Restore from backup for that. Migrations before `0033` have **no** down file in the repo. |
+| **A migration needs undoing** | Each migration from `0033` to `0051` has a hand-run down file in `drizzle/down/` (`0040` is absent from the journal and has none; to confirm with Nikao that this is intended). Run it by hand, in a transaction, against a database at that migration. Down files for migrations that drop data cannot bring the data back. Restore from backup for that. Migrations before `0033` have **no** down file in the repo. |
+| **Rolling back past 0051** | Every image older than `0051_payment_mode_not_null` writes `payment_mode` as NULL, so against a database that has 0051 every chargeable order fails with a NOT NULL error. Do not run the new image's `bun migrate.js` while an older image is still serving, and before starting an older image run `drizzle/down/0051_payment_mode_not_null.down.sql` by hand. Deploy outside café hours. |
 | **Migration refused at boot** | Read the `[migrate] FATAL` line. If it asks for approval, check the backup, then set `FAVO_APPROVE_MIGRATION` to the named tag(s) for this deploy only. |
 | **Database lost or corrupt** | Restore from the WAL archive to a point in time (RPO ≤ 5 min, RTO ≤ 4 hours, §9.4). The café runs on paper meanwhile. The exact restore commands depend on what Matt builds in step 4: **to confirm with Matt**. |
 | **Card machine or Yoco down on a Sunday** | Sunday card sales stay on the Yoco machine until step 19, so this cannot hurt them before then. After step 19: deferred mode (§9.6.1). |

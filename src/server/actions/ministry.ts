@@ -8,6 +8,7 @@ import { z } from "zod";
 import { authorize } from "@/server/auth/guard";
 import { readMinistryRollup } from "@/server/cogs/ministry-rollup";
 import type { MinistryRollup } from "@/lib/ministry-rollup";
+import { UnknownPaymentModeError } from "@/lib/payment-mode";
 import type { ActionResult } from "@/lib/types";
 
 const day = z
@@ -35,7 +36,12 @@ export async function getMinistryRollup(
   }
   try {
     return { ok: true, data: await readMinistryRollup(parsed.data.from, parsed.data.to) };
-  } catch {
+  } catch (err) {
+    // REQ-134 / §10.6: an unknown payment_mode stops the report, named — never
+    // absorbed into a generic failure and never defaulted.
+    if (err instanceof UnknownPaymentModeError) {
+      return { ok: false, code: err.code, message: err.message };
+    }
     return { ok: false, code: "DB_ERROR", message: "Could not load the ministry rollup." };
   }
 }

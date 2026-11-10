@@ -70,8 +70,8 @@ maybe("REQ-163: two simultaneous draws against one drink's worth (FOR UPDATE, re
       VALUES (${f.id}, 'top_up', 2000, 'cash', 'lock-test', ${s.id}, 'one drink')`;
     for (let i = 0; i < 2; i++) {
       const [o] = await admin`
-        INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target)
-        VALUES (${s.id}, 2000, '2026-10-25', 'none') RETURNING id`;
+        INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target, payment_mode)
+        VALUES (${s.id}, 2000, '2026-10-25', 'none', 'yoco') RETURNING id`;
       ids.orders.push(o.id);
     }
   });

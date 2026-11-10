@@ -59,6 +59,17 @@ export function migrationSql(file: string): string {
 }
 
 /**
+ * Step 0051 (orders.payment_mode NOT NULL, §10.3 L2499) down inside the
+ * caller's always-rolled-back transaction. It only drops the NOT NULL, so the
+ * older suites' fixtures that insert an order without naming its mode keep
+ * working at their own migration. It is the newest migration, so it steps
+ * down before 0050.
+ */
+export async function stepDown0051(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
+  await tx.unsafe(migrationSql("down/0051_payment_mode_not_null.down.sql"));
+}
+
+/**
  * Step 0050 (AT-203 follow-up: v_daily_revenue also counts an abandoned
  * fund-paid order) down inside the caller's always-rolled-back transaction.
  * It restores 0045's view text, which no longer reads donor_fund_entries, so
