@@ -41,7 +41,6 @@ Coolify resolves them at container start. Do not store values in this file.
 | `LOKI_URL` | Coolify internal network | Gian | ⚠️ optional | On Loki migration | `http://loki.hofmi-internal:3100` — healthz skips Loki check if absent. |
 | `TZ` | Hardcoded | — | ✅ | Never | Must be `Africa/Johannesburg` for all wall-clock logic. |
 | `PUBLIC_BASE_URL` | Manual | Gian | ✅ | On domain change | `https://favo.hofmi.net` — used by preflight.sh and E2E. |
-| `TEST_AUDIT_SECRET` | `openssl rand -hex 16` | Gian | ⚠️ staging only | Per staging cycle | Only set on staging. Must NOT be set in production. |
 
 ---
 

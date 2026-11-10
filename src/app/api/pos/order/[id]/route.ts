@@ -71,6 +71,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     cardCheckout: payState.totalFrozen || isFundSettled(row.paymentMode),
     paymentAwaitingLookup: payState.awaitingLookup,
     fundSettled: isFundSettled(row.paymentMode),
+    // DEC-21: the queue card's payment gate (src/server/orders/payment-gate.ts).
+    paymentMode: row.paymentMode,
+    revenueDay: row.revenueDay,
+    latestAttemptSent: (paymentRow[paymentRow.length - 1]?.sentAt ?? null) !== null,
     items: items.map((i) => ({
       id: i.id,
       menuItemId: i.menuItemId,

@@ -23,17 +23,20 @@ import {
 import type { FavoView } from "@/server/favo/schema";
 import FavoPicker from "@/components/favo/FavoPicker";
 import { useOrderStream } from "@/hooks/useOrderStream";
-import { useDraftOrder, lineKey } from "@/store/draftOrder";
+import { useDraftOrder, lineKey, HANDED_OVER, keepDraftForNextSignIn } from "@/store/draftOrder";
 import { formatZar, formatDate, revenueDay } from "@/lib/format";
 import { computeLineTotalZar } from "@/server/orders/pricing";
 import { FAIL_CLOSED_POLICY, shotSurchargeZar, shotsLabel, type ShotPolicy } from "@/server/orders/shot-surcharge";
 import { FREE_CUP_COPY } from "@/server/orders/free-coffee";
+import { decideQueueCardGate } from "@/server/orders/payment-gate";
 import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, Plus, Minus, Trash2, ChevronDown, ChevronUp,
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
-  CheckCircle, AlertCircle, ShieldCheck, CreditCard,
+  CheckCircle, AlertCircle, ShieldCheck, CreditCard, Users,
 } from "lucide-react";
+import { endTillSession, type TillLockReason } from "@/server/actions/hand-over";
+import { useIdleLock } from "@/hooks/useIdleLock";
 import { toast } from "sonner";
 import ActiveBeanCard from "@/components/pos/ActiveBeanCard";
 import OpenContainersCard from "@/components/pos/OpenContainersCard";
@@ -115,9 +118,9 @@ type Props = {
   staffId: string;
   role: import("@/lib/types").StaffRole;
   initialOrders?: { orderId: string; state: import("@/lib/types").OrderState; lastUpdatedAt: string; customerName: string | null }[];
-  /** Whether the server has Yoco configured — computed server-side by the page
-   *  (REQ-071: no Yoco key of any kind reaches the client, only this boolean). */
-  yocoConfigured?: boolean;
+  /** DEC-21: Sunday card sales are taken on the Yoco machine (SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE),
+   *  read by the page. Absent = false: every paid order needs a FAVO payment. */
+  sundayCardOnMachine?: boolean;
   /** AT-202: today's shot ceiling and surcharge, read by the page (T09, T15).
    *  Absent = fail closed: weekday ceiling, no surcharge. The server re-checks. */
   shotPolicy?: ShotPolicy;
@@ -125,7 +128,7 @@ type Props = {
   fundOptions?: (input: { customerId: string | null; netZar: number }) => Promise<{ ok: true; data: FundOptions } | { ok: false; code: string; message: string }>;
 };
 
-export default function POSWorkspace({ staffName, staffId, role, initialOrders, yocoConfigured = false, shotPolicy = FAIL_CLOSED_POLICY, fundOptions }: Props) {
+export default function POSWorkspace({ staffName, staffId, role, initialOrders, sundayCardOnMachine = false, shotPolicy = FAIL_CLOSED_POLICY, fundOptions }: Props) {
   const router = useRouter();
 
   // ── Left panel ─────────────────────────────────────────────────────────────
@@ -189,6 +192,20 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   const removeItem = clearOnDraft(draft.removeItem);
   const updateQuantity = clearOnDraft(draft.updateQuantity);
   const setVoucherCount = clearOnDraft(draft.setVoucherCount);
+
+  // REQ-053 / L37: a repeat tap on a drink already on the order changes nothing
+  // about its quantity — the store names the matching line, and it flashes here
+  // for a moment so the barista's eye goes to that line's stepper.
+  const [flashLine, setFlashLine] = useState<string | null>(null);
+  const flashKey = draft.flashKey ?? null;
+  const flashSeq = draft.flashSeq ?? 0;
+  const mountFlashSeq = useRef(flashSeq); // a tap made before this screen mounted never flashes
+  useEffect(() => {
+    if (!flashKey || flashSeq === mountFlashSeq.current) return;
+    setFlashLine(flashKey);
+    const t = setTimeout(() => setFlashLine(null), 1500);
+    return () => clearTimeout(t);
+  }, [flashKey, flashSeq]);
 
   // §6.9.3 / L48: the voucher chip exists only while the open session carries
   // a voucher kind. Re-read whenever the opening step opens or closes a session.
@@ -380,7 +397,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       if (cancelled) return;
       const owner = `${staffId}|${revenueDay()}`;
       const s = store.getState();
-      if (s.draftOwner !== owner) {
+      // REQ-061: a draft kept through Hand over / the idle lock passes to whoever signs in next today.
+      if (s.draftOwner === `${HANDED_OVER}|${revenueDay()}`) store.setState({ draftOwner: owner });
+      else if (s.draftOwner !== owner) {
         s.reset();
         store.setState({ draftOwner: owner });
         return;
@@ -657,6 +676,32 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
     toast.message("Free cup declined — the order is charged in full.");
   }
 
+  // REQ-061 / §9.5.1: Hand over and the idle lock both return to the PIN screen
+  // with all work preserved — the draft stays saved for whoever signs in next,
+  // and orders in flight are not touched (they live on the server and the queue).
+  const [handingOver, setHandingOver] = useState(false);
+  async function lockTill(reason: TillLockReason): Promise<boolean> {
+    const r = await endTillSession(reason);
+    // A session that already ended (12-hour ceiling) goes to the PIN screen too.
+    if (!r.ok && r.code !== "UNAUTHORIZED") return false;
+    keepDraftForNextSignIn(revenueDay());
+    router.push("/pos");
+    return true;
+  }
+  async function handleHandOver() {
+    if (handingOver) return;
+    setHandingOver(true);
+    try {
+      if (!(await lockTill("hand_over"))) toast.error("Could not hand over. Try again.");
+    } catch {
+      toast.error("Could not hand over. Try again.");
+    } finally {
+      setHandingOver(false);
+    }
+  }
+  // 5 minutes idle: the server decides — it refuses inside an opening window (L36).
+  useIdleLock(async () => { await lockTill("idle_lock"); });
+
   async function handleSignOut() {
     // The kept draft must not carry over to whoever signs in next on this tab.
     reset();
@@ -897,9 +942,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
             {items.map(item => {
               const m = vouchersLive ? Math.min(voucherCountOf(item), item.quantity) : 0;
               const grossZar = draftLineGrossZar(item);
+              // REQ-053 / L37: a repeat tap flashes the matching line and rings its stepper.
+              const flashing = flashLine !== null && flashLine === lineKey(item);
               return (
-              <div key={lineKey(item)} data-line className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
+              <div key={lineKey(item)} data-line data-flash={flashing || undefined}
+                className={["flex items-center gap-2 rounded-[2px] transition-colors", flashing ? "bg-crimson-carrot/15" : ""].join(" ")}>
+                <div className={["flex items-center gap-1 rounded-[2px]", flashing ? "ring-2 ring-crimson-carrot animate-pulse" : ""].join(" ")}
+                  data-stepper>
                   <DraftLineButton onClick={() => updateQuantity(lineKey(item), item.quantity - 1)} aria-label={`Decrease ${item.menuItemName} quantity`}
                     className="rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
                     <Minus size={12} strokeWidth={2} />
@@ -1067,6 +1116,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
             Admin
           </a>
         )}
+        {/* REQ-061 / §9.5.1: shift change — ends this session, keeps all work, back to the PIN screen. */}
+        <button type="button" onClick={() => void handleHandOver()} disabled={handingOver}
+          className="flex min-h-[44px] shrink-0 items-center gap-1 px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors disabled:opacity-40">
+          <Users size={14} strokeWidth={2} aria-hidden />
+          Hand over
+        </button>
         <button type="button" onClick={() => (items.length > 0 ? setConfirmSignOut(true) : handleSignOut())} aria-label="Sign out"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
           <LogOut size={16} strokeWidth={2} />
@@ -1315,19 +1370,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
             const nextState = STATE_NEXT[o.state];
             const isDone = o.state === "collected" || o.state === "cancelled";
             const isReady = o.state === "ready";
-            // L01: payment gate — only enforced when Yoco is configured.
-            // Without Yoco keys the gate is bypassed so baristas can start making immediately.
-            const needsPayment = yocoConfigured
-              && !!full
+            // L01: the payment gate, the same decision transitionOrder makes
+            // (decidePaymentGate): free, fund-paid, paid, a SENT unresolved
+            // attempt (REQ-008 / S4) and — DEC-21 — a Sunday order with its card
+            // on the Yoco machine may start. A YOCO key never switches it off.
+            const needsPayment = !!full
               && o.state === "ordered"
-              // L03: a free cup discounts one unit only — whatever is left is still owed.
-              && full.totalZar > 0
-              && full.paymentStatus !== "successful"
-              // AT-203 / L47: paid from a blessing fund — nothing owed.
-              && full.fundSettled !== true
-              // REQ-008 / S4: a SENT attempt that ended unresolved does not hold
-              // the drink back. A closed-out never-sent one does: still owed.
-              && full.paymentAwaitingLookup !== true
+              && decideQueueCardGate(full, sundayCardOnMachine) === "payment_required"
               && !paidLocally.has(o.orderId);
 
             return (

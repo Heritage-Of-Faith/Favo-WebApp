@@ -126,9 +126,9 @@ test.describe("unauthenticated API guards", () => {
     expect(res.status()).toBe(403);
   });
 
-  test("GET /api/admin/audit-coverage without secret → 403", async ({ request }) => {
+  test("GET /api/admin/audit-coverage without auth → 401", async ({ request }) => {
     const res = await request.get("/api/admin/audit-coverage");
-    expect(res.status()).toBe(403);
+    expect(res.status()).toBe(401);
   });
 });
 

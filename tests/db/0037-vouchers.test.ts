@@ -16,7 +16,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0053 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -91,6 +91,9 @@ maybe("0037 vouchers: up → down → up, defaults and refusals (AT-204)", () =>
     try {
       await sql.begin(async (tx) => {
         await tx`UPDATE opening_sessions SET closed_at = now() WHERE closed_at IS NULL`;
+        // REQ-127: 0053's v_weekly_variance reads app_config, which 0037 down
+        // drops; 0053 steps down first (rolled back with everything else).
+        await stepDown0053(tx);
         await fn(tx);
         throw new Rollback();
       });
@@ -157,7 +160,7 @@ maybe("0037 vouchers: up → down → up, defaults and refusals (AT-204)", () =>
         INSERT INTO opening_sessions (session_date, opens_at, mode, voucher_kinds_active)
         VALUES ('2099-01-04', '17:45', 'event', ARRAY['untracked_hot_drink']) RETURNING id`;
       const [order] = await tx`
-        INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target) VALUES (${st.id}, 7600, '2099-01-04', 'none')
+        INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target, payment_mode) VALUES (${st.id}, 7600, '2099-01-04', 'none', 'yoco')
         RETURNING id`;
       const [line] = await tx`
         INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_zar)

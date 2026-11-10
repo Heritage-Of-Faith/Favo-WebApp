@@ -117,6 +117,14 @@ export function setSundaySkipForTests(on: boolean): void {
   sundaySkipInForce = on;
 }
 
+/**
+ * DEC-21's switch as it stands now (the constant above, or a test's override).
+ * The payment gate on `in_progress` reads it (src/server/orders/payment-gate.ts).
+ */
+export function sundayCardSalesOnMachine(): boolean {
+  return sundaySkipInForce;
+}
+
 /** True when the revenue day is a Sunday and Sunday card sales are still taken outside FAVO. */
 export function isSundayOutsideFavo(revenueDay: string): boolean {
   return sundaySkipInForce && defaultSessionMode(revenueDay) === "sunday";

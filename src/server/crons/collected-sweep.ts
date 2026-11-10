@@ -7,9 +7,9 @@
 // next run sweeps everything eligible.
 //
 // It changes `orders.state` and nothing else. No stock, no payments, no push,
-// and `completed_at` keeps the Done time. Keyed on `completed_at` only: until
-// transitionOrder stamps it at Done (Mia's lane, raised on AT-194) a `ready`
-// order has a NULL `completed_at` and is left alone.
+// and `completed_at` keeps the Done time. Keyed on `completed_at` only, which
+// transitionOrder stamps at Done (→ ready, REQ-047); a `ready` order with a
+// NULL `completed_at` (made ready before that fix) is left alone.
 
 import { and, asc, eq, isNotNull, lte } from "drizzle-orm";
 import { db } from "@/lib/db";

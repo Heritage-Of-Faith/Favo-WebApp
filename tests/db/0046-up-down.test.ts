@@ -24,7 +24,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql, stepDown0050 } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0050, stepDown0051, stepDown0052, stepDown0053 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -66,6 +66,9 @@ maybe("0046 blessing fund: up → down → up, and the database's own guarantees
       await sql.begin(async (tx) => {
         // AT-203 follow-up: 0050's v_daily_revenue reads donor_fund_entries,
         // which 0046 down drops; 0050 steps down first (rolled back with everything else).
+        await stepDown0053(tx); // REQ-127: 0053 is newest of all, before 0052
+        await stepDown0052(tx); // REQ-130: 0052, before 0051
+        await stepDown0051(tx); // 0051 (orders.payment_mode NOT NULL), before 0050
         await stepDown0050(tx);
         await fn(tx);
         throw new Rollback();

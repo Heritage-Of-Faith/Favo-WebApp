@@ -398,7 +398,7 @@ describe("AT-212: weekday orders never take a payment", () => {
     const res = await createOrder({ notificationTarget: "none", items: [one(CAPPUCCINO.id)] });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 3800, paymentMode: null });
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 3800, paymentMode: "yoco" });
     expect(mockStartTender).toHaveBeenCalledTimes(1);
     expectOrderCommittedBeforeTender();
     expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 3800 });
@@ -453,7 +453,7 @@ describe("AT-212: weekday orders never take a payment", () => {
     expect(res).toEqual({ ok: true, data: { totalZar: 3000 } });
     expect(deletes.map((d) => d.table)).toEqual([staffEntitlementLog]);
     expect(updatesOf(orderItems)).toEqual([{ discountZar: 0 }]);
-    expect(updatesOf(orders)).toEqual([{ totalZar: 3000, isStaffDiscount: false, paymentMode: null }]);
+    expect(updatesOf(orders)).toEqual([{ totalZar: 3000, isStaffDiscount: false, paymentMode: "yoco" }]);
     expect(insertsInto(payments)).toEqual([]);
     expect(auditActions()).toEqual(["decline_free_cup"]);
   });
@@ -486,7 +486,7 @@ describe("REQ-153: a net-R0 order writes no payments row and sends nothing (roun
     expect(mockStartTender).toHaveBeenCalledTimes(1);
     expect(mockStartTender).toHaveBeenCalledWith(expect.anything(), res.data.orderId);
     expectOrderCommittedBeforeTender();
-    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: null, totalZar: 3000 });
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "yoco", totalZar: 3000 });
     expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 3000 });
     expect(res.data.cardCheckout).toBe(true);
   });
@@ -581,7 +581,7 @@ describe("B1: the free cup discounts unit_price_zar + mods_zar (oat milk)", () =
 
   it("applyFreeCoffee on a 2× oat Cappuccino line discounts one unit incl. mods (4600)", async () => {
     rows = new Map<unknown, Row[]>([
-      [orders, [{ id: "ord_b1", state: "ordered", totalZar: 9200, customerId: OFFICE.id, isStaffDiscount: false, paymentMode: null }]],
+      [orders, [{ id: "ord_b1", state: "ordered", totalZar: 9200, customerId: OFFICE.id, isStaffDiscount: false, paymentMode: "yoco" }]],
       [orderItems, [{ id: "oi_b1", quantity: 2, unitPriceZar: 3800, modsZar: 800, discountZar: 0, category: "coffee" }]],
       [customers, [OFFICE]],
       [openingSessions, [{ mode: "weekday" }]],
@@ -623,7 +623,7 @@ describe("8. declineFreeCoffee — one tap to decline (REQ-024)", () => {
     expect(res).toEqual({ ok: true, data: { totalZar: 3000 } });
     expect(deletes.map((d) => d.table)).toEqual([staffEntitlementLog]);
     expect(updatesOf(orderItems)).toContainEqual({ discountZar: 0 });
-    expect(updatesOf(orders)).toContainEqual({ totalZar: 3000, isStaffDiscount: false, paymentMode: null });
+    expect(updatesOf(orders)).toContainEqual({ totalZar: 3000, isStaffDiscount: false, paymentMode: "yoco" });
     expect(insertsInto(payments)).toEqual([]);
     expect(updatesOf(payments)).toEqual([]);
     expect(mockStartTender).not.toHaveBeenCalled();
@@ -637,7 +637,7 @@ describe("8. declineFreeCoffee — one tap to decline (REQ-024)", () => {
       { id: "pay_1", status: "unresolved", sentAt: SENT, yocoPaymentId: "p_yoco_1" },
     ]) {
       deletes.length = 0; updates.length = 0; inserts.length = 0;
-      givenAppliedOrder({ totalZar: 3000, paymentMode: null, payment, lines: [{ id: "oi_1", quantity: 2, unitPriceZar: 3000, discountZar: 3000 }] });
+      givenAppliedOrder({ totalZar: 3000, paymentMode: "yoco", payment, lines: [{ id: "oi_1", quantity: 2, unitPriceZar: 3000, discountZar: 3000 }] });
       const res = await declineFreeCoffee("ord_1");
       expect(res).toEqual(CANCEL_AND_RERING);
       expect(deletes).toEqual([]);
@@ -652,7 +652,7 @@ describe("8. declineFreeCoffee — one tap to decline (REQ-024)", () => {
       { id: "pay_1", status: "unresolved", sentAt: null, yocoPaymentId: null },
     ]) {
       deletes.length = 0; updates.length = 0; inserts.length = 0;
-      givenAppliedOrder({ totalZar: 3000, paymentMode: null, payment, lines: [{ id: "oi_1", quantity: 2, unitPriceZar: 3000, discountZar: 3000 }] });
+      givenAppliedOrder({ totalZar: 3000, paymentMode: "yoco", payment, lines: [{ id: "oi_1", quantity: 2, unitPriceZar: 3000, discountZar: 3000 }] });
       const res = await declineFreeCoffee("ord_1");
       expect(res).toEqual({ ok: true, data: { totalZar: 6000 } });
       expect(updatesOf(payments)).toEqual([]);
@@ -661,10 +661,17 @@ describe("8. declineFreeCoffee — one tap to decline (REQ-024)", () => {
   });
 
   it("a chargeable order with no attempt yet (beginTender refused, e.g. no machine) may still change: nothing to freeze", async () => {
-    givenAppliedOrder({ totalZar: 3000, paymentMode: null, payment: null, lines: [{ id: "oi_1", quantity: 2, unitPriceZar: 3000, discountZar: 3000 }] });
+    givenAppliedOrder({ totalZar: 3000, paymentMode: "yoco", payment: null, lines: [{ id: "oi_1", quantity: 2, unitPriceZar: 3000, discountZar: 3000 }] });
     const res = await declineFreeCoffee("ord_1");
     expect(res).toEqual({ ok: true, data: { totalZar: 6000 } });
     expect(insertsInto(payments)).toEqual([]);
+  });
+
+  it("§10.6: taking the cup back never writes payment_mode NULL — a deferred order stays yoco_deferred", async () => {
+    givenAppliedOrder({ totalZar: 3000, paymentMode: "yoco_deferred", payment: null, lines: [{ id: "oi_1", quantity: 2, unitPriceZar: 3000, discountZar: 3000 }] });
+    const res = await declineFreeCoffee("ord_1");
+    expect(res).toEqual({ ok: true, data: { totalZar: 6000 } });
+    expect(updatesOf(orders)).toContainEqual({ totalZar: 6000, isStaffDiscount: false, paymentMode: "yoco_deferred" });
   });
 
   it("clears the line the cup paid for — not simply the first line (round-2 item 6)", async () => {
@@ -689,7 +696,7 @@ describe("8. declineFreeCoffee — one tap to decline (REQ-024)", () => {
   });
 
   it("refuses once the order is paid", async () => {
-    givenAppliedOrder({ totalZar: 3000, paymentMode: null, payment: { id: "pay_1", status: "successful", sentAt: SENT, yocoPaymentId: "p_1" } });
+    givenAppliedOrder({ totalZar: 3000, paymentMode: "yoco", payment: { id: "pay_1", status: "successful", sentAt: SENT, yocoPaymentId: "p_1" } });
     const res = await declineFreeCoffee("ord_1");
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("ALREADY_RESOLVED");
@@ -702,7 +709,7 @@ describe("applyFreeCoffee(orderId, beneficiaryCustomerId) — was applyStaffDisc
   function givenOrder(customer: Row | null, opts: { claimedToday?: boolean; payment?: Row | null; quantity?: number } = {}) {
     const quantity = opts.quantity ?? 2;
     rows = new Map<unknown, Row[]>([
-      [orders, [{ id: "ord_9", state: "ordered", totalZar: 3000 * quantity, customerId: OFFICE.id, isStaffDiscount: false, paymentMode: null }]],
+      [orders, [{ id: "ord_9", state: "ordered", totalZar: 3000 * quantity, customerId: OFFICE.id, isStaffDiscount: false, paymentMode: "yoco" }]],
       [orderItems, [{ id: "oi_9", quantity, unitPriceZar: 3000, discountZar: 0, category: "coffee", modifications: [] }]],
       [customers, customer ? [customer] : []],
       [openingSessions, [{ mode: "weekday" }]],
@@ -719,7 +726,7 @@ describe("applyFreeCoffee(orderId, beneficiaryCustomerId) — was applyStaffDisc
       { customerId: "cust_thabo", appliedByStaffId: "staff_louis", orderId: "ord_9", day: "2026-10-08" },
     ]);
     expect(updatesOf(orderItems)).toContainEqual({ discountZar: 3000 });
-    expect(updatesOf(orders)).toContainEqual({ totalZar: 3000, isStaffDiscount: true, paymentMode: null });
+    expect(updatesOf(orders)).toContainEqual({ totalZar: 3000, isStaffDiscount: true, paymentMode: "yoco" });
     expect(updatesOf(payments)).toEqual([]);
     expect(mockStartTender).not.toHaveBeenCalled();
     const audit = mockWriteAudit.mock.calls.map((c) => c[0] as { action: string; after?: Row });

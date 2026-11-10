@@ -8,7 +8,6 @@
 #   DATABASE_URL      — Postgres connection string
 #   AUTH_SECRET       — Auth.js secret
 # Optional env:
-#   TEST_AUDIT_SECRET — enables audit coverage assertion in E2E suite
 #   SKIP_LIGHTHOUSE   — set to 1 to skip Lighthouse (e.g. in headless CI without Chrome)
 
 set -euo pipefail
