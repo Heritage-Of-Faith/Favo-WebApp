@@ -147,8 +147,10 @@ describe("GET /api/admin/audit-coverage — what counts as a mutation (REQ-064)"
       ["event_windows", "created_at"],
     ]) {
       expect(sql).toContain(`FROM "${table}" t`);
-      expect(sql).toContain(`t."${createdAt}" > NOW() - INTERVAL '30 minutes'`);
+      // CHANGED (Semgrep raw-sql-no-params): the 30 minutes is a bound parameter, not sql.raw text.
+      expect(sql).toMatch(new RegExp(`t\\."${createdAt}" > NOW\\(\\) - \\(\\$\\d+::int \\* INTERVAL '1 minute'\\)`));
     }
+    expect(params).toContain(30);
     for (const kind of ["order", "payment", "waste_log", "walk_in", "stock_take", "opening_session", "event_window"]) {
       expect(params).toContain(kind);
     }

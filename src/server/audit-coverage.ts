@@ -27,7 +27,8 @@
 
 import { sql, type SQL } from "drizzle-orm";
 
-export const AUDIT_WINDOW = "30 minutes";
+export const AUDIT_WINDOW_MINUTES = 30;
+export const AUDIT_WINDOW = `${AUDIT_WINDOW_MINUTES} minutes`;
 
 /** table, its creation-time column, and the entity_kind its writers audit under. */
 export const MEASURED_MUTATIONS = [
@@ -54,7 +55,7 @@ export function coverageQuery(): SQL {
                AND a.entity_id = t.id
            ) AS audited
     FROM ${sql.identifier(m.table)} t
-    WHERE t.${sql.identifier(m.createdAt)} > NOW() - INTERVAL '${sql.raw(AUDIT_WINDOW)}'`
+    WHERE t.${sql.identifier(m.createdAt)} > NOW() - (${AUDIT_WINDOW_MINUTES}::int * INTERVAL '1 minute')`
   );
   return sql`SELECT entity, id, audited FROM (${sql.join(parts, sql` UNION ALL `)}) m ORDER BY created_at, entity, id`;
 }
