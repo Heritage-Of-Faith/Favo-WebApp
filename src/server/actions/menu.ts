@@ -11,7 +11,7 @@ import { unstable_cache, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
 import type { DB } from "@/lib/db";
 import {
-  menuItems, menuCustomisations, priceHistory, operatingHours, recipeIngredients, inventoryItems,
+  menuItems, menuCustomisations, priceHistory, operatingHours, recipeIngredients, inventoryItems, staff,
 } from "@db/schema";
 import { COFFEE_KIND } from "@/server/orders/shot-surcharge";
 import { authorize } from "@/server/auth/guard";
@@ -32,6 +32,9 @@ export type PriceHistoryRow = {
   priceZar: number;
   effectiveFrom: string; // ISO 8601
   effectiveUntil: string | null;
+  /** REQ-130: the staff member who set this price. */
+  setByStaffId: string;
+  setByStaffName: string;
 };
 
 export type OperatingHour = {
@@ -146,6 +149,10 @@ export async function setMenuItemPrice(input: {
 }): Promise<ActionResult<MenuItem>> {
   const auth = await authorize("admin");
   if (!auth.ok) return auth;
+  // REQ-130: the write fails rather than proceeding anonymously.
+  if (!auth.session.id) {
+    return { ok: false, code: "UNAUTHORIZED", message: "You must be signed in." };
+  }
 
   const parsed = setPriceSchema.safeParse(input);
   if (!parsed.success) {
@@ -186,12 +193,13 @@ export async function setMenuItemPrice(input: {
         )
       );
 
-    // Insert a new price history row.
+    // Insert a new price history row, carrying who set it (REQ-130).
     await tx.insert(priceHistory).values({
       menuItemId,
       priceZar: newPriceZar,
       effectiveFrom: now,
       effectiveUntil: null,
+      setByStaffId: auth.session.id,
     });
 
     // Update the denormalised current price.
@@ -261,8 +269,16 @@ export async function getMenuItemPriceHistory(
   if (!auth.ok) return auth;
 
   const rows = await db
-    .select()
+    .select({
+      id: priceHistory.id,
+      priceZar: priceHistory.priceZar,
+      effectiveFrom: priceHistory.effectiveFrom,
+      effectiveUntil: priceHistory.effectiveUntil,
+      setByStaffId: priceHistory.setByStaffId,
+      setByStaffName: staff.name,
+    })
     .from(priceHistory)
+    .innerJoin(staff, eq(priceHistory.setByStaffId, staff.id))
     .where(eq(priceHistory.menuItemId, menuItemId))
     .orderBy(desc(priceHistory.effectiveFrom));
 
@@ -273,6 +289,8 @@ export async function getMenuItemPriceHistory(
       priceZar: r.priceZar,
       effectiveFrom: r.effectiveFrom.toISOString(),
       effectiveUntil: r.effectiveUntil ? r.effectiveUntil.toISOString() : null,
+      setByStaffId: r.setByStaffId,
+      setByStaffName: r.setByStaffName,
     })),
   };
 }
@@ -378,6 +396,7 @@ export async function createMenuItem(input: {
       priceZar,
       effectiveFrom: now,
       effectiveUntil: null,
+      setByStaffId: auth.session.id, // REQ-130
     });
 
     await writeAudit(

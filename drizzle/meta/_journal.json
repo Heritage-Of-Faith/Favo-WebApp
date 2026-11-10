@@ -358,6 +358,20 @@
       "when": 1793220000000,
       "tag": "0051_payment_mode_not_null",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1793220100000,
+      "tag": "0052_at130_price_history_set_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793220200000,
+      "tag": "0053_at127_lid_variance_band",
+      "breakpoints": true
     }
   ]
 }

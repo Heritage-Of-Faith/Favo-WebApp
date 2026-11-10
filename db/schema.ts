@@ -120,6 +120,9 @@ export const priceHistory = pgTable("price_history", {
   priceZar: integer("price_zar").notNull(),
   effectiveFrom: timestamp("effective_from", { withTimezone: true }).defaultNow().notNull(),
   effectiveUntil: timestamp("effective_until", { withTimezone: true }),
+  // REQ-130 / PRD §10.3: who set this price. NOT NULL, so a price change
+  // without an actor fails rather than writing an anonymous row (§11).
+  setByStaffId: text("set_by_staff_id").notNull().references(() => staff.id),
 });
 
 // ─── Recipes ──────────────────────────────────────────────────────────────────
@@ -150,6 +153,10 @@ export const inventoryItems = pgTable("inventory_items", {
   unit: inventoryUnit("unit").notNull(),
   lowStockThreshold: integer("low_stock_threshold").default(0).notNull(),
   origin: text("origin"),
+  // REQ-127 / T08: a lid is judged against config.variance_bands.lid (0–25%
+  // ok) in v_weekly_variance, not T01, because lid declines are deliberately
+  // unmodelled (§7.4). Cups stay on T01.
+  isLid: boolean("is_lid").default(false).notNull(),
 });
 
 export const inventoryLots = pgTable("inventory_lots", {
