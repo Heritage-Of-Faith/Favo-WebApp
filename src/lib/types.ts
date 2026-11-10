@@ -111,6 +111,12 @@ export type Order = {
   paymentAwaitingLookup?: boolean;
   /** AT-203 / L47: paid from a blessing fund — no payments row, nothing owed. */
   fundSettled?: boolean;
+  /** orders.payment_mode — the payment gate opens for 'yoco_deferred' (T3 step 2, §6.7). */
+  paymentMode?: string | null;
+  /** orders.revenue_day (YYYY-MM-DD, SAST) — the payment gate's Sunday rule (DEC-21). */
+  revenueDay?: string;
+  /** The latest payment attempt was sent to the terminal (DEC-21: it keeps the normal gate). */
+  latestAttemptSent?: boolean;
   items: OrderItem[];
 };
 

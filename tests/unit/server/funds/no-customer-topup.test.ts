@@ -40,6 +40,7 @@ const ALLOWED = new Set([
   "src/server/actions/funds.ts", // staff-authorised server actions
   "src/server/actions/orders.ts", // POS-authorised: createOrder's draw, cancelOrder's adjustment
   "src/server/orders/payment-lock.ts", // reads payment_mode: a fund-settled total is frozen (REQ-167)
+  "src/server/orders/payment-gate.ts", // pure: reads payment_mode so a fund-paid order may start (L47); used by transitionOrder and the POS queue card
   "src/server/actions/write-downs.ts", // POS-authorised compOrderLine: refuses a fund-settled order (REQ-167)
   "src/server/tender/drizzle-store.ts", // the top-up's payments rows (the tender chain)
   "src/server/tender/types.ts",

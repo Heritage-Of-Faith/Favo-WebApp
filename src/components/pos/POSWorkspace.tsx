@@ -28,6 +28,7 @@ import { formatZar, formatDate, revenueDay } from "@/lib/format";
 import { computeLineTotalZar } from "@/server/orders/pricing";
 import { FAIL_CLOSED_POLICY, shotSurchargeZar, shotsLabel, type ShotPolicy } from "@/server/orders/shot-surcharge";
 import { FREE_CUP_COPY } from "@/server/orders/free-coffee";
+import { decideQueueCardGate } from "@/server/orders/payment-gate";
 import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, Plus, Minus, Trash2, ChevronDown, ChevronUp,
@@ -117,9 +118,9 @@ type Props = {
   staffId: string;
   role: import("@/lib/types").StaffRole;
   initialOrders?: { orderId: string; state: import("@/lib/types").OrderState; lastUpdatedAt: string; customerName: string | null }[];
-  /** Whether the server has Yoco configured — computed server-side by the page
-   *  (REQ-071: no Yoco key of any kind reaches the client, only this boolean). */
-  yocoConfigured?: boolean;
+  /** DEC-21: Sunday card sales are taken on the Yoco machine (SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE),
+   *  read by the page. Absent = false: every paid order needs a FAVO payment. */
+  sundayCardOnMachine?: boolean;
   /** AT-202: today's shot ceiling and surcharge, read by the page (T09, T15).
    *  Absent = fail closed: weekday ceiling, no surcharge. The server re-checks. */
   shotPolicy?: ShotPolicy;
@@ -127,7 +128,7 @@ type Props = {
   fundOptions?: (input: { customerId: string | null; netZar: number }) => Promise<{ ok: true; data: FundOptions } | { ok: false; code: string; message: string }>;
 };
 
-export default function POSWorkspace({ staffName, staffId, role, initialOrders, yocoConfigured = false, shotPolicy = FAIL_CLOSED_POLICY, fundOptions }: Props) {
+export default function POSWorkspace({ staffName, staffId, role, initialOrders, sundayCardOnMachine = false, shotPolicy = FAIL_CLOSED_POLICY, fundOptions }: Props) {
   const router = useRouter();
 
   // ── Left panel ─────────────────────────────────────────────────────────────
@@ -1369,19 +1370,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
             const nextState = STATE_NEXT[o.state];
             const isDone = o.state === "collected" || o.state === "cancelled";
             const isReady = o.state === "ready";
-            // L01: payment gate — only enforced when Yoco is configured.
-            // Without Yoco keys the gate is bypassed so baristas can start making immediately.
-            const needsPayment = yocoConfigured
-              && !!full
+            // L01: the payment gate, the same decision transitionOrder makes
+            // (decidePaymentGate): free, fund-paid, paid, a SENT unresolved
+            // attempt (REQ-008 / S4) and — DEC-21 — a Sunday order with its card
+            // on the Yoco machine may start. A YOCO key never switches it off.
+            const needsPayment = !!full
               && o.state === "ordered"
-              // L03: a free cup discounts one unit only — whatever is left is still owed.
-              && full.totalZar > 0
-              && full.paymentStatus !== "successful"
-              // AT-203 / L47: paid from a blessing fund — nothing owed.
-              && full.fundSettled !== true
-              // REQ-008 / S4: a SENT attempt that ended unresolved does not hold
-              // the drink back. A closed-out never-sent one does: still owed.
-              && full.paymentAwaitingLookup !== true
+              && decideQueueCardGate(full, sundayCardOnMachine) === "payment_required"
               && !paidLocally.has(o.orderId);
 
             return (
