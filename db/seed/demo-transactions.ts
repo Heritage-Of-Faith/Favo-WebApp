@@ -157,6 +157,8 @@ async function main() {
             placedAt,
             completedAt: new Date(placedAt.getTime() + 5 * 60 * 1000),
             totalZar: drink.priceZar,
+            // §10.6: never NULL — a paid demo sale is a card sale.
+            paymentMode: "yoco",
             revenueDay: revenueDay(placedAt),
           })
           .onConflictDoNothing();

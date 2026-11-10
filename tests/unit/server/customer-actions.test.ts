@@ -167,6 +167,56 @@ describe("listCustomerOrders", () => {
     expect(order.items).toHaveLength(1);
     expect(order.items[0]!.menuItemName).toBe("Cappuccino");
   });
+
+  // REQ-049 / L23 (PRD §17.4): own orders only, and only in ready, collected or cancelled.
+  it("REQ-049: the query asks only for ready, collected or cancelled orders of this customer", async () => {
+    const { getCustomerSession } = await import("@/server/auth/customer-session");
+    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
+
+    const { db } = await import("@db/index");
+    const ordersChain = makeSelectChain([]);
+    vi.mocked(db.select).mockReturnValueOnce(ordersChain as unknown as ReturnType<typeof db.select>);
+
+    const { listCustomerOrders } = await import("@/server/actions/customer");
+    await listCustomerOrders();
+
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const whereArg = ordersChain.where.mock.calls[0]![0];
+    const q = new PgDialect().sqlToQuery(whereArg);
+    expect(q.sql).toMatch(/"state" in \(\$\d+, \$\d+, \$\d+\)/);
+    expect(q.params).toEqual(expect.arrayContaining([CUSTOMER_ID, "ready", "collected", "cancelled"]));
+    expect(q.params).not.toContain("ordered");
+    expect(q.params).not.toContain("in_progress");
+  });
+
+  it("REQ-049: an order still ordered or in_progress is never returned, even if the database hands it back", async () => {
+    const { getCustomerSession } = await import("@/server/auth/customer-session");
+    vi.mocked(getCustomerSession).mockResolvedValue(CUSTOMER_ID);
+
+    const { db } = await import("@db/index");
+    const placed = new Date("2026-06-12T07:00:00Z");
+    vi.mocked(db.select)
+      .mockReturnValueOnce(makeSelectChain([
+        { id: "ord-ordered", state: "ordered", placedAt: placed, completedAt: null, totalZar: 4500 },
+        { id: "ord-making", state: "in_progress", placedAt: placed, completedAt: null, totalZar: 4500 },
+        { id: "ord-ready", state: "ready", placedAt: placed, completedAt: null, totalZar: 4500 },
+        { id: "ord-done", state: "collected", placedAt: placed, completedAt: placed, totalZar: 4500 },
+        { id: "ord-cxl", state: "cancelled", placedAt: placed, completedAt: null, totalZar: 4500 },
+      ]) as unknown as ReturnType<typeof db.select>)
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          leftJoin: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+        }),
+      } as unknown as ReturnType<typeof db.select>);
+
+    const { listCustomerOrders } = await import("@/server/actions/customer");
+    const res = await listCustomerOrders();
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.map((o) => o.id)).toEqual(["ord-ready", "ord-done", "ord-cxl"]);
+    expect(res.data.map((o) => o.state)).toEqual(["ready", "collected", "cancelled"]);
+  });
 });
 
 // ─── updateCustomerProfile ────────────────────────────────────────────────────

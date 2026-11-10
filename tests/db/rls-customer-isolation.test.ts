@@ -48,12 +48,12 @@ maybe("RLS customer isolation (F2)", () => {
 
     // revenue_day is NOT NULL since 0033 (AT-181); notification_target since 0042 (L28).
     const oa = await sql`
-      INSERT INTO orders (customer_id, staff_id, total_zar, revenue_day, notification_target)
-      VALUES (${custA}, ${staffId}, 1000, (now() AT TIME ZONE 'Africa/Johannesburg')::date, 'customer')
+      INSERT INTO orders (customer_id, staff_id, total_zar, revenue_day, notification_target, payment_mode)
+      VALUES (${custA}, ${staffId}, 1000, (now() AT TIME ZONE 'Africa/Johannesburg')::date, 'customer', 'yoco')
       RETURNING id`;
     const ob = await sql`
-      INSERT INTO orders (customer_id, staff_id, total_zar, revenue_day, notification_target)
-      VALUES (${custB}, ${staffId}, 2000, (now() AT TIME ZONE 'Africa/Johannesburg')::date, 'customer')
+      INSERT INTO orders (customer_id, staff_id, total_zar, revenue_day, notification_target, payment_mode)
+      VALUES (${custB}, ${staffId}, 2000, (now() AT TIME ZONE 'Africa/Johannesburg')::date, 'customer', 'yoco')
       RETURNING id`;
     orderA = oa[0].id as string;
     orderB = ob[0].id as string;

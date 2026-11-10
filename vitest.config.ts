@@ -12,13 +12,10 @@ export default defineConfig({
     // Dummy DB URL so modules importing the (lazy) Drizzle client load without a real DB.
     // Unit tests never open a connection — they assert on pure data and logic.
     //
-    // YOCO_SECRET_KEY is forced empty so transitionOrder's cash-remove payment
-    // gate (AT-122) stays in its "Yoco not configured" bypass branch during
-    // tests, regardless of whatever placeholder value a developer's local
-    // .env.local defines — Vite auto-loads .env.local into process.env, and
-    // without this override that placeholder makes the gate active and any
-    // test that doesn't mock a `payments` row fails with PAYMENT_REQUIRED on
-    // any machine that has a real .env.local.
+    // YOCO_SECRET_KEY is forced empty so no test picks up a placeholder from a
+    // developer's .env.local (Vite auto-loads it into process.env). The
+    // payment gate on transitionOrder no longer reads this key at all (PRD
+    // DEC-26, 9 Nov 2026): it is on in every mode, key set or not.
     env: {
       DATABASE_URL: "postgresql://test:test@localhost:5432/favo_test",
       YOCO_SECRET_KEY: "",

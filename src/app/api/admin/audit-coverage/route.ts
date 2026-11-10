@@ -1,37 +1,50 @@
-// Test-only endpoint — returns 403 when TEST_AUDIT_SECRET is not set.
-// Used by E2E full-suite.spec.ts to assert that no recent mutations lack an audit row.
+// GET /api/admin/audit-coverage — admin only (PRD v7 access matrix; REQ-064).
+// Spec of record (docs/FAVO_PRD_v7.md, "Three endpoints had no baseline
+// specification"): `200 {mutations, audited, coverage_pct, gaps:[...]}`.
+// PRD §05's "Audit coverage 100%" criterion reads this: 0 orphans means `gaps`
+// is empty. Gated by the staff session: no session → 401, non-admin → 403.
+// SCOPE (not all of REQ-064): a "mutation" here is an order placed in the last
+// 30 minutes, "audited" means it has an audit_log row with entity_kind='order'.
+// Transitions, refusals, discounts, waste and stock takes are not measured, so
+// 100 means "every recent order has an audit note", not "every action is audited".
+// coverage_pct is 100 when mutations is 0; read `mutations` to see nothing was measured.
 
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { authorize } from "@/server/auth/guard";
 
-export async function GET(req: NextRequest) {
-  const secret = process.env.TEST_AUDIT_SECRET;
-  if (!secret) {
-    return NextResponse.json({ error: "Not available" }, { status: 403 });
+export const dynamic = "force-dynamic";
+
+export async function GET(_req: Request) {
+  const auth = await authorize("admin");
+  if (!auth.ok) {
+    const status = auth.code === "UNAUTHORIZED" ? 401 : 403;
+    return NextResponse.json({ error: auth.message }, { status });
   }
 
-  const { searchParams } = req.nextUrl;
-  if (searchParams.get("secret") !== secret) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // Count orders from the last 30 minutes that have no corresponding audit_log row.
-  // A gap here means writeAudit() was not called on a mutation (business rule violation).
-  // NB: the orders table's creation timestamp column is `placed_at` (there is no
-  // `created_at`); using the wrong column made this query throw. PRD SC09 requires
-  // this to run and return 0. See docs/FAVO_PRD_v4.md §04 (Audit coverage).
-  const result = await db.execute<{ gap_count: string }>(sql`
-    SELECT COUNT(*) AS gap_count
+  // Orders placed in the last 30 minutes, each flagged by whether an
+  // audit_log row exists for it. An unaudited order is a gap: writeAudit()
+  // was not called on a mutation. The creation timestamp is `placed_at`.
+  // Only entity_kind='order' counts — a 'walk_in' refusal row never stands in
+  // for an order's missing creation audit (see walk-ins.ts).
+  const rows = await db.execute<{ id: string; audited: boolean }>(sql`
+    SELECT o.id,
+           EXISTS (
+             SELECT 1 FROM audit_log a
+             WHERE a.entity_kind = 'order'
+               AND a.entity_id = o.id
+           ) AS audited
     FROM orders o
     WHERE o.placed_at > NOW() - INTERVAL '30 minutes'
-      AND NOT EXISTS (
-        SELECT 1 FROM audit_log a
-        WHERE a.entity_kind = 'order'
-          AND a.entity_id = o.id
-      )
+    ORDER BY o.placed_at
   `);
-  const gapCount = parseInt(result[0]?.gap_count ?? "0", 10);
-  return NextResponse.json({ ok: gapCount === 0, gapCount });
+
+  const mutations = rows.length;
+  const gaps = rows.filter((r) => !r.audited).map((r) => r.id);
+  const audited = mutations - gaps.length;
+  // No mutations in the window means nothing is unaudited: 0 orphans, 100%.
+  const coverage_pct = mutations === 0 ? 100 : (audited / mutations) * 100;
+
+  return NextResponse.json({ mutations, audited, coverage_pct, gaps });
 }
