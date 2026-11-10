@@ -241,7 +241,8 @@ test.describe("Audit coverage", () => {
     const res = await page.context().request.get("/api/admin/audit-coverage");
     expect(res.status()).toBe(200);
     const body = await res.json();
-    expect(body.gaps, `${body.gaps.length} order(s) created without an audit row`).toEqual([]);
-    expect(body.coverage_pct).toBe(100);
+    expect(body.gaps, `${body.gaps.length} row(s) created without an audit row (entity:id)`).toEqual([]);
+    // Nothing measured in the window -> null, never a claimed 100 (REQ-064).
+    expect(body.coverage_pct).toBe(body.mutations === 0 ? null : 100);
   });
 });

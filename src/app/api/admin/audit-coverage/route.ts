@@ -3,16 +3,19 @@
 // specification"): `200 {mutations, audited, coverage_pct, gaps:[...]}`.
 // PRD §05's "Audit coverage 100%" criterion reads this: 0 orphans means `gaps`
 // is empty. Gated by the staff session: no session → 401, non-admin → 403.
-// SCOPE (not all of REQ-064): a "mutation" here is an order placed in the last
-// 30 minutes, "audited" means it has an audit_log row with entity_kind='order'.
-// Transitions, refusals, discounts, waste and stock takes are not measured, so
-// 100 means "every recent order has an audit note", not "every action is audited".
-// coverage_pct is 100 when mutations is 0; read `mutations` to see nothing was measured.
+// SCOPE (still not all of REQ-064): a "mutation" is a row created in the last
+// 30 minutes in one of seven tables (orders, payments, waste_log, walk_ins,
+// stock_takes, opening_sessions, event_windows); "audited" means an audit_log
+// row of that table's entity_kind names it. Updates, transitions and rejected
+// actions are NOT measured — the full list and why is in
+// src/server/audit-coverage.ts. A gap reads `entity:id`, e.g. `order:ord_2`.
+// coverage_pct is null when mutations is 0: nothing was measured, so no
+// percentage is claimed; `gaps` is empty, so it still reads as 0 orphans.
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { sql } from "drizzle-orm";
 import { authorize } from "@/server/auth/guard";
+import { coverageQuery, summariseCoverage, type CoverageRow } from "@/server/audit-coverage";
 
 export const dynamic = "force-dynamic";
 
@@ -23,28 +26,9 @@ export async function GET(_req: Request) {
     return NextResponse.json({ error: auth.message }, { status });
   }
 
-  // Orders placed in the last 30 minutes, each flagged by whether an
-  // audit_log row exists for it. An unaudited order is a gap: writeAudit()
-  // was not called on a mutation. The creation timestamp is `placed_at`.
-  // Only entity_kind='order' counts — a 'walk_in' refusal row never stands in
-  // for an order's missing creation audit (see walk-ins.ts).
-  const rows = await db.execute<{ id: string; audited: boolean }>(sql`
-    SELECT o.id,
-           EXISTS (
-             SELECT 1 FROM audit_log a
-             WHERE a.entity_kind = 'order'
-               AND a.entity_id = o.id
-           ) AS audited
-    FROM orders o
-    WHERE o.placed_at > NOW() - INTERVAL '30 minutes'
-    ORDER BY o.placed_at
-  `);
+  // Only the table's own entity_kind counts — a 'walk_in' refusal row never
+  // stands in for an order's missing creation audit (see walk-ins.ts).
+  const rows = await db.execute<CoverageRow>(coverageQuery());
 
-  const mutations = rows.length;
-  const gaps = rows.filter((r) => !r.audited).map((r) => r.id);
-  const audited = mutations - gaps.length;
-  // No mutations in the window means nothing is unaudited: 0 orphans, 100%.
-  const coverage_pct = mutations === 0 ? 100 : (audited / mutations) * 100;
-
-  return NextResponse.json({ mutations, audited, coverage_pct, gaps });
+  return NextResponse.json(summariseCoverage(rows));
 }
