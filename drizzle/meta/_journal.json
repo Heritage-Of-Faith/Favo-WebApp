@@ -372,6 +372,13 @@
       "when": 1793220200000,
       "tag": "0053_at127_lid_variance_band",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1793220300000,
+      "tag": "0054_deferred_mode_settlement",
+      "breakpoints": true
     }
   ]
 }

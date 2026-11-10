@@ -57,6 +57,8 @@ import {
   OTHER_DISCOUNT, TOO_MANY_VOUCHERS, VOUCHER_NOT_ON_EXTRA_SHOTS, planLineVouchers,
 } from "@/server/orders/voucher";
 import { lockOpenSession } from "@/server/orders/voucher-session";
+import { readOpenSessionDeferred } from "@/server/deferred/drizzle-store";
+import { newOrderPaymentMode } from "@/server/deferred/order-mode";
 import { notifyOrderChange } from "@/server/queue/notify";
 import { sendOrderReadyPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
@@ -167,6 +169,8 @@ export async function createOrder(
   fundDraw?: CreateOrderFundDraw;
   /** AT-212 / DEC-19: true when this order is an overridden extra free cup. */
   extraFreeCup?: boolean;
+  /** §6.0.4 T3 step 2: taken unpaid in deferred mode — no tender was begun. */
+  deferred?: true;
 }>> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
@@ -193,6 +197,9 @@ export async function createOrder(
   // they can never straddle midnight SAST (L07, REQ-039).
   const receivedAt = new Date();
   const day = revenueDay(receivedAt);
+  // §6.0.4 T3 step 2 / §6.7: the open session is in deferred mode. A plain
+  // read, as readShotPolicy's. 'free' still wins (S7a, newOrderPaymentMode).
+  const tillDeferred = (await readOpenSessionDeferred(db))?.deferred === true;
 
   // ── AT-202: the shot ceiling (T15, REQ-138, REQ-144) and the extra-shot
   // surcharge (T09, REQ-104, REQ-136). Only a line above one shot can be
@@ -440,7 +447,8 @@ export async function createOrder(
         // REQ-153: a net-R0 order is `free` — it gets no payments row.
         // S7a: 'free' on weekday mode, whatever else applies. Otherwise the
         // card tender, 'yoco' — never NULL (§10.3 L2499, §10.6; migration 0051).
-        paymentMode: weekdayFree || totalZar === 0 ? "free" : "yoco",
+        // T3 step 2: 'yoco_deferred' while the session is deferred.
+        paymentMode: newOrderPaymentMode({ weekdayFree, totalZar, tillDeferred }),
         placedAt: receivedAt,
         revenueDay: day,
       });
@@ -499,7 +507,7 @@ export async function createOrder(
                 orderItemId: baseItemRows[l.index].id, vouchers: l.perVoucherZar.length,
                 lineDiscountZar: l.lineDiscountZar,
               })),
-              discountZar: v.discountZar, totalZar, paymentMode: totalZar === 0 ? "free" : "yoco",
+              discountZar: v.discountZar, totalZar, paymentMode: newOrderPaymentMode({ weekdayFree, totalZar, tillDeferred }),
             },
           },
           txDb
@@ -607,7 +615,9 @@ export async function createOrder(
       console.error("[createOrder] drawFromDonorFund failed", err);
       fundDraw = { ok: false, code: "FUND_UNAVAILABLE", message: "Couldn't pay from the fund — nothing was drawn. Try again." };
     }
-  } else if (outcome.totalZar > 0 && !outcome.weekdayFree) {
+  } else if (outcome.totalZar > 0 && !outcome.weekdayFree && !tillDeferred) {
+    // T3: while deferred the tender step is "replaced, not skipped" — no
+    // payments row, nothing sent; the screen says the order is unpaid.
     // L19: no weekday order ever sends anything to the card machine.
     // The order is committed: a refusal (NO_SESSION, TERMINAL_UNREACHABLE when
     // no machine is configured, …) is returned beside it, never thrown.
@@ -653,6 +663,11 @@ export async function createOrder(
       tender,
       ...(fundDraw !== undefined ? { fundDraw } : {}),
       ...(outcome.extraFreeCup ? { extraFreeCup: true } : {}),
+      // T3: taken unpaid in deferred mode (a fund draw that succeeded paid it).
+      ...(newOrderPaymentMode({ weekdayFree: outcome.weekdayFree, totalZar: outcome.totalZar, tillDeferred }) === "yoco_deferred" &&
+      fundDraw?.ok !== true
+        ? { deferred: true as const }
+        : {}),
     },
   };
 }

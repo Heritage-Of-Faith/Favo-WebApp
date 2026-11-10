@@ -237,6 +237,13 @@ export async function compOrderLine(
         orderId: order.id, why: "fund_settled",
       });
     }
+    // §10.3 settled_at (§6.7 path B): a slip-settled deferred order was paid at
+    // its total — frozen exactly like a fund-settled one (REQ-167 / P4).
+    if (order.settledAt) {
+      return rejectComp(txDb, session, input.orderItemId, "TENDER_IN_PROGRESS", COPY.TENDER_IN_PROGRESS, {
+        orderId: order.id, why: "slip_settled",
+      });
+    }
 
     // One barista's comps are counted and written one at a time, so two taps
     // cannot both be "the second comp" (L33's cap).

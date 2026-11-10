@@ -56,6 +56,12 @@ const WRITTEN_OFF_NO_CHARGE = "This order was written off at the daily close and
 /** AT-207: the audit action of a successful payment attached to a written-off order. */
 export const LATE_SUCCESS_ON_WRITTEN_OFF_ACTION = "payment.late_success_on_written_off";
 
+/** §6.7 path B: a card success attached to an order already settled with a slip — a double charge. */
+export const DUPLICATE_AFTER_SLIP_SETTLE_ACTION = "duplicate_charge_after_slip_settle";
+
+/** §6.0.4 T3: the audit action that records a deferred order's settled_at (both paths). */
+export const DEFERRED_SETTLED_ACTION = "order.settled";
+
 // ─── small helpers ────────────────────────────────────────────────────────────
 
 type Post = Array<() => Promise<void>>;
@@ -160,6 +166,15 @@ export async function beginTender(
     if (order.state === "cancelled") return reject("VALIDATION", "This order is cancelled.", "order_cancelled");
     // AT-203 / §11.2: beginTender "rejects an order already settled from a fund".
     if (order.fundSettled === true) return reject("ALREADY_RESOLVED", COPY.ALREADY_RESOLVED, "settled_from_fund");
+    // S1 ALREADY_RESOLVED / §10.3 settled_at: a deferred order settled on the
+    // standalone machine (§6.7 path B) holds no payments row, so the check on
+    // successful attempts below cannot see it. Never charged again.
+    if (order.settledAt) {
+      return reject("ALREADY_RESOLVED", COPY.ALREADY_RESOLVED, "already_settled", {
+        code: "ALREADY_RESOLVED",
+        settledAt: order.settledAt.toISOString(),
+      });
+    }
     // AT-207 / §10.3.3: settled_at and written_off_at are mutually exclusive.
     if (order.writtenOff === true) {
       return reject("ORDER_WRITTEN_OFF", WRITTEN_OFF_NO_CHARGE, "order_written_off");
@@ -258,6 +273,18 @@ export async function sendToTerminal(
         after: { code: "ORDER_WRITTEN_OFF", attempt },
       });
       return fail("ORDER_WRITTEN_OFF", WRITTEN_OFF_NO_CHARGE);
+    }
+    // Defence in depth for §6.7 path B: a settled order is never sent to the machine.
+    if (locked.order.settledAt) {
+      await tx.audit({
+        entityKind: "payment",
+        entityId: p.id,
+        action: "payment.send_rejected",
+        ...actorFields(actor),
+        reason: "already_settled",
+        after: { code: "ALREADY_RESOLVED", attempt },
+      });
+      return fail("ALREADY_RESOLVED", COPY.ALREADY_RESOLVED);
     }
     if (p.status !== "pending" || p.sentAt !== null || p.yocoPaymentId !== null) {
       await tx.audit({
@@ -521,6 +548,41 @@ async function attachSuccessful(
     });
     post.push(async () => {
       await deps.notify.lateSuccessOnWrittenOff?.(info);
+    });
+  }
+  // §6.7 path B + S4 step 4: money arrived on an order ALREADY settled on the
+  // standalone machine — the customer has paid twice. Handled like the
+  // written-off branch above: the payment is recorded exactly as Yoco reports
+  // it (payments.status untouched by this branch), settled_at is left as the
+  // slip set it, the fact is audited and the Admin gets the duplicate-charge
+  // push after the commit (a failed push never undoes the record).
+  if (order.settledAt && order.writtenOff !== true) {
+    flags.push("duplicate_charge");
+    const yocoPaymentIds = [`slip-settled ${order.settledAt.toISOString()}`, pay.yocoPaymentId];
+    await tx.audit({
+      entityKind: "order",
+      entityId: order.id,
+      action: DUPLICATE_AFTER_SLIP_SETTLE_ACTION,
+      ...actorFields(actor),
+      reason: "duplicate_charge_after_slip_settle",
+      after: { paymentId: p.id, attempt: p.attempt, chargedAmountZar: charged, settledAt: order.settledAt.toISOString(), via },
+    });
+    post.push(() => deps.notify.duplicateCharge({ orderId: order.id, yocoPaymentIds, amountZar: charged }));
+  }
+  // §6.0.4 T3 step 3a: a successful payment on a deferred order settles it —
+  // orders.settled_at, so the §07 split by settled_at sees it (REQ-133). Never
+  // on a written-off order (§10.3: the two are mutually exclusive) and never
+  // twice. Writes the order only; payments.status was set above, as always.
+  if (order.deferred === true && order.writtenOff !== true && !order.settledAt && tx.markOrderSettled) {
+    const settledAt = deps.now();
+    await tx.markOrderSettled(order.id, settledAt, null);
+    await tx.audit({
+      entityKind: "order",
+      entityId: order.id,
+      action: DEFERRED_SETTLED_ACTION,
+      ...actorFields(actor),
+      before: { settledAt: null },
+      after: { settledAt: settledAt.toISOString(), path: "card", paymentId: p.id, attempt: p.attempt, via },
     });
   }
   // No tip handling (DEC-17): FAVO stores no tip; a stray one surfaces at T10

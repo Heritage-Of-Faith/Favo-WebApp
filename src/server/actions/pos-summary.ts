@@ -86,7 +86,17 @@ export async function getPosToday(): Promise<ActionResult<PosTodaySummary>> {
       (SELECT COUNT(*)::text FROM staff_entitlement_log WHERE day = ${date}) AS entitlement_cups,
       (SELECT COALESCE(SUM(w.quantity), 0)::text FROM walk_ins w
          JOIN orders ON orders.id = w.order_id
-        WHERE orders.revenue_day = ${date}::date) AS walk_in_cups`
+        WHERE orders.revenue_day = ${date}::date) AS walk_in_cups,
+      -- REQ-133 / §7.5: yoco_deferred split by settled_at and written_off_at.
+      (SELECT COALESCE(SUM(orders.total_zar), 0)::text FROM orders
+        WHERE orders.revenue_day = ${date}::date AND orders.payment_mode = 'yoco_deferred'
+          AND orders.state <> 'cancelled' AND orders.settled_at IS NULL AND orders.written_off_at IS NULL) AS deferred_open_zar,
+      (SELECT COALESCE(SUM(orders.total_zar), 0)::text FROM orders
+        WHERE orders.revenue_day = ${date}::date AND orders.payment_mode = 'yoco_deferred'
+          AND orders.state <> 'cancelled' AND orders.settled_at IS NOT NULL) AS deferred_settled_zar,
+      (SELECT COALESCE(SUM(orders.total_zar), 0)::text FROM orders
+        WHERE orders.revenue_day = ${date}::date AND orders.payment_mode = 'yoco_deferred'
+          AND orders.written_off_at IS NOT NULL) AS deferred_written_off_zar`
   );
   const int = (k: string) => parseInt(day?.[k] ?? "0", 10) || 0;
   const { feeZar, netSettledZar } = feeAndNet({
@@ -107,6 +117,9 @@ export async function getPosToday(): Promise<ActionResult<PosTodaySummary>> {
       compsZar: int("comps_zar"),
       entitlementCups: int("entitlement_cups"),
       walkInCups: int("walk_in_cups"),
+      deferredOpenZar: int("deferred_open_zar"),
+      deferredSettledZar: int("deferred_settled_zar"),
+      deferredWrittenOffZar: int("deferred_written_off_zar"),
     },
   };
 }

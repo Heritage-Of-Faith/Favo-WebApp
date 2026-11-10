@@ -47,7 +47,7 @@ export const CHECKOUT_EXISTS = {
  */
 export async function lockPaymentForTotalChange(
   tx: Pick<DB, "select">,
-  order: { id: string; paymentMode?: string | null }
+  order: { id: string; paymentMode?: string | null; settledAt?: Date | null }
 ): Promise<{
   hasPayments: boolean;
   refusal: typeof ORDER_MOVED_ON | typeof CHECKOUT_EXISTS | null;
@@ -55,6 +55,9 @@ export async function lockPaymentForTotalChange(
   // AT-203 / REQ-167: a fund-settled order's total is frozen exactly as P4
   // freezes it during a card tender — TENDER_IN_PROGRESS.
   if (order.paymentMode === "donor_fund") return { hasPayments: false, refusal: CHECKOUT_EXISTS };
+  // §10.3 settled_at (§6.7 path B, REQ-167 / P4): a deferred order settled on
+  // the standalone machine was paid at its total — frozen the same way.
+  if (order.settledAt) return { hasPayments: false, refusal: CHECKOUT_EXISTS };
   const attempts = await tx
     .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId })
     .from(payments)

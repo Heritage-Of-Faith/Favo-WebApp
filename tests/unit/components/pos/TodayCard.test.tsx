@@ -67,12 +67,17 @@ describe("TodayCard — REQ-128 Day summary", () => {
   it("REQ-129: a day with no orders shows zeroes, not UNAVAILABLE", async () => {
     mockGetPosToday.mockResolvedValue({
       ok: true,
-      data: { ...FULL, orderCount: 0, revenueZar: 0, drinks: 0, feeZar: 0, netSettledZar: 0, writtenOffZar: 0, compsZar: 0, entitlementCups: 0, walkInCups: 0 },
+      data: {
+        ...FULL, orderCount: 0, revenueZar: 0, drinks: 0, feeZar: 0, netSettledZar: 0, writtenOffZar: 0, compsZar: 0, entitlementCups: 0, walkInCups: 0,
+        deferredOpenZar: 0, deferredSettledZar: 0, deferredWrittenOffZar: 0,
+      },
     });
     render(<TodayCard />);
     await screen.findByText("Card fees");
     expect(screen.queryByText("UNAVAILABLE")).toBeNull();
-    expect(screen.getAllByText(/0,00/).length).toBe(5);
+    // Five money lines plus §7.5's "Deferred: open · settled · written off" (REQ-133).
+    expect(screen.getAllByText(/0,00/).length).toBe(6);
+    expect(screen.getByText("Deferred: open · settled · written off")).toBeTruthy();
   });
 
   it("is a read: the only buttons are Back and Refresh — nothing confirms or ends the day", async () => {
