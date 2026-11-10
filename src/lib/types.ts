@@ -111,6 +111,12 @@ export type Order = {
   paymentAwaitingLookup?: boolean;
   /** AT-203 / L47: paid from a blessing fund — no payments row, nothing owed. */
   fundSettled?: boolean;
+  /** orders.payment_mode — the payment gate opens for 'yoco_deferred' (T3 step 2, §6.7). */
+  paymentMode?: string | null;
+  /** orders.revenue_day (YYYY-MM-DD, SAST) — the payment gate's Sunday rule (DEC-21). */
+  revenueDay?: string;
+  /** The latest payment attempt was sent to the terminal (DEC-21: it keeps the normal gate). */
+  latestAttemptSent?: boolean;
   items: OrderItem[];
 };
 
@@ -286,8 +292,24 @@ export type CogsLive = {
 export type PosTodaySummary = {
   date: string; // YYYY-MM-DD in Africa/Johannesburg
   orderCount: number;
+  /** Gross charged (v_daily_revenue). */
   revenueZar: number;
   wasteCount: number;
+  // REQ-128 / PRD §7.5, §7.0.2 — the rest of the Day summary.
+  /** Σ order_items.quantity on the day's orders. */
+  drinks: number;
+  /** processing_fee. NULL = UNAVAILABLE, "settles overnight" — never R0.00 (REQ-108, REQ-129). */
+  feeZar: number | null;
+  /** net_settled. NULL = UNAVAILABLE, "settles overnight" (REQ-108, REQ-129). */
+  netSettledZar: number | null;
+  /** written_off_zar = Σ total_zar WHERE written_off_at IS NOT NULL. */
+  writtenOffZar: number;
+  /** comps_zar = Σ order_items.discount_zar WHERE comp_reason IS NOT NULL (L33). */
+  compsZar: number;
+  /** entitlement_cups = COUNT(staff_entitlement_log rows) — one row is one cup (L03). */
+  entitlementCups: number;
+  /** walk_in_cups = Σ walk_ins.quantity (REQ-116). */
+  walkInCups: number;
 };
 
 // ─── Phase 2: Purchases ───────────────────────────────────────────────────────

@@ -63,7 +63,6 @@ export function migrationSql(file: string): string {
  * v_weekly_variance judging lids against T08) down inside the caller's
  * always-rolled-back transaction. Its view reads app_config, which 0037 down
  * drops, so it steps down first. It is the newest migration, before 0052.
- * PROVISIONAL number — renumbered in merge order.
  */
 export async function stepDown0053(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
   await tx.unsafe(migrationSql("down/0053_at127_lid_variance_band.down.sql"));
@@ -72,11 +71,21 @@ export async function stepDown0053(tx: { unsafe: (q: string) => PromiseLike<unkn
 /**
  * Step 0052 (REQ-130: price_history.set_by_staff_id) down inside the caller's
  * always-rolled-back transaction. Its down refuses while any price_history row
- * exists; no tests/db suite commits one. Steps down after 0053, before 0050.
- * PROVISIONAL number — renumbered in merge order.
+ * exists; no tests/db suite commits one. Steps down after 0053, before 0051.
  */
 export async function stepDown0052(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
   await tx.unsafe(migrationSql("down/0052_at130_price_history_set_by.down.sql"));
+}
+
+/**
+ * Step 0051 (orders.payment_mode NOT NULL, §10.3 L2499) down inside the
+ * caller's always-rolled-back transaction. It only drops the NOT NULL, so the
+ * older suites' fixtures that insert an order without naming its mode keep
+ * working at their own migration. It is the newest migration, so it steps
+ * down before 0050.
+ */
+export async function stepDown0051(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
+  await tx.unsafe(migrationSql("down/0051_payment_mode_not_null.down.sql"));
 }
 
 /**

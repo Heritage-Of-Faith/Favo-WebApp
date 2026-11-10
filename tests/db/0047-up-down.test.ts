@@ -114,8 +114,8 @@ maybe("0047 order_items.surcharge_zar: up → down → up, and the refusals (AT-
       INSERT INTO menu_items (name, category, current_price_zar)
       VALUES ('AT-202 Cappuccino', 'coffee', 2000) RETURNING id`;
     const [order] = await tx`
-      INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target)
-      VALUES (${staff.id}, 3000, '2026-10-11', 'none') RETURNING id`;
+      INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target, payment_mode)
+      VALUES (${staff.id}, 3000, '2026-10-11', 'none', 'yoco') RETURNING id`;
     return { orderId: order.id as string, menuId: menu.id as string };
   }
 

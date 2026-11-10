@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { staff } from "@db/schema";
@@ -48,6 +49,25 @@ const ADMIN_COOLDOWN_MS = 5 * 60_000;
 // The one answer for any PIN that does not sign in — wrong, unknown, or an
 // admin PIN refused by the cooldown.
 const INCORRECT_PIN = { ok: false, code: "INVALID_CREDENTIALS", message: "Incorrect PIN." } as const;
+
+// The one answer when a PIN matched but no session was created. Generic on
+// purpose: it never echoes the Auth.js error, which could name the cause.
+const SIGN_IN_FAILED = { ok: false, code: "AUTH_ERROR", message: "Sign-in failed." } as const;
+
+// Auth.js session cookie: `authjs.session-token`, `__Secure-` prefixed over
+// https, and split into `.0`, `.1`… chunks when large (@auth/core lib/utils/cookie.js).
+const SESSION_COOKIE = /^(__Secure-)?authjs\.session-token(\.\d+)?$/;
+
+/** The session-token cookie(s) as this response will send them; "" when none. */
+async function sessionCookieValue(): Promise<string> {
+  const jar = await cookies();
+  return jar
+    .getAll()
+    .filter((c) => SESSION_COOKIE.test(c.name) && c.value !== "")
+    .map((c) => `${c.name}=${c.value}`)
+    .sort()
+    .join(";");
+}
 
 /** PRD §9.5.3: every breach writes action='reject' with a reason — never the attempted value. Outside any transaction. */
 async function auditReject(reason: string): Promise<void> {
@@ -140,12 +160,26 @@ export async function loginWithPin(
   // Establish the Auth.js session. If signIn throws (e.g. AuthError when
   // the authorize callback returns null), map it to a structured error — server
   // actions must never throw across the client boundary.
+  //
+  // signIn({ redirect: false }) does NOT throw when Auth.js refuses before
+  // reaching the provider — e.g. UntrustedHost with AUTH_URL unset answers a
+  // 500 and signIn still returns a URL string. The only proof a session exists
+  // is a fresh session-token cookie on this response, so check for exactly that.
+  const before = await sessionCookieValue();
+  let failure: string | null = null;
   try {
     await signIn("credentials", { attestation, redirect: false });
+    const after = await sessionCookieValue();
+    if (after === "" || after === before) {
+      failure = "PIN matched but Auth.js set no session cookie (check AUTH_URL / trusted host)";
+    }
   } catch (err) {
-    // AuthError or unexpected failure — session was NOT created.
-    const message = err instanceof Error ? err.message : "Sign-in failed.";
-    return { ok: false, code: "AUTH_ERROR", message };
+    failure = `PIN matched but Auth.js sign-in threw: ${err instanceof Error ? err.name : "unknown error"}`;
+  }
+  if (failure) {
+    // No session was created. Generic answer — it must not hint that the PIN was right.
+    await writeAudit({ entityKind: "staff", entityId: matched.id, action: "login_failed", reason: failure });
+    return { ...SIGN_IN_FAILED };
   }
 
   // Audit only after the session is confirmed — prevents a login_success row

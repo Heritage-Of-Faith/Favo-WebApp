@@ -160,7 +160,7 @@ maybe("0037 vouchers: up → down → up, defaults and refusals (AT-204)", () =>
         INSERT INTO opening_sessions (session_date, opens_at, mode, voucher_kinds_active)
         VALUES ('2099-01-04', '17:45', 'event', ARRAY['untracked_hot_drink']) RETURNING id`;
       const [order] = await tx`
-        INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target) VALUES (${st.id}, 7600, '2099-01-04', 'none')
+        INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target, payment_mode) VALUES (${st.id}, 7600, '2099-01-04', 'none', 'yoco')
         RETURNING id`;
       const [line] = await tx`
         INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_zar)

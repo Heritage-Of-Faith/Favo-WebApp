@@ -80,7 +80,7 @@ maybe("blessing fund on Postgres (AT-203)", () => {
 
         const [order] = await tx
           .insert(schema.orders)
-          .values({ staffId: staff.id, customerId: c1.id, notificationTarget: "customer", totalZar: 2000, revenueDay: "2026-10-25" })
+          .values({ staffId: staff.id, customerId: c1.id, notificationTarget: "customer", totalZar: 2000, paymentMode: "yoco", revenueDay: "2026-10-25" })
           .returning({ id: schema.orders.id });
         expect(await drawFromDonorFund(deps, actor, order.id, fundId)).toMatchObject({ ok: true, balanceAfterZar: 48_000 });
         const [o] = await tx.select().from(schema.orders).where(eq(schema.orders.id, order.id));

@@ -42,8 +42,6 @@ jobs:
       AUTH_SECRET: preflight-test-secret-do-not-use-in-prod
       AUTH_URL: http://localhost:3000
       TZ: Africa/Johannesburg
-      # TEST_AUDIT_SECRET enables the audit-coverage assertion in full-suite.spec.ts
-      TEST_AUDIT_SECRET: preflight-audit-secret
       # The in-app scheduler (AT-169) must never fire jobs against the test DB
       SCHEDULER_ENABLED: "false"
       PUBLIC_BASE_URL: ${{ github.event.inputs.base_url || 'http://localhost:3000' }}

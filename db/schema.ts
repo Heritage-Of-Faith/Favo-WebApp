@@ -267,12 +267,15 @@ export const orders = pgTable("orders", {
   totalZar: integer("total_zar").notNull(),
   yocoPaymentId: text("yoco_payment_id"),
   isStaffDiscount: boolean("is_staff_discount").default(false).notNull(),
-  // Tracks how offline orders were tendered. null = normal Yoco flow.
+  // How the order is tendered: `yoco` (card), `yoco_deferred` (taken while the
+  // machine was unreachable), `free` (nothing to pay, L42/S7a).
   // AT-203 / L47: `donor_fund` — settled from a blessing fund (one spend entry
   // in donor_fund_entries, never a payments row).
+  // §10.3 L2499 / §10.6: NOT NULL, no default — every writer names the mode.
+  // Migration 0051 backfilled the old NULLs ("'yoco' by convention").
   paymentMode: text("payment_mode", {
     enum: ["yoco", "yoco_deferred", "free", "donor_fund"],
-  }),
+  }).notNull(),
   // AT-181 / L07 · REQ-039: the SAST revenue day, from the server's clock at
   // receipt (never the client's). Midnight SAST is the boundary.
   revenueDay: date("revenue_day").notNull(),
