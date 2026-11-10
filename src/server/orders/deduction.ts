@@ -108,12 +108,13 @@ export async function deductForOrder(
   const consumesCupLid = async (): Promise<boolean> => {
     if (cupLid === undefined) {
       const [order] = await tx
-        .select({ revenueDay: orders.revenueDay })
+        .select({ revenueDay: orders.revenueDay, placedAt: orders.placedAt })
         .from(orders)
         .where(eq(orders.id, orderId));
       // Unreachable: transitionOrder holds this order's row lock.
       if (!order) throw new Error(`deductForOrder: order ${orderId} not found`);
-      cupLid = await dayConsumesCupAndLid(order.revenueDay, tx);
+      // L24 / L26: the mode (or event switch) in force when the order was rung.
+      cupLid = await dayConsumesCupAndLid(order.revenueDay, tx, order.placedAt);
     }
     return cupLid;
   };

@@ -33,10 +33,10 @@ export type ShotConfig = {
   maxShotsWeekday: number;
 };
 
-export type ShotMode = "weekday" | "sunday" | "unresolved";
+export type ShotMode = "weekday" | "sunday" | "event" | "unresolved";
 
 export type ShotPolicy = {
-  /** "unresolved" = no session today, an event, or mixed modes — fail closed. */
+  /** "event" = an event in force (its own switches); "unresolved" = no session or mixed modes — fail closed. */
   mode: ShotMode;
   /** The most shots one line may carry right now (T15). */
   maxShots: number;
@@ -73,8 +73,24 @@ export function shotSurchargeZar(shots: number, extraShotZar: number, inForce: b
  * and their switch are AT-202 part 2), no session, mixed modes — fails closed
  * to the weekday ceiling, so nothing above it is ever written un-priced.
  */
-export function shotCeiling(mode: ShotMode | "event", config: ShotConfig): number {
-  return mode === "sunday" ? config.maxShotsPerLine : config.maxShotsWeekday;
+export function shotCeiling(mode: ShotMode, config: ShotConfig): number {
+  return mode === "sunday" || mode === "event" ? config.maxShotsPerLine : config.maxShotsWeekday;
+}
+
+/**
+ * An event in force replaces the date's policy (§6.6 precedence 2). L31: a
+ * line takes 1 to T15 shots "in any mode" — max_shots_weekday binds weekday
+ * mode only, so an event takes max_shots_per_line. The surcharge is charged
+ * only when the event's switch says so, and is inert under
+ * payment_posture='free' (§6.6, T09, DEC-16) — the caller passes that.
+ */
+export function eventShotPolicy(surchargeInForce: boolean, config: ShotConfig): ShotPolicy {
+  return {
+    mode: "event",
+    maxShots: shotCeiling("event", config),
+    surchargeInForce,
+    extraShotZar: config.extraShotZar,
+  };
 }
 
 /**
@@ -82,9 +98,8 @@ export function shotCeiling(mode: ShotMode | "event", config: ShotConfig): numbe
  *  - every session `weekday` → weekday: ceiling 2, no surcharge.
  *  - every session `sunday`  → sunday: ceiling 4, surcharge in force.
  *  - none, `event`, or mixed → unresolved: weekday ceiling, no surcharge.
- *    An `event` session can be opened (AT-204), but the till does not read
- *    its extra_shot switch yet (session-mode.ts SWITCHES_IN_TILL); reading
- *    it is AT-202 part 2.
+ *    An event in force is not resolved here: readShotPolicy replaces this
+ *    with eventShotPolicy, from the event's own switch (src/lib/till-mode.ts).
  */
 export function resolveShotPolicy(modes: readonly string[], config: ShotConfig): ShotPolicy {
   let mode: ShotMode = "unresolved";
@@ -154,6 +169,6 @@ export function shotsNotAllowedMessage(itemName: string): string {
 /** SHOTS_ABOVE_CEILING copy. Not PRD copy — the PRD names no code or words for this refusal. */
 export function shotsAboveCeilingMessage(policy: ShotPolicy): string {
   if (policy.mode === "weekday") return `Weekday drinks take at most ${policy.maxShots} shots.`;
-  if (policy.mode === "sunday") return `A drink takes at most ${policy.maxShots} shots.`;
+  if (policy.mode === "sunday" || policy.mode === "event") return `A drink takes at most ${policy.maxShots} shots.`;
   return `Open today's session first — until then a drink takes at most ${policy.maxShots} shots.`;
 }

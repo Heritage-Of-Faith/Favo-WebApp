@@ -35,7 +35,7 @@ import { writeAudit } from "@/server/audit";
 import { todaySast } from "@/server/cogs/compute";
 import {
   SATURDAY_CLOSED, resolveSessionMode, forcedCloseAt, forcedClose, sastInstant, validateWindowSpan,
-  postureIsInTill, eventSwitchesInTill, EVENT_WEEKDAY_NOT_SUPPORTED, isWeekdayDate, windowTouchesWeekday,
+  postureIsInTill, eventSwitchesInTill,
   type Audience, type DateMode, type EventProfileView, type EventSwitches, type EventWindowView,
   type SessionMode,
 } from "@/lib/session-mode";
@@ -188,7 +188,7 @@ const ADMIN_ALREADY_OPEN = {
 
 const SWITCHES_NOT_IN_TILL = {
   ok: false as const, code: "INVALID_INPUT",
-  message: "This event's menu, cup, audience or extra-shot settings can't run in the till yet. Use the normal Sunday settings.",
+  message: "A custom menu can't run in the till yet. Use the full or coffee-only menu.",
 };
 
 type Refusal = { ok: false; code: string; message: string };
@@ -276,15 +276,9 @@ async function openSessionCore(input: CoreInput): Promise<CoreResult> {
   // REQ-057: no session opens on a Saturday without an event window in force.
   if (resolved.kind === "closed") return reject({ ok: false, ...SATURDAY_CLOSED }, slot, "saturday_closed");
 
-  // Temporary (review of 3779b6d, REQ-042): no event-mode session on Mon–Fri
-  // until the order path's weekday test is made session-aware. See
-  // EVENT_WEEKDAY_NOT_SUPPORTED in src/lib/session-mode.ts; the money story removes this.
-  // resolveSessionMode already ignores events on Mon–Fri; this refuses a
-  // client-confirmed event mode there (and stays as a backstop).
-  const confirmsEvent = input.confirm !== "default" && input.confirm.mode === "event";
-  if ((resolved.kind === "event" || confirmsEvent) && isWeekdayDate(date)) {
-    return reject({ ok: false, ...EVENT_WEEKDAY_NOT_SUPPORTED }, slot, "event_on_weekday");
-  }
+  // §4.2 / L18: an event session may open on any day, Mon–Fri included
+  // (Discipleship 101 is a Wednesday). The order path reads the mode per
+  // instant (src/lib/till-mode.ts), so the day's weekday sessions keep theirs.
 
   if (input.confirm !== "default") {
     const c = input.confirm;
@@ -668,7 +662,7 @@ export async function openEventWindow(
     return reject(
       {
         ok: false, code: "INVALID_INPUT",
-        message: "Free and event-price events can't run in the till yet. Use normal prices.",
+        message: "Event prices can't run in the till yet. Use normal prices or free.",
       },
       "posture_not_in_till"
     );
@@ -688,14 +682,6 @@ export async function openEventWindow(
   if (endsAt.getTime() <= now.getTime()) {
     return reject({ ok: false, code: "INVALID_INPUT", message: "Pick an end time later than now." }, "ends_in_past", span);
   }
-  // Temporary (review of 3779b6d, REQ-042): no event on Mon–Fri SAST until the
-  // money story makes the order path session-aware; that story removes this.
-  if (windowTouchesWeekday(startsAt, endsAt)) {
-    return reject({ ok: false, ...EVENT_WEEKDAY_NOT_SUPPORTED }, "event_on_weekday", {
-      startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(),
-    });
-  }
-
   const created = await db.transaction(async (tx) => {
     const txDb = tx as unknown as DB;
     const [w] = await tx

@@ -56,64 +56,30 @@ export type EventProfileView = EventSwitches & {
 export const MAX_EVENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Payment postures the order path honours today. `free` (send nothing to the
- * machine, L25) and `override` (event prices via price_history, DEC-03) are not
- * built yet, so a window carrying either is neither applied nor opened: the
- * screen would say "free" while the till still charged.
+ * Payment postures the order path honours (src/lib/till-mode.ts, createOrder).
+ * `standard` charges menu prices; `free` sends nothing to the machine and
+ * writes payment_mode 'free' (L25, REQ-045, S7a). `override` (event prices,
+ * DEC-03) is not built — nothing yet writes the price_history rows and the
+ * price_overrides snapshot together — so a window carrying it is neither
+ * applied nor opened: the screen would say "event prices" while the till
+ * charged menu prices.
  */
-export const POSTURES_IN_TILL: readonly PaymentPosture[] = ["standard"];
+export const POSTURES_IN_TILL: readonly PaymentPosture[] = ["standard", "free"];
 
 export function postureIsInTill(p: PaymentPosture): boolean {
   return POSTURES_IN_TILL.includes(p);
 }
 
 /**
- * The switches the till does not read yet (menu scope, cup & lid, audience,
- * extra-shot surcharge) must hold the normal-Sunday values of PRD §4's mode
- * table — the same values as Untracked Church (§6.11.2). Any other value would
- * be shown as confirmed state while the till ignored it, so it is refused,
- * exactly like a posture outside POSTURES_IN_TILL. Voucher kinds are honoured.
+ * Menu scopes the till honours. `custom` needs the subset stored somewhere,
+ * and no column holds it (§10.2 lists none), so it is refused like `override`.
+ * Cup & lid (L24, L26), audience (REQ-056), the extra-shot surcharge (L31) and
+ * voucher kinds are all honoured, in every combination.
  */
-export const SWITCHES_IN_TILL = {
-  menuScope: "full", consumesCupLid: true, audience: "both", extraShotSurcharge: true,
-} as const satisfies Partial<EventSwitches>;
+export const MENU_SCOPES_IN_TILL: readonly MenuScope[] = ["full", "coffee_only"];
 
 export function eventSwitchesInTill(s: EventSwitches): boolean {
-  return (
-    postureIsInTill(s.paymentPosture) &&
-    s.menuScope === SWITCHES_IN_TILL.menuScope &&
-    s.consumesCupLid === SWITCHES_IN_TILL.consumesCupLid &&
-    s.audience === SWITCHES_IN_TILL.audience &&
-    s.extraShotSurcharge === SWITCHES_IN_TILL.extraShotSurcharge
-  );
-}
-
-/**
- * Temporary refusal (independent review of 3779b6d, REQ-042): the free-cup and
- * cup/lid code treat a day as weekday only when every opening_sessions row of
- * the date is mode 'weekday', so an event session on Mon–Fri would make office
- * staff pay for the rest of the day. Until that money decision is taken (Tier
- * A), no event-mode session or window may fall on Mon–Fri SAST. Remove this
- * guard in the story that makes the order path session-aware.
- */
-export const EVENT_WEEKDAY_NOT_SUPPORTED = {
-  code: "EVENT_WEEKDAY_NOT_SUPPORTED",
-  message: "Events can only run on a Saturday or Sunday for now.",
-} as const;
-
-/** True for a Mon–Fri revenue day (YYYY-MM-DD, already SAST). */
-export function isWeekdayDate(sessionDate: string): boolean {
-  return defaultSessionMode(sessionDate) === "weekday";
-}
-
-/** The SAST revenue day (YYYY-MM-DD) of an instant — UTC+2 all year. */
-export function sastDate(instant: string | Date): string {
-  return new Date(new Date(instant).getTime() + 2 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
-/** Does any part of [startsAt, endsAt) fall on a Mon–Fri SAST? (≤ 24 h, so two days at most.) */
-export function windowTouchesWeekday(startsAt: Date, endsAt: Date): boolean {
-  return isWeekdayDate(sastDate(startsAt)) || isWeekdayDate(sastDate(new Date(endsAt.getTime() - 1)));
+  return postureIsInTill(s.paymentPosture) && MENU_SCOPES_IN_TILL.includes(s.menuScope);
 }
 
 /**
@@ -233,11 +199,10 @@ export function resolveSessionMode(input: SessionSlot & {
   const dateMode = defaultSessionMode(input.sessionDate);
   const overridesSunday = dateMode === "sunday";
 
-  // Temporary (coordinator decision on the review of 3779b6d, REQ-042): on
-  // Mon–Fri a stray window or recurring profile is ignored, so a weekday session
-  // is always plain weekday and the barista is never blocked. Explicitly
-  // creating a weekday event stays refused (EVENT_WEEKDAY_NOT_SUPPORTED).
-  if (dateMode === "weekday") return { kind: "date", mode: "weekday" };
+  // §4.2 / L18: "any session whose window overlaps an event window → Event",
+  // Mon–Fri included — Discipleship 101 runs on Wednesdays (§6.6, T7). The
+  // order path reads the mode per instant (src/lib/till-mode.ts), so a weekday
+  // morning session is untouched by the evening's event.
 
   // (1) A window that already exists (one-off or started) beats a recurring template.
   const window = [...input.windows]

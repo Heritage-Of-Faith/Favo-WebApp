@@ -10,6 +10,7 @@ import { describe, it, expect } from "vitest";
 import {
   shotSurchargeZar,
   shotCeiling,
+  eventShotPolicy,
   resolveShotPolicy,
   parseShotConfig,
   parseShotConfigWithFallbacks,
@@ -89,8 +90,17 @@ describe("shotCeiling / resolveShotPolicy — T15, REQ-138, REQ-144", () => {
         mode: "unresolved", maxShots: 2, surchargeInForce: false, extraShotZar: 1000,
       });
     }
-    expect(shotCeiling("event", DEFAULTS)).toBe(2);
     expect(FAIL_CLOSED_POLICY).toEqual({ mode: "unresolved", maxShots: 2, surchargeInForce: false, extraShotZar: 1000 });
+  });
+
+  // CHANGED (event switches story): an event in force is no longer "unresolved".
+  // L31: 1 to T15 shots "in any mode"; max_shots_weekday binds weekday mode only.
+  // The surcharge follows the event's own switch (§6.6), passed in by the caller.
+  it("an event in force: max_shots_per_line (4), surcharge per its switch", () => {
+    expect(shotCeiling("event", DEFAULTS)).toBe(4);
+    expect(eventShotPolicy(true, DEFAULTS)).toEqual({ mode: "event", maxShots: 4, surchargeInForce: true, extraShotZar: 1000 });
+    expect(eventShotPolicy(false, DEFAULTS)).toEqual({ mode: "event", maxShots: 4, surchargeInForce: false, extraShotZar: 1000 });
+    expect(shotsAboveCeilingMessage(eventShotPolicy(true, DEFAULTS))).toBe("A drink takes at most 4 shots.");
   });
 
   it("copy names the ceiling in plain words", () => {

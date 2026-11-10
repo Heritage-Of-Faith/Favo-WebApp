@@ -27,6 +27,7 @@ import { useDraftOrder, lineKey, HANDED_OVER, keepDraftForNextSignIn } from "@/s
 import { formatZar, formatDate, revenueDay } from "@/lib/format";
 import { computeLineTotalZar } from "@/server/orders/pricing";
 import { FAIL_CLOSED_POLICY, shotSurchargeZar, shotsLabel, type ShotPolicy } from "@/server/orders/shot-surcharge";
+import { isEventFree, menuScopeAllows, type TillEventView } from "@/lib/till-mode";
 import { FREE_CUP_COPY } from "@/server/orders/free-coffee";
 import { decideQueueCardGate } from "@/server/orders/payment-gate";
 import { freshness, daysSinceRoast } from "@/lib/status/freshness";
@@ -123,7 +124,7 @@ type Props = {
   sundayCardOnMachine?: boolean;
   /** AT-202: today's shot ceiling and surcharge, read by the page (T09, T15).
    *  Absent = fail closed: weekday ceiling, no surcharge. The server re-checks. */
-  shotPolicy?: ShotPolicy;
+  shotPolicy?: ShotPolicy & { event?: TillEventView | null };
   /** AT-203 / §6.10.6: fundOptionsForOrder, passed by the page. Absent = no fund chips. */
   fundOptions?: (input: { customerId: string | null; netZar: number }) => Promise<{ ok: true; data: FundOptions } | { ok: false; code: string; message: string }>;
 };
@@ -148,7 +149,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   const [entitlementRefused, setEntitlementRefused] = useState(false);
   // AT-212 / L19: on a weekday no order has a payment step — no Charge, no card.
   // The page reads today's mode with the shot policy; the server decides.
-  const weekdayFree = shotPolicy.mode === "weekday";
+  // L25 / REQ-045: a free-posture event in force has no payment step either.
+  const weekdayFree = shotPolicy.mode === "weekday" || isEventFree(shotPolicy.event);
   const [showPayment, setShowPayment] = useState(false);
   const { notice: orderSuccess, setNotice: setOrderSuccess, clearOnDraft } = useDraftNotice();
   // The order already in `ordered` state that the payment step is settling.
@@ -1176,7 +1178,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
               </div>
             ) : (
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-                {menu.map(item => {
+                {/* §6.6 menu scope: an event in force shows only its menu; the server refuses the rest. */}
+                {menu.filter(item => menuScopeAllows(shotPolicy.event, item.category)).map(item => {
                   const stock = menuItemStock(item.id);
                   const oos = stock === "out";
                   return (

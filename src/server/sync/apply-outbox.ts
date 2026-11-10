@@ -17,10 +17,11 @@ import {
   orders,
   orderItems,
   menuItems,
-  openingSessions,
 } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { isFreeCupWeekday, weekdayLineDiscountZar } from "@/server/orders/free-coffee";
+import { readTillMode } from "@/server/orders/till-mode-read";
+import { isEventFree } from "@/lib/till-mode";
 import { computeOrderTotalZar } from "@/server/orders/pricing";
 import { shotSurchargeZar, type ShotPolicy } from "@/server/orders/shot-surcharge";
 import { readShotPolicy, readCoffeeRecipeIds } from "@/server/orders/shot-policy";
@@ -156,18 +157,18 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
   // client queued, every line zeroed by discount_zar (DEC-18), total R0 — so
   // the close never writes it off as a phantom loss (S3a).
   const receivedAt = new Date();
-  const sessionRows = await db
-    .select({ mode: openingSessions.mode })
-    .from(openingSessions)
-    .where(eq(openingSessions.sessionDate, revenueDay(receivedAt)));
-  const weekdayFree = isFreeCupWeekday(sessionRows.map((r) => r.mode), receivedAt);
+  // The mode in force at receipt (src/lib/till-mode.ts): a Wednesday's evening
+  // event does not make the morning's replays paid. S7a: 'free' also on a
+  // free-posture event in force (L25) — the same zeroing, the same R0.
+  const till = await readTillMode(db, revenueDay(receivedAt), receivedAt);
+  const weekdayFree = isFreeCupWeekday(till.modes, receivedAt) || isEventFree(till.event);
   const lineDiscountZar = (idx: number) => (weekdayFree ? weekdayLineDiscountZar(lines[idx]) : 0);
   const orderTotalZar = weekdayFree ? 0 : serverTotalZar;
   // The till's 'free' is never trusted: only the server's own weekday read
   // (or its own R0 total, REQ-153) makes an order free. A 'free' entry replayed
-  // on any other day (an outage crossing into Saturday/Sunday, an event
-  // session, no session) is written as the paying mode — owed, at the server
-  // total, and swept at the close (S3a) — so the money can never vanish.
+  // on any other day (an outage crossing into Saturday/Sunday, a paid event,
+  // no session) is written as the paying mode — owed, at the server total,
+  // and swept at the close (S3a) — so the money can never vanish.
   const paymentMode = weekdayFree || orderTotalZar === 0 ? "free" : "yoco_deferred";
 
   // ── Create the order ───────────────────────────────────────────────────────
@@ -196,7 +197,8 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
       unitPriceZar: menuById.get(i.menuItemId)!.currentPriceZar,
       modifications: i.modifications.map((id) => ({ id })),
       shots: shotsOf(i),
-      surchargeZar: lines[idx].surchargeZar,
+      // §6.6: the extra-shot surcharge is inert where nobody pays.
+      surchargeZar: weekdayFree ? 0 : lines[idx].surchargeZar,
       ...(weekdayFree ? { discountZar: lineDiscountZar(idx) } : {}),
     }))
   );

@@ -36,7 +36,20 @@ const CAPPUCCINO_INGREDIENTS = [
  * A query-shape-aware fake tx: answers by the table queried, not by call order,
  * so it does not care in what order (or whether) deductForOrder reads the mode.
  */
-function buildTx(modes: string[]) {
+// The order: Wednesday 21 Oct 2026, rung at 19:00 SAST (Discipleship 101 hours).
+const PLACED_AT = new Date("2026-10-21T19:00:00+02:00");
+
+/** An event window 18:30–20:30 SAST on the order's Wednesday (§6.6 worked example). */
+function d101Window(consumesCupLid: boolean, over: Record<string, unknown> = {}) {
+  return {
+    id: "evw_d101", name: "Discipleship 101",
+    startsAt: new Date("2026-10-21T18:30:00+02:00"), endsAt: new Date("2026-10-21T20:30:00+02:00"),
+    menuScope: "coffee_only", paymentPosture: "free", consumesCupLid, audience: "church_member",
+    extraShotSurcharge: false, voucherKinds: [], ...over,
+  };
+}
+
+function buildTx(modes: string[], windows: Record<string, unknown>[] = []) {
   const values = vi.fn().mockResolvedValue([]);
   const select = vi.fn().mockImplementation((fields: Record<string, unknown>) => {
     const keys = Object.keys(fields ?? {});
@@ -46,9 +59,14 @@ function buildTx(modes: string[]) {
     } else if (keys.includes("itemKind")) {
       rows = CAPPUCCINO_INGREDIENTS;
     } else if (keys.includes("revenueDay")) {
-      rows = [{ revenueDay: "2026-10-21" }];
+      rows = [{ revenueDay: "2026-10-21", placedAt: PLACED_AT }];
+    } else if (keys.includes("consumesCupLid")) {
+      rows = windows;
     } else if (keys.includes("mode")) {
-      rows = modes.map((mode) => ({ mode }));
+      // An event session is bound to the first window given (if any).
+      rows = modes.map((mode) => ({
+        sessionDate: "2026-10-21", mode, eventWindowId: mode === "event" ? (windows[0]?.id ?? null) : null,
+      }));
     } else {
       throw new Error(`unexpected select: ${keys.join(",")}`);
     }
@@ -70,7 +88,7 @@ function buildTx(modes: string[]) {
   };
 }
 
-async function deductWithMode(modes: string[]) {
+async function deductWithMode(modes: string[], windows: Record<string, unknown>[] = []) {
   const lotPicker = await import("@/server/inventory/lot-picker");
   vi.spyOn(lotPicker, "pickOpenContainer").mockImplementation(async (itemId: string) => ({
     id: LOT_BY_ITEM[itemId], currentStock: 100, isLegacyLot: true,
@@ -79,7 +97,7 @@ async function deductWithMode(modes: string[]) {
     id: LOT_BY_ITEM[itemId], currentStock: 100, isLegacyLot: true,
   }));
   const { deductForOrder } = await import("@/server/orders/deduction");
-  const { tx, values } = buildTx(modes);
+  const { tx, values } = buildTx(modes, windows);
   await deductForOrder("order_001", tx as never, "staff_sam");
   const lots = values.mock.calls.map((c) => (c[0] as { inventoryLotId: string }).inventoryLotId);
   return { lots, pickActiveLot };
@@ -102,10 +120,26 @@ describe("REQ-125 / L24 — cup and lid deduction follows the mode", () => {
     expect(lots).toEqual(["lot_beans_open", "lot_milk_open", "lot_cup_12oz_001", "lot_lid_001"]);
   });
 
-  it("event mode deducts cup and lid (no consumes_cup_lid switch exists yet — today's behaviour)", async () => {
-    const { lots } = await deductWithMode(["event"]);
-    expect(lots).toContain("lot_cup_12oz_001");
-    expect(lots).toContain("lot_lid_001");
+  // CHANGED (event switches story): L24 "per the event's consumes_cup_lid
+  // switch on event orders" — the switch is read now, from the window in force
+  // when the order was rung. L26: independent of payment posture.
+  it("Discipleship 101 (free, cups consumed) on a Wednesday: cup and lid ARE deducted (§15 drill)", async () => {
+    const { lots } = await deductWithMode(["weekday", "event"], [d101Window(true)]);
+    expect(lots).toEqual(["lot_beans_open", "lot_milk_open", "lot_cup_12oz_001", "lot_lid_001"]);
+  });
+
+  it("an event whose switch says own mugs (consumes_cup_lid = false): no cup or lid row", async () => {
+    const { lots, pickActiveLot } = await deductWithMode(["event"], [d101Window(false, { paymentPosture: "standard" })]);
+    expect(lots).toEqual(["lot_beans_open", "lot_milk_open"]);
+    expect(pickActiveLot).not.toHaveBeenCalled();
+  });
+
+  it("REQ-042: an order rung after the event window ended follows the date's mode (weekday: no cups)", async () => {
+    const ended = d101Window(true, {
+      startsAt: new Date("2026-10-21T16:00:00+02:00"), endsAt: new Date("2026-10-21T18:00:00+02:00"),
+    });
+    const { lots } = await deductWithMode(["event"], [ended]);
+    expect(lots).toEqual(["lot_beans_open", "lot_milk_open"]);
   });
 
   it("no session for the order's day: not a weekday order, so cup and lid deduct", async () => {

@@ -8,7 +8,7 @@
 // (PRD §15 "Shot pricing, at every step"); extra_shot_zar default 1000.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { outboxLog, orders, orderItems, menuItems, openingSessions, appConfig, recipeIngredients } from "@db/schema";
+import { outboxLog, orders, orderItems, menuItems, openingSessions, eventWindows, appConfig, recipeIngredients } from "@db/schema";
 
 vi.mock("@/server/audit", () => ({ writeAudit: vi.fn(async () => {}) }));
 
@@ -47,15 +47,33 @@ const CHOC = { id: "mi-choc", name: "Hot Chocolate", currentPriceZar: 2000, acti
 const SUNDAY = new Date("2026-10-11T09:00:00+02:00");
 const MONDAY = new Date("2026-10-12T09:00:00+02:00");
 
-function given(modes: string[]) {
+/** A mode string, or a session row bound to an event window (`window`). */
+type GivenSession = string | { mode: "event"; window: Row };
+
+function given(sessions: GivenSession[]) {
+  const windows = sessions.flatMap((s) => (typeof s === "string" ? [] : [s.window]));
   rows = new Map<unknown, Row[]>([
     [outboxLog, []],
     [menuItems, [CAPP, CHOC]],
     // The coffee-recipe lookup (ingredient kind 'bean'): only the cappuccino holds coffee.
     [recipeIngredients, [{ recipeId: "rec_capp" }]],
-    [openingSessions, modes.map((mode) => ({ mode }))],
+    [openingSessions, sessions.map((s) => (typeof s === "string" ? { mode: s } : { mode: s.mode, eventWindowId: s.window.id }))],
+    [eventWindows, windows],
     [appConfig, []],
   ]);
+}
+
+/** An event window 08:00–12:00 SAST on the given date, with the given posture. */
+function eventOn(date: string, paymentPosture: "free" | "standard"): { mode: "event"; window: Row } {
+  return {
+    mode: "event",
+    window: {
+      id: `evw_${date}_${paymentPosture}`, name: paymentPosture === "free" ? "Discipleship 101" : "Youth Social",
+      startsAt: new Date(`${date}T08:00:00+02:00`), endsAt: new Date(`${date}T12:00:00+02:00`),
+      menuScope: "full", paymentPosture, consumesCupLid: true, audience: "both",
+      extraShotSurcharge: paymentPosture !== "free", voucherKinds: [],
+    },
+  };
 }
 
 function entry(shots: number | undefined, clientTotalZar: number) {
@@ -167,19 +185,37 @@ describe("applyOutboxItem — weekday + deferred → free (S7a, AT-212)", () => 
     expect((insertsInto(orderItems)[0] as Row[])[0]).toMatchObject({ unitPriceZar: 2000, discountZar: 2000 });
   });
 
+  // CHANGED (event switches story): the mode is read at the instant of receipt
+  // (src/lib/till-mode.ts). An event session counts only while its window is in
+  // force, and then by its posture: a paid event is owed; a free one is free.
   it.each([
     ["a Sunday", SUNDAY, ["sunday"]],
-    ["a Saturday event", SATURDAY, ["event"]],
-    ["a weekday with an event session", MONDAY, ["event"]],
-    ["a weekday with a weekday and an event session", MONDAY, ["weekday", "event"]],
+    ["a Saturday paid event in force", SATURDAY, [eventOn("2026-10-10", "standard")]],
+    ["a weekday with a paid event in force", MONDAY, [eventOn("2026-10-12", "standard")]],
+    ["a weekday with a weekday session and a paid event in force", MONDAY, ["weekday", eventOn("2026-10-12", "standard")]],
     ["a weekday with no session", MONDAY, []],
-  ] as const)("a queued 'free' entry replayed on %s → 'yoco_deferred' at the server total R20.00, line not zeroed", async (_l, now, modes) => {
+  ] as const)("a queued 'free' entry replayed on %s → 'yoco_deferred' at the server total R20.00, line not zeroed", async (_l, now, sessions) => {
     vi.setSystemTime(now);
-    given([...modes]);
+    given([...sessions]);
     const res = await applyOutboxItem(queuedFree());
     expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 2000 });
     expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "yoco_deferred", totalZar: 2000 });
     expect((insertsInto(orderItems)[0] as Row[])[0]).not.toHaveProperty("discountZar");
+  });
+
+  it.each([
+    ["a weekday whose event session's window is not in force (reads as weekday)", MONDAY,
+      ["weekday", { ...eventOn("2026-10-12", "standard"), window: { ...eventOn("2026-10-12", "standard").window,
+        startsAt: new Date("2026-10-12T18:30:00+02:00"), endsAt: new Date("2026-10-12T20:30:00+02:00") } }]],
+    ["a Saturday free-posture event in force (S7a, L25)", SATURDAY, [eventOn("2026-10-10", "free")]],
+    ["a weekday free-posture event in force (S7a, L25)", MONDAY, [eventOn("2026-10-12", "free")]],
+  ] as const)("a R20.00 cappuccino replayed on %s → 'free', R0, line zeroed", async (_l, now, sessions) => {
+    vi.setSystemTime(now);
+    given([...sessions] as GivenSession[]);
+    const res = await applyOutboxItem(entry(1, 2000));
+    expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 0 });
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "free", totalZar: 0 });
+    expect((insertsInto(orderItems)[0] as Row[])[0]).toMatchObject({ unitPriceZar: 2000, discountZar: 2000, surchargeZar: 0 });
   });
 
   it("the same entry replayed on a Sunday stays 'yoco_deferred' at R20.00 (unchanged)", async () => {

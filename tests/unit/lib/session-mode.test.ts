@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import {
   defaultSessionMode, SATURDAY_CLOSED, resolveSessionMode, effectiveSessionMode,
   eventSwitchesInForce, validateWindowSpan, describeEvent, forcedCloseAt, sastInstant,
-  profileOccurrence, forcedClose, eventSwitchesInTill, EVENT_WEEKDAY_NOT_SUPPORTED,
+  profileOccurrence, forcedClose, eventSwitchesInTill,
   type EventWindowView, type EventProfileView,
 } from "@/lib/session-mode";
 
@@ -135,9 +135,19 @@ describe("resolveSessionMode — §6.6 precedence and L18", () => {
     expect(r).toMatchObject({ kind: "event", source: "window" });
   });
 
-  it("Mon–Fri: event windows and recurring profiles are ignored; the session is plain weekday", () => {
+  // CHANGED (event switches story): the temporary Mon–Fri block is removed.
+  // §4.2 / L18: "any session whose window overlaps an event window → Event";
+  // T7 is a Wednesday (Discipleship 101, §6.0.8).
+  it("Mon–Fri: a session inside an event window is an event (Discipleship 101 is a Wednesday)", () => {
     const w = windowOf({ id: "evw_wed", startsAt: "2026-10-07T16:00:00.000Z", endsAt: "2026-10-07T19:00:00.000Z" });
-    expect(resolveSessionMode({ sessionDate: "2026-10-07", opensAt: "18:30", closesAt: null, windows: [w], profiles: [profileOf()] }))
+    const r = resolveSessionMode({ sessionDate: "2026-10-07", opensAt: "18:30", closesAt: null, windows: [w], profiles: [profileOf()] });
+    expect(r).toMatchObject({ kind: "event", source: "window", overridesSunday: false });
+    // Wednesday 18:30–20:30 SAST: the recurring profile, found by the session's own window (COL-8).
+    const d101 = profileOf({ name: "Discipleship 101", paymentPosture: "free", menuScope: "coffee_only", audience: "church_member", extraShotSurcharge: false });
+    const p = resolveSessionMode({ sessionDate: "2026-10-07", opensAt: "18:30", closesAt: null, windows: [], profiles: [d101] });
+    expect(p).toMatchObject({ kind: "event", source: "profile", startsAt: "2026-10-07T16:30:00.000Z", endsAt: "2026-10-07T18:30:00.000Z" });
+    // The same Wednesday's morning stays plain weekday.
+    expect(resolveSessionMode({ sessionDate: "2026-10-07", opensAt: "08:00", closesAt: null, windows: [w], profiles: [d101] }))
       .toEqual({ kind: "date", mode: "weekday" });
   });
 
@@ -148,10 +158,11 @@ describe("resolveSessionMode — §6.6 precedence and L18", () => {
       .toEqual({ kind: "date", mode: "sunday" });
   });
 
-  it("a free or event-price window is not applied while the till cannot honour it", () => {
-    const free = profileOf({ paymentPosture: "free" });
-    expect(resolveSessionMode({ sessionDate: "2026-10-07", opensAt: "18:30", closesAt: null, windows: [], profiles: [free] }))
-      .toEqual({ kind: "date", mode: "weekday" });
+  // CHANGED (event switches story): free posture is honoured now; event prices are not.
+  it("an event-price (override) profile is not applied while the till cannot honour it", () => {
+    const override = profileOf({ paymentPosture: "override", recurrence: "FREQ=WEEKLY;BYDAY=SA" });
+    expect(resolveSessionMode({ sessionDate: "2026-10-10", opensAt: "18:30", closesAt: null, windows: [], profiles: [override] }))
+      .toEqual({ kind: "closed" });
   });
 });
 
@@ -239,12 +250,29 @@ describe("eventSwitchesInTill — only switches the till honours may run", () =>
     expect(eventSwitchesInTill({ ...SWITCHES_STANDARD, voucherKinds: ["untracked_hot_drink"] })).toBe(true);
   });
 
+  // CHANGED (event switches story): the till now honours free posture,
+  // coffee-only menus, cup & lid, audience and the surcharge switch.
   it.each([
     ["menuScope", "coffee_only"],
     ["consumesCupLid", false],
     ["audience", "nobody"],
     ["extraShotSurcharge", false],
     ["paymentPosture", "free"],
+  ] as const)("%s = %s runs", (key, value) => {
+    expect(eventSwitchesInTill({ ...SWITCHES_STANDARD, voucherKinds: [], [key]: value })).toBe(true);
+  });
+
+  it("the Discipleship 101 switches (§6.6 worked example) run", () => {
+    expect(eventSwitchesInTill({
+      menuScope: "coffee_only", paymentPosture: "free", consumesCupLid: true,
+      audience: "church_member", extraShotSurcharge: false, voucherKinds: [],
+    })).toBe(true);
+  });
+
+  // Not built: DEC-03 event prices, and a custom menu subset (no column holds it).
+  it.each([
+    ["paymentPosture", "override"],
+    ["menuScope", "custom"],
   ] as const)("%s = %s is refused", (key, value) => {
     expect(eventSwitchesInTill({ ...SWITCHES_STANDARD, voucherKinds: [], [key]: value })).toBe(false);
   });
@@ -252,17 +280,8 @@ describe("eventSwitchesInTill — only switches the till honours may run", () =>
   it("resolveSessionMode ignores a window whose switches the till cannot honour", () => {
     const res = resolveSessionMode({
       sessionDate: "2026-10-11", opensAt: "18:00", closesAt: null,
-      windows: [windowOf({ menuScope: "coffee_only" })], profiles: [],
+      windows: [windowOf({ menuScope: "custom" })], profiles: [],
     });
     expect(res).toEqual({ kind: "date", mode: "sunday" });
-  });
-});
-
-describe("EVENT_WEEKDAY_NOT_SUPPORTED", () => {
-  it("is a typed code with the plain message", () => {
-    expect(EVENT_WEEKDAY_NOT_SUPPORTED).toEqual({
-      code: "EVENT_WEEKDAY_NOT_SUPPORTED",
-      message: "Events can only run on a Saturday or Sunday for now.",
-    });
   });
 });
