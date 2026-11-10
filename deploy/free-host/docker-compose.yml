@@ -1,0 +1,96 @@
+# FAVO Café - INTERIM free-host kit. UNTESTED (written without Docker available).
+# Stand-in only. The plan of record is PRD v7 s9 (Transformate VM). See README.md.
+#
+# Run from this folder:  docker compose up -d
+# Everything secret comes from ./.env (copy .env.example). Nothing secret is in this file.
+
+name: favo
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: favo
+      POSTGRES_DB: favo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      TZ: Africa/Johannesburg
+      PGTZ: Africa/Johannesburg
+    volumes:
+      - favo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U favo -d favo"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # No "ports:" on purpose. The database is reachable only by the app, on the
+    # private compose network, never from the host or the internet.
+
+  app:
+    image: ${FAVO_IMAGE:-ghcr.io/heritage-of-faith/favo-webapp:latest}
+    # Used only by `docker compose build` (build locally). The three
+    # NEXT_PUBLIC_* values are baked into the browser code at build time and are
+    # public by design. See README section "Customer sign-in".
+    build:
+      context: ../..
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # The image entrypoint runs the migrator first, then starts the server
+    # (docker-entrypoint.sh). No separate migrate service is needed.
+    environment:
+      # Both point at the same direct Postgres. On current main the migrator and
+      # the live queue stream still read DATABASE_URL_SESSION (scripts/migrate.ts,
+      # src/server/queue/broker.ts) and the container refuses to start without it.
+      # When PR #262 (AT-168) lands this flips: DELETE the next line, because the
+      # container then refuses to start if it is set (GO_LIVE_RUNBOOK gap G4).
+      DATABASE_URL: postgresql://favo:${POSTGRES_PASSWORD}@db:5432/favo
+      DATABASE_URL_SESSION: postgresql://favo:${POSTGRES_PASSWORD}@db:5432/favo
+      AUTH_SECRET: ${AUTH_SECRET:?set the staff-login secret in .env}
+      AUTH_URL: ${AUTH_URL:?set AUTH_URL in .env}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      YOCO_SECRET_KEY: ${YOCO_SECRET_KEY:-}
+      # Per deploy only, and only for migrations marked requires-approval.
+      FAVO_APPROVE_MIGRATION: ${FAVO_APPROVE_MIGRATION:-}
+      TZ: Africa/Johannesburg
+    # Reachable from this machine only. The tunnel (below) reaches the app over
+    # the compose network, so no port needs opening to the internet.
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  # Optional free HTTPS without opening any router or firewall port.
+  # Start with:  docker compose --profile tunnel up -d
+  # Needs a Cloudflare account with a domain on it and a named tunnel token.
+  tunnel:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on:
+      - app
+    # In the Cloudflare dashboard, point the tunnel's public hostname at
+    # http://app:3000
+
+  # Optional, no account needed: a random https://xxxx.trycloudflare.com address.
+  # The address CHANGES every time this restarts. Pilot/testing only.
+  # Start with:  docker compose --profile quicktunnel up -d
+  # Find the address with:  docker compose logs quicktunnel | grep trycloudflare
+  quicktunnel:
+    profiles: ["quicktunnel"]
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://app:3000
+    depends_on:
+      - app
+
+volumes:
+  favo_pgdata:
