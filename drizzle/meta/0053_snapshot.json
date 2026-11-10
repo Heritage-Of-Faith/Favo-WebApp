@@ -1,6 +1,6 @@
 {
-  "id": "a6387f65-604b-42be-9a38-2f1f9e873644",
-  "prevId": "ffa9ad71-0d3f-4950-9721-1e1431444bad",
+  "id": "54492acd-8140-4f7d-8006-5f945eef83f4",
+  "prevId": "c44e2abf-0de9-4839-a6fe-7805d15bd918",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2350,7 +2350,7 @@
           "name": "payment_mode",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "revenue_day": {
           "name": "revenue_day",

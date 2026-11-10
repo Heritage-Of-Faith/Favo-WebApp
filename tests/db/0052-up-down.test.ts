@@ -10,7 +10,7 @@
 // What it proves:
 //   - the database refuses an anonymous price row and an unknown staff id, and
 //     accepts a row naming a real staff member;
-//   - price_history matches the 0052 snapshot; after `down` the 0050 snapshot
+//   - price_history matches the 0052 snapshot; after `down` the 0051 snapshot
 //     (0052 gone from drizzle's ledger); after `up` the 0052 snapshot again;
 //   - down refuses, changing nothing, while a price row exists;
 //   - up refuses on a database already holding a price row with no actor.
@@ -115,7 +115,7 @@ maybe("0052 price_history.set_by_staff_id: up → down → up, and the refusals 
       if (ledgerBefore !== null) expect(ledgerBefore).toBe(true);
 
       await tx.unsafe(migrationSql(DOWN));
-      expect(await dbShape(tx)).toEqual(snapshotShape("0050_snapshot.json"));
+      expect(await dbShape(tx)).toEqual(snapshotShape("0051_snapshot.json"));
       if (ledgerBefore !== null) expect(await ledgerHas0052(tx)).toBe(false);
 
       await tx.unsafe(migrationSql(UP));
@@ -138,7 +138,7 @@ maybe("0052 price_history.set_by_staff_id: up → down → up, and the refusals 
       await tx.unsafe(migrationSql(DOWN));
       await tx`INSERT INTO price_history (menu_item_id, price_zar) VALUES (${menuId}, 3500)`;
       await expect(tx.savepoint((sp) => sp.unsafe(migrationSql(UP)))).rejects.toThrow(/set_by_staff_id/);
-      expect(await dbShape(tx)).toEqual(snapshotShape("0050_snapshot.json"));
+      expect(await dbShape(tx)).toEqual(snapshotShape("0051_snapshot.json"));
     });
   });
 });
