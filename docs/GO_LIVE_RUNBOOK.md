@@ -125,12 +125,12 @@ PRD §9.6.2 is the register of record and lists **seven** jobs. (§9.6.1's depen
 | 1 | checkLowStock | every 15 min | Wired |
 | 2 | closeDaily | 00:05, catch-up on startup | Wired, plus a 06:00 missing-close alert |
 | 3 | generateWeeklyPnL | Monday 06:00, catch-up | Wired |
-| 4 | Unconfirmed-payment reconciliation | every 15 min | **Not wired** (file says deferred) |
+| 4 | Unconfirmed-payment reconciliation | every 15 min | Wired, **paid days only** (DEC-27, owner decision, Mia, 10 Nov 2026): runs on a Sunday or a day with a paid event session, and on payments carried over from one until resolved; on any other day it does nothing at all. While no Web POS device is linked it skips the Yoco lookups but still sends the 30-minute alert |
 | 5 | `collected` sweep | every 5 min | Wired |
 | 6 | importYocoTransactions | 06:00, catch-up | **Not wired** |
 | 7 | Donor-fund dormancy check | daily 06:30 | **Not wired** |
 
-So **today four of the seven are live**. Jobs 4, 6 and 7 must land before they are relied on; job 4 matters once real card payments exist. **To confirm with Nikao** which are required before the first Sunday on FAVO. No job may start a payment or create revenue (§9.6.2 rule 2).
+So **today five of the seven are live**. Jobs 6 and 7 must land before they are relied on. Job 4 only does real work once a Web POS device is linked and real card payments go through FAVO. **To confirm with Nikao** which are required before the first Sunday on FAVO. No job may start a payment or create revenue (§9.6.2 rule 2).
 
 **Healthz** (`GET /api/healthz`, cached 5 seconds). Returns 200 only if Postgres answers `SELECT 1`, `DATABASE_URL_SESSION` is set (this "sse_config" check proves only that it is set, not that the queue stream connected), and Loki is reachable *or not configured*. **Yoco is shown but advisory**, so a Yoco blip will not fail the check. Expect `{"ok":true,...}` with `checks.loki.reason: "not configured"`. After #262, `sse_config` keys off `DATABASE_URL` instead. Transformate's monitoring should poll this URL (§9.8); who wires that: **to confirm with Matt**.
 
@@ -177,7 +177,7 @@ These were found by reading the repo. **Reported, not fixed.**
 | G7 | **`docs/backup-restore.md` is out of date.** It describes Supabase point-in-time recovery, RPO 24 h and RTO 2 h. PRD §9.4 says RPO ≤ 5 min, RTO ≤ 4 hours, WAL archiving on Transformate. `docs/deploy-runbook.md` also still describes the older Coolify and Vercel-era flow. Use this page and the PRD instead. | `docs/backup-restore.md`; `docs/deploy-runbook.md` | Nikao |
 | G8 | **Fixed: the Dockerfile now has a `HEALTHCHECK` on `/api/healthz`.** Still open: whether Transformate's monitoring polls `/api/healthz` is unconfirmed. | `Dockerfile` | Matt |
 | G9 | **Push subject is hard-coded to `mailto:ops@hofmi.org`.** PRD §9.3 says `hofmi.org` has never existed. Some push services may reject or ignore an undeliverable contact. | `src/server/push/vapid.ts:8` | Nikao |
-| G10 | **Jobs 4, 6 and 7 are not wired** (section 5). | `src/server/jobs/registry.ts:6-9` | Nikao |
+| G10 | **Jobs 6 and 7 are not wired** (section 5). Job 4 is wired, paid days only (DEC-27). | `src/server/jobs/registry.ts:6-10` | Nikao |
 | G11 | `docker-entrypoint.sh`, the `migrate.js` bundle and the standalone `server.js` are all copied into the runner stage and the entrypoint is executable. No missing step found there. | `Dockerfile`, `docker-entrypoint.sh` | none |
 
 ---

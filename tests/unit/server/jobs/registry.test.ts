@@ -10,6 +10,10 @@ vi.mock("@/server/crons/close-daily", () => ({
 }));
 vi.mock("@/server/crons/collected-sweep", () => ({ sweepCollected: vi.fn(async () => ({})) }));
 vi.mock("@/server/jobs/close-watch", () => ({ checkMissingCloses: vi.fn(async () => ({})) }));
+vi.mock("@/server/crons/unconfirmed-payments", () => ({
+  shouldRunUnconfirmedPayments: vi.fn(async () => true),
+  reconcileUnconfirmedPayments: vi.fn(async () => ({ due: 0, lookedUp: 0, alerted: 0 })),
+}));
 vi.mock("@/server/crons/generate-weekly-pnl", async (orig) => ({
   ...(await orig<typeof import("@/server/crons/generate-weekly-pnl")>()),
   // CHANGED (AT-206): the run now goes through runWeeklyPnLJob, which pushes
@@ -23,6 +27,7 @@ import { parseCron, sastDate } from "@/server/jobs/schedule";
 import { closeDaily } from "@/server/crons/close-daily";
 import { sweepCollected } from "@/server/crons/collected-sweep";
 import { checkMissingCloses } from "@/server/jobs/close-watch";
+import { reconcileUnconfirmedPayments, shouldRunUnconfirmedPayments } from "@/server/crons/unconfirmed-payments";
 import { generateWeeklyPnL, weekBounds } from "@/server/crons/generate-weekly-pnl";
 
 const byName = (n: string) => {
@@ -34,10 +39,28 @@ const byName = (n: string) => {
 beforeEach(() => vi.clearAllMocks());
 
 describe("job register", () => {
-  it("wires exactly the jobs signed off for AT-169, AT-193 and AT-194", () => {
+  // CHANGED (job 4): unconfirmedPayments added between jobs 3 and 5.
+  it("wires exactly the jobs signed off for AT-169, AT-193, AT-194 and job 4", () => {
     expect(JOBS.map((j) => j.name)).toEqual([
-      "checkLowStock", "closeDaily", "closeDailyWatch", "generateWeeklyPnL", "collectedSweep",
+      "checkLowStock", "closeDaily", "closeDailyWatch", "generateWeeklyPnL", "unconfirmedPayments", "collectedSweep",
     ]);
+  });
+
+  it("unconfirmedPayments (§9.6.2 #4): every 15 minutes, skipped when missed, gated by DEC-27", async () => {
+    const j = byName("unconfirmedPayments");
+    const m = parseCron(j.cron);
+    expect(j.cron).toBe("*/15 * * * *");
+    expect(m(new Date("2026-11-08T07:00:00Z"))).toBe(true);
+    expect(m(new Date("2026-11-08T07:15:00Z"))).toBe(true);
+    expect(m(new Date("2026-11-08T07:20:00Z"))).toBe(false);
+    expect(j.missedRun).toBe("skip");
+    expect(j.isDone).toBeUndefined();
+    const firedAt = new Date("2026-11-08T07:15:00Z"); // Sun 8 Nov 09:15 SAST
+    expect(j.periodFor(firedAt)).toBe("2026-11-08T09:15");
+    expect(await j.runsAt!(firedAt)).toBe(true);
+    expect(shouldRunUnconfirmedPayments).toHaveBeenCalledWith(firedAt);
+    await j.run(firedAt, false);
+    expect(reconcileUnconfirmedPayments).toHaveBeenCalledTimes(1);
   });
 
   it("checkLowStock: every 15 minutes, skipped when missed", () => {
