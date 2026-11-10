@@ -40,6 +40,7 @@ import type { ActionResult } from "@/lib/types";
 import { revenueDay } from "@/lib/format";
 import { forcedCloseAt } from "@/lib/session-mode";
 import { NO_VOUCHERS, voucherContextFor, type VoucherContext } from "@/lib/pos-vouchers";
+import { chargeableMode } from "@/lib/payment-mode";
 
 const POS_ROLES = ["barista", "admin"] as const;
 
@@ -287,8 +288,9 @@ export async function removeVoucher(
     // No payments row is written here — the screen begins a tender
     // (beginTender) at the committed new total, before anything is sent
     // (REQ-026).
-    const wasFree = order.paymentMode === "free";
-    const paymentMode = wasFree ? null : order.paymentMode;
+    // Never NULL (§10.6, migration 0051): a deferred or fund tender is kept;
+    // a `free` order that owes money again is the card, 'yoco'.
+    const paymentMode = totalZar === 0 ? "free" : chargeableMode(order.paymentMode);
     await tx
       .update(orders)
       .set({ totalZar, paymentMode: paymentMode as typeof orders.$inferInsert.paymentMode })

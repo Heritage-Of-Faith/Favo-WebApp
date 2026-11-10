@@ -47,16 +47,14 @@ beforeEach(() => {
 const LATTE_ORDER = { notificationTarget: "none" as const, items: [{ menuItemId: "mi-latte", quantity: 1, modifications: [] }] };
 
 describe("createOrder — pre-payment stock gate", () => {
-  it("rejects with OUT_OF_STOCK before charging when a recipe ingredient is unavailable", async () => {
+  it("REQ-020 / S8: rejects with STOCK_EXHAUSTED before charging when a recipe ingredient is unavailable", async () => {
     mockCheckRecipeStock.mockResolvedValue({ ok: false, itemName: "Full-Cream Milk (carton)" });
+    const { startTender } = await import("@/server/tender/service");
 
     const res = await createOrder(LATTE_ORDER);
 
-    expect(res.ok).toBe(false);
-    if (!res.ok) {
-      expect(res.code).toBe("OUT_OF_STOCK");
-      expect(res.message).toContain("Full-Cream Milk (carton)");
-    }
+    expect(res).toEqual({ ok: false, code: "STOCK_EXHAUSTED", message: "Out of beans — tell the admin" });
+    expect(startTender).not.toHaveBeenCalled();
   });
 
   it("checks stock for the ordered quantity, not a fixed 1", async () => {

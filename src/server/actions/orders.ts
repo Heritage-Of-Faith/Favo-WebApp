@@ -23,6 +23,9 @@ import { canTransition } from "@/server/orders/state-machine";
 import { deductForOrder, DeductionError } from "@/server/orders/deduction";
 import { writeOrderCogs } from "@/server/orders/order-cogs";
 import { checkRecipeStock } from "@/server/inventory/lot-picker";
+import { decidePaymentGate } from "@/server/orders/payment-gate";
+import { sundayCardSalesOnMachine } from "@/server/close/write-offs";
+import { STOCK_EXHAUSTED, refuseStockExhaustedAtMake } from "@/server/orders/stock-exhausted";
 import type { DB } from "@/lib/db";
 import {
   computeOrderTotalZar,
@@ -42,7 +45,7 @@ import {
 } from "@/server/orders/shot-surcharge";
 import { readShotPolicy, readCoffeeRecipeIds } from "@/server/orders/shot-policy";
 import { startTender, TENDER_NOT_BEGUN } from "@/server/tender/service";
-import { isAttemptOpen, isUnresolvedNeedingAttention } from "@/server/tender/tender";
+import { isAttemptOpen } from "@/server/tender/tender";
 import { summarisePayments } from "@/server/tender/summary";
 import { compensateFundDraw, drawFromDonorFund } from "@/server/funds/funds";
 import { getFundDeps } from "@/server/funds/runtime";
@@ -58,6 +61,7 @@ import { notifyOrderChange } from "@/server/queue/notify";
 import { sendOrderReadyPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
 import type { ActionResult, Order, OrderState } from "@/lib/types";
+import { chargeableMode } from "@/lib/payment-mode";
 
 // Docs: docs/API.md · Business rules L01–L06, L14–L15.
 // Roles allowed to operate the POS:
@@ -257,13 +261,8 @@ export async function createOrder(
     // stock is actually deducted here, this is a read-only availability check).
     if (mi.recipeId) {
       const stock = await checkRecipeStock(mi.recipeId, item.quantity, db);
-      if (!stock.ok) {
-        return {
-          ok: false,
-          code: "OUT_OF_STOCK",
-          message: `${mi.name} is unavailable right now — out of ${stock.itemName}.`,
-        };
-      }
+      // REQ-020 / S8: STOCK_EXHAUSTED, before any tender begins (S1 copy).
+      if (!stock.ok) return { ok: false, ...STOCK_EXHAUSTED };
     }
     const mods = item.modifications.map((id) => ({
       priceDeltaZar: modById.get(id)?.priceDeltaZar ?? 0,
@@ -439,8 +438,9 @@ export async function createOrder(
         totalZar,
         isStaffDiscount: decision.status === "apply",
         // REQ-153: a net-R0 order is `free` — it gets no payments row.
-        // S7a: 'free' on weekday mode, whatever else applies.
-        paymentMode: weekdayFree || totalZar === 0 ? "free" : null,
+        // S7a: 'free' on weekday mode, whatever else applies. Otherwise the
+        // card tender, 'yoco' — never NULL (§10.3 L2499, §10.6; migration 0051).
+        paymentMode: weekdayFree || totalZar === 0 ? "free" : "yoco",
         placedAt: receivedAt,
         revenueDay: day,
       });
@@ -499,7 +499,7 @@ export async function createOrder(
                 orderItemId: baseItemRows[l.index].id, vouchers: l.perVoucherZar.length,
                 lineDiscountZar: l.lineDiscountZar,
               })),
-              discountZar: v.discountZar, totalZar, paymentMode: totalZar === 0 ? "free" : null,
+              discountZar: v.discountZar, totalZar, paymentMode: totalZar === 0 ? "free" : "yoco",
             },
           },
           txDb
@@ -685,7 +685,7 @@ async function rejectVoucherOrder(
 // without leaking exception details across the client boundary.
 class TransitionError extends Error {
   constructor(
-    public readonly code: "NOT_FOUND" | "INVALID_TRANSITION" | "PAYMENT_REQUIRED",
+    public readonly code: "NOT_FOUND",
     message: string
   ) {
     super(message);
@@ -707,7 +707,7 @@ class CancelError extends Error {
  * Move an order through the state machine.
  *
  * On `ordered → in_progress`: deducts stock atomically inside a transaction
- *   (rule L01 / R5). Returns OUT_OF_STOCK if any ingredient lot is empty.
+ *   (rule L01 / R5). Returns STOCK_EXHAUSTED_AT_MAKE if deduction fails (S8b).
  * On `in_progress → ready`:  sends the order-ready push to known customers.
  *
  * All DB mutations (state change + deduction + audit) are wrapped in a single
@@ -771,11 +771,20 @@ export async function transitionOrder(
           message: "This order was written off at the daily close and cannot be moved on.",
         };
       }
+      // REQ-023 / S9: a backwards or repeated transition is STALE_STATE (§6.0
+      // error table copy). Returned, not thrown, so the reject audit commits
+      // (CLAUDE.md §5); nothing else is written.
       if (!canTransition(current.state, toState)) {
-        throw new TransitionError(
-          "INVALID_TRANSITION",
-          `Cannot move order from ${current.state} to ${toState}.`
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: { attempted: "transition", code: "STALE_STATE", state: current.state, toState },
+            reason: "STALE_STATE",
+          },
+          txDb
         );
+        return { ok: false, code: "STALE_STATE", message: "This order just changed — reloading" };
       }
 
       // ── Cash-remove guard (AT-122): ordered → in_progress requires a
@@ -784,35 +793,58 @@ export async function transitionOrder(
       // the drink is made" while recovery asks Yoco. A declined, a pending or a
       // never-sent closed-out attempt does not open it. Free orders (totalZar
       // === 0) need no payment row. Every attempt is read (ORDER BY attempt).
-      // Bypass when YOCO_SECRET_KEY is absent (dev/simulation mode — no real Yoco). ──
       // AT-203 / L47: an order settled from a blessing fund is paid — it holds
       // a spend entry and, by design, no payments row.
-      if (
-        toState === "in_progress" &&
-        current.totalZar > 0 &&
-        current.paymentMode !== "donor_fund" &&
-        process.env.YOCO_SECRET_KEY
-      ) {
+      // DEC-26 (Mia, 9 Nov 2026) / DEC-21: no YOCO_SECRET_KEY bypass; a deferred
+      // order starts normally (T3 step 2); a Sunday order may start while its
+      // card sale is expected on the Yoco machine — decidePaymentGate.
+      if (toState === "in_progress" && current.totalZar > 0 && current.paymentMode !== "donor_fund") {
         const attempts = await tx
           .select({ status: payments.status, sentAt: payments.sentAt })
           .from(payments)
           .where(eq(payments.orderId, orderId))
           .orderBy(payments.attempt);
-        const mayMake = attempts.some((p) => p.status === "successful" || isUnresolvedNeedingAttention(p));
-        if (!mayMake) {
-          throw new TransitionError(
-            "PAYMENT_REQUIRED",
-            "Order cannot start — card payment not yet confirmed."
+        const gate = decidePaymentGate(
+          { totalZar: current.totalZar, paymentMode: current.paymentMode, revenueDay: current.revenueDay, attempts },
+          sundayCardSalesOnMachine()
+        );
+        if (gate === "payment_required") {
+          // Returned, not thrown, so the reject audit commits (CLAUDE.md §5).
+          const refusal = { code: "PAYMENT_REQUIRED", message: "Order cannot start — card payment not yet confirmed." };
+          await writeAudit(
+            {
+              entityKind: "order", entityId: orderId, action: "reject",
+              actorId: session.id, actorRole: session.role,
+              after: { attempted: "transition", code: refusal.code, state: current.state, toState },
+              reason: refusal.code,
+            },
+            txDb
+          );
+          return { ok: false, ...refusal };
+        }
+        if (gate === "sunday_machine") {
+          // DEC-21 / DEC-26: FAVO has seen no payment; the card sale is expected
+          // on the Yoco machine, outside FAVO. No money change.
+          await writeAudit(
+            {
+              entityKind: "order", entityId: orderId, action: "sunday_started_without_favo_payment",
+              actorId: session.id, actorRole: session.role,
+              after: { revenueDay: current.revenueDay, totalZar: current.totalZar, rule: "DEC-21" },
+              reason: "card sale expected on the Yoco machine (DEC-21)",
+            },
+            txDb
           );
         }
       }
 
       // ── 1. Update order state ──────────────────────────────────────────────
+      // REQ-047 / S7: completed_at is the moment of Done (→ ready), stamped
+      // once; the sweep and the order-to-cup metric read it, never `collected`.
       await tx
         .update(orders)
         .set({
           state: toState,
-          completedAt: toState === "collected" ? new Date() : current.completedAt,
+          completedAt: toState === "ready" ? (current.completedAt ?? new Date()) : current.completedAt,
         })
         .where(eq(orders.id, orderId));
 
@@ -858,7 +890,9 @@ export async function transitionOrder(
       return { ok: false, code: err.code, message: err.message };
     }
     if (err instanceof DeductionError) {
-      return { ok: false, code: err.code, message: err.message };
+      // REQ-022 / S8b: the transaction rolled back (order stays `ordered`, no
+      // stock row); audit the refusal, push the Admin, return the S1 code.
+      return refuseStockExhaustedAtMake(orderId, session, err);
     }
     throw err; // Unexpected — let Next.js error boundary handle it
   }
@@ -1369,7 +1403,9 @@ export async function declineFreeCoffee(
       await tx.update(orderItems).set({ discountZar: 0 }).where(eq(orderItems.id, line.id));
       await tx
         .update(orders)
-        .set({ totalZar, isStaffDiscount: false, paymentMode: totalZar === 0 ? "free" : null })
+        // A free order that owes money again keeps a tender already chosen
+        // (deferred, fund) and is otherwise the card, 'yoco' — never NULL (§10.6).
+        .set({ totalZar, isStaffDiscount: false, paymentMode: totalZar === 0 ? "free" : chargeableMode(current.paymentMode) })
         .where(eq(orders.id, orderId));
       await writeAudit(
         {

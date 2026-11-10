@@ -115,7 +115,7 @@ maybe("0049 drop refunds + refund_status: up → down → up, and the refusals (
     await inRolledBackTx(async (tx) => {
       await tx.unsafe(migrationSql(DOWN));
       const [s] = await tx`INSERT INTO staff (name, role, pin_hash) VALUES ('AT-174 Barista', 'barista', 'x') RETURNING id`;
-      const [o] = await tx`INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target) VALUES (${s.id}, 2500, '2026-10-25', 'none') RETURNING id`;
+      const [o] = await tx`INSERT INTO orders (staff_id, total_zar, revenue_day, notification_target, payment_mode) VALUES (${s.id}, 2500, '2026-10-25', 'none', 'yoco') RETURNING id`;
       await tx`INSERT INTO refunds (order_id, amount_zar, reason, requested_by) VALUES (${o.id}, 2500, 'x', ${s.id})`;
       await expect(tx.savepoint((sp) => sp.unsafe(migrationSql(UP)))).rejects.toThrow(/AT-174\/0049: refunds holds rows/);
       expect(await dbColumns(tx, "refunds")).toEqual(snapshotColumns("0048_snapshot.json", "refunds"));

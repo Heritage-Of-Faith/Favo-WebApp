@@ -27,11 +27,19 @@ export type CustomerSummary = {
 
 // ─── Orders ───────────────────────────────────────────────────────────────────
 
+/**
+ * REQ-049 / L23: a customer's own history shows only orders that are Done —
+ * `ready`, `collected` or `cancelled`. An order still `ordered` or
+ * `in_progress` is never returned to a customer-scoped read (PRD §17.4).
+ */
+export const CUSTOMER_VISIBLE_ORDER_STATES = ["ready", "collected", "cancelled"] as const;
+export type CustomerVisibleOrderState = (typeof CUSTOMER_VISIBLE_ORDER_STATES)[number];
+
 /** A customer-visible slice of an order (read-only history). */
 export type CustomerOrder = Pick<
   Order,
-  "id" | "state" | "placedAt" | "completedAt" | "totalZar" | "items"
->;
+  "id" | "placedAt" | "completedAt" | "totalZar" | "items"
+> & { state: CustomerVisibleOrderState };
 
 // ─── Profile ──────────────────────────────────────────────────────────────────
 

@@ -11,11 +11,13 @@
 // in the /admin/expenses copy or a later rule, not in this action.
 
 import { z } from "zod";
+import { sql } from "drizzle-orm";
 import { db, type DB } from "@/lib/db";
 import { expenses } from "@db/schema";
 import { expenseCategory } from "@db/enums";
 import { writeAudit } from "@/server/audit";
 import { authorize } from "@/server/auth/guard";
+import { EXPENSE_LOGGED_ACTION } from "@/server/cogs/ministry-rollup";
 import type { ActionResult } from "@/lib/types";
 
 /** YYYY-MM-DD, a real calendar date. Read as midnight SAST (UTC+2, no DST). */
@@ -92,5 +94,83 @@ export async function logExpense(input: LogExpenseInput): Promise<ActionResult<L
     return { ok: true, data: row };
   } catch {
     return { ok: false, code: "DB_ERROR", message: "Could not record the expense." };
+  }
+}
+
+const calendarDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "dates must be YYYY-MM-DD")
+  .refine((d) => {
+    const t = new Date(`${d}T00:00:00Z`);
+    return !Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === d;
+  }, "not a real date");
+
+const listSchema = z
+  .object({ from: calendarDay, to: calendarDay })
+  .refine((r) => r.from <= r.to, "from must not be after to");
+
+export type ListedExpense = LoggedExpense & {
+  /** The SAST calendar day of incurred_at, YYYY-MM-DD. */
+  incurredDay: string;
+  loggedByName: string | null;
+};
+
+/**
+ * /admin/expenses' list: every expense whose incurred_at falls on a SAST day
+ * from..to inclusive — the same day rule as readDailyExpenses, so the list
+ * sums to the figure the ministry rollup subtracts. Admin only. Reads only.
+ */
+export async function listExpenses(
+  from: string,
+  to: string
+): Promise<ActionResult<{ expenses: ListedExpense[]; totalZar: number; anyEverLogged: boolean }>> {
+  const auth = await authorize("admin");
+  if (!auth.ok) return auth;
+
+  const parsed = listSchema.safeParse({ from, to });
+  if (!parsed.success) {
+    return { ok: false, code: "VALIDATION", message: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+  try {
+    const rows = await db.execute<{
+      id: string;
+      category: LoggedExpense["category"];
+      amount_zar: number | string;
+      incurred_at: string | Date;
+      incurred_day: string;
+      note: string | null;
+      logged_by_name: string | null;
+    }>(sql`
+      SELECT e.id, e.category, e.amount_zar, e.incurred_at,
+        TO_CHAR((e.incurred_at AT TIME ZONE 'Africa/Johannesburg')::date, 'YYYY-MM-DD') AS incurred_day,
+        e.note, s.name AS logged_by_name
+      FROM expenses e
+      LEFT JOIN staff s ON s.id = e.logged_by
+      WHERE (e.incurred_at AT TIME ZONE 'Africa/Johannesburg')::date >= ${parsed.data.from}::date
+        AND (e.incurred_at AT TIME ZONE 'Africa/Johannesburg')::date <= ${parsed.data.to}::date
+      ORDER BY e.incurred_at DESC, e.id
+    `);
+    const writer = await db.execute<{ exists: boolean }>(sql`
+      SELECT EXISTS (SELECT 1 FROM audit_log WHERE action = ${EXPENSE_LOGGED_ACTION}) AS exists
+    `);
+    const expensesOut: ListedExpense[] = [...rows].map((r) => ({
+      id: r.id,
+      category: r.category,
+      amountZar: Number(r.amount_zar),
+      incurredAt: new Date(r.incurred_at).toISOString(),
+      incurredDay: r.incurred_day,
+      note: r.note ?? null,
+      loggedByName: r.logged_by_name ?? null,
+    }));
+    return {
+      ok: true,
+      data: {
+        expenses: expensesOut,
+        totalZar: expensesOut.reduce((s, e) => s + e.amountZar, 0),
+        anyEverLogged: [...writer][0]?.exists === true,
+      },
+    };
+  } catch {
+    return { ok: false, code: "DB_ERROR", message: "Could not load the expenses." };
   }
 }
