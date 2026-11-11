@@ -59,6 +59,16 @@ export function migrationSql(file: string): string {
 }
 
 /**
+ * Step 0056 (the barista rota: barista_shifts, FKs → staff and
+ * opening_sessions) down inside the caller's always-rolled-back transaction.
+ * Its FK hangs on opening_sessions and staff, which older downs alter or drop.
+ * It is the newest migration, so it steps down first, before 0055.
+ */
+export async function stepDown0056(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
+  await tx.unsafe(migrationSql("down/0056_barista_rota.down.sql"));
+}
+
+/**
  * Step 0055 (DEC-28 d: orders.event_window_id, FK → event_windows) down inside
  * the caller's always-rolled-back transaction. Its FK hangs on event_windows,
  * which 0036 down drops, and it adds a column to orders, which the older

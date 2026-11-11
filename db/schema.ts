@@ -665,6 +665,34 @@ export const openingSessions = pgTable(
   ]
 );
 
+// ─── Barista rota (PRD §6.3, §10.2, §10.3 barista_shifts, §6.11.1 COL-23) ─────
+// "Who is on duty on which date", keyed to the session: `session_id, or
+// shift_date + slot`. An Admin plans by date + slot before the session exists;
+// when a session opens it is attached here and the shift-start push fires once
+// (notified_at). `slot` is the session's order of opening that revenue day:
+// 1 = the first session, 2 = the second (a Sunday's evening session, COL-23).
+
+export const baristaShifts = pgTable(
+  "barista_shifts",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    staffId: text("staff_id").notNull().references(() => staff.id),
+    shiftDate: text("shift_date").notNull(), // YYYY-MM-DD (SAST revenue day), as opening_sessions.session_date
+    slot: integer("slot").notNull(),
+    // Set when the session for (shift_date, slot) opens. A deleted session detaches it.
+    sessionId: text("session_id").references(() => openingSessions.id, { onDelete: "set null" }),
+    // Set when the shift-start push was sent — the dedupe record.
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    createdByStaffId: text("created_by_staff_id").notNull().references(() => staff.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("barista_shifts_date_slot_staff_unique").on(t.shiftDate, t.slot, t.staffId),
+    check("barista_shifts_slot_positive", sql`${t.slot} >= 1`),
+  ]
+);
+
 // ─── Event mode (AT-204 prerequisite — PRD §6.6, §10.2, L25–L27) ──────────────
 // A profile is the reusable definition (Path A recurring / Path B one-off).
 // A window is one concrete occurrence; its six switches are snapshotted at

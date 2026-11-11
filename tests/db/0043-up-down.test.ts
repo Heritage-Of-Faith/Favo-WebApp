@@ -29,7 +29,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql, stepDown0048, stepDown0049, stepDown0050, stepDown0051, stepDown0052, stepDown0053, stepDown0054, stepDown0055 } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0048, stepDown0049, stepDown0050, stepDown0051, stepDown0052, stepDown0053, stepDown0054, stepDown0055, stepDown0056 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -115,6 +115,7 @@ maybe("0043 payments as the tender record: up → down → up, and the refusals 
         // any 0043 down (rolled back with everything else). AT-209: 0045's
         // v_daily_revenue reads payments.status, which 0043 down retypes, and
         // 0045 is the newest, so it steps down before 0044.
+        await stepDown0056(tx); // the barista rota: 0056 (barista_shifts, FK → opening_sessions) is newest of all, before 0055
         await stepDown0055(tx); // DEC-28 d: 0055 (orders.event_window_id, FK → event_windows) is newest of all, before 0054
         await stepDown0054(tx); // 0054 (deferred mode, settled_at) is newest of all, before 0053
         await stepDown0053(tx); // REQ-127: 0053 (is_lid; v_weekly_variance reads app_config) is newest of all, before 0052
