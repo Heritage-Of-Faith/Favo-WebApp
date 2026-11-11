@@ -17,6 +17,7 @@ function digest(over: Partial<AdminDigest> = {}): AdminDigest {
     activeFundCount: 4,
     lastClose: { revenueDay: "2026-11-08", reconciliationStatus: "payments_matched", blockedReason: null, writtenOffCount: 0, writtenOffZar: 0, wasCatchUp: false },
     yesterdayUnclosed: false,
+    yocoImport: null,
     ...over,
   };
 }
@@ -44,6 +45,20 @@ describe("DailyDigestCard", () => {
     );
     expect(screen.getByTestId("digest-close").textContent).toContain("2026-11-06: blocked — variance");
     expect(screen.getByTestId("digest-close").textContent).toContain("2026-11-08 is not closed yet.");
+  });
+});
+
+describe("DailyDigestCard — Yoco import line (T10, §9.6.2 job 6)", () => {
+  it("no import for the day is said so, never shown as zero", () => {
+    render(<DailyDigestCard digest={digest()} />);
+    const text = screen.getByTestId("digest-yoco-import").textContent ?? "";
+    expect(text).toContain("No Yoco export imported for 2026-11-08");
+    expect(text).not.toMatch(/\b0 of\b/);
+  });
+
+  it("an import reports the unmatched rate and what is left to check", () => {
+    render(<DailyDigestCard digest={digest({ yocoImport: { unmatchedRows: 1, totalRows: 14, toCheck: 2 } })} />);
+    expect(screen.getByTestId("digest-yoco-import").textContent).toContain("1 of 14 rows unmatched · 2 to check");
   });
 });
 

@@ -35,11 +35,43 @@ function filesUnder(dir: string): string[] {
 }
 
 describe("§10.2.1: only the tender module writes payments", () => {
-  it("no file outside src/server/tender/ inserts into or updates payments", () => {
+  // CHANGED (T10): PRD §11.2 importYocoTransactions "writes payments.fee_zar and
+  // receipt_no" and "never writes payments.status". Its store is the one other
+  // file that updates payments; tests/unit/server/reconciliation/import.test.ts
+  // proves every .set() there names only feeZar / receiptNo.
+  it("no file outside src/server/tender/ inserts into or updates payments, bar the T10 fee/receipt import", () => {
     const writers = filesUnder(resolve(ROOT, "src"))
       .filter((f) => /\b(insert|update)\(payments\)/.test(readFileSync(f, "utf8")))
-      .map((f) => f.slice(ROOT.length + 1));
-    expect(writers).toEqual(["src/server/tender/drizzle-store.ts"]);
+      .map((f) => f.slice(ROOT.length + 1))
+      .sort();
+    expect(writers).toEqual(["src/server/reconciliation/drizzle-store.ts", "src/server/tender/drizzle-store.ts"]);
+    const t10 = readFileSync(resolve(ROOT, "src/server/reconciliation/drizzle-store.ts"), "utf8");
+    expect(t10).not.toMatch(/\binsert\(payments\)/);
+    const sets = [...t10.matchAll(/\.set\(\{([^}]*)\}\)/g)].map((m) => m[1].trim());
+    expect(sets).toEqual(["feeZar: patch.feeZar", "receiptNo: patch.receiptNo"]);
+  });
+
+  // CHANGED (T10, review hardening): across every reconciliation file, a .set()
+  // must take an object literal (a spread or a variable could carry `status`),
+  // and no raw SQL may update, insert into or delete from payments.
+  it("the T10 files never pass a non-literal to .set() and never write payments in raw SQL", () => {
+    const files = [
+      ...filesUnder(resolve(ROOT, "src/server/reconciliation")),
+      resolve(ROOT, "src/server/actions/reconciliation.ts"),
+    ];
+    for (const f of files) {
+      const src = readFileSync(f, "utf8");
+      const name = f.slice(ROOT.length + 1);
+      // A chained .set( (after `)` or on its own line) is a Drizzle update; a
+      // Map's `name.set(` is not. Both drizzle forms are held to the literal rule.
+      const chained = [...src.matchAll(/(?:\)|\n)\s*\.set\(\s*([^)]*)\)/g)];
+      for (const m of chained) {
+        expect(`${name}: ${m[1]}`).toMatch(/: \{\s*(feeZar|receiptNo): patch\.(feeZar|receiptNo)\s*\}$/);
+      }
+      if (name.endsWith("reconciliation/drizzle-store.ts")) expect(chained).toHaveLength(2);
+      expect(src, name).not.toMatch(/\b(UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+"?payments"?\b/i);
+      expect(src, name).not.toMatch(/setPaymentStatus/);
+    }
   });
 
   it("the Yoco Online webhook and checkout client are retired (§11.1)", () => {

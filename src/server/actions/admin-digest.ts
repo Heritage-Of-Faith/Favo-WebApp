@@ -12,6 +12,7 @@ import { authorize } from "@/server/auth/guard";
 import { revenueDay } from "@/lib/format";
 import { fundAlertsView, type FundAlertsView } from "@/server/funds/funds";
 import { getFundDeps } from "@/server/funds/runtime";
+import { latestImports } from "@/server/reconciliation/read";
 import {
   DEFAULT_VOUCHER_EXPECTED_MAX,
   VOUCHER_EXPECTED_MAX_KEY,
@@ -50,7 +51,7 @@ export async function getAdminDigest(): Promise<ActionResult<{ digest: AdminDige
   // SAST has no daylight saving, so 24 h back is always the previous revenue day.
   const day = revenueDay(new Date(Date.now() - DAY_MS));
 
-  const [sessions, expectedMax, funds, [last]] = await Promise.all([
+  const [sessions, expectedMax, funds, [last], imports] = await Promise.all([
     db
       .select({
         opensAt: openingSessions.opensAt,
@@ -80,7 +81,9 @@ export async function getAdminDigest(): Promise<ActionResult<{ digest: AdminDige
       .from(dailyCloses)
       .orderBy(desc(dailyCloses.revenueDay))
       .limit(1),
+    latestImports(db, [day]),
   ]);
+  const imp = imports.get(day) ?? null;
 
   const lastClose = last ?? null;
   return {
@@ -98,6 +101,7 @@ export async function getAdminDigest(): Promise<ActionResult<{ digest: AdminDige
         lastClose,
         // Only a completed day can be closed, so the newest close is at most yesterday.
         yesterdayUnclosed: lastClose?.revenueDay !== day,
+        yocoImport: imp && { unmatchedRows: imp.unmatchedRows, totalRows: imp.totalRows, toCheck: imp.exceptions.length },
       },
       funds,
     },
