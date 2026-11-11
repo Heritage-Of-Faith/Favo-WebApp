@@ -14,6 +14,10 @@
 // planner's own; the delete fixture is a closed session (an open one is now
 // refused); the recurring-profile and openEventWindow success cases moved off
 // a weekday, because events are refused Mon–Fri until the money story lands.
+//
+// CHANGED (event switches story): events run Mon–Fri again (§4.2, L18, T7);
+// free posture and the coffee-only / cup / audience / surcharge switches are
+// honoured; only event prices (override) and a custom menu are refused.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -566,11 +570,21 @@ describe("openEventWindow (L27, REQ-043, REQ-044)", () => {
     expect(res).toMatchObject({ ok: false, code: "INVALID_INPUT" });
   });
 
-  it("a free or event-price posture is refused until the till can honour it", async () => {
-    selectQueue.push([{ ...UNTRACKED_PROFILE, paymentPosture: "free" }]);
+  // CHANGED (event switches story): free posture is honoured in the till now
+  // (L25, REQ-045); only event prices (override, DEC-03) are still refused.
+  it("an event-price (override) posture is refused until the till can honour it", async () => {
+    selectQueue.push([{ ...UNTRACKED_PROFILE, paymentPosture: "override" }]);
     const res = await openEventWindow("evp_x", { endsAt: "2026-07-09T12:00:00.000Z" });
-    expect(res).toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    expect(res).toEqual({ ok: false, code: "INVALID_INPUT", message: "Event prices can't run in the till yet. Use normal prices or free." });
     expect(tx.insert).not.toHaveBeenCalled();
+  });
+
+  it("a free-posture profile opens a window with its switches snapshotted (L25)", async () => {
+    selectQueue.push([{ ...UNTRACKED_PROFILE, paymentPosture: "free" }]);
+    mockReturning.mockResolvedValueOnce([{ id: "evw_free" }]);
+    const res = await openEventWindow("evp_x", { endsAt: "2026-07-09T12:00:00.000Z" });
+    expect(res.ok).toBe(true);
+    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ paymentPosture: "free" }));
   });
 
   it("an end time already past is rejected", async () => {
@@ -626,8 +640,6 @@ const THU_WINDOW = {
   ...SAT_WINDOW, id: "evw_thu", name: "Thursday Social",
   startsAt: new Date("2026-07-09T05:00:00Z"), endsAt: new Date("2026-07-09T09:00:00Z"), // 07:00–11:00 SAST
 };
-const WEEKDAY_EVENT = { ok: false, code: "EVENT_WEEKDAY_NOT_SUPPORTED", message: "Events can only run on a Saturday or Sunday for now." };
-
 /** A refusal audit written on its own, outside any transaction (CLAUDE.md §5). */
 function expectRejectAudit(code: string) {
   expect(mockWriteAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "reject", reason: code }));
@@ -635,73 +647,68 @@ function expectRejectAudit(code: string) {
   expect(call?.[1]).toBeUndefined(); // not handed a tx that could roll back
 }
 
-describe("review 1: no event-mode session on Monday–Friday (REQ-042 money decision pending)", () => {
+// CHANGED (event switches story): the temporary Mon–Fri block
+// (EVENT_WEEKDAY_NOT_SUPPORTED) is removed. §4.2 / L18: "any session whose
+// window overlaps an event window → Event", and T7 — Discipleship 101 — is a
+// Wednesday (§6.0.8). The order path now reads the mode per instant.
+describe("review 1, superseded: events run on Monday–Friday (§4.2, L18, T7)", () => {
   afterEach(() => mockToday.mockReturnValue("2026-07-09"));
 
-  it("openSession inside a Thursday event window is refused, audited, nothing inserted", async () => {
+  it("openSession inside a Thursday event window opens mode 'event', bound to it", async () => {
     mockAuthorize.mockResolvedValue(BARISTA);
     queueOpeningReads([], [THU_WINDOW], []);
+    selectQueue.push([]); selectQueue.push([]); selectQueue.push([]);
     const res = await openSession({ opensAt: "07:30", confirm: { mode: "event", eventWindowId: "evw_thu" } });
-    expect(res).toEqual(WEEKDAY_EVENT);
-    expect(tx.insert).not.toHaveBeenCalled();
-    expectRejectAudit("EVENT_WEEKDAY_NOT_SUPPORTED");
+    await flush();
+    expect(res.ok).toBe(true);
+    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ mode: "event", eventWindowId: "evw_thu" }));
   });
 
-  // CHANGED (coordinator decision): a stray weekday window is ignored, never a block.
-  it("submitOpeningTime on a Thursday with a stray event window opens plain weekday", async () => {
+  it("submitOpeningTime inside a Thursday event window defaults to the event (no Sunday confirm needed)", async () => {
     mockAuthorize.mockResolvedValue(BARISTA);
     queueOpeningReads([], [THU_WINDOW], []);
     selectQueue.push([]); selectQueue.push([]); selectQueue.push([]);
     const res = await submitOpeningTime("07:30");
     await flush();
     expect(res.ok).toBe(true);
-    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ mode: "weekday", eventWindowId: null }));
+    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ mode: "event", eventWindowId: "evw_thu" }));
   });
 
-  // CHANGED (coordinator decision): as above, for the admin planner.
-  it("addTodaySession on a Thursday with a stray event window opens plain weekday", async () => {
-    mockAuthorize.mockResolvedValue(ADMIN);
-    queueOpeningReads([], [THU_WINDOW], []);
-    selectQueue.push([]); selectQueue.push([]);
-    const res = await addTodaySession({ opensAt: "07:30" });
-    expect(res.ok).toBe(true);
-    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ mode: "weekday", eventWindowId: null }));
-  });
-
-  it("openSession with a weekday confirm and a stray weekday window opens plain weekday", async () => {
+  it("a weekday confirm against a Thursday event window no longer matches: STALE_STATE, audited", async () => {
     mockAuthorize.mockResolvedValue(BARISTA);
+    queueOpeningReads([], [THU_WINDOW], []);
+    const res = await openSession({ opensAt: "07:30", confirm: { mode: "weekday" } });
+    expect(res).toMatchObject({ ok: false, code: "STALE_STATE" });
+    expect(tx.insert).not.toHaveBeenCalled();
+    expectRejectAudit("STALE_STATE");
+  });
+
+  it("a Thursday morning outside the window stays plain weekday", async () => {
+    mockAuthorize.mockResolvedValue(BARISTA);
+    vi.setSystemTime(new Date("2026-07-09T04:00:00Z")); // 06:00 SAST
     queueOpeningReads([], [THU_WINDOW], []);
     selectQueue.push([]); selectQueue.push([]); selectQueue.push([]);
-    const res = await openSession({ opensAt: "07:30", confirm: { mode: "weekday" } });
+    const res = await openSession({ opensAt: "06:00", confirm: { mode: "weekday" } });
     await flush();
     expect(res.ok).toBe(true);
+    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ mode: "weekday", eventWindowId: null }));
   });
 
-  it("openSession confirming an event profile on a Thursday is refused", async () => {
+  it("openEventWindow on a Thursday (Discipleship 101 switches) opens; nothing is refused", async () => {
     mockAuthorize.mockResolvedValue(BARISTA);
-    queueOpeningReads([], [], [UNTRACKED_PROFILE]);
-    const res = await openSession({ opensAt: "07:30", confirm: { mode: "event", eventProfileId: "evp_untracked_church" } });
-    expect(res).toEqual(WEEKDAY_EVENT);
-    expect(tx.insert).not.toHaveBeenCalled();
-  });
-
-  it("openEventWindow on a Thursday is refused and audited; nothing inserted", async () => {
-    mockAuthorize.mockResolvedValue(BARISTA);
+    mockReturning.mockResolvedValueOnce([{ id: "evw_d101" }]);
     const res = await openEventWindow(null, {
-      name: "Thursday Social", endsAt: "2026-07-09T09:00:00.000Z", switches: { ...STANDARD, voucherKinds: [] },
+      name: "Discipleship 101", endsAt: "2026-07-09T09:00:00.000Z",
+      switches: {
+        menuScope: "coffee_only", paymentPosture: "free", consumesCupLid: true,
+        audience: "church_member", extraShotSurcharge: false, voucherKinds: [],
+      },
     });
-    expect(res).toEqual(WEEKDAY_EVENT);
-    expect(tx.insert).not.toHaveBeenCalled();
-    expectRejectAudit("EVENT_WEEKDAY_NOT_SUPPORTED");
-  });
-
-  it("openEventWindow from Sunday night into Monday is refused", async () => {
-    mockAuthorize.mockResolvedValue(BARISTA);
-    vi.setSystemTime(new Date("2026-10-11T19:00:00Z")); // Sunday 21:00 SAST
-    const res = await openEventWindow(null, {
-      name: "Late", endsAt: "2026-10-11T23:00:00.000Z", switches: { ...STANDARD, voucherKinds: [] }, // Mon 01:00 SAST
-    });
-    expect(res).toEqual(WEEKDAY_EVENT);
+    expect(res.ok).toBe(true);
+    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Discipleship 101", menuScope: "coffee_only", paymentPosture: "free", consumesCupLid: true,
+      audience: "church_member", extraShotSurcharge: false,
+    }));
   });
 });
 
@@ -751,8 +758,9 @@ describe("review 2: every refused open/close is audited outside the rolled-back 
     expectRejectAudit("STALE_STATE");
   });
 
-  it("a free-posture event window", async () => {
-    selectQueue.push([{ ...UNTRACKED_PROFILE, paymentPosture: "free" }]);
+  // CHANGED (event switches story): free is honoured; override is the refused posture.
+  it("an event-price (override) event window", async () => {
+    selectQueue.push([{ ...UNTRACKED_PROFILE, paymentPosture: "override" }]);
     await openEventWindow("evp_x", { endsAt: "2026-07-09T12:00:00.000Z" });
     expectRejectAudit("INVALID_INPUT");
   });
@@ -763,17 +771,29 @@ describe("review 3: switches the till does not honour are refused, not shown as 
     mockAuthorize.mockResolvedValue(BARISTA);
     vi.setSystemTime(new Date("2026-10-10T08:05:30Z")); // Saturday
   });
-  const MSG = "This event's menu, cup, audience or extra-shot settings can't run in the till yet. Use the normal Sunday settings.";
+  // CHANGED (event switches story): coffee-only menus, cup & lid, audience and
+  // the surcharge switch are honoured now; only a custom menu is refused.
+  const MSG = "A custom menu can't run in the till yet. Use the full or coffee-only menu.";
 
   it.each([
     ["menuScope", "coffee_only"],
     ["consumesCupLid", false],
     ["audience", "nobody"],
     ["extraShotSurcharge", false],
-  ] as const)("ad-hoc %s = %s is refused, audited, nothing inserted", async (key, value) => {
+  ] as const)("ad-hoc %s = %s opens, snapshotted", async (key, value) => {
+    mockReturning.mockResolvedValueOnce([{ id: "evw_adhoc" }]);
     const res = await openEventWindow(null, {
       name: "Youth Social", endsAt: "2026-10-10T12:00:00.000Z",
       switches: { ...STANDARD, voucherKinds: [], [key]: value },
+    });
+    expect(res.ok).toBe(true);
+    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ [key]: value }));
+  });
+
+  it("ad-hoc menuScope = custom is refused, audited, nothing inserted", async () => {
+    const res = await openEventWindow(null, {
+      name: "Youth Social", endsAt: "2026-10-10T12:00:00.000Z",
+      switches: { ...STANDARD, voucherKinds: [], menuScope: "custom" },
     });
     expect(res).toEqual({ ok: false, code: "INVALID_INPUT", message: MSG });
     expect(tx.insert).not.toHaveBeenCalled();
@@ -781,7 +801,7 @@ describe("review 3: switches the till does not honour are refused, not shown as 
   });
 
   it("a profile with a non-honoured switch is refused", async () => {
-    selectQueue.push([{ ...UNTRACKED_PROFILE, menuScope: "coffee_only" }]);
+    selectQueue.push([{ ...UNTRACKED_PROFILE, menuScope: "custom" }]);
     const res = await openEventWindow("evp_x", { endsAt: "2026-10-10T12:00:00.000Z" });
     expect(res).toEqual({ ok: false, code: "INVALID_INPUT", message: MSG });
   });

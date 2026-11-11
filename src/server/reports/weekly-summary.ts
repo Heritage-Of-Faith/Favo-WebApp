@@ -17,7 +17,10 @@
 
 import { sql } from "drizzle-orm";
 import { db as defaultDb, type DB } from "@/lib/db";
-import { readDailyFigures, readMarginByShot, readPeriodFigures, type PeriodCogs, type ShotMarginRow } from "@/server/cogs/period-cogs";
+import {
+  readDailyFiguresByEvent, readMarginByShot, readPeriodFigures,
+  type DayFigures, type PeriodCogs, type ShotMarginRow,
+} from "@/server/cogs/period-cogs";
 import type { PeriodFigures } from "@/lib/cost-state";
 import type { StaffRole } from "@/lib/types";
 import { splitByMode, type Consumption, type ModeKey, type ModeSection, type SummaryDay } from "@/lib/weekly-summary";
@@ -84,36 +87,41 @@ export async function readWeeklySummary(weekStarting: string, db: DB = defaultDb
 
   const [headline, daily, sessions, drinks, entitlements, walkIns, consumption] = await Promise.all([
     readPeriodFigures(from, to, db),
-    readDailyFigures(from, to, db),
+    readDailyFiguresByEvent(from, to, db),
     db.execute<{ session_date: string; mode: string }>(sql`
       SELECT session_date, mode::text AS mode FROM opening_sessions
       WHERE session_date >= ${from} AND session_date <= ${to}
     `),
-    db.execute<{ revenue_day: string; drinks: string | number }>(sql`
-      SELECT TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day, SUM(oi.quantity)::bigint AS drinks
+    // DEC-28 (d): every count below is split by orders.event_window_id, so an
+    // event's drinks land in the Event section with its money.
+    db.execute<{ revenue_day: string; drinks: string | number; event?: boolean | null }>(sql`
+      SELECT TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day, SUM(oi.quantity)::bigint AS drinks,
+             (o.event_window_id IS NOT NULL) AS event
       FROM order_items oi JOIN orders o ON o.id = oi.order_id
       WHERE o.state IN ('in_progress', 'ready', 'collected')
         AND o.revenue_day >= ${from}::date AND o.revenue_day <= ${to}::date
-      GROUP BY 1
+      GROUP BY 1, (o.event_window_id IS NOT NULL)
     `),
-    db.execute<{ revenue_day: string; cups: string | number }>(sql`
-      SELECT TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day, COUNT(*)::bigint AS cups
+    db.execute<{ revenue_day: string; cups: string | number; event?: boolean | null }>(sql`
+      SELECT TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day, COUNT(*)::bigint AS cups,
+             (o.event_window_id IS NOT NULL) AS event
       FROM staff_entitlement_log sel JOIN orders o ON o.id = sel.order_id
       WHERE o.state IN ('in_progress', 'ready', 'collected')
         AND o.revenue_day >= ${from}::date AND o.revenue_day <= ${to}::date
-      GROUP BY 1
+      GROUP BY 1, (o.event_window_id IS NOT NULL)
     `),
     // REQ-123 / §7.0.2: walk_in_cups = Σ walk_ins.quantity (one row per line).
-    db.execute<{ revenue_day: string; cups: string | number }>(sql`
-      SELECT TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day, SUM(w.quantity)::bigint AS cups
+    db.execute<{ revenue_day: string; cups: string | number; event?: boolean | null }>(sql`
+      SELECT TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day, SUM(w.quantity)::bigint AS cups,
+             (o.event_window_id IS NOT NULL) AS event
       FROM walk_ins w JOIN orders o ON o.id = w.order_id
       WHERE o.state IN ('in_progress', 'ready', 'collected')
         AND o.revenue_day >= ${from}::date AND o.revenue_day <= ${to}::date
-      GROUP BY 1
+      GROUP BY 1, (o.event_window_id IS NOT NULL)
     `),
-    db.execute<{ revenue_day: string; kind: string; unit: string; quantity: string | number }>(sql`
+    db.execute<{ revenue_day: string; kind: string; unit: string; quantity: string | number; event?: boolean | null }>(sql`
       SELECT TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day, ii.kind::text AS kind, ii.unit::text AS unit,
-             SUM(-sm.delta)::bigint AS quantity
+             SUM(-sm.delta)::bigint AS quantity, (o.event_window_id IS NOT NULL) AS event
       FROM stock_movements sm
       JOIN orders o ON o.id = sm.related_order_id
       JOIN inventory_lots il ON il.id = sm.inventory_lot_id
@@ -121,35 +129,51 @@ export async function readWeeklySummary(weekStarting: string, db: DB = defaultDb
       WHERE sm.kind = 'deduction' AND ii.kind IN ('bean', 'milk')
         AND o.state IN ('in_progress', 'ready', 'collected')
         AND o.revenue_day >= ${from}::date AND o.revenue_day <= ${to}::date
-      GROUP BY 1, 2, 3
+      GROUP BY 1, 2, 3, (o.event_window_id IS NOT NULL)
     `),
   ]);
 
   const modes = new Map<string, string[]>();
   for (const s of sessions) modes.set(s.session_date, [...(modes.get(s.session_date) ?? []), s.mode]);
-  const drinksBy = new Map([...drinks].map((r) => [r.revenue_day, Number(r.drinks) || 0]));
-  const cupsBy = new Map([...entitlements].map((r) => [r.revenue_day, Number(r.cups) || 0]));
-  const walkInsBy = new Map([...walkIns].map((r) => [r.revenue_day, Number(r.cups) || 0]));
+  // Keyed by day and part ("|e" = the day's event-stamped orders).
+  const key = (day: string, event: boolean | null | undefined) => (event === true ? `${day}|e` : day);
+  function sumBy<R extends { revenue_day: string; event?: boolean | null }>(rs: Iterable<R>, n: (r: R) => number) {
+    const m = new Map<string, number>();
+    for (const r of rs) {
+      const k = key(r.revenue_day, r.event);
+      m.set(k, (m.get(k) ?? 0) + n(r));
+    }
+    return m;
+  }
+  const drinksBy = sumBy(drinks, (r) => Number(r.drinks) || 0);
+  const cupsBy = sumBy(entitlements, (r) => Number(r.cups) || 0);
+  const walkInsBy = sumBy(walkIns, (r) => Number(r.cups) || 0);
   const useBy = new Map<string, Consumption[]>();
   for (const r of consumption) {
-    useBy.set(r.revenue_day, [...(useBy.get(r.revenue_day) ?? []), { kind: r.kind, unit: r.unit, quantity: Number(r.quantity) || 0 }]);
+    const k = key(r.revenue_day, r.event);
+    useBy.set(k, [...(useBy.get(k) ?? []), { kind: r.kind, unit: r.unit, quantity: Number(r.quantity) || 0 }]);
   }
 
-  const days: SummaryDay[] = daily.map((d) => ({
-    date: d.date,
-    revenueZar: d.revenueZar,
-    cogs: {
-      state: d.cogs.state,
-      cogsZar: d.cogs.cogsZar,
-      absentItemNames: d.cogs.absentItemNames,
-      ordersWithoutCost: d.cogs.ordersWithoutCost,
-      orderCount: d.cogs.orderCount,
-    },
-    drinks: drinksBy.get(d.date) ?? 0,
-    staffCoffees: cupsBy.get(d.date) ?? 0,
-    walkInCups: walkInsBy.get(d.date) ?? 0,
-    consumption: useBy.get(d.date) ?? [],
-  }));
+  const toDay = (d: DayFigures, part?: "event"): SummaryDay => {
+    const k = part ? `${d.date}|e` : d.date;
+    return {
+      date: d.date,
+      ...(part ? { part } : {}),
+      revenueZar: d.revenueZar,
+      cogs: {
+        state: d.cogs.state,
+        cogsZar: d.cogs.cogsZar,
+        absentItemNames: d.cogs.absentItemNames,
+        ordersWithoutCost: d.cogs.ordersWithoutCost,
+        orderCount: d.cogs.orderCount,
+      },
+      drinks: drinksBy.get(k) ?? 0,
+      staffCoffees: cupsBy.get(k) ?? 0,
+      walkInCups: walkInsBy.get(k) ?? 0,
+      consumption: useBy.get(k) ?? [],
+    };
+  };
+  const days: SummaryDay[] = [...daily.rest.map((d) => toDay(d)), ...daily.event.map((d) => toDay(d, "event"))];
 
   // REQ-139: the dashboard's own margin-by-shot read, for the same Mon..Sun.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

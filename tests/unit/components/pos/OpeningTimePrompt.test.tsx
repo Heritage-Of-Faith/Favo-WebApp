@@ -38,6 +38,10 @@ const FREE_PROFILE = {
   ...UNTRACKED_PROFILE, id: "evp_discipleship_101", name: "Discipleship 101",
   recurrence: "FREQ=WEEKLY;BYDAY=WE", paymentPosture: "free", voucherKinds: [],
 };
+const OVERRIDE_PROFILE = {
+  ...UNTRACKED_PROFILE, id: "evp_priced_social", name: "Priced Social",
+  recurrence: null, paymentPosture: "override", voucherKinds: [],
+};
 
 function step(over: Record<string, unknown> = {}) {
   return { ok: true, data: { date: "2026-07-09", current: null, sessions: [], windows: [], profiles: [], ...over } };
@@ -108,16 +112,17 @@ describe("OpeningTimePrompt — Saturday (REQ-057)", () => {
       ...STANDARD, voucherKinds: ["untracked_hot_drink"],
     };
     mockGetStep
-      .mockResolvedValueOnce(step({ date: "2026-10-10", profiles: [UNTRACKED_PROFILE, FREE_PROFILE] }))
-      .mockResolvedValueOnce(step({ date: "2026-10-10", profiles: [UNTRACKED_PROFILE, FREE_PROFILE], windows: [window] }));
+      .mockResolvedValueOnce(step({ date: "2026-10-10", profiles: [UNTRACKED_PROFILE, FREE_PROFILE, OVERRIDE_PROFILE] }))
+      .mockResolvedValueOnce(step({ date: "2026-10-10", profiles: [UNTRACKED_PROFILE, FREE_PROFILE, OVERRIDE_PROFILE], windows: [window] }));
     mockStartEvent.mockResolvedValue({ ok: true, data: { window } });
     render(<OpeningTimePrompt />);
     await screen.findByText("Open the session first");
     fireEvent.click(screen.getByRole("button", { name: "Start an event" }));
 
-    // A free profile is not offered while the till cannot honour it.
+    // CHANGED (event switches story): a free profile is offered now (L25);
+    // an event-price (override) profile is not, while the till cannot honour it.
     const picker = screen.getByLabelText("Event profile") as HTMLSelectElement;
-    expect([...picker.options].map((o) => o.textContent)).toEqual(["Choose an event", "Untracked Church"]);
+    expect([...picker.options].map((o) => o.textContent)).toEqual(["Choose an event", "Untracked Church", "Discipleship 101"]);
     const start = screen.getByRole("button", { name: "Start event" }) as HTMLButtonElement;
     fireEvent.change(picker, { target: { value: "evp_untracked_church" } });
     expect(start.disabled).toBe(true); // an end time is mandatory

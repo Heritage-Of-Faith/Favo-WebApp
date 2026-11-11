@@ -27,6 +27,8 @@ type Row = {
   absent_item_ids: string[] | null;
   estimated: boolean | null;
   missing: boolean;
+  /** DEC-28 (d): the order's event window, or null when rung under no event. */
+  event_window_id?: string | null;
 };
 
 /** Raw per-order rows for revenue days from..to inclusive (YYYY-MM-DD). */
@@ -34,6 +36,7 @@ async function readRows(from: string, to: string, db: DB): Promise<Row[]> {
   const rows = await db.execute<Row>(sql`
     SELECT
       TO_CHAR(o.revenue_day, 'YYYY-MM-DD') AS revenue_day,
+      o.event_window_id,
       oc.cogs_zar,
       oc.absent_item_ids,
       oc.estimated,
@@ -167,6 +170,82 @@ export async function readDailyFigures(from: string, to: string, db: DB = defaul
   return out;
 }
 
+/**
+ * DEC-28 (d): revenue per revenue_day, split by whether the order is stamped
+ * with an event window — the same scope and day bucket as readDailyRevenue.
+ */
+async function readDailyRevenueByEvent(
+  from: string,
+  to: string,
+  db: DB
+): Promise<{ rest: Map<string, number>; event: Map<string, number> }> {
+  const rows = await db.execute<{ revenue_day: string; event?: boolean | null; revenue_zar: string | number }>(sql`
+    SELECT
+      TO_CHAR(revenue_day, 'YYYY-MM-DD') AS revenue_day,
+      (event_window_id IS NOT NULL) AS event,
+      SUM(total_zar)::bigint AS revenue_zar
+    FROM orders
+    WHERE ${revenueOrderScope}
+      AND revenue_day >= ${from}::date
+      AND revenue_day <= ${to}::date
+    GROUP BY revenue_day, (event_window_id IS NOT NULL)
+  `);
+  const rest = new Map<string, number>();
+  const event = new Map<string, number>();
+  for (const r of rows) {
+    const m = r.event === true ? event : rest;
+    m.set(r.revenue_day, (m.get(r.revenue_day) ?? 0) + (Number(r.revenue_zar) || 0));
+  }
+  return { rest, event };
+}
+
+/**
+ * DEC-28 (d): the day figures in two parts — `rest`, every day from..to for
+ * the orders with no event_window_id (carrying the day's expenses), and
+ * `event`, only the days that hold event-stamped orders (expenses 0, so the
+ * period's expenses are counted once). rest + event = readDailyFigures, order
+ * for order: the same reads, the same frozen order_cogs integers, nothing
+ * re-rounded (REQ-106).
+ */
+export async function readDailyFiguresByEvent(
+  from: string,
+  to: string,
+  db: DB = defaultDb
+): Promise<{ rest: DayFigures[]; event: DayFigures[] }> {
+  const revenue = await readDailyRevenueByEvent(from, to, db);
+  const rows = await readRows(from, to, db);
+  const expenses = await readDailyExpenses(from, to, db);
+  const restRows = new Map<string, Row[]>();
+  const eventRows = new Map<string, Row[]>();
+  for (const r of rows) {
+    const m = r.event_window_id != null ? eventRows : restRows;
+    m.set(r.revenue_day, [...(m.get(r.revenue_day) ?? []), r]);
+  }
+  const eventDates = [...new Set([...eventRows.keys(), ...revenue.event.keys()])].sort();
+  const restDates: string[] = [];
+  for (let d = from; d <= to; d = nextDay(d)) restDates.push(d);
+
+  const rollups = [
+    ...restDates.map((d) => (restRows.has(d) ? toRollup(restRows.get(d)!) : null)),
+    ...eventDates.map((d) => toRollup(eventRows.get(d) ?? [])),
+  ];
+  const named = await withNames(rollups.filter((r): r is CostRollup => r !== null), db);
+  let i = 0;
+  const cogsOf = (r: CostRollup | null): PeriodCogs => (r === null ? EMPTY_PERIOD_COGS : named[i++]);
+  const restCogs = rollups.slice(0, restDates.length).map(cogsOf);
+  const eventCogs = rollups.slice(restDates.length).map(cogsOf);
+
+  const figures = (date: string, c: PeriodCogs, revenueZar: number, expensesZar: number): DayFigures => ({
+    date,
+    cogs: c,
+    ...periodFigures({ revenueZar, cogsZar: c.cogsZar, expensesZar, costState: c.state }),
+  });
+  return {
+    rest: restDates.map((d, k) => figures(d, restCogs[k], revenue.rest.get(d) ?? 0, expenses.get(d) ?? 0)),
+    event: eventDates.map((d, k) => figures(d, eventCogs[k], revenue.event.get(d) ?? 0, 0)),
+  };
+}
+
 /** The whole of from..to as one period, through the same reads and periodFigures. */
 export async function readPeriodFigures(
   from: string,
@@ -206,7 +285,7 @@ export async function readMarginByShot(from: string, to: string, db: DB = defaul
   }>(sql`
     SELECT
       o.total_zar,
-      (
+      CASE WHEN o.event_window_id IS NULL THEN (
         SELECT CASE
           WHEN COUNT(*) = 0 THEN 'no_session'
           WHEN COUNT(DISTINCT s.mode) = 1 THEN MIN(s.mode::text)
@@ -214,7 +293,14 @@ export async function readMarginByShot(from: string, to: string, db: DB = defaul
         END
         FROM opening_sessions s
         WHERE s.session_date = TO_CHAR(o.revenue_day, 'YYYY-MM-DD')
-      ) AS day_mode,
+          -- DEC-28 (d): an unstamped order on a day that holds a non-event
+          -- session takes the non-event sessions' mode — the same rule as
+          -- restOfDayMode (src/lib/weekly-summary.ts).
+          AND NOT (
+            s.mode = 'event'
+            AND EXISTS (SELECT 1 FROM opening_sessions s2 WHERE s2.session_date = s.session_date AND s2.mode <> 'event')
+          )
+      ) ELSE 'event' END AS day_mode,
       oc.cogs_zar,
       oc.absent_item_ids,
       oc.estimated,

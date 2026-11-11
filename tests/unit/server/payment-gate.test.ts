@@ -126,3 +126,54 @@ describe("decideQueueCardGate (the POS queue card)", () => {
     expect(decideQueueCardGate(card({ revenueDay: SATURDAY, paymentStatus: "unresolved", paymentAwaitingLookup: true }), true)).toBe("open");
   });
 });
+
+// DEC-28 (b) (owner, Mia, 11 Nov 2026): a paid event on any day — a Thursday
+// included — is allowed. Web POS is not live, so while DEC-21's switch is on,
+// an order bound to a paid-posture event window (standard or override) starts
+// without a FAVO payment exactly as a Sunday-date order does; the server audits
+// it as event_started_without_favo_payment. A free posture is not paid.
+describe("DEC-28 (b): a paid event's card is on the Yoco machine", () => {
+  const THURSDAY = "2026-11-12";
+
+  it("Thursday R38.00 standard event, no payment, switch on → event_machine; off → payment_required", () => {
+    expect(decidePaymentGate(paid({ revenueDay: THURSDAY, eventPaymentPosture: "standard" }), true)).toBe("event_machine");
+    expect(decidePaymentGate(paid({ revenueDay: THURSDAY, eventPaymentPosture: "standard" }), false)).toBe("payment_required");
+  });
+
+  it("an override (event prices) posture is paid too; Saturday the same", () => {
+    expect(decidePaymentGate(paid({ revenueDay: THURSDAY, eventPaymentPosture: "override" }), true)).toBe("event_machine");
+    expect(decidePaymentGate(paid({ revenueDay: SATURDAY, eventPaymentPosture: "standard" }), true)).toBe("event_machine");
+  });
+
+  it("no event, or a free posture, keeps PAYMENT_REQUIRED on a Thursday", () => {
+    expect(decidePaymentGate(paid({ revenueDay: THURSDAY }), true)).toBe("payment_required");
+    expect(decidePaymentGate(paid({ revenueDay: THURSDAY, eventPaymentPosture: null }), true)).toBe("payment_required");
+    expect(decidePaymentGate(paid({ revenueDay: THURSDAY, eventPaymentPosture: "free" }), true)).toBe("payment_required");
+  });
+
+  it("S3: a latest attempt SENT to the terminal keeps the normal rule", () => {
+    expect(decidePaymentGate(paid({ revenueDay: THURSDAY, eventPaymentPosture: "standard", attempts: [{ status: "declined", sentAt: SENT }] }), true)).toBe("payment_required");
+    expect(decidePaymentGate(paid({ revenueDay: THURSDAY, eventPaymentPosture: "standard", attempts: [{ status: "successful", sentAt: SENT }] }), true)).toBe("open");
+  });
+
+  it("a Sunday event keeps the Sunday rule (DEC-26 unchanged)", () => {
+    expect(decidePaymentGate(paid({ revenueDay: SUNDAY, eventPaymentPosture: "standard" }), true)).toBe("sunday_machine");
+  });
+
+  it("a free (R0) event order is open whatever the switch", () => {
+    for (const on of [true, false]) {
+      expect(decidePaymentGate(paid({ revenueDay: THURSDAY, totalZar: 0, paymentMode: "free", eventPaymentPosture: "free" }), on)).toBe("open");
+    }
+  });
+
+  it("the queue card draws the same decision from the order's event posture", () => {
+    const card: Order = {
+      id: "ord_1", customerId: null, customerName: null, staffId: "s1", state: "ordered",
+      placedAt: "2026-11-12T17:00:00Z", completedAt: null, totalZar: 3800, isStaffDiscount: false,
+      paymentStatus: null, items: [], revenueDay: THURSDAY, paymentMode: "yoco", eventPaymentPosture: "standard",
+    };
+    expect(decideQueueCardGate(card, true)).toBe("event_machine");
+    expect(decideQueueCardGate({ ...card, eventPaymentPosture: null }, true)).toBe("payment_required");
+    expect(decideQueueCardGate({ ...card, paymentStatus: "declined", latestAttemptSent: true }, true)).toBe("payment_required");
+  });
+});

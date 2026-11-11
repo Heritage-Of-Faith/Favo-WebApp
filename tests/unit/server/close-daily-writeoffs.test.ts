@@ -307,3 +307,64 @@ describe("closeDaily — Sunday card sales outside FAVO until the Web POS is liv
     expect(vi.mocked(db.execute).mock.calls.length).toBe(2);
   });
 });
+
+// DEC-28 (b) (owner, Mia, 11 Nov 2026): a paid event on a Thursday (or a
+// Saturday social) takes its cards on the same Yoco machine while the Web POS
+// is not live. The close treats those orders as it treats a Sunday's: on
+// neither side of the reconciliation, and named on the close record.
+describe("closeDaily — paid-event card sales outside FAVO (DEC-28 b)", () => {
+  const THU = new Date("2026-06-11T10:00:00Z"); // a Thursday
+  const THU_NOW = new Date("2026-06-11T22:05:00Z"); // 00:05 SAST on Friday
+  const revenueFields = () => vi.mocked(db.select).mock.calls[1][0] as Record<string, SQL>;
+
+  afterEach(() => setSundaySkipForTests(SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE));
+
+  it("flag on: two R38.00 paid-event orders with no FAVO payment — no variance, named eventCardSalesOutsideFavo", async () => {
+    setSundaySkipForTests(true);
+    vi.mocked(db.transaction).mockImplementation(((fn: (tx: unknown) => unknown) => fn(db)) as never);
+    vi.mocked(db.execute).mockResolvedValueOnce([] as never); // lock
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    } as never);
+    vi.mocked(sweepWriteOffs).mockResolvedValueOnce(NONE);
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ total: 2000, eventOutsideCount: 2, eventOutsideZar: "7600" }]),
+      }),
+    } as never);
+    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "2000" }] as never); // payments: R20.00 paid in FAVO
+
+    const res = await closeDaily(THU, { now: THU_NOW });
+
+    const f = revenueFields();
+    expect(dialect.sqlToQuery(f.total).sql).toContain("FILTER (WHERE NOT (EXISTS (SELECT 1 FROM event_windows ew");
+    expect(dialect.sqlToQuery(f.total).sql).toContain("ew.payment_posture IN ('standard', 'override')");
+    expect(dialect.sqlToQuery(f.eventOutsideCount).sql).toContain("IS DISTINCT FROM 'free'");
+    expect(res).toMatchObject({ revenueZar: 2000, paymentsZar: 2000, variancePct: 0, band: "ok", reconciliationStatus: "payments_matched" });
+    expect(vi.mocked(writeAudit).mock.calls[0][0].after).toMatchObject({
+      revenueDay: "2026-06-11",
+      eventCardSalesOutsideFavo: { orderCount: 2, orderZar: 7600 },
+    });
+    expect(vi.mocked(writeAudit).mock.calls[0][0].after).not.toHaveProperty("sundayCardSalesOutsideFavo");
+    expect(vi.mocked(db.execute).mock.calls.length).toBe(2); // lock + payments: no extra read
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("flag off (Web POS live): the weekday close reads every order and names no outside-FAVO line", async () => {
+    setSundaySkipForTests(false);
+    mockClose({ revenue: 5000, payments: 5000, sweep: NONE });
+    await closeDaily(DAY, { now: NOW });
+    expect(Object.keys(revenueFields())).toEqual(["total"]);
+    expect(dialect.sqlToQuery(revenueFields().total).sql).not.toContain("event_windows");
+    expect(vi.mocked(writeAudit).mock.calls[0][0].after).not.toHaveProperty("eventCardSalesOutsideFavo");
+  });
+
+  it("a Sunday keeps DEC-21's own read; no event line is added (the Sunday line already covers its events)", async () => {
+    setSundaySkipForTests(true);
+    mockClose({ revenue: 0, payments: 0, sweep: NONE });
+    vi.mocked(db.execute).mockResolvedValueOnce([{ n: 1, zar: "3800" }] as never);
+    await closeDaily(new Date("2026-06-07T10:00:00Z"), { now: new Date("2026-06-07T22:05:00Z") });
+    expect(Object.keys(revenueFields())).toEqual(["total"]);
+    expect(vi.mocked(writeAudit).mock.calls[0][0].after).not.toHaveProperty("eventCardSalesOutsideFavo");
+  });
+});

@@ -20,13 +20,20 @@
 //     terminal (that one went through FAVO and keeps the normal rule, as in
 //     the sweep). The server audits it as `sunday_started_without_favo_payment`
 //     (a card sale is expected on the Yoco machine; FAVO has seen no payment).
+//   - DEC-28 (b) (owner, Mia, 11 Nov 2026): a paid event is allowed on any
+//     day, a Thursday or Friday included. While the same switch is on (the
+//     Web POS is not live), an order bound to a paid-posture event window
+//     (orders.event_window_id → payment_posture 'standard' or 'override')
+//     starts exactly as a Sunday-date order does — not if its latest attempt
+//     was sent — audited as `event_started_without_favo_payment`. A Sunday
+//     event keeps the Sunday rule. A free posture is never "paid".
 //   - everything else needs a payment: PAYMENT_REQUIRED.
 
 import { defaultSessionMode } from "@/lib/session-mode";
 import { revenueDay } from "@/lib/format";
 import type { Order } from "@/lib/types";
 
-export type PaymentGate = "open" | "sunday_machine" | "payment_required";
+export type PaymentGate = "open" | "sunday_machine" | "event_machine" | "payment_required";
 
 export type PaymentGateFacts = {
   totalZar: number;
@@ -36,7 +43,17 @@ export type PaymentGateFacts = {
   revenueDay: string;
   /** Every payment attempt, ORDER BY attempt (§10.3.3). */
   attempts: { status: string; sentAt: Date | string | null }[];
+  /**
+   * DEC-28 (b): payment_posture of the event window the order was rung under
+   * (orders.event_window_id), or null/absent when it was rung under no event.
+   */
+  eventPaymentPosture?: string | null;
 };
+
+/** DEC-28 (b): the postures under which people pay (L25: only 'free' is free). */
+export function isPaidEventPosture(posture: string | null | undefined): boolean {
+  return posture === "standard" || posture === "override";
+}
 
 /** The order's revenue day is a Sunday. An unreadable day is not a Sunday (fails closed: the gate stays on). */
 function isSundayRevenueDay(revenueDay: string): boolean {
@@ -63,6 +80,7 @@ export function decidePaymentGate(f: PaymentGateFacts, sundayCardOnMachine: bool
   const latest = f.attempts[f.attempts.length - 1];
   const latestSent = latest != null && latest.sentAt != null;
   if (sundayCardOnMachine && !latestSent && isSundayRevenueDay(f.revenueDay)) return "sunday_machine";
+  if (sundayCardOnMachine && !latestSent && isPaidEventPosture(f.eventPaymentPosture)) return "event_machine";
   return "payment_required";
 }
 
@@ -84,6 +102,7 @@ export function decideQueueCardGate(o: Order, sundayCardOnMachine: boolean): Pay
       paymentMode: o.fundSettled ? "donor_fund" : (o.paymentMode ?? null),
       revenueDay: o.revenueDay ?? revenueDay(new Date(o.placedAt)),
       attempts,
+      eventPaymentPosture: o.eventPaymentPosture ?? null,
     },
     sundayCardOnMachine
   );

@@ -11,7 +11,7 @@
 //    stops the push).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { orders, payments } from "@db/schema";
+import { eventWindows, orders, payments } from "@db/schema";
 
 vi.mock("@/server/auth/guard", () => ({
   authorize: vi.fn(async () => ({ ok: true, session: { id: "staff_louis", role: "barista", name: "Louis" } })),
@@ -175,6 +175,52 @@ describe("DEC-21: a Sunday order's card is on the Yoco machine", () => {
     const res = await transitionOrder("ord-1", "in_progress");
     expect(res.ok).toBe(true);
     expect(auditActions()).toEqual(["transition"]);
+  });
+});
+
+// DEC-28 (b) (owner, Mia, 11 Nov 2026): a paid event on a Thursday is allowed;
+// with the Web POS not live its card is on the Yoco machine, exactly as a
+// Sunday's (DEC-21 / DEC-26), audited as event_started_without_favo_payment.
+describe("DEC-28 (b): a paid weekday event's card is on the Yoco machine", () => {
+  const THURSDAY = "2026-11-12";
+  const thursdayEvent = (posture: string) => {
+    seed({ revenueDay: THURSDAY, placedAt: new Date("2026-11-12T17:00:00.000Z"), eventWindowId: "evw_thu" });
+    rows.set(eventWindows, [{ paymentPosture: posture }]);
+  };
+
+  it("Thursday R38.00 standard event, no FAVO payment: starts, one event_started_without_favo_payment row, total unchanged", async () => {
+    thursdayEvent("standard");
+    const res = await transitionOrder("ord-1", "in_progress");
+    expect(res.ok).toBe(true);
+    expect(orderSets()).toEqual([{ state: "in_progress", completedAt: null }]);
+    expect(mockDeduct).toHaveBeenCalledTimes(1);
+    expect(auditActions()).toEqual(["event_started_without_favo_payment", "transition"]);
+    expect(mockWriteAudit.mock.calls[0][0]).toMatchObject({
+      entityKind: "order", entityId: "ord-1", action: "event_started_without_favo_payment",
+      actorId: "staff_louis", actorRole: "barista",
+      after: { revenueDay: THURSDAY, totalZar: 3800, eventWindowId: "evw_thu", paymentPosture: "standard", rule: "DEC-28" },
+    });
+  });
+
+  it("switch off (Web POS live): the same order is refused with PAYMENT_REQUIRED and audited", async () => {
+    setSundaySkipForTests(false);
+    thursdayEvent("standard");
+    const res = await transitionOrder("ord-1", "in_progress");
+    expect(res).toMatchObject({ ok: false, code: "PAYMENT_REQUIRED" });
+    expect(auditActions()).toEqual(["reject"]);
+  });
+
+  it("a Thursday order on a free-posture window that somehow owes R38.00 is refused, never waved through", async () => {
+    thursdayEvent("free");
+    const res = await transitionOrder("ord-1", "in_progress");
+    expect(res).toMatchObject({ ok: false, code: "PAYMENT_REQUIRED" });
+    expect(auditActions()).toEqual(["reject"]);
+  });
+
+  it("a Thursday order rung under no event (event_window_id NULL) still needs a payment", async () => {
+    seed({ revenueDay: THURSDAY, placedAt: new Date("2026-11-12T17:00:00.000Z"), eventWindowId: null });
+    const res = await transitionOrder("ord-1", "in_progress");
+    expect(res).toMatchObject({ ok: false, code: "PAYMENT_REQUIRED" });
   });
 });
 

@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   orders, orderItems, menuItems, menuCustomisations, customers, payments,
-  staffEntitlementLog, openingSessions,
+  staffEntitlementLog, openingSessions, eventWindows,
 } from "@db/schema";
 
 vi.mock("@/server/auth/guard", () => ({
@@ -226,11 +226,24 @@ describe("createOrder applies the free weekday cup automatically (L03, REQ-024)"
     expect(res.data.tender).toBeNull();
   });
 
+  // CHANGED (event switches story): "event mode" now means an event session
+  // whose window is in force at the order (src/lib/till-mode.ts); an event
+  // session outside its window reads as the date default (REQ-042).
   it("4. sunday mode or event mode → NOT_ELIGIBLE (weekday mode only)", async () => {
     for (const [now, modes] of [[SUNDAY, ["sunday"]], [THURSDAY, ["event"]]] as const) {
       inserts.length = 0;
       vi.setSystemTime(now);
       given({ customer: OFFICE, modes: [...modes] });
+      if (modes[0] === "event") {
+        // A standard-posture event in force on the Thursday, 08:00–12:00 SAST.
+        rows.set(openingSessions, [{ sessionDate: "2026-10-08", mode: "event", eventWindowId: "evw_thu" }]);
+        rows.set(eventWindows, [{
+          id: "evw_thu", name: "Thursday Social",
+          startsAt: new Date("2026-10-08T08:00:00+02:00"), endsAt: new Date("2026-10-08T12:00:00+02:00"),
+          menuScope: "full", paymentPosture: "standard", consumesCupLid: true, audience: "both",
+          extraShotSurcharge: true, voucherKinds: [],
+        }]);
+      }
       const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [one(AMERICANO.id)] });
       expect(res.ok).toBe(true);
       if (!res.ok) return;

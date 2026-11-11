@@ -298,6 +298,11 @@ export const orders = pgTable("orders", {
   // reference (path B). payment_mode stays 'yoco_deferred' forever (§10.3.3).
   settledAt: timestamp("settled_at", { withTimezone: true }),
   settlementRef: text("settlement_ref"),
+  // DEC-28 (d) / PRD §10.3 ("Event attribution (§6.6)"), §11 createOrder ("Tags
+  // event_window_id when an event is in force"), R6. NULL = rung under no
+  // event. Stamped once at ring-up (createOrder, the offline replay); the
+  // reports' per-mode split buckets these orders as Event.
+  eventWindowId: text("event_window_id").references(() => eventWindows.id),
 }, (t) => [
   // §6.7 path B: one standalone-machine slip settles one order, never two.
   uniqueIndex("orders_settlement_ref_unique")

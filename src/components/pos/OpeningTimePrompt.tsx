@@ -26,7 +26,7 @@ import {
   type CurrentSession, type OpeningSession,
 } from "@/server/actions/opening";
 import {
-  resolveSessionMode, describeEvent, switchLines, dateModeLabel, postureIsInTill, sastClock, sastInstant,
+  resolveSessionMode, describeEvent, switchLines, dateModeLabel, eventSwitchesInTill, sastClock, sastInstant,
   type EventProfileView, type EventWindowView, type ModeResolution,
 } from "@/lib/session-mode";
 import { SESSION_CHANGED_EVENT } from "@/lib/pos-vouchers";
@@ -168,7 +168,8 @@ export default function OpeningTimePrompt() {
     await load({ initial: false, time: sastClock(res.data.window.startsAt) });
   }
 
-  const startable = data.profiles.filter((p) => postureIsInTill(p.paymentPosture));
+  // Only profiles whose switches the till honours (no event prices, no custom menu yet).
+  const startable = data.profiles.filter((p) => eventSwitchesInTill(p));
   const event = resolution?.kind === "event"
     ? resolution.source === "window"
       ? { name: resolution.window.name, switches: resolution.window, endsAt: resolution.window.endsAt }

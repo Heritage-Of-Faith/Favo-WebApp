@@ -50,3 +50,19 @@ describe("splitFiguresByMode", () => {
     expect(u.modes.sunday).toMatchObject({ cogsZar: null, grossMarginZar: null, tone: "unavailable", absentItemNames: ["Oat Milk"] });
   });
 });
+
+// DEC-28 (d): the dashboard's split reads orders.event_window_id — a
+// Wednesday with an event is no longer folded into "No mode recorded".
+describe("splitFiguresByMode — event-stamped orders (DEC-28 d)", () => {
+  it("Wednesday: weekday orders → Weekday, Discipleship 101 orders → Event; expenses counted once", () => {
+    const WED = "2026-08-12";
+    const s = splitFiguresByMode("2026-08-10", "2026-08-16", [
+      { date: WED, revenueZar: 0, expensesZar: 1000, cogs: cost("final", 1352, 3) },
+      { date: WED, part: "event", revenueZar: 0, expensesZar: 0, cogs: cost("final", 1059, 2) },
+    ], new Map([[WED, ["weekday", "event"]]]));
+    expect(s.modes.weekday).toMatchObject({ cogsZar: 1352, orderCount: 3 });
+    expect(s.modes.event).toMatchObject({ days: [WED], cogsZar: 1059, orderCount: 2 });
+    expect(s.modes.unassigned.orderCount).toBe(0);
+    expect(s.expensesZar).toBe(1000);
+  });
+});

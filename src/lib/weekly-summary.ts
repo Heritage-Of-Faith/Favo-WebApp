@@ -10,7 +10,9 @@
 // A day's mode is its opening session's mode (§10.3: "the day's mode,
 // defaulted from the date"). A day with no session takes the date's default;
 // a day with two different modes, or a Saturday with no session, is never
-// guessed into a mode — it is "unassigned" and shown as such.
+// guessed into a mode — it is "unassigned" and shown as such. DEC-28 (d):
+// event orders carry orders.event_window_id and are reported as Event; the
+// event sessions then no longer decide the rest of the day (restOfDayMode).
 
 import { defaultSessionMode } from "@/lib/session-mode";
 import { combineCostStates, periodFigures, type CostState, type NetTone } from "@/lib/cost-state";
@@ -21,6 +23,12 @@ export type Consumption = { kind: string; unit: string; quantity: number };
 
 export type SummaryDay = {
   date: string;
+  /**
+   * DEC-28 (d): "event" = only the day's orders stamped with an
+   * orders.event_window_id; they are always reported as Event. Absent = the
+   * day's other (unstamped) orders.
+   */
+  part?: "event";
   revenueZar: number;
   cogs: {
     state: CostState;
@@ -75,6 +83,19 @@ export function dayMode(date: string, sessionModes: readonly string[]): ModeKey 
   return defaultSessionMode(date) ?? "unassigned";
 }
 
+/**
+ * DEC-28 (d): the mode of a day's UNSTAMPED orders. Event orders carry
+ * orders.event_window_id and are Event by their own stamp, so any day that
+ * holds a non-event session reads its unstamped orders by the non-event
+ * sessions' mode. With no non-event session the day reads as dayMode.
+ * Known limit: an event order rung before migration 0055 carries no stamp,
+ * so on such a mixed day it is counted under the non-event mode.
+ */
+export function restOfDayMode(date: string, sessionModes: readonly string[]): ModeKey {
+  const nonEvent = sessionModes.filter((m) => m !== "event");
+  return nonEvent.length > 0 ? dayMode(date, nonEvent) : dayMode(date, sessionModes);
+}
+
 function section(mode: ModeKey, days: readonly SummaryDay[]): ModeSection {
   let revenueZar = 0;
   let cogsSum = 0;
@@ -112,7 +133,7 @@ function section(mode: ModeKey, days: readonly SummaryDay[]): ModeSection {
 
   return {
     mode,
-    days: days.map((d) => d.date),
+    days: [...new Set(days.map((d) => d.date))].sort(), // DEC-28 (d): a day may hold two parts
     orderCount,
     revenueZar,
     cogsZar: f.cogsZar,
@@ -135,7 +156,12 @@ export function splitByMode(
   sessionModes: ReadonlyMap<string, readonly string[]>
 ): Record<ModeKey, ModeSection> {
   const by: Record<ModeKey, SummaryDay[]> = { weekday: [], sunday: [], event: [], unassigned: [] };
-  for (const d of days) by[dayMode(d.date, sessionModes.get(d.date) ?? [])].push(d);
+  // DEC-28 (d): stamped event orders are Event; the rest of the day reads its
+  // non-event sessions' mode (restOfDayMode).
+  for (const d of days) {
+    const modes = sessionModes.get(d.date) ?? [];
+    by[d.part === "event" ? "event" : restOfDayMode(d.date, modes)].push(d);
+  }
   return {
     weekday: section("weekday", by.weekday),
     sunday: section("sunday", by.sunday),
