@@ -22,7 +22,9 @@ import {
 export type { OfflineOrder };
 
 /** Replay a single queued order. Returns the server outcome for the caller. */
-type SyncOutcome = "applied" | "duplicate" | "rejected" | "retry";
+// "too_old": REQ-039 / §6.0.5 REPLAY_TOO_OLD — "Not shown to the barista;
+// surfaced on the admin exception list". Removed from the outbox, no toast.
+type SyncOutcome = "applied" | "duplicate" | "rejected" | "too_old" | "retry";
 
 export function useOfflineOutbox(currentStaffId: string) {
   // Newest-last list of this staff member's queued orders.
@@ -73,7 +75,13 @@ export function useOfflineOutbox(currentStaffId: string) {
         // so it doesn't retry forever. The receipt stays in outbox_log for
         // manual admin follow-up; there is no automated resolution flow.
         await deleteOrder(order.clientUuid);
-        return "rejected";
+        let reason: unknown;
+        try {
+          reason = ((await res.json()) as { reason?: unknown } | null)?.reason;
+        } catch {
+          /* unreadable body — treat as an ordinary rejection */
+        }
+        return reason === "replay_too_old" ? "too_old" : "rejected";
       }
       // 401/403/5xx — leave in outbox; try again on next online event.
       return "retry";
@@ -126,6 +134,7 @@ export function useOfflineOutbox(currentStaffId: string) {
       await refresh();
       if (outcome === "applied" || outcome === "duplicate") toast.success("Order synced");
       else if (outcome === "rejected") toast.warning("Order flagged for admin review");
+      else if (outcome === "too_old") return; // REQ-039: not shown to the barista
       else toast.error("Still can't reach the server — will retry automatically.");
     },
     [myOrders, postOne, refresh]

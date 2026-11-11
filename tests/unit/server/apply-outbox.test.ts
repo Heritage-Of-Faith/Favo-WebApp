@@ -28,7 +28,10 @@ function makeOutboxItem(overrides: Partial<Record<string, unknown>> = {}) {
     items: [{ menuItemId: "mi-capp", quantity: 1, modifications: [] }],
     paymentMode: "yoco_deferred" as const,
     clientTotalZar: 4500,
-    clientTimestamp: "2026-06-13T07:00:00Z",
+    // CHANGED (REQ-039): was the fixed "2026-06-13T07:00:00Z", which is now
+    // months older than the receipt and rejected as REPLAY_TOO_OLD before any
+    // check these tests exercise. Rung "now" keeps each test on its own path.
+    clientTimestamp: new Date().toISOString(),
     ...overrides,
   };
 }

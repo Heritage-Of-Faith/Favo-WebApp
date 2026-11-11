@@ -37,6 +37,16 @@ vi.mock("@/lib/db", () => ({
       },
     }),
     update: () => ({ set: () => ({ where: async () => {} }) }),
+    // REQ-039: the too-old rejection writes its receipt and audit row in one transaction.
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        insert: (table: unknown) => ({
+          values: (values: unknown) => {
+            inserts.push({ table, values });
+            return { returning: async () => [{ id: "log-1" }] };
+          },
+        }),
+      }),
   },
 }));
 
@@ -84,7 +94,11 @@ function entry(shots: number | undefined, clientTotalZar: number) {
     items: [{ menuItemId: CAPP.id, quantity: 1, modifications: [] as string[], ...(shots === undefined ? {} : { shots }) }],
     paymentMode: "yoco_deferred" as const,
     clientTotalZar,
-    clientTimestamp: "2026-10-11T07:00:00Z",
+    // CHANGED (REQ-039): was the fixed "2026-10-11T07:00:00Z" (Sunday 09:00
+    // SAST). Replayed on MONDAY that is 24 h old and is now rejected as
+    // REPLAY_TOO_OLD; rung at the (fake) receipt time instead, so each test
+    // reads the mode of the day it sets.
+    clientTimestamp: new Date().toISOString(),
   };
 }
 
@@ -113,7 +127,10 @@ describe("applyOutboxItem — shots (AT-202)", () => {
     expect(insertsInto(orders)).toEqual([]);
   });
 
-  it("a Sunday triple replayed on a weekday is refused, never re-priced without its surcharge", async () => {
+  // CHANGED (REQ-039): a Sunday entry replayed on Monday is now more than 12 h
+  // old and rejected as too old (apply-outbox-too-old.test.ts); this test now
+  // rings the triple on the weekday itself.
+  it("a triple rung and replayed on a weekday is refused, never re-priced without its surcharge", async () => {
     vi.setSystemTime(MONDAY);
     given(["weekday"]);
     const res = await applyOutboxItem(entry(3, 3000));
@@ -322,10 +339,13 @@ describe("applyOutboxItem — the mode at the client's ring-up time (DEC-28)", (
     expect(insertsInto(orders)[0]).toMatchObject({ placedAt: new Date("2026-10-14T12:30:00+02:00"), revenueDay: "2026-10-14" });
   });
 
-  it("a client time more than 12 hours old (REQ-039) is not used — the receipt time decides", async () => {
+  // CHANGED (REQ-039): this used to assert the order was applied under the
+  // receipt-time mode. REQ-039 rejects it: no order is written.
+  it("a client time more than 12 hours old (REQ-039) is rejected as too old — no order", async () => {
     vi.setSystemTime(new Date("2026-10-15T00:30:00+02:00"));
     given([eventOn("2026-10-14", "standard")]);
-    await applyOutboxItem(at("2026-10-14T11:30:00+02:00")); // 13 h before receipt
-    expect(insertsInto(orders)[0]).toMatchObject({ eventWindowId: null });
+    const res = await applyOutboxItem(at("2026-10-14T11:30:00+02:00")); // 13 h before receipt
+    expect(res).toEqual({ outcome: "rejected", reason: "replay_too_old" });
+    expect(insertsInto(orders)).toEqual([]);
   });
 });
