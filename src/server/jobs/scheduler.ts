@@ -38,6 +38,13 @@ export type JobDefinition = {
    * Defaults to "a run of this job for this period was audited".
    */
   isDone?(period: string): Promise<boolean>;
+  /**
+   * Optional gate, asked at each firing before `run`. False means the firing
+   * is not a run at all: `run` is not called, no audit row is written and
+   * nothing is pushed. A gate that throws is a failed run (rule 3). Job 4
+   * uses it for DEC-27 (paid days, and payments carried over from one).
+   */
+  runsAt?(firedAt: Date): Promise<boolean>;
 };
 
 export type RunAction = "job_run" | "job_catch_up" | "job_failed";
@@ -122,6 +129,8 @@ export class Scheduler {
     const startedAt = this.now();
     let record: RunRecord;
     try {
+      // Gated off: not a run. The finally below releases the overlap guard.
+      if (job.runsAt && !(await job.runsAt(firedAt))) return null;
       const result = await job.run(firedAt, late);
       record = {
         job: job.name, period, action: late ? "job_catch_up" : "job_run",
