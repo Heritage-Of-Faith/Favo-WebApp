@@ -167,6 +167,17 @@ describe("REQ-124 — three named per-barista figures from audit_log", () => {
     expect(q.sql).not.toMatch(/\bINSERT\b|\bUPDATE\b|\bDELETE\b|ROUND\(/i);
   });
 
+  it("REQ-034: a write-off that was later reversed (written_off_at cleared) is not counted", async () => {
+    given([]);
+    await getWriteDownsReport({ from: "2026-10-19", to: "2026-10-25" });
+    const q = render(mockExecute.mock.calls[1][0]);
+    // The write_off branch, and only it, requires the order to still be written off.
+    const branches = q.sql.split("UNION ALL");
+    const writeOff = branches.find((b) => b.includes("'write_off'"));
+    expect(writeOff).toContain("o.written_off_at IS NOT NULL");
+    expect(branches.filter((b) => b.includes("o.written_off_at IS NOT NULL"))).toHaveLength(1);
+  });
+
   it("defaults to the Monday–Sunday week containing today", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-22T10:00:00Z")); // Thursday

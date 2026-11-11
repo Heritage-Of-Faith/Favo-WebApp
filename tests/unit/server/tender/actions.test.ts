@@ -147,6 +147,22 @@ describe("no card terminal linked to FAVO (no webpos_device_id, or the unlinked 
     expect(await sendToTerminal("ord-1", 1)).toMatchObject({ ok: false, code: "TERMINAL_UNREACHABLE", message: PRD_COPY });
   });
 
+  it("§6.7: a LINKED device that errors offers deferred mode one tap away (deferredOffered), never a retry", async () => {
+    const w = world({ sends: [{ outcome: "device_error" }] });
+    await beginTender("ord-1");
+    const r = await sendToTerminal("ord-1", 1);
+    expect(r).toMatchObject({ ok: false, code: "TERMINAL_UNREACHABLE", deferredOffered: true });
+    expect(r).not.toHaveProperty("retryOffered", true);
+    expect(w.port.sends).toHaveLength(1);
+  });
+
+  it("no terminal linked (the unlinked port): no deferred offer — the no-terminal copy only", async () => {
+    world();
+    deps.port = unlinkedWebPosPort;
+    await beginTender("ord-1");
+    expect(await sendToTerminal("ord-1", 1)).not.toHaveProperty("deferredOffered");
+  });
+
   it("an exception inside beginTender (DB outage) → TENDER_NOT_BEGUN with a retry, not STALE_STATE", async () => {
     world();
     deps.store = { transaction: async () => { throw new Error("connection refused"); } };

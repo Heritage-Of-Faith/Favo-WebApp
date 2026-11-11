@@ -154,6 +154,8 @@ export async function readWriteDowns(
       JOIN orders o ON o.id = a.entity_id
       LEFT JOIN staff s ON s.id = a.actor_id
       WHERE a.entity_kind = 'order' AND a.action = ${WRITE_OFF_ACTION}
+        -- REQ-034: a reversed write-off has written_off_at cleared and is not a write-off any more.
+        AND o.written_off_at IS NOT NULL
         AND o.revenue_day BETWEEN ${from}::date AND ${to}::date
       UNION ALL
       SELECT 'abandoned', a.id, o.revenue_day::text, to_json(a.at) #>> '{}',

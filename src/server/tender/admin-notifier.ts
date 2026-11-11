@@ -79,11 +79,14 @@ export function duplicateChargeAlert(orderRef: string, info: { orderId: string; 
 /** AT-207: money arrived on an order the daily close already wrote off. */
 export function lateSuccessOnWrittenOffAlert(
   orderRef: string,
-  info: { orderId: string; paymentId: string; attempt: number; chargedAmountZar: number; orderTotalZar: number }
+  info: { orderId: string; paymentId: string; attempt: number; chargedAmountZar: number; orderTotalZar: number; reversed?: boolean }
 ): AdminAlert {
+  // REQ-034: an `unresolved_at_close` write-off is reversed when the payment
+  // turns up. The PRD gives no wording; this states the fact only.
+  const outcome = info.reversed ? "the write-off is reversed" : "the write-off still stands";
   return {
     title: `Paid after write-off — order ${orderRef}`,
-    body: `${formatZar(info.chargedAmountZar)} was charged on attempt ${info.attempt} of an order the daily close wrote off. The payment is recorded; the write-off still stands.`,
+    body: `${formatZar(info.chargedAmountZar)} was charged on attempt ${info.attempt} of an order the daily close wrote off. The payment is recorded; ${outcome}.`,
     data: { ...info },
   };
 }

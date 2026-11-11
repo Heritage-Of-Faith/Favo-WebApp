@@ -102,6 +102,16 @@ export interface TenderTx {
   markOrderSettled?(orderId: string, at: Date, settlementRef: string | null): Promise<void>;
   /** §6.7 path B: true when another order already carries this settlement_ref. */
   settlementRefTaken?(settlementRef: string, orderId: string): Promise<boolean>;
+  /**
+   * REQ-034: the reason on the order's newest `write_off` audit row (the
+   * close's sweep), or null. Optional: the fund top-up store has no orders.
+   */
+  writeOffReason?(orderId: string): Promise<string | null>;
+  /**
+   * REQ-034: clear orders.written_off_at on a written-off order. Writes the
+   * order only — never payments.status. True when a row changed.
+   */
+  reverseWriteOff?(orderId: string): Promise<boolean>;
 }
 
 export interface TenderStore {
@@ -129,6 +139,8 @@ export interface TenderNotifier {
     attempt: number;
     chargedAmountZar: number;
     orderTotalZar: number;
+    /** REQ-034: true when the write-off was `unresolved_at_close` and has been reversed. */
+    reversed?: boolean;
   }): Promise<void>;
 }
 

@@ -7,22 +7,25 @@
 //                                any scheduler: §9.6.2 lists seven jobs and this
 //                                is not one of them (an owner question).
 
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { DB } from "@/lib/db";
 import { writeAudit } from "@/server/audit";
 import { alertAdmins } from "@/server/push/admin-alert";
 import { auditLog, eventWindows, openingSessions, staff } from "@db/schema";
 import {
   DEFERRED_ENTER_ACTION,
+  DEFERRED_EXIT_ACTION,
   DEFERRED_REMINDER_ACTION,
   deferredAlert,
   deferredReminderDue,
+  sessionTakesPayment,
   type DeferredEnteredBy,
   type DeferredEntryInfo,
   type DeferredStore,
   type DeferredTx,
   type SessionDeferredState,
 } from "./mode";
+import type { DeviceCheckSession } from "./health-check";
 
 const SESSION_COLUMNS = {
   id: openingSessions.id,
@@ -99,6 +102,38 @@ export async function readOpenSessionDeferred(client: Pick<DB, "select">): Promi
     enteredBy: s.deferredEnteredBy ?? null,
     since: s.deferredSince ?? null,
     reason: s.deferredReason ?? null,
+  };
+}
+
+/** The open session as the 60 s device check needs it (./health-check.ts); null when none is open. */
+export async function readOpenSessionForDeviceCheck(client: Pick<DB, "select">): Promise<DeviceCheckSession | null> {
+  const [s] = await client
+    .select({ ...SESSION_COLUMNS, mode: openingSessions.mode, eventWindowId: openingSessions.eventWindowId })
+    .from(openingSessions)
+    .where(isNull(openingSessions.closedAt));
+  if (!s) return null;
+  let eventPaymentPosture: string | null = null;
+  if (s.eventWindowId) {
+    const [w] = await client
+      .select({ posture: eventWindows.paymentPosture })
+      .from(eventWindows)
+      .where(eq(eventWindows.id, s.eventWindowId));
+    eventPaymentPosture = w?.posture ?? null;
+  }
+  const [changes] = await client
+    .select({ n: sql<number>`count(*)::int` })
+    .from(auditLog)
+    .where(and(
+      eq(auditLog.entityKind, "opening_session"),
+      eq(auditLog.entityId, s.id),
+      inArray(auditLog.action, [DEFERRED_ENTER_ACTION, DEFERRED_EXIT_ACTION]),
+    ));
+  return {
+    sessionId: s.id,
+    takesPayment: sessionTakesPayment({ sessionDate: s.sessionDate, mode: s.mode ?? null, eventPaymentPosture }),
+    deferred: s.deferredSince != null,
+    enteredBy: s.deferredEnteredBy ?? null,
+    deferredChanges: Number(changes?.n ?? 0),
   };
 }
 

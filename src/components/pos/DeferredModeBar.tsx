@@ -12,6 +12,8 @@
  *    it needs the same tap that set it"). A check-triggered entry refuses a
  *    barista: "Needs an admin" (REQ-006), shown as the server returns it.
  *  • A link to /pos/settle, where unpaid deferred orders are settled.
+ *  • While a session is open, the §6.7 device check every 60 s
+ *    (runDeviceHealthCheck). The server looks the machine up and decides.
  *
  * Not shown on a weekday session: the server refuses deferred mode where
  * nobody pays (S7a). Labels not in the PRD (invented): "Switch to deferred",
@@ -22,13 +24,15 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { AlertTriangle } from "lucide-react";
-import { getDeferredState, setDeferredMode } from "@/server/actions/deferred";
+import { getDeferredState, runDeviceHealthCheck, setDeferredMode } from "@/server/actions/deferred";
 import { DEFERRED_BANNER } from "@/lib/deferred-copy";
 import { SESSION_CHANGED_EVENT } from "@/lib/pos-vouchers";
 
 type State = { sessionId: string; mode: string | null; deferred: boolean } | null;
 
 const MIN_REASON_CHARS = 3;
+/** §6.7: "A background device check every 60 s" (the server's DEVICE_CHECK_INTERVAL_MS). */
+const DEVICE_CHECK_EVERY_MS = 60_000;
 
 export default function DeferredModeBar() {
   const [state, setState] = useState<State>(null);
@@ -47,6 +51,30 @@ export default function DeferredModeBar() {
     window.addEventListener(SESSION_CHANGED_EVENT, read);
     return () => window.removeEventListener(SESSION_CHANGED_EVENT, read);
   }, [read]);
+
+  // §6.7 / §6.8.2: the device check, every 60 s while a session is open. The
+  // server looks the machine up and decides; nothing here is a result. The
+  // next check is scheduled only after the last one answered, so two never
+  // overlap. Off on the server unless the live Web POS port is selected.
+  const sessionId = state?.sessionId ?? null;
+  useEffect(() => {
+    if (!sessionId) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const loop = () => {
+      timer = setTimeout(async () => {
+        const r = await runDeviceHealthCheck().catch(() => null);
+        if (stopped) return;
+        if (r && r.ok && r.data.action !== "none") await read();
+        loop();
+      }, DEVICE_CHECK_EVERY_MS);
+    };
+    loop();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [sessionId, read]);
 
   if (!state) return null;
   if (!state.deferred && state.mode === "weekday") return null;

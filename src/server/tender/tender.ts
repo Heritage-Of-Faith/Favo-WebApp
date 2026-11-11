@@ -56,6 +56,17 @@ const WRITTEN_OFF_NO_CHARGE = "This order was written off at the daily close and
 /** AT-207: the audit action of a successful payment attached to a written-off order. */
 export const LATE_SUCCESS_ON_WRITTEN_OFF_ACTION = "payment.late_success_on_written_off";
 
+/** REQ-034: the audit action (entity_kind 'order') of a reversed write-off. */
+export const WRITE_OFF_REVERSED_ACTION = "write_off_reversed";
+
+/**
+ * REQ-034's Given: the one write-off reason that is reversed when Yoco's
+ * record produces the payment. Same value as WRITE_OFF_REASONS.unresolvedAtClose
+ * (src/server/close/write-offs.ts; a test pins the two together). Not imported
+ * from there so this file keeps no DB import.
+ */
+export const REVERSIBLE_WRITE_OFF_REASON = "unresolved_at_close";
+
 /** §6.7 path B: a card success attached to an order already settled with a slip — a double charge. */
 export const DUPLICATE_AFTER_SLIP_SETTLE_ACTION = "duplicate_charge_after_slip_settle";
 
@@ -532,12 +543,25 @@ async function attachSuccessful(
     });
   }
   // AT-207: money arrived on an order the close already wrote off. The payment
-  // is recorded exactly as above (setPaymentStatus only) and written_off_at is
-  // left alone — reversing a write-off is REQ-034, AT-207 part 2. This only
-  // records the fact and tells the Admin; the push runs after the commit and a
-  // failed push never undoes the recorded payment (runPost).
-  if (order.writtenOff === true) {
-    const info = { orderId: order.id, paymentId: p.id, attempt: p.attempt, chargedAmountZar: charged, orderTotalZar: order.totalZar };
+  // is recorded exactly as above (setPaymentStatus only). The fact is audited
+  // and the Admin told; the push runs after the commit and a failed push never
+  // undoes the recorded payment (runPost).
+  // REQ-034 (T4): a write-off with reason `unresolved_at_close` is reversed
+  // when Yoco's record produces the payment — written_off_at cleared, in this
+  // same transaction, and audited. Any other write-off reason stands (the PRD
+  // names only this one). Writes orders.written_off_at only; payments.status
+  // was set above by one of the two writers, as always.
+  let writtenOff = order.writtenOff === true;
+  if (writtenOff) {
+    const writeOffReason = tx.writeOffReason ? await tx.writeOffReason(order.id) : null;
+    let reversed = false;
+    if (writeOffReason === REVERSIBLE_WRITE_OFF_REASON && tx.reverseWriteOff) {
+      reversed = await tx.reverseWriteOff(order.id);
+    }
+    const info = {
+      orderId: order.id, paymentId: p.id, attempt: p.attempt, chargedAmountZar: charged, orderTotalZar: order.totalZar,
+      ...(reversed ? { reversed: true } : {}),
+    };
     await tx.audit({
       entityKind: "order",
       entityId: order.id,
@@ -546,6 +570,18 @@ async function attachSuccessful(
       reason: "late_success_on_written_off",
       after: { ...info, via },
     });
+    if (reversed) {
+      writtenOff = false;
+      await tx.audit({
+        entityKind: "order",
+        entityId: order.id,
+        action: WRITE_OFF_REVERSED_ACTION,
+        ...actorFields(actor),
+        reason: REVERSIBLE_WRITE_OFF_REASON,
+        before: { writtenOff: true },
+        after: { writtenOffAt: null, paymentId: p.id, attempt: p.attempt, chargedAmountZar: charged, via },
+      });
+    }
     post.push(async () => {
       await deps.notify.lateSuccessOnWrittenOff?.(info);
     });
@@ -556,7 +592,7 @@ async function attachSuccessful(
   // it (payments.status untouched by this branch), settled_at is left as the
   // slip set it, the fact is audited and the Admin gets the duplicate-charge
   // push after the commit (a failed push never undoes the record).
-  if (order.settledAt && order.writtenOff !== true) {
+  if (order.settledAt && !writtenOff) {
     flags.push("duplicate_charge");
     const yocoPaymentIds = [`slip-settled ${order.settledAt.toISOString()}`, pay.yocoPaymentId];
     await tx.audit({
@@ -573,7 +609,7 @@ async function attachSuccessful(
   // orders.settled_at, so the §07 split by settled_at sees it (REQ-133). Never
   // on a written-off order (§10.3: the two are mutually exclusive) and never
   // twice. Writes the order only; payments.status was set above, as always.
-  if (order.deferred === true && order.writtenOff !== true && !order.settledAt && tx.markOrderSettled) {
+  if (order.deferred === true && !writtenOff && !order.settledAt && tx.markOrderSettled) {
     const settledAt = deps.now();
     await tx.markOrderSettled(order.id, settledAt, null);
     await tx.audit({

@@ -284,6 +284,32 @@ export async function applyDeferredMode(
   return out;
 }
 
+// ─── the one tap after TERMINAL_UNREACHABLE (§6.0.2, §6.7, §6.8.4) ────────────
+
+/**
+ * §6.7 "Detection": "TERMINAL_UNREACHABLE offers deferred mode one tap away";
+ * T3 step 1 "One barista tap". §11.2 still audits setDeferredMode "with the
+ * reason" and S2a's push names it, so the one tap carries this fixed reason
+ * instead of a typed one. Not PRD copy: the PRD gives none.
+ */
+export const TERMINAL_UNREACHABLE_DEFERRED_REASON = "Card machine unreachable";
+
+/**
+ * The one tap: setDeferredMode(open session, on, the fixed reason) for the
+ * barista or admin who tapped — deferred_entered_by='manual' (a person
+ * declared it), audited, S2a's push on entry. Every rule is applyDeferredMode's:
+ * a weekday / free session refuses, an already-deferred session is unchanged.
+ * Touches opening_sessions and audit_log only — never orders or payments.
+ */
+export async function enterDeferredAfterUnreachable(
+  deps: DeferredDeps,
+  actor: Extract<DeferredActor, { kind: "staff" }>,
+  openSessionId: string | null
+): Promise<SetDeferredOk | DeferredFailure> {
+  if (!openSessionId) return { ok: false, code: "NO_SESSION", message: NO_OPEN_SESSION };
+  return applyDeferredMode(deps, actor, openSessionId, true, TERMINAL_UNREACHABLE_DEFERRED_REASON);
+}
+
 // ─── S2a's Admin push ─────────────────────────────────────────────────────────
 
 export type DeferredAlert = { title: string; body: string; data: Record<string, unknown> };
