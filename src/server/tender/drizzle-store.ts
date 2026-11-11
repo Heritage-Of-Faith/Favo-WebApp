@@ -6,7 +6,7 @@
 //   setPaymentStatus        → the one UPDATE of payments.status in the chain (§10.2.1)
 //   audit                   → writeAudit in the SAME transaction as the change it records
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, ne } from "drizzle-orm";
 import type { DB } from "@/lib/db";
 import { writeAudit } from "@/server/audit";
 import { auditLog, donorFundEntries, donorFunds, orders, payments } from "@db/schema";
@@ -55,13 +55,35 @@ function makeTx(tx: DB): TenderTx {
           clientUuid: orders.clientUuid,
           paymentMode: orders.paymentMode,
           writtenOffAt: orders.writtenOffAt,
+          settledAt: orders.settledAt,
         })
         .from(orders)
         .where(eq(orders.id, orderId))
         .for("update");
       if (!o) return null;
       const { paymentMode, writtenOffAt, ...order } = o;
-      return { ...order, fundSettled: paymentMode === "donor_fund", writtenOff: writtenOffAt !== null };
+      return {
+        ...order,
+        // settledAt is carried as read (NULL while open); beginTender refuses a settled order.
+        fundSettled: paymentMode === "donor_fund",
+        writtenOff: writtenOffAt !== null,
+        deferred: paymentMode === "yoco_deferred",
+      };
+    },
+    async settlementRefTaken(settlementRef, orderId) {
+      const rows = await tx
+        .select({ id: orders.id })
+        .from(orders)
+        .where(and(eq(orders.settlementRef, settlementRef), ne(orders.id, orderId)))
+        .limit(1);
+      return rows.length > 0;
+    },
+    async markOrderSettled(orderId, at, settlementRef) {
+      // Guarded: never over a settled or written-off order (the CHECK backs it).
+      await tx
+        .update(orders)
+        .set({ settledAt: at, settlementRef })
+        .where(and(eq(orders.id, orderId), isNull(orders.settledAt), isNull(orders.writtenOffAt)));
     },
     async listPayments(orderId) {
       const rows = await tx.select().from(payments).where(eq(payments.orderId, orderId)).orderBy(payments.attempt);

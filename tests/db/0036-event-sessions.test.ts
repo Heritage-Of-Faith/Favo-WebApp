@@ -20,7 +20,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0054 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -105,6 +105,8 @@ maybe("0036 event sessions: up → down → up, and the refusals (AT-204 prerequ
         // Any session another suite left open would trip the one-open index;
         // close it inside this always-rolled-back transaction.
         await tx`UPDATE opening_sessions SET closed_at = now() WHERE closed_at IS NULL`;
+        // 0054 added opening_sessions.deferred_*; this suite compares against the 0036 snapshot.
+        await stepDown0054(tx);
         await fn(tx);
         throw new Rollback();
       });

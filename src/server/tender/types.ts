@@ -22,6 +22,10 @@ export type TenderOrder = {
   fundSettled?: boolean;
   /** AT-207 / §10.3.3: written off by closeDaily() — never tendered again. */
   writtenOff?: boolean;
+  /** §6.0.4 T3: taken in deferred mode (payment_mode='yoco_deferred'). */
+  deferred?: boolean;
+  /** §10.3 orders.settled_at — when a deferred order was settled; NULL while open. */
+  settledAt?: Date | null;
 };
 
 export type TenderPayment = {
@@ -89,6 +93,15 @@ export interface TenderTx {
   audit(row: TenderAudit): Promise<void>;
   /** The newest `payment.lookup` audit row for this payment, if any. */
   lastLookupRead(paymentId: string): Promise<{ read: LookupRead; at: Date } | null>;
+  /**
+   * §10.3 / T3 3a–3b: stamp orders.settled_at (and settlement_ref for path B)
+   * on a deferred order that is neither settled nor written off. Writes the
+   * order only — never payments.status. Optional: the fund top-up store has
+   * no orders to settle.
+   */
+  markOrderSettled?(orderId: string, at: Date, settlementRef: string | null): Promise<void>;
+  /** §6.7 path B: true when another order already carries this settlement_ref. */
+  settlementRefTaken?(settlementRef: string, orderId: string): Promise<boolean>;
 }
 
 export interface TenderStore {
@@ -104,6 +117,12 @@ export interface TenderNotifier {
    * Optional: only the order chain's notifier implements it (a fund top-up is
    * never written off). Amounts are integer cents.
    */
+  /**
+   * §6.7 path B: every standalone-machine settlement is pushed to the Admin —
+   * the order, its amount (integer cents), the slip reference and the barista.
+   * Optional: only the order chain's notifier implements it.
+   */
+  standaloneSettled?(info: { orderId: string; amountZar: number; settlementRef: string; staffId: string | null }): Promise<void>;
   lateSuccessOnWrittenOff?(info: {
     orderId: string;
     paymentId: string;

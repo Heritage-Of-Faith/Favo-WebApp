@@ -65,7 +65,7 @@ type LockedLine = {
     surchargeZar: number;
     discountZar: number; compReason: string | null;
   };
-  order: { id: string; state: string; totalZar: number; paymentMode: string | null };
+  order: { id: string; state: string; totalZar: number; paymentMode: string | null; settledAt: Date | null };
 };
 
 const LINE_NOT_FOUND: Fail = { ok: false, code: "NOT_FOUND", message: "That drink isn't on an order." };
@@ -84,7 +84,8 @@ async function lockLine(tx: Tx, orderItemId: string): Promise<LockedLine | Fail>
     .where(eq(orderItems.id, orderItemId));
   if (!ref) return LINE_NOT_FOUND;
   const [order] = await tx
-    .select({ id: orders.id, state: orders.state, totalZar: orders.totalZar, paymentMode: orders.paymentMode })
+    // settledAt: a slip-settled order's total is frozen (lockPaymentForTotalChange).
+    .select({ id: orders.id, state: orders.state, totalZar: orders.totalZar, paymentMode: orders.paymentMode, settledAt: orders.settledAt })
     .from(orders)
     .where(eq(orders.id, ref.orderId))
     .for("update");

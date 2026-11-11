@@ -310,6 +310,13 @@ export type PosTodaySummary = {
   entitlementCups: number;
   /** walk_in_cups = Σ walk_ins.quantity (REQ-116). */
   walkInCups: number;
+  /**
+   * §7.5 "Deferred: open · settled · written off" (REQ-133): Σ total_zar of the
+   * day's yoco_deferred orders split by settled_at / written_off_at. Cents.
+   */
+  deferredOpenZar: number;
+  deferredSettledZar: number;
+  deferredWrittenOffZar: number;
 };
 
 // ─── Phase 2: Purchases ───────────────────────────────────────────────────────

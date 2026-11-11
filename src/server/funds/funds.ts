@@ -237,6 +237,14 @@ export async function drawFromDonorFund(
     if (order.paymentMode === "donor_fund") {
       return reject("FUND_UNAVAILABLE", "This order is already paid from a blessing fund.", "already_fund_settled");
     }
+    // §10.3 settled_at / S1 ALREADY_RESOLVED: a deferred order settled on the
+    // standalone machine (§6.7 path B) holds no payments row — never paid
+    // again from a fund. Refused under the order lock, before any entry.
+    if (order.settledAt) {
+      return reject("ALREADY_RESOLVED", FUND_COPY.ALREADY_RESOLVED, "already_settled", {
+        settledAt: order.settledAt.toISOString(),
+      });
+    }
     if (order.state !== "ordered") {
       return reject("FUND_UNAVAILABLE", `This order is ${order.state} — a fund can only pay an order that is waiting.`, "order_not_ordered", { state: order.state });
     }

@@ -23,7 +23,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql, stepDown0048, stepDown0049, stepDown0050, stepDown0051, stepDown0052, stepDown0053 } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0048, stepDown0049, stepDown0050, stepDown0051, stepDown0052, stepDown0053, stepDown0054 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -170,6 +170,7 @@ maybe("0033 Day 5 substrate: up → down → up, and the refusals (AT-181)", () 
         // AT-209: 0045 rewrites v_daily_revenue over orders.state and
         // payments.status (which 0043 down retypes), so it goes before 0044.
         // Newest first throughout: 0049, 0048, 0047, 0046, 0045, 0044, 0043, 0042, 0036.
+        await stepDown0054(tx); // 0054 (deferred mode, settled_at) is newest of all, before 0053
         await stepDown0053(tx); // REQ-127: 0053 (is_lid; v_weekly_variance reads app_config) is newest of all, before 0052
         await stepDown0052(tx); // REQ-130: 0052 (price_history.set_by_staff_id), before 0051
         await stepDown0051(tx); // 0051 (orders.payment_mode NOT NULL), before 0050

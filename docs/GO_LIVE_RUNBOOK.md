@@ -132,6 +132,8 @@ PRD §9.6.2 is the register of record and lists **seven** jobs. (§9.6.1's depen
 
 So **today five of the seven are live**. Jobs 6 and 7 must land before they are relied on. Job 4 only does real work once a Web POS device is linked and real card payments go through FAVO. **To confirm with Nikao** which are required before the first Sunday on FAVO. No job may start a payment or create revenue (§9.6.2 rule 2).
 
+**Built, not scheduled: the deferred-mode reminder** (`remindDeferredSessions`, `src/server/deferred/drizzle-store.ts`). REQ-005 wants the Admin pushed again every 30 minutes a session stays in deferred mode. The function exists and is tested in parts, but nothing calls it: it needs a §9.6.2 row 8 approved by the owner (a job not in the register does not exist). Until then the Admin gets the push on entry only.
+
 **Healthz** (`GET /api/healthz`, cached 5 seconds). Returns 200 only if Postgres answers `SELECT 1`, `DATABASE_URL_SESSION` is set (this "sse_config" check proves only that it is set, not that the queue stream connected), and Loki is reachable *or not configured*. **Yoco is shown but advisory**, so a Yoco blip will not fail the check. Expect `{"ok":true,...}` with `checks.loki.reason: "not configured"`. After #262, `sse_config` keys off `DATABASE_URL` instead. Transformate's monitoring should poll this URL (§9.8); who wires that: **to confirm with Matt**.
 
 ---
@@ -158,6 +160,7 @@ So **today five of the seven are live**. Jobs 6 and 7 must land before they are 
 | **Migration refused at boot** | Read the `[migrate] FATAL` line. If it asks for approval, check the backup, then set `FAVO_APPROVE_MIGRATION` to the named tag(s) for this deploy only. |
 | **Database lost or corrupt** | Restore from the WAL archive to a point in time (RPO ≤ 5 min, RTO ≤ 4 hours, §9.4). The café runs on paper meanwhile. The exact restore commands depend on what Matt builds in step 4: **to confirm with Matt**. |
 | **Card machine or Yoco down on a Sunday** | Sunday card sales stay on the Yoco machine until step 19, so this cannot hurt them before then. After step 19: deferred mode (§9.6.1). |
+| **The close is blocked on a day with slip settlements** | Expected, not a fault. An order settled with a slip reference from a standalone machine (§6.7 path B, `/pos/settle`) counts as revenue but has no FAVO payment, so the close's card reconciliation (`src/server/crons/close-daily.ts`) shows a variance and blocks the close record. The write-offs still happen. Check each `order.settled` audit row's reference against the standalone machine's record, then resolve the close. **Open owner question for the reconciliation story:** leave such orders out of that reconciliation (like fund orders) and check them against the slips instead, or keep the block as the signal (today's behaviour). Every slip settlement also pushes the Admin. |
 | **Server dies on a Sunday** | Paper for the day (§9.6.1). Who fixes it and how fast is exactly what OPEN-08 question 4 must answer. |
 
 ---

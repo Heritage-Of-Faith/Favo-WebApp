@@ -21,6 +21,8 @@ export type MemoryState = {
   audit: TenderAudit[];
   /** Every setPaymentStatus call, in order — the status-writer trail. */
   statusWrites: { id: string; status: PaymentStatus }[];
+  /** orders.settlement_ref by order id (deferred settlement, §6.7 path B). */
+  settlementRefs: Record<string, string | null>;
 };
 
 export class MemoryTenderStore implements TenderStore {
@@ -28,7 +30,7 @@ export class MemoryTenderStore implements TenderStore {
   private seq = 0;
 
   constructor(orders: TenderOrder[]) {
-    this.state = { orders: orders.map((o) => ({ ...o })), payments: [], audit: [], statusWrites: [] };
+    this.state = { orders: orders.map((o) => ({ ...o })), payments: [], audit: [], statusWrites: [], settlementRefs: {} };
   }
 
   order(id: string): TenderOrder | undefined {
@@ -131,6 +133,19 @@ export class MemoryTenderStore implements TenderStore {
       },
       audit: async (row) => {
         this.state.audit.push(structuredClone(row));
+      },
+      settlementRefTaken: async (ref, orderId) =>
+        Object.entries(this.state.settlementRefs).some(([id, r]) => r === ref && id !== orderId),
+      // §10.3: settled_at and written_off_at are mutually exclusive (the CHECK);
+      // orders_settlement_ref_unique: one reference, one order.
+      markOrderSettled: async (orderId, at, settlementRef) => {
+        const o = this.order(orderId);
+        if (!o || o.settledAt || o.writtenOff) return;
+        if (settlementRef !== null && Object.entries(this.state.settlementRefs).some(([id, r]) => r === settlementRef && id !== orderId)) {
+          throw new Error('duplicate key value violates unique constraint "orders_settlement_ref_unique"');
+        }
+        o.settledAt = at;
+        this.state.settlementRefs[orderId] = settlementRef;
       },
       lastLookupRead: async (paymentId) => {
         const rows = this.state.audit.filter(
