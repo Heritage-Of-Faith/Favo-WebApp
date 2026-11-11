@@ -9,7 +9,9 @@
 //     (snapshotted at open — REQ-044);
 //   • gross split by payment_mode — card (yoco | yoco_deferred), fund
 //     (donor_fund), free — and written_off_zar. Any other payment_mode,
-//     NULL included, throws UnknownPaymentModeError (REQ-134, §10.6);
+//     NULL included, throws UnknownPaymentModeError (REQ-134, §10.6). The
+//     yoco_deferred part is split by settled_at / written_off_at (REQ-133,
+//     §10.3.3) for display; no total reads the split;
 //   • processing_fee from payments.fee_zar over successful payments — the
 //     day's orders, and fund top-ups by their SAST day (§6.10.4: a top-up's fee
 //     flows to processing_fee). Any NULL fee_zar makes it NULL (REQ-108);
@@ -25,7 +27,7 @@
 
 import { sql } from "drizzle-orm";
 import { db as defaultDb, type DB } from "@/lib/db";
-import { ministryRollup, type MinistryDay, type MinistryRollup, type MinistrySession } from "@/lib/ministry-rollup";
+import { ministryRollup, type DeferredSplit, type MinistryDay, type MinistryRollup, type MinistrySession } from "@/lib/ministry-rollup";
 import { assertPaymentMode } from "@/lib/payment-mode";
 import type { PaymentPosture, SessionMode } from "@/lib/session-mode";
 import { EMPTY_PERIOD_COGS, readDailyCogs, readDailyExpenses, readDailyOutreach } from "@/server/cogs/period-cogs";
@@ -51,9 +53,21 @@ async function readDaySessions(from: string, to: string, db: DB): Promise<Map<st
   return out;
 }
 
-type Gross = { cardGrossZar: number; fundGrossZar: number; writtenOffZar: number; cardOrdersWithoutFavoPayment: number };
+type Gross = {
+  cardGrossZar: number;
+  fundGrossZar: number;
+  writtenOffZar: number;
+  cardOrdersWithoutFavoPayment: number;
+  deferred: DeferredSplit;
+};
 
-const NO_GROSS: Gross = { cardGrossZar: 0, fundGrossZar: 0, writtenOffZar: 0, cardOrdersWithoutFavoPayment: 0 };
+const NO_GROSS: Gross = {
+  cardGrossZar: 0,
+  fundGrossZar: 0,
+  writtenOffZar: 0,
+  cardOrdersWithoutFavoPayment: 0,
+  deferred: { openZar: 0, settledZar: 0, writtenOffZar: 0 },
+};
 
 /**
  * Gross by payment_mode and written_off_zar per revenue day, over the revenue
@@ -68,6 +82,9 @@ async function readDailyGross(from: string, to: string, db: DB): Promise<Map<str
     gross_zar: string | number;
     written_off_zar: string | number;
     without_favo_payment: string | number;
+    deferred_open_zar?: string | number;
+    deferred_settled_zar?: string | number;
+    deferred_written_off_zar?: string | number;
   }>(sql`
     SELECT
       TO_CHAR(orders.revenue_day, 'YYYY-MM-DD') AS revenue_day,
@@ -78,7 +95,17 @@ async function readDailyGross(from: string, to: string, db: DB): Promise<Map<str
         WHERE orders.total_zar > 0
           AND orders.written_off_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM payments wp WHERE wp.order_id = orders.id AND wp.status = 'successful')
-      )::int AS without_favo_payment
+      )::int AS without_favo_payment,
+      -- REQ-133 / §10.3.3: yoco_deferred split by settled_at and written_off_at.
+      COALESCE(SUM(orders.total_zar) FILTER (
+        WHERE orders.payment_mode = 'yoco_deferred' AND orders.settled_at IS NULL AND orders.written_off_at IS NULL
+      ), 0)::bigint AS deferred_open_zar,
+      COALESCE(SUM(orders.total_zar) FILTER (
+        WHERE orders.payment_mode = 'yoco_deferred' AND orders.settled_at IS NOT NULL AND orders.written_off_at IS NULL
+      ), 0)::bigint AS deferred_settled_zar,
+      COALESCE(SUM(orders.total_zar) FILTER (
+        WHERE orders.payment_mode = 'yoco_deferred' AND orders.written_off_at IS NOT NULL
+      ), 0)::bigint AS deferred_written_off_zar
     FROM orders
     WHERE ${revenueOrderScope}
       AND orders.revenue_day >= ${from}::date
@@ -88,12 +115,17 @@ async function readDailyGross(from: string, to: string, db: DB): Promise<Map<str
   const out = new Map<string, Gross>();
   for (const r of rows) {
     const mode = assertPaymentMode(r.payment_mode, r.revenue_day);
-    const g = out.get(r.revenue_day) ?? { ...NO_GROSS };
+    const g = out.get(r.revenue_day) ?? { ...NO_GROSS, deferred: { ...NO_GROSS.deferred } };
     const gross = Number(r.gross_zar) || 0;
     if (mode === "yoco" || mode === "yoco_deferred") {
       g.cardGrossZar += gross;
       g.cardOrdersWithoutFavoPayment += Number(r.without_favo_payment) || 0;
     } else if (mode === "donor_fund") g.fundGrossZar += gross;
+    if (mode === "yoco_deferred") {
+      g.deferred.openZar += Number(r.deferred_open_zar) || 0;
+      g.deferred.settledZar += Number(r.deferred_settled_zar) || 0;
+      g.deferred.writtenOffZar += Number(r.deferred_written_off_zar) || 0;
+    }
     g.writtenOffZar += Number(r.written_off_zar) || 0;
     out.set(r.revenue_day, g);
   }
@@ -181,6 +213,7 @@ export async function readMinistryRollup(from: string, to: string, db: DB = defa
       // outside FAVO is caught by cardOrdersWithoutFavoPayment, never this 0.
       processingFeeZar: fees.has(date) ? fees.get(date)! : 0,
       cardOrdersWithoutFavoPayment: g.cardOrdersWithoutFavoPayment,
+      deferred: g.deferred,
     };
   });
   const expensesZar = [...expenses.values()].reduce((s, v) => s + v, 0);

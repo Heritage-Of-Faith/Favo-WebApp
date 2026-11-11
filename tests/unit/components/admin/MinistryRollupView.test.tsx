@@ -73,3 +73,21 @@ describe("MinistryRollupView", () => {
     expect(norm(netCell().textContent)).toContain("R 0,00");
   });
 });
+
+// REQ-133 · §7.5 "Deferred: open · settled · written off".
+describe("MinistryRollupView — REQ-133 deferred split", () => {
+  const deferredCell = () =>
+    within(screen.getByRole("rowheader", { name: "Deferred: open · settled · written off" }).closest("tr")!).getByRole("cell");
+
+  it("prints the period's deferred open · settled · written off, zeroes as R0,00", () => {
+    view([FIXTURE_A_SUNDAY]);
+    expect(norm(deferredCell().textContent)).toBe("R 0,00 · R 0,00 · R 0,00");
+  });
+
+  it("prints the split for the period and beneath a day's gross", () => {
+    view([{ ...FIXTURE_A_SUNDAY, writtenOffZar: 2500, deferred: { openZar: 3000, settledZar: 2000, writtenOffZar: 2500 } }]);
+    expect(norm(deferredCell().textContent)).toBe("R 30,00 · R 20,00 · R 25,00");
+    const dayRow = norm(screen.getByText("2026-08-16").closest("tr")!.textContent);
+    expect(dayRow).toContain("deferred: R 30,00 open · R 20,00 settled · R 25,00 written off");
+  });
+});

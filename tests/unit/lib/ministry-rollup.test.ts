@@ -273,3 +273,35 @@ describe("review fixes — refusals that must never read as 0", () => {
     expect(r.weekdayCogsZar).toBeNull();
   });
 });
+
+// REQ-133 · §10.3.3 · §7.5: payment_mode records how an order was TAKEN; the
+// split by settled_at / written_off_at says how it ENDED. It is a split of
+// card_gross_zar, never a new term: every total stays where §7.0.2 puts it.
+// Synthetic cents (the PRD prints no deferred figures).
+describe("REQ-133 — yoco_deferred split by settled_at and written_off_at", () => {
+  const DEFERRED = { openZar: 3000, settledZar: 2000, writtenOffZar: 2500 };
+  const withDeferred: MinistryDay = { ...FIXTURE_A_SUNDAY, writtenOffZar: 2500, deferred: DEFERRED };
+
+  it("each day row carries open · settled · written off, and the period sums them", () => {
+    const r = run([withDeferred, { ...withDeferred, date: "2026-08-23" }]);
+    expect(r.days[0].deferred).toEqual(DEFERRED);
+    expect(r.days[1].deferred).toEqual(DEFERRED);
+    expect(r.deferred).toEqual({ openZar: 6000, settledZar: 4000, writtenOffZar: 5000 });
+  });
+
+  it("the split moves no total: gross, written off, collected and contribution are those of the same day without it", () => {
+    const split = run([withDeferred]);
+    const plain = run([{ ...withDeferred, deferred: undefined }]);
+    for (const k of ["grossZar", "writtenOffZar", "collectedZar", "contributionZar", "processingFeeZar", "cogsZar"] as const) {
+      expect(split.days[0][k]).toBe(plain.days[0][k]);
+    }
+    expect(split.ministryIncomeZar).toBe(plain.ministryIncomeZar);
+    expect(split.ministryNetZar).toBe(plain.ministryNetZar);
+  });
+
+  it("a day with no deferred order splits to zeroes", () => {
+    const r = run([FIXTURE_A_SUNDAY]);
+    expect(r.days[0].deferred).toEqual({ openZar: 0, settledZar: 0, writtenOffZar: 0 });
+    expect(r.deferred).toEqual({ openZar: 0, settledZar: 0, writtenOffZar: 0 });
+  });
+});

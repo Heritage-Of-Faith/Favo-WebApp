@@ -72,7 +72,26 @@ export type MinistryDay = {
    * UNAVAILABLE, never 0 (REQ-108).
    */
   cardOrdersWithoutFavoPayment: number;
+  /**
+   * REQ-133 / §10.3.3: the day's yoco_deferred orders — already inside
+   * cardGrossZar — split by how they ENDED (payment_mode only says how they
+   * were taken). Absent = no yoco_deferred order on the day.
+   */
+  deferred?: DeferredSplit;
 };
+
+/**
+ * REQ-133 · §10.3.3 · §7.5 "Deferred: open · settled · written off". Σ
+ * order_net_charged of yoco_deferred orders, integer cents:
+ *   open        settled_at IS NULL AND written_off_at IS NULL
+ *   settled     settled_at IS NOT NULL (and not written off)
+ *   writtenOff  written_off_at IS NOT NULL
+ * A split of card_gross_zar for display only: no §7.0.2 term reads it, so no
+ * total moves (gross, written_off_zar, collected and contribution are as before).
+ */
+export type DeferredSplit = { openZar: number; settledZar: number; writtenOffZar: number };
+
+const NO_DEFERRED: DeferredSplit = { openZar: 0, settledZar: 0, writtenOffZar: 0 };
 
 export type MinistryUnavailable =
   | { kind: "no_expense_writer" }
@@ -103,6 +122,8 @@ export type MinistryDayRow = {
   contributionZar: number | null;
   /** Unpaid days: the day's cost entering ministry_cost (cogs − outreach). NULL otherwise or when UNAVAILABLE. */
   ministryCogsZar: number | null;
+  /** REQ-133: the day's yoco_deferred split. Zeroes on a day with none. */
+  deferred: DeferredSplit;
   state: CostState;
 };
 
@@ -113,6 +134,8 @@ export type MinistryRollup = {
   outreachCogsZar: number | null;
   expensesZar: number;
   sweepsZar: number;
+  /** REQ-133: Σ of the days' yoco_deferred split over the period. */
+  deferred: DeferredSplit;
   ministryCostZar: number | null;
   ministryIncomeZar: number | null;
   ministryNetZar: number | null;
@@ -160,6 +183,7 @@ export function ministryRollup(input: {
   const costStates: CostState[] = [];
   const incomeStates: CostState[] = [];
   const rows: MinistryDayRow[] = [];
+  const deferred: DeferredSplit = { ...NO_DEFERRED };
 
   for (const day of input.days) {
     const grossZar = day.cardGrossZar + day.fundGrossZar;
@@ -186,9 +210,13 @@ export function ministryRollup(input: {
       processingFeeZar: feeZar,
       contributionZar: null,
       ministryCogsZar: null,
+      deferred: { ...(day.deferred ?? NO_DEFERRED) },
       state: day.cogs.state,
     };
     rows.push(row);
+    deferred.openZar += row.deferred.openZar;
+    deferred.settledZar += row.deferred.settledZar;
+    deferred.writtenOffZar += row.deferred.writtenOffZar;
 
     if (cogsZar === null) {
       unavailable.push({ kind: "absent_cost", date: day.date, itemNames: day.cogs.absentItemNames, ordersWithoutCost: day.cogs.ordersWithoutCost });
@@ -298,6 +326,7 @@ export function ministryRollup(input: {
     outreachCogsZar,
     expensesZar: input.expensesZar,
     sweepsZar: input.sweepsZar,
+    deferred,
     ministryCostZar,
     ministryIncomeZar,
     ministryNetZar,
