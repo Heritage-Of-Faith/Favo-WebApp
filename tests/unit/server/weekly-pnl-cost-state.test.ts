@@ -40,7 +40,9 @@ vi.mock("@db/index", async () => {
       insert: vi.fn().mockImplementation(() => ({
         values: (v: Record<string, unknown>) => {
           inserted.push(v);
-          return { returning: () => Promise.resolve([{ id: "wr_1" }]) };
+          // CHANGED (AT-206): the insert now goes through onConflictDoNothing.
+          const returning = () => Promise.resolve([{ id: "wr_1" }]);
+          return { returning, onConflictDoNothing: () => ({ returning }) };
         },
       })),
     },

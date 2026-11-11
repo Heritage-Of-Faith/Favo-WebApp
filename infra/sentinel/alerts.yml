@@ -200,6 +200,7 @@ groups:
             relativeTimeRange: { from: 300, to: 0 }
             datasourceUid: "${DS_LOKI}"
             model:
+              # The Yoco webhook is retired (404), PRD v7.0 §11.1 — this alert watches a dead path.
               expr: |
                 sum(rate({service="favo-webapp"} |= "/api/payments/yoco/webhook" |= "4" [5m]))
                 /

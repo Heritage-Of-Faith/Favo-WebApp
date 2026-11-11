@@ -259,3 +259,30 @@ describe("Scheduler construction", () => {
     expect(() => new Scheduler([job({ cron: "5 0 * *" })], { store: memoryStore().store, alert: vi.fn() })).toThrow();
   });
 });
+
+describe("Scheduler — a job's runsAt gate (job 4's paid-day condition)", () => {
+  it("gated off: run is not called and no audit row is written; the next firing is not blocked", async () => {
+    const { store, runs } = memoryStore();
+    let open = false;
+    const j = job({ runsAt: vi.fn(async () => open) });
+    const s = new Scheduler([j], { store, alert: vi.fn(), log: quiet });
+    await s.tick(T("2026-10-20T08:15:00Z"));
+    expect(j.run).not.toHaveBeenCalled();
+    expect(runs).toHaveLength(0);
+    open = true;
+    await s.tick(T("2026-10-20T08:30:00Z"));
+    expect(j.run).toHaveBeenCalledTimes(1);
+    expect(runs).toHaveLength(1);
+  });
+
+  it("a gate that throws is a failed run: audited and alerted once (rule 3)", async () => {
+    const { store, runs } = memoryStore();
+    const alert = vi.fn(async () => {});
+    const j = job({ runsAt: vi.fn(async () => { throw new Error("db down"); }) });
+    const s = new Scheduler([j], { store, alert, log: quiet });
+    await s.tick(T("2026-10-20T08:15:00Z"));
+    expect(j.run).not.toHaveBeenCalled();
+    expect(runs).toEqual([expect.objectContaining({ action: "job_failed", error: "db down" })]);
+    expect(alert).toHaveBeenCalledTimes(1);
+  });
+});

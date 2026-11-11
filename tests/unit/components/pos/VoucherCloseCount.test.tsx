@@ -14,6 +14,9 @@ vi.mock("@/server/actions/opening", () => ({
   openEventWindow: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), message: vi.fn() } }));
+// AT-202: OpeningTimePrompt calls useRouter (router.refresh after a confirm),
+// which needs a mounted app router — a stub router stands in for it here.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 import OpeningTimePrompt from "@/components/pos/OpeningTimePrompt";
 

@@ -12,8 +12,6 @@
  *   Barista: Sam Barista  PIN 1234  id: staff_barista_sam
  *   Admin:   Mia Manager  PIN 4321  id: staff_manager_mia
  *   Menu:    Cappuccino  id: menu_cappuccino
- *
- * TEST_AUDIT_SECRET is not required by this spec.
  */
 
 import { test, expect, type Page } from "@playwright/test";

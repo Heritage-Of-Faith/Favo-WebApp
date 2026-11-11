@@ -62,7 +62,8 @@ vi.mock("@/lib/db", () => {
         from: () => ({
           where: () => {
             const rows = state.order ? [state.order] : [];
-            return Object.assign(Promise.resolve(rows), { limit: () => Promise.resolve([]) });
+            // orderBy: loadOrder reads every payment attempt ORDER BY attempt (AT-201 part 2b).
+            return Object.assign(Promise.resolve(rows), { limit: () => Promise.resolve([]), orderBy: () => Promise.resolve([]) });
           },
           leftJoin: () => ({ where: () => Promise.resolve([]) }),
           limit: () => Promise.resolve([]),
@@ -83,7 +84,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 function setOrder(over: Record<string, unknown> = {}) {
   state.order = {
-    id: "ord-1", state: "in_progress", totalZar: 3800, customerId: "cust-1",
+    id: "ord-1", state: "in_progress", totalZar: 3800, customerId: "cust-1", notificationTarget: "customer",
     staffId: "staff1", completedAt: null,
     placedAt: { toISOString: () => "2026-06-19T08:00:00.000Z" },
     ...over,
@@ -109,7 +110,7 @@ describe("transitionOrder('ready') customer push", () => {
   });
 
   it("does not push when the order has no customer", async () => {
-    setOrder({ customerId: null });
+    setOrder({ customerId: null, notificationTarget: "none" });
     await transitionOrder("ord-1", "ready");
     await flush();
     expect(mockSendReady).not.toHaveBeenCalled();

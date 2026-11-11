@@ -18,6 +18,8 @@ import AlertTile from "@/components/shared/dashboard/AlertTile";
 import AreaChart from "@/components/shared/charts/AreaChart";
 import BarChart from "@/components/shared/charts/BarChart";
 import DonutChart from "@/components/shared/charts/DonutChart";
+import MarginByShotPanel from "@/components/admin/MarginByShotPanel";
+import ModeSplitPanel from "@/components/admin/ModeSplitPanel";
 import type { CogsLive } from "@/lib/types";
 import {
   combineCostStates,
@@ -457,6 +459,20 @@ export default function CogsDashboard({ initialToday, initialHistory, todayDate 
           )}
         </section>
       </div>
+
+      {/* ── Per mode (REQ-121, §7.1) — same window as the tiles; refetches on live change ─ */}
+      <ModeSplitPanel
+        from={inspectDate ?? trend[0]?.date ?? today.date}
+        to={inspectDate ?? today.date}
+        refreshKey={`${today.revenueZar}:${today.cogsZar}:${today.costState}`}
+      />
+
+      {/* ── Margin by shot count (AT-208, REQ-139) — same window as the tiles ─ */}
+      <MarginByShotPanel
+        from={inspectDate ?? trend[0]?.date ?? today.date}
+        to={inspectDate ?? today.date}
+        refreshKey={`${today.revenueZar}:${today.cogsZar}:${today.costState}`}
+      />
 
       {/* ── Daily net ──────────────────────────────────────────────────────── */}
       <section

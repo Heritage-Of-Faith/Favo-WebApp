@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, gte, inArray, notInArray } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   orders,
@@ -13,14 +13,20 @@ import {
   payments,
   openingSessions,
   voucherRedemptions,
+  stockMovements,
+  eventWindows,
 } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { authorize } from "@/server/auth/guard";
+import { verifyAdminPin } from "@/server/auth/admin-pin";
 import { revenueDay } from "@/lib/format";
 import { canTransition } from "@/server/orders/state-machine";
 import { deductForOrder, DeductionError } from "@/server/orders/deduction";
 import { writeOrderCogs } from "@/server/orders/order-cogs";
 import { checkRecipeStock } from "@/server/inventory/lot-picker";
+import { decidePaymentGate } from "@/server/orders/payment-gate";
+import { sundayCardSalesOnMachine } from "@/server/close/write-offs";
+import { STOCK_EXHAUSTED, refuseStockExhaustedAtMake } from "@/server/orders/stock-exhausted";
 import type { DB } from "@/lib/db";
 import {
   computeOrderTotalZar,
@@ -30,22 +36,37 @@ import { isWeekdayInSAST } from "@/server/orders/discount";
 import {
   decideFreeCup,
   isFreeCupWeekday,
+  weekdayLineDiscountZar,
   FREE_CUP_COPY,
   type FreeCupDecision,
   type FreeCupRefusalCode,
 } from "@/server/orders/free-coffee";
-import { createPaymentIntent } from "@/server/yoco/client";
+import {
+  shotSurchargeZar, shotsAboveCeilingMessage, shotsNotAllowedMessage, type ShotPolicy,
+} from "@/server/orders/shot-surcharge";
+import { readShotPolicy, readCoffeeRecipeIds } from "@/server/orders/shot-policy";
+import { readTillMode, refuseOffMenuScope } from "@/server/orders/till-mode-read";
+import { isEventFree, menuScopeAllows, type TillEvent } from "@/lib/till-mode";
+import { startTender, TENDER_NOT_BEGUN } from "@/server/tender/service";
+import { isAttemptOpen } from "@/server/tender/tender";
+import { summarisePayments } from "@/server/tender/summary";
+import { compensateFundDraw, drawFromDonorFund } from "@/server/funds/funds";
+import { getFundDeps } from "@/server/funds/runtime";
+import { fundTxOn } from "@/server/funds/drizzle-store";
 import {
   ORDER_MOVED_ON, CHECKOUT_EXISTS, lockPaymentForTotalChange,
 } from "@/server/orders/payment-lock";
 import {
-  LINE_SURCHARGE_CHARGED_ZAR, OTHER_DISCOUNT, TOO_MANY_VOUCHERS, planLineVouchers,
+  OTHER_DISCOUNT, TOO_MANY_VOUCHERS, VOUCHER_NOT_ON_EXTRA_SHOTS, planLineVouchers,
 } from "@/server/orders/voucher";
 import { lockOpenSession } from "@/server/orders/voucher-session";
+import { readOpenSessionDeferred } from "@/server/deferred/drizzle-store";
+import { newOrderPaymentMode } from "@/server/deferred/order-mode";
 import { notifyOrderChange } from "@/server/queue/notify";
 import { sendOrderReadyPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
 import type { ActionResult, Order, OrderState } from "@/lib/types";
+import { chargeableMode } from "@/lib/payment-mode";
 
 // Docs: docs/API.md · Business rules L01–L06, L14–L15.
 // Roles allowed to operate the POS:
@@ -53,19 +74,39 @@ const POS_ROLES = ["barista", "admin"] as const;
 
 export type CreateOrderInput = {
   customerId?: string;
+  /** L28 / REQ-046: required. `customer` needs customerId; `none` forbids it. */
+  notificationTarget: "customer" | "none";
   items: {
     menuItemId: string;
     quantity: number;
     modifications: string[];
     /** §6.9: Untracked vouchers on this line, 0..quantity (L41, REQ-151). Default 0. */
     voucherCount?: number;
+    /** AT-202 / L31: the line's shot count, set by the §6.2.3c picker. Default 1. */
+    shots?: number;
   }[];
   /** The voucher kind; default = the open session's single active kind. */
   voucherKind?: string;
+  /**
+   * AT-203 / §6.10.6: the blessing fund chosen on the footer. When set, the
+   * order is settled from the fund (drawFromDonorFund) instead of beginning a
+   * card tender — never both (no split tender, §6.10.5).
+   */
+  donorFundId?: string;
+  /**
+   * AT-212 / DEC-19: the barista tapped "Give another free cup" after this
+   * customer was refused with ENTITLEMENT_USED. Weekday mode with a customer
+   * attached only. Creates an R0 order, writes NO second entitlement row, and
+   * logs one audit row action='extra_free_cup' (REQ-025).
+   */
+  extraFreeCup?: boolean;
 };
 
 const createOrderSchema = z.object({
   customerId: z.string().min(1).optional(),
+  donorFundId: z.string().min(1).optional(),
+  // L28: no default — an order without a bound target is refused.
+  notificationTarget: z.enum(["customer", "none"]),
   items: z
     .array(
       z.object({
@@ -73,18 +114,21 @@ const createOrderSchema = z.object({
         quantity: z.number().int().positive(),
         modifications: z.array(z.string()),
         voucherCount: z.number().int().min(0).optional(),
+        // The ceiling for the mode (T15) is checked below, with its own code.
+        shots: z.number().int().min(1).default(1),
       })
     )
     .min(1),
   voucherKind: z.string().trim().min(1).optional(),
-});
+  extraFreeCup: z.boolean().optional(),
+}).refine(
+  // PRD §10.3 CHECK: (notification_target = 'customer') = (customer_id IS NOT NULL).
+  (d) => (d.notificationTarget === "customer") === (d.customerId !== undefined),
+  { message: "notificationTarget must be 'customer' with a customer, or 'none' without one." }
+);
 
 type VoucherRefusal = { code: string; message: string };
 
-/**
- * Create an order in `ordered` state and return its id + a Yoco payment intent.
- * No stock is deducted at creation (rule L01 — that happens on in_progress, P2).
- */
 /** What happened to the L03 free cup on this order — shown to the barista once. */
 export type FreeCupResult = {
   applied: boolean;
@@ -94,15 +138,42 @@ export type FreeCupResult = {
   discountZar: number;
 };
 
+/**
+ * The tender attempt createOrder began (T2 step 3, "automatic on Place"), or
+ * why none was. `null` for a net-R0 order: no tender, no payments row (REQ-153).
+ * Nothing has been sent yet — the screen sends it (sendToTerminal).
+ */
+export type CreateOrderTender =
+  | { ok: true; attempt: number; amountZar: number }
+  | { ok: false; code: string; message: string; retryOffered?: boolean }
+  | null;
+
+/** AT-203: the blessing-fund draw createOrder made instead of a card tender. */
+export type CreateOrderFundDraw =
+  | { ok: true; fundId: string; amountZar: number; balanceAfterZar: number }
+  | { ok: false; code: string; message: string };
+
+/**
+ * Create an order in `ordered` state (T2 step 2). The order and its items
+ * commit first; only then does beginTender write the `pending` payments row,
+ * and only after that can anything be sent (REQ-026, P1 — never the reverse).
+ * No stock is deducted at creation (rule L01 — that happens on in_progress, P2).
+ */
 export async function createOrder(
   input: CreateOrderInput
 ): Promise<ActionResult<{
   orderId: string;
-  yocoClientSecret: string;
-  /** A Yoco card checkout was set up — from now on the free cup cannot change. */
+  /** P4: an attempt is open — from now on the free cup cannot change. */
   cardCheckout: boolean;
   totalZar: number;
   freeCup: FreeCupResult;
+  tender: CreateOrderTender;
+  /** Present only when a donorFundId was given. */
+  fundDraw?: CreateOrderFundDraw;
+  /** AT-212 / DEC-19: true when this order is an overridden extra free cup. */
+  extraFreeCup?: boolean;
+  /** §6.0.4 T3 step 2: taken unpaid in deferred mode — no tender was begun. */
+  deferred?: true;
 }>> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
@@ -125,6 +196,30 @@ export async function createOrder(
     return rejectVoucherOrder(orderId, session, { code: "VALIDATION", message: TOO_MANY_VOUCHERS }, voucherCounts);
   }
 
+  // One server timestamp for placed_at, revenue_day and the free-cup day, so
+  // they can never straddle midnight SAST (L07, REQ-039).
+  const receivedAt = new Date();
+  const day = revenueDay(receivedAt);
+  // §6.0.4 T3 step 2 / §6.7: the open session is in deferred mode. A plain
+  // read, as readShotPolicy's. 'free' still wins (S7a, newOrderPaymentMode).
+  const tillDeferred = (await readOpenSessionDeferred(db))?.deferred === true;
+
+  // ── AT-202: the shot ceiling (T15, REQ-138, REQ-144) and the extra-shot
+  // surcharge (T09, REQ-104, REQ-136). Only a line above one shot can be
+  // affected, so the policy is read only then. A line above the ceiling for
+  // today's mode is refused here, before anything is written.
+  let shotPolicy: ShotPolicy | null = null;
+  if (data.items.some((i) => i.shots > 1)) {
+    shotPolicy = await readShotPolicy(db, day, receivedAt);
+    const policy = shotPolicy;
+    if (data.items.some((i) => i.shots > policy.maxShots)) {
+      return { ok: false, code: "SHOTS_ABOVE_CEILING", message: shotsAboveCeilingMessage(policy) };
+    }
+  }
+  /** §7.0.2 surcharge_zar for one unit of a line. */
+  const surchargeFor = (shots: number) =>
+    shotPolicy ? shotSurchargeZar(shots, shotPolicy.extraShotZar, shotPolicy.surchargeInForce) : 0;
+
   // Resolve current prices from the DB (never trust client-supplied prices).
   // The item and modifier lookups are independent — run them in parallel so
   // creation costs one round trip here, not two sequential ones.
@@ -144,6 +239,22 @@ export async function createOrder(
   const menuById = new Map(menuRows.map((m) => [m.id, m]));
   const modById = new Map(modRows.map((m) => [m.id, m]));
 
+  // AT-202 / L48: shots above 1 only on a drink whose recipe holds coffee —
+  // never a surcharge on a hot chocolate. Refused before anything is written.
+  const multiShot = data.items.filter((i) => i.shots > 1);
+  if (multiShot.length > 0) {
+    const recipeIds = multiShot
+      .map((i) => menuById.get(i.menuItemId)?.recipeId)
+      .filter((r): r is string => typeof r === "string");
+    const coffee = await readCoffeeRecipeIds(db, recipeIds);
+    for (const i of multiShot) {
+      const mi = menuById.get(i.menuItemId);
+      if (mi && !(mi.recipeId && coffee.has(mi.recipeId))) {
+        return { ok: false, code: "SHOTS_NOT_ALLOWED", message: shotsNotAllowedMessage(mi.name) };
+      }
+    }
+  }
+
   const lines: PricedLine[] = [];
   for (const item of data.items) {
     const mi = menuById.get(item.menuItemId);
@@ -160,13 +271,8 @@ export async function createOrder(
     // stock is actually deducted here, this is a read-only availability check).
     if (mi.recipeId) {
       const stock = await checkRecipeStock(mi.recipeId, item.quantity, db);
-      if (!stock.ok) {
-        return {
-          ok: false,
-          code: "OUT_OF_STOCK",
-          message: `${mi.name} is unavailable right now — out of ${stock.itemName}.`,
-        };
-      }
+      // REQ-020 / S8: STOCK_EXHAUSTED, before any tender begins (S1 copy).
+      if (!stock.ok) return { ok: false, ...STOCK_EXHAUSTED };
     }
     const mods = item.modifications.map((id) => ({
       priceDeltaZar: modById.get(id)?.priceDeltaZar ?? 0,
@@ -175,18 +281,27 @@ export async function createOrder(
       unitPriceZar: mi.currentPriceZar,
       quantity: item.quantity,
       modifications: mods,
+      surchargeZar: surchargeFor(item.shots),
     });
   }
+  // AT-202 part 1, interim: never a voucher on a line carrying an extra-shot
+  // surcharge (decideRedeem's VOUCHER_NOT_ON_EXTRA_SHOTS). Refused and audited
+  // before anything is written. The free cup is weekday-only, where the
+  // surcharge is never in force, so it is unaffected.
+  if (data.items.some((_, i) => voucherCounts[i] > 0 && (lines[i].surchargeZar ?? 0) > 0)) {
+    return rejectVoucherOrder(
+      orderId, session, { code: "VOUCHER_NOT_ON_EXTRA_SHOTS", message: VOUCHER_NOT_ON_EXTRA_SHOTS }, voucherCounts
+    );
+  }
+
+  // §7.0.2 order_gross: quantity × (unit + mods + surcharge), summed.
   const grossZar = computeOrderTotalZar(lines);
   // AT-181 B1: per-unit priced mods, from the same deltas that priced the line.
   const modsZarByLine = lines.map((l) => l.modifications.reduce((sum, m) => sum + m.priceDeltaZar, 0));
 
-  // One server timestamp for placed_at, revenue_day and the free-cup day, so
-  // they can never straddle midnight SAST (L07, REQ-039).
-  const receivedAt = new Date();
-  const day = revenueDay(receivedAt);
-
   // ── L03 free weekday cup — applied automatically, no tap (REQ-024) ─────────
+  // It only applies on a weekday, where the surcharge is 0 (T09), so its one
+  // unit is unit_price_zar + mods_zar and never includes a surcharge.
   const freeCupLines = data.items.map((item, i) => ({
     category: menuById.get(item.menuItemId)!.category,
     unitPriceZar: menuById.get(item.menuItemId)!.currentPriceZar,
@@ -209,20 +324,34 @@ export async function createOrder(
       unitPriceZar: mi.currentPriceZar,
       modsZar: modsZarByLine[i],
       modifications: mods,
+      // AT-202: one row per input line — a different shot count is a
+      // different line (L37), never merged by menu item.
+      shots: item.shots,
+      surchargeZar: lines[i].surchargeZar ?? 0,
     };
   });
 
   // The transaction runs FIRST and settles the order's final total — the free
   // cup decided and its UNIQUE(customer_id, day) row inserted (or refused) —
-  // and only then is anything priced for the card. So the payments row and
-  // any Yoco checkout always carry exactly the committed total.
-  const outcome = await db.transaction(
-    async (tx): Promise<
-      { totalZar: number; freeCup: FreeCupResult; refusal?: undefined } | { refusal: VoucherRefusal }
-    > => {
+  // and only then is a tender begun. So the payments row and whatever is
+  // sent to the machine always carry exactly the committed total.
+  type CreateOutcome =
+    | { kind: "created"; totalZar: number; freeCup: FreeCupResult; weekdayFree: boolean; extraFreeCup: boolean }
+    | { kind: "voucher_refusal"; refusal: VoucherRefusal }
+    // AT-212 / DEC-18: a second weekday drink — refused, nothing written.
+    | { kind: "entitlement_used" }
+    // AT-212 / DEC-19: the override asked for outside weekday mode or with no customer.
+    | { kind: "extra_cup_forbidden" }
+    // §6.0.8: an item outside the event's menu scope — refused, nothing written.
+    | { kind: "off_menu_scope"; event: TillEvent };
+  let outcome: CreateOutcome;
+  try {
+    outcome = await db.transaction(async (tx): Promise<CreateOutcome> => {
       const txDb = tx as unknown as DB;
 
       let decision: FreeCupDecision;
+      let modes: string[];
+      let event: TillEvent | null;
       if (!data.customerId) {
         // No customer → nothing to look up. "Weekday" here is the date alone;
         // it only decides whether the pick-a-customer hint is worth showing.
@@ -231,8 +360,13 @@ export async function createOrder(
           weekdayDate: isWeekdayInSAST(receivedAt),
           weekday: isWeekdayInSAST(receivedAt), lines: freeCupLines, alreadyClaimed: false,
         });
+        // AT-212 / L19: the mode decides whether anyone pays, customer or not.
+        // A plain read, as readShotPolicy's: no lock is taken on sessions.
+        ({ modes, event } = await readTillMode(db, day, receivedAt));
       } else {
-        const ctx = await readFreeCupContext(tx as unknown as FreeCupClient, data.customerId, day);
+        const ctx = await readFreeCupContext(tx as unknown as FreeCupClient, data.customerId, day, receivedAt);
+        modes = ctx.modes;
+        event = ctx.event;
         decision = decideFreeCup({
           customer: ctx.customer, customerBound: true, sessionOpen: ctx.modes.length > 0,
           weekdayDate: isWeekdayInSAST(receivedAt),
@@ -242,14 +376,40 @@ export async function createOrder(
       }
       const discountZar = decision.status === "apply" ? decision.discountZar : 0;
 
+      // ── AT-212 / L19 / S7a: weekday mode (mode='weekday' AND Mon–Fri SAST,
+      // the L03 double condition) — no order carries a payment step and
+      // `payment_mode` is 'free', whatever else applies.
+      const weekdayFree = isFreeCupWeekday(modes, receivedAt);
+      // L25 / REQ-045 / S7a: a free-posture event in force — nobody pays, as
+      // on a weekday, by the same mechanism (DEC-18: menu price kept, each line
+      // zeroed by discount_zar, total R0, 'free', no tender). The extra-shot
+      // surcharge is inert under it (§6.6), so it is written as 0.
+      const eventFree = isEventFree(event);
+      const orderFree = weekdayFree || eventFree;
+      // §6.0.8: an item outside the event's menu scope is MODE_FORBIDDEN.
+      if (event && freeCupLines.some((l) => !menuScopeAllows(event, l.category))) {
+        return { kind: "off_menu_scope", event };
+      }
+      // DEC-19: "Offered only in weekday mode and only with a customer attached."
+      if (data.extraFreeCup && (!data.customerId || !weekdayFree)) return { kind: "extra_cup_forbidden" };
+      const entitlementUsed = decision.status === "refused" && decision.code === "ENTITLEMENT_USED";
+      // DEC-19: after ENTITLEMENT_USED the barista gave the drink anyway.
+      const extraCup = weekdayFree && entitlementUsed && data.extraFreeCup === true;
+      // DEC-18 / REQ-025: "the second drink is refused by default and never
+      // charged". Nothing is written; the reject audit is written outside.
+      if (entitlementUsed && !extraCup) return { kind: "entitlement_used" };
+
       // ── §6.9 vouchers — decided before anything is written (L41, L42) ──────
       type PlannedLine = { index: number; perVoucherZar: number[]; lineDiscountZar: number };
       let vouchers: null | {
         sessionId: string; recorded: number; kind: string; lines: PlannedLine[]; discountZar: number;
       } = null;
       if (vouchersOnOrder > 0) {
+        // L41, safest reading: a free-posture order is already zeroed, so a
+        // voucher on it would book a redemption against nothing paid.
+        if (eventFree) return { kind: "voucher_refusal", refusal: { code: "VALIDATION", message: OTHER_DISCOUNT } };
         const open = await lockOpenSession(txDb, receivedAt);
-        if (!open) return { refusal: { code: "NO_SESSION", message: "Open the session first." } };
+        if (!open) return { kind: "voucher_refusal", refusal: { code: "NO_SESSION", message: "Open the session first." } };
         const kind = data.voucherKind ?? (open.voucherKindsActive.length === 1 ? open.voucherKindsActive[0] : "");
         const planned: PlannedLine[] = [];
         for (const [i, row] of baseItemRows.entries()) {
@@ -259,18 +419,18 @@ export async function createOrder(
             kind,
             line: {
               quantity: row.quantity, unitPriceZar: row.unitPriceZar, modsZar: row.modsZar,
-              surchargeZar: LINE_SURCHARGE_CHARGED_ZAR, discountZar: 0, compReason: null,
+              surchargeZar: row.surchargeZar, discountZar: 0, compReason: null,
             },
             count: voucherCounts[i],
           });
-          if (plan.status === "refused") return { refusal: { code: plan.code, message: plan.message } };
+          if (plan.status === "refused") return { kind: "voucher_refusal", refusal: { code: plan.code, message: plan.message } };
           planned.push({ index: i, perVoucherZar: plan.perVoucherZar, lineDiscountZar: plan.lineDiscountZar });
         }
         // L41, safest reading: the free cup and a voucher never share an
         // order. Unreachable today — the free cup needs every session today in
         // weekday mode; a voucher needs a non-weekday open session.
         if (decision.status === "apply") {
-          return { refusal: { code: "VALIDATION", message: OTHER_DISCOUNT } };
+          return { kind: "voucher_refusal", refusal: { code: "VALIDATION", message: OTHER_DISCOUNT } };
         }
         vouchers = {
           sessionId: open.id, recorded: open.voucherRedemptionsRecorded, kind, lines: planned,
@@ -279,21 +439,40 @@ export async function createOrder(
       }
       const voucherLineDiscount = (i: number) => vouchers?.lines.find((l) => l.index === i)?.lineDiscountZar ?? 0;
 
+      // AT-212 / DEC-18: on a weekday every line keeps its menu price and
+      // discount_zar zeroes it, so the order is R0.
+      // A free-posture event zeroes every line the same way (L25, REQ-045).
+      const lineDiscountZar = (i: number) =>
+        orderFree
+          ? weekdayLineDiscountZar(baseItemRows[i])
+          : decision.status === "apply" && decision.lineIndex === i ? discountZar : voucherLineDiscount(i);
+
       // Total = Σ lines after discounts (REQ-150: the card sees the paid part only).
-      const totalZar = grossZar - discountZar - (vouchers?.discountZar ?? 0);
+      // Free: every line zeroed and the surcharge written as 0, so R0 exactly.
+      const totalZar = orderFree
+        ? 0
+        : grossZar - discountZar - (vouchers?.discountZar ?? 0);
 
       // INSERT orders first (FK), then items and audit in parallel.
       await tx.insert(orders).values({
         id: orderId,
         customerId: data.customerId ?? null,
+        notificationTarget: data.notificationTarget,
         staffId: session.id,
         state: "ordered",
         totalZar,
         isStaffDiscount: decision.status === "apply",
         // REQ-153: a net-R0 order is `free` — it gets no payments row.
-        paymentMode: totalZar === 0 ? "free" : null,
+        // S7a: 'free' on weekday mode, whatever else applies. Otherwise the
+        // card tender, 'yoco' — never NULL (§10.3 L2499, §10.6; migration 0051).
+        // T3 step 2: 'yoco_deferred' while the session is deferred. L25: a
+        // free-posture event is free exactly as weekday mode is (orderFree).
+        paymentMode: newOrderPaymentMode({ weekdayFree: orderFree, totalZar, tillDeferred }),
         placedAt: receivedAt,
         revenueDay: day,
+        // DEC-28 (d) / §11 createOrder: "Tags event_window_id when an event is
+        // in force" — the window the till resolved (DEC-28 a, c), else NULL.
+        eventWindowId: event?.windowId ?? null,
       });
 
       await Promise.all([
@@ -302,7 +481,10 @@ export async function createOrder(
             ...row,
             // L03: one unit of one eligible line, never the line, never the order.
             // §6.9: a vouchered line carries one unit's price per voucher.
-            discountZar: decision.status === "apply" && decision.lineIndex === i ? discountZar : voucherLineDiscount(i),
+            // DEC-18: on a weekday, every line zeroed.
+            discountZar: lineDiscountZar(i),
+            // §6.6: the extra-shot surcharge is inert where nobody pays.
+            ...(orderFree ? { surchargeZar: 0 } : {}),
           }))
         ),
         writeAudit(
@@ -312,7 +494,12 @@ export async function createOrder(
             action: "create",
             actorId: session.id,
             actorRole: session.role,
-            after: { state: "ordered", totalZar, customerId: data.customerId ?? null },
+            after: {
+              state: "ordered", totalZar, customerId: data.customerId ?? null,
+              notificationTarget: data.notificationTarget,
+              // §6.6 event attribution (also on orders.event_window_id, DEC-28 d).
+              ...(event ? { eventWindowId: event.windowId, paymentPosture: event.paymentPosture } : {}),
+            },
           },
           txDb
         ),
@@ -346,7 +533,7 @@ export async function createOrder(
                 orderItemId: baseItemRows[l.index].id, vouchers: l.perVoucherZar.length,
                 lineDiscountZar: l.lineDiscountZar,
               })),
-              discountZar: v.discountZar, totalZar, paymentMode: totalZar === 0 ? "free" : null,
+              discountZar: v.discountZar, totalZar, paymentMode: newOrderPaymentMode({ weekdayFree, totalZar, tillDeferred }),
             },
           },
           txDb
@@ -364,24 +551,32 @@ export async function createOrder(
             txDb
           );
           return {
-            totalZar,
+            kind: "created", totalZar, weekdayFree, extraFreeCup: false,
             freeCup: { applied: true, code: null, message: FREE_CUP_COPY.applied, discountZar },
           };
         }
-        // Lost the UNIQUE(customer_id, day) race: the order continues as paid
-        // (REQ-025). Nothing is thrown, so this audit row commits.
-        await tx.update(orderItems).set({ discountZar: 0 }).where(eq(orderItems.orderId, orderId));
-        await tx
-          .update(orders)
-          .set({ totalZar: grossZar, isStaffDiscount: false, paymentMode: grossZar === 0 ? "free" : null })
-          .where(eq(orders.id, orderId));
-        await writeFreeCupReject(txDb, orderId, session, data.customerId, day, "ENTITLEMENT_USED", "already_claimed");
-        return {
-          totalZar: grossZar,
-          freeCup: {
-            applied: false, code: "ENTITLEMENT_USED",
-            message: FREE_CUP_COPY.ENTITLEMENT_USED, discountZar: 0,
+        // Lost the UNIQUE(customer_id, day) race: this is a second weekday
+        // drink (DEC-18) — refused, so everything above rolls back. The reject
+        // audit is written outside the transaction, so it always commits.
+        throw new EntitlementRaceLost();
+      }
+      if (extraCup && data.customerId) {
+        // DEC-19 / REQ-025: NO second entitlement row; ONE audit row
+        // action='extra_free_cup' with barista, beneficiary, order, day, gross.
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "extra_free_cup",
+            actorId: session.id, actorRole: session.role,
+            after: {
+              baristaStaffId: session.id, beneficiaryCustomerId: data.customerId,
+              orderId, day, grossZar, totalZar,
+            },
           },
+          txDb
+        );
+        return {
+          kind: "created", totalZar, weekdayFree, extraFreeCup: true,
+          freeCup: { applied: false, code: null, message: null, discountZar: 0 },
         };
       }
       if (decision.status === "refused" && decision.audit && data.customerId) {
@@ -390,47 +585,82 @@ export async function createOrder(
         await writeFreeCupReject(txDb, orderId, session, data.customerId, day, decision.code, decision.reason);
       }
       return {
-        totalZar,
+        kind: "created", totalZar, weekdayFree, extraFreeCup: false,
         freeCup:
           decision.status === "apply"
             ? { applied: true, code: null, message: FREE_CUP_COPY.applied, discountZar }
             : { applied: false, code: decision.code, message: decision.message, discountZar: 0 },
       };
-    }
-  );
+    });
+  } catch (err) {
+    if (!(err instanceof EntitlementRaceLost)) throw err;
+    outcome = { kind: "entitlement_used" };
+  }
 
   // A voucher refusal wrote nothing; its audit row is written here, outside
   // the transaction, so it always commits.
-  if (outcome.refusal) return rejectVoucherOrder(orderId, session, outcome.refusal, voucherCounts);
-
-  // REQ-153: a net-R0 order writes no payments row and sends nothing to Yoco.
-  let yocoClientSecret = "";
-  let cardCheckout = false;
-  if (outcome.totalZar > 0) {
-    // NEVER throw on Yoco failure: the order is committed, so throwing would
-    // show a generic error AND leave an order the barista can't see. Degrade —
-    // the POS falls back to taking payment from the queue.
-    const yocoResult = await createPaymentIntent({
-      amountZar: outcome.totalZar,
-      metadata: { orderId },
-    }).catch((err: unknown) => {
-      const reason = !process.env.YOCO_SECRET_KEY ? "YOCO_SECRET_KEY not set" : String(err);
-      console.error(`[createOrder] Yoco intent failed — falling back to manual payment (${reason})`);
-      return null;
+  if (outcome.kind === "voucher_refusal") return rejectVoucherOrder(orderId, session, outcome.refusal, voucherCounts);
+  if (outcome.kind === "off_menu_scope") {
+    return refuseOffMenuScope(orderId, session, outcome.event, data.items.map((i) => i.menuItemId));
+  }
+  // AT-212 / DEC-18 / REQ-025: the second weekday drink is refused and never
+  // charged — no order, no payments row, nothing sent; only the reject audit.
+  // The till then offers "Give another free cup" (DEC-19).
+  if (outcome.kind === "entitlement_used") {
+    await writeFreeCupReject(db, orderId, session, data.customerId as string, day, "ENTITLEMENT_USED", "already_claimed");
+    return { ok: false, code: "ENTITLEMENT_USED", message: FREE_CUP_COPY.ENTITLEMENT_USED };
+  }
+  if (outcome.kind === "extra_cup_forbidden") {
+    await writeAudit({
+      entityKind: "order", entityId: orderId, action: "reject",
+      actorId: session.id, actorRole: session.role,
+      after: { attempted: "extra_free_cup", code: "MODE_FORBIDDEN", beneficiaryCustomerId: data.customerId ?? null, day },
+      reason: "MODE_FORBIDDEN",
     });
-    yocoClientSecret = yocoResult?.clientSecret ?? "";
-    cardCheckout = Boolean(yocoResult?.id);
+    return { ok: false, code: "MODE_FORBIDDEN", message: FREE_CUP_COPY.extraCupNotHere };
+  }
 
-    // The payments row carries the same committed total as the checkout.
-    // (REQ-026's full ordering — row before the send — is not in this story.)
-    // A concurrent decline/apply cannot have written a row first: while this
-    // chargeable order has no row they refuse with STALE_STATE.
-    await db.insert(payments).values({
-      orderId,
-      amountZar: outcome.totalZar,
-      status: "pending",
-      yocoCheckoutId: yocoResult?.id ?? null,
-    });
+  // REQ-026 / P1: the order and its items are committed above; ONLY NOW does
+  // beginTender write the `pending` payments row (under the order's row lock,
+  // at the order's committed total), and nothing is sent from here — the
+  // screen sends it with sendToTerminal. REQ-153: a net-R0 order (a free cup,
+  // or fully vouchered) begins no tender at all — no payments row, nothing
+  // sent (it is payment_mode 'free').
+  let tender: CreateOrderTender = null;
+  let fundDraw: CreateOrderFundDraw | undefined;
+  if (data.donorFundId !== undefined) {
+    // AT-203 / L47: the fund is the tender — no payments row, nothing sent. A
+    // refusal (FUND_INSUFFICIENT, FUND_NOT_LINKED, FUND_UNAVAILABLE for an R0
+    // order, …) is returned beside the committed order, which stays unpaid and
+    // can still go to the card (beginTender).
+    const actor = { kind: "staff" as const, staffId: session.id, role: session.role };
+    try {
+      const drawn = await drawFromDonorFund(getFundDeps(), actor, orderId, data.donorFundId);
+      fundDraw = drawn.ok
+        ? { ok: true, fundId: drawn.fundId, amountZar: drawn.amountZar, balanceAfterZar: drawn.balanceAfterZar }
+        : { ok: false, code: drawn.code, message: drawn.message };
+    } catch (err) {
+      // The draw's transaction rolled back: nothing was drawn.
+      console.error("[createOrder] drawFromDonorFund failed", err);
+      fundDraw = { ok: false, code: "FUND_UNAVAILABLE", message: "Couldn't pay from the fund — nothing was drawn. Try again." };
+    }
+  } else if (outcome.totalZar > 0 && !outcome.weekdayFree && !tillDeferred) {
+    // T3: while deferred the tender step is "replaced, not skipped" — no
+    // payments row, nothing sent; the screen says the order is unpaid.
+    // L19: no weekday order ever sends anything to the card machine.
+    // The order is committed: a refusal (NO_SESSION, TERMINAL_UNREACHABLE when
+    // no machine is configured, …) is returned beside it, never thrown.
+    // An exception inside beginTender (e.g. a database outage) comes back as
+    // TENDER_NOT_BEGUN with a retry — nothing was written or sent.
+    try {
+      const begun = await startTender({ kind: "staff", staffId: session.id, role: session.role }, orderId);
+      tender = begun.ok
+        ? { ok: true, attempt: begun.attempt, amountZar: begun.amountZar }
+        : { ok: false, code: begun.code, message: begun.message, ...("retryOffered" in begun ? { retryOffered: begun.retryOffered } : {}) };
+    } catch (err) {
+      console.error("[createOrder] beginTender failed", err);
+      tender = { ...TENDER_NOT_BEGUN };
+    }
   }
 
   // Look up customer name for the queue display (walk-in orders have no customer).
@@ -454,8 +684,29 @@ export async function createOrder(
 
   return {
     ok: true,
-    data: { orderId, yocoClientSecret, cardCheckout, totalZar: outcome.totalZar, freeCup: outcome.freeCup },
+    data: {
+      orderId,
+      cardCheckout: tender?.ok === true || fundDraw?.ok === true,
+      totalZar: outcome.totalZar,
+      freeCup: outcome.freeCup,
+      tender,
+      ...(fundDraw !== undefined ? { fundDraw } : {}),
+      ...(outcome.extraFreeCup ? { extraFreeCup: true } : {}),
+      // T3: taken unpaid in deferred mode (a fund draw that succeeded paid it).
+      ...(newOrderPaymentMode({ weekdayFree: outcome.weekdayFree, totalZar: outcome.totalZar, tillDeferred }) === "yoco_deferred" &&
+      fundDraw?.ok !== true
+        ? { deferred: true as const }
+        : {}),
+    },
   };
+}
+
+/** AT-212: createOrder lost the UNIQUE(customer_id, day) race — roll back, then refuse. */
+class EntitlementRaceLost extends Error {
+  constructor() {
+    super("ENTITLEMENT_USED");
+    this.name = "EntitlementRaceLost";
+  }
 }
 
 /** A createOrder refused for its vouchers: audited action='reject', nothing else written. */
@@ -478,7 +729,7 @@ async function rejectVoucherOrder(
 // without leaking exception details across the client boundary.
 class TransitionError extends Error {
   constructor(
-    public readonly code: "NOT_FOUND" | "INVALID_TRANSITION" | "PAYMENT_REQUIRED",
+    public readonly code: "NOT_FOUND",
     message: string
   ) {
     super(message);
@@ -496,21 +747,11 @@ class CancelError extends Error {
   }
 }
 
-class ManualPaymentError extends Error {
-  constructor(
-    public readonly code: "NOT_FOUND" | "CONFLICT",
-    message: string
-  ) {
-    super(message);
-    this.name = "ManualPaymentError";
-  }
-}
-
 /**
  * Move an order through the state machine.
  *
  * On `ordered → in_progress`: deducts stock atomically inside a transaction
- *   (rule L01 / R5). Returns OUT_OF_STOCK if any ingredient lot is empty.
+ *   (rule L01 / R5). Returns STOCK_EXHAUSTED_AT_MAKE if deduction fails (S8b).
  * On `in_progress → ready`:  sends the order-ready push to known customers.
  *
  * All DB mutations (state change + deduction + audit) are wrapped in a single
@@ -540,7 +781,7 @@ export async function transitionOrder(
   let pushCustomerId: string | null = null;
 
   try {
-    await db.transaction(async (tx) => {
+    const refused = await db.transaction(async (tx): Promise<ActionResult<Order> | null> => {
       const txDb = tx as unknown as DB;
 
       // ── 0. Lock the row for the duration of this transaction ───────────────
@@ -555,36 +796,128 @@ export async function transitionOrder(
         .for("update");
 
       if (!current) throw new TransitionError("NOT_FOUND", "Order not found.");
-      if (!canTransition(current.state, toState)) {
-        throw new TransitionError(
-          "INVALID_TRANSITION",
-          `Cannot move order from ${current.state} to ${toState}.`
+      // AT-207 / §10.3.3: the close wrote this order off; that is its outcome,
+      // and the day's daily_closes figure was taken from it. Returned, not
+      // thrown, so the reject audit commits; nothing else is written.
+      if (current.writtenOffAt) {
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: { attempted: "transition", code: "ORDER_WRITTEN_OFF", state: current.state, toState },
+            reason: "ORDER_WRITTEN_OFF",
+          },
+          txDb
         );
+        return {
+          ok: false,
+          code: "ORDER_WRITTEN_OFF",
+          message: "This order was written off at the daily close and cannot be moved on.",
+        };
+      }
+      // REQ-023 / S9: a backwards or repeated transition is STALE_STATE (§6.0
+      // error table copy). Returned, not thrown, so the reject audit commits
+      // (CLAUDE.md §5); nothing else is written.
+      if (!canTransition(current.state, toState)) {
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: { attempted: "transition", code: "STALE_STATE", state: current.state, toState },
+            reason: "STALE_STATE",
+          },
+          txDb
+        );
+        return { ok: false, code: "STALE_STATE", message: "This order just changed — reloading" };
       }
 
       // ── Cash-remove guard (AT-122): ordered → in_progress requires a
-      // confirmed Yoco payment for non-free orders. Free orders (totalZar === 0
-      // after a staff discount) need no payment row.
-      // Bypass when YOCO_SECRET_KEY is absent (dev/simulation mode — no real Yoco). ──
-      if (toState === "in_progress" && current.totalZar > 0 && process.env.YOCO_SECRET_KEY) {
-        const [pmt] = await tx
-          .select({ status: payments.status })
+      // successful payment for non-free orders — or, REQ-008 / S4, an attempt
+      // that was SENT and ended `unresolved`: "the order enters the queue and
+      // the drink is made" while recovery asks Yoco. A declined, a pending or a
+      // never-sent closed-out attempt does not open it. Free orders (totalZar
+      // === 0) need no payment row. Every attempt is read (ORDER BY attempt).
+      // AT-203 / L47: an order settled from a blessing fund is paid — it holds
+      // a spend entry and, by design, no payments row.
+      // DEC-26 (Mia, 9 Nov 2026) / DEC-21: no YOCO_SECRET_KEY bypass; a deferred
+      // order starts normally (T3 step 2); a Sunday order may start while its
+      // card sale is expected on the Yoco machine — decidePaymentGate.
+      // DEC-28 (b): so may an order bound to a paid-posture event window.
+      if (toState === "in_progress" && current.totalZar > 0 && current.paymentMode !== "donor_fund") {
+        const attempts = await tx
+          .select({ status: payments.status, sentAt: payments.sentAt })
           .from(payments)
-          .where(eq(payments.orderId, orderId));
-        if (pmt?.status !== "successful") {
-          throw new TransitionError(
-            "PAYMENT_REQUIRED",
-            "Order cannot start — card payment not yet confirmed."
+          .where(eq(payments.orderId, orderId))
+          .orderBy(payments.attempt);
+        // DEC-28 (b): the posture of the event window the order was rung under.
+        let eventPaymentPosture: string | null = null;
+        if (current.eventWindowId) {
+          const [w] = await tx
+            .select({ paymentPosture: eventWindows.paymentPosture })
+            .from(eventWindows)
+            .where(eq(eventWindows.id, current.eventWindowId));
+          eventPaymentPosture = w?.paymentPosture ?? null;
+        }
+        const gate = decidePaymentGate(
+          {
+            totalZar: current.totalZar, paymentMode: current.paymentMode, revenueDay: current.revenueDay, attempts,
+            eventPaymentPosture,
+          },
+          sundayCardSalesOnMachine()
+        );
+        if (gate === "payment_required") {
+          // Returned, not thrown, so the reject audit commits (CLAUDE.md §5).
+          const refusal = { code: "PAYMENT_REQUIRED", message: "Order cannot start — card payment not yet confirmed." };
+          await writeAudit(
+            {
+              entityKind: "order", entityId: orderId, action: "reject",
+              actorId: session.id, actorRole: session.role,
+              after: { attempted: "transition", code: refusal.code, state: current.state, toState },
+              reason: refusal.code,
+            },
+            txDb
+          );
+          return { ok: false, ...refusal };
+        }
+        if (gate === "sunday_machine") {
+          // DEC-21 / DEC-26: FAVO has seen no payment; the card sale is expected
+          // on the Yoco machine, outside FAVO. No money change.
+          await writeAudit(
+            {
+              entityKind: "order", entityId: orderId, action: "sunday_started_without_favo_payment",
+              actorId: session.id, actorRole: session.role,
+              after: { revenueDay: current.revenueDay, totalZar: current.totalZar, rule: "DEC-21" },
+              reason: "card sale expected on the Yoco machine (DEC-21)",
+            },
+            txDb
+          );
+        }
+        if (gate === "event_machine") {
+          // DEC-28 (b): a paid event (any day) while the Web POS is not live —
+          // the card sale is expected on the Yoco machine. No money change.
+          await writeAudit(
+            {
+              entityKind: "order", entityId: orderId, action: "event_started_without_favo_payment",
+              actorId: session.id, actorRole: session.role,
+              after: {
+                revenueDay: current.revenueDay, totalZar: current.totalZar,
+                eventWindowId: current.eventWindowId, paymentPosture: eventPaymentPosture, rule: "DEC-28",
+              },
+              reason: "card sale expected on the Yoco machine (DEC-28)",
+            },
+            txDb
           );
         }
       }
 
       // ── 1. Update order state ──────────────────────────────────────────────
+      // REQ-047 / S7: completed_at is the moment of Done (→ ready), stamped
+      // once; the sweep and the order-to-cup metric read it, never `collected`.
       await tx
         .update(orders)
         .set({
           state: toState,
-          completedAt: toState === "collected" ? new Date() : current.completedAt,
+          completedAt: toState === "ready" ? (current.completedAt ?? new Date()) : current.completedAt,
         })
         .where(eq(orders.id, orderId));
 
@@ -597,7 +930,9 @@ export async function transitionOrder(
       }
 
       // ── 3. Fetch subscription for order-ready push (in_progress → ready) ──
-      if (toState === "ready" && current.customerId) {
+      // §11: `ready` pushes to the registered customer and no-ops for target
+      // `none` (L28) — keyed off the bound target, never inferred.
+      if (toState === "ready" && current.notificationTarget === "customer" && current.customerId) {
         const [cust] = await tx
           .select({ name: customers.name, pushSubscription: customers.pushSubscription })
           .from(customers)
@@ -620,13 +955,17 @@ export async function transitionOrder(
         },
         txDb
       );
+      return null;
     });
+    if (refused) return refused;
   } catch (err) {
     if (err instanceof TransitionError) {
       return { ok: false, code: err.code, message: err.message };
     }
     if (err instanceof DeductionError) {
-      return { ok: false, code: err.code, message: err.message };
+      // REQ-022 / S8b: the transaction rolled back (order stays `ordered`, no
+      // stock row); audit the refusal, push the Admin, return the S1 code.
+      return refuseStockExhaustedAtMake(orderId, session, err);
     }
     throw err; // Unexpected — let Next.js error boundary handle it
   }
@@ -685,10 +1024,31 @@ export async function transitionOrder(
   return await loadOrder(orderId);
 }
 
-/** Cancel an order — valid only while still `ordered` (rule L01). */
+/** States from which a cancel reverses stock and needs an admin (T6, REQ-040). */
+const STARTED_STATES: readonly OrderState[] = ["in_progress", "ready", "collected"];
+
+/** PRD §6.0.7 T6: the admin PIN prompt "stating what it is for". */
+const CANCEL_NEEDS_ADMIN = {
+  ok: false as const,
+  code: "FORBIDDEN",
+  message: "Cancelling a started order reverses stock. Needs an admin.",
+};
+
+/**
+ * Cancel an order (PRD §11.3 cancelOrder, T6, DEC-10, REQ-040).
+ *  - `ordered`: a barista may cancel outright; nothing was deducted.
+ *  - `in_progress` onward: needs an admin — the caller is an Admin, or a
+ *    barista passes `adminPin` (a single-action override: no admin session is
+ *    created, REQ-063, and audit_log.on_behalf_of_staff_id names the admin).
+ *    Compensating stock_movements rows are written for every deduction the
+ *    order made; the originals are never edited. L02: no money moves.
+ *  - Never while a tender attempt is open (REQ-028, TENDER_IN_PROGRESS).
+ * Every refusal is returned with its reject audit committed.
+ */
 export async function cancelOrder(
   orderId: string,
-  reason: string
+  reason: string,
+  adminPin?: string
 ): Promise<ActionResult> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
@@ -696,15 +1056,37 @@ export async function cancelOrder(
 
   // Fast existence check before opening a transaction.
   const [exists] = await db
-    .select({ id: orders.id })
+    .select({ id: orders.id, state: orders.state })
     .from(orders)
     .where(eq(orders.id, orderId));
   if (!exists) {
     return { ok: false, code: "NOT_FOUND", message: "Order not found." };
   }
 
+  const rejectCancel = async (client: DB | undefined, code: string, message: string, detail: Record<string, unknown> = {}) => {
+    await writeAudit(
+      {
+        entityKind: "order", entityId: orderId, action: "reject",
+        actorId: session.id, actorRole: session.role,
+        after: { attempted: "cancel", code, ...detail },
+        reason: code,
+      },
+      client
+    );
+    return { ok: false as const, code, message };
+  };
+
+  // The admin PIN is checked before the row lock (bcrypt is slow), and only
+  // when a barista cancels a started order.
+  let overridingAdminId: string | null = null;
+  if (adminPin !== undefined && session.role === "barista" && STARTED_STATES.includes(exists.state)) {
+    const pin = await verifyAdminPin(adminPin, session);
+    if (!pin.ok) return rejectCancel(undefined, pin.code, pin.message, { state: exists.state, adminPin: "refused" });
+    overridingAdminId = pin.adminStaffId;
+  }
+
   try {
-    await db.transaction(async (tx) => {
+    const refused = await db.transaction(async (tx): Promise<ActionResult | null> => {
       const txDb = tx as unknown as DB;
 
       // SELECT FOR UPDATE serializes concurrent cancel attempts on the same order.
@@ -717,10 +1099,108 @@ export async function cancelOrder(
         .for("update");
 
       if (!current) throw new CancelError("NOT_FOUND", "Order not found.");
-      if (current.state !== "ordered") {
-        throw new CancelError(
-          "CONFLICT",
-          `Only unpaid (ordered) orders can be cancelled; this one is ${current.state}.`
+      const started = STARTED_STATES.includes(current.state);
+      if (current.state !== "ordered" && !started) {
+        return rejectCancel(txDb, "CONFLICT", `This order is already ${current.state}.`, { state: current.state });
+      }
+
+      // AT-207 / §10.3.3: the close wrote this order off; that is its outcome.
+      // Returned, not thrown, so the reject audit commits.
+      if (current.writtenOffAt) {
+        return rejectCancel(
+          txDb,
+          "ORDER_WRITTEN_OFF",
+          "This order was written off at the daily close and cannot be cancelled."
+        );
+      }
+
+      // REQ-028 / P4: no cancel while a tender attempt is open (pending, or
+      // sent and unresolved). Returned, not thrown, so the reject audit commits.
+      const attempts = await tx
+        .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId, attempt: payments.attempt })
+        .from(payments)
+        .where(eq(payments.orderId, orderId))
+        .orderBy(payments.attempt);
+      const open = attempts.find(isAttemptOpen);
+      if (open) {
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: { attempted: "cancel", code: "TENDER_IN_PROGRESS", openAttempt: open.attempt, openStatus: open.status },
+            reason: "TENDER_IN_PROGRESS",
+          },
+          txDb
+        );
+        return TENDER_IN_PROGRESS;
+      }
+
+      // T6 / §10.7: from in_progress on, a barista needs an admin PIN.
+      const override = started && session.role !== "admin";
+      if (override && !overridingAdminId) {
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: { attempted: "cancel", code: CANCEL_NEEDS_ADMIN.code, state: current.state },
+            reason: "admin_pin_required",
+          },
+          txDb
+        );
+        return CANCEL_NEEDS_ADMIN;
+      }
+
+      // REQ-040: compensating stock_movements, originals never edited. One
+      // inverse row per deduction the order made: same lot, same drink, the
+      // delta negated, so every SUM(-delta) over kind='deduction' (cups made,
+      // cost per cup) nets this order to zero. Written only on the started
+      // path (S8a: nothing is deducted before in_progress).
+      let compensating: { inventoryLotId: string; delta: number; at: Date }[] = [];
+      if (started) {
+        const deducted = await tx
+          .select({
+            inventoryLotId: stockMovements.inventoryLotId,
+            delta: stockMovements.delta,
+            menuItemId: stockMovements.menuItemId,
+            at: stockMovements.at,
+          })
+          .from(stockMovements)
+          .where(and(
+            eq(stockMovements.relatedOrderId, orderId),
+            eq(stockMovements.kind, "deduction"),
+            lt(stockMovements.delta, 0),
+          ));
+        compensating = deducted.map((m) => ({ inventoryLotId: m.inventoryLotId, delta: -m.delta, at: m.at }));
+        if (deducted.length > 0) {
+          await tx.insert(stockMovements).values(
+            deducted.map((m) => ({
+              inventoryLotId: m.inventoryLotId,
+              delta: -m.delta,
+              kind: "deduction" as const,
+              relatedOrderId: orderId,
+              menuItemId: m.menuItemId,
+              byStaffId: session.id,
+              // Stamped with the ORIGINAL deduction's time, so the reversal
+              // lands in the same day/week/month as the deduction it cancels.
+              // A new row; the original is untouched.
+              at: m.at,
+            }))
+          );
+        }
+      }
+
+      // AT-203 / REQ-168: a fund-paid order gives its draw back to the fund as
+      // a compensating `adjustment`; the spend entry is never edited. Not a
+      // refund — no money leaves FAVO (§6.10.5). Same transaction as the
+      // cancel, after every refusal above, on either path (§6.10.5: "the fund
+      // reversal rides that same path").
+      if (current.paymentMode === "donor_fund") {
+        await compensateFundDraw(
+          fundTxOn(txDb),
+          { kind: "staff", staffId: session.id, role: session.role },
+          orderId,
+          reason,
+          new Date()
         );
       }
 
@@ -732,13 +1212,16 @@ export async function cancelOrder(
           action: "cancel",
           actorId: session.id,
           actorRole: session.role,
+          ...(override && overridingAdminId ? { onBehalfOfStaffId: overridingAdminId } : {}),
           before: { state: current.state },
-          after: { state: "cancelled" },
+          after: started ? { state: "cancelled", compensatingMovements: compensating } : { state: "cancelled" },
           reason,
         },
         txDb
       );
+      return null;
     });
+    if (refused) return refused;
   } catch (err) {
     if (err instanceof CancelError) {
       return { ok: false, code: err.code, message: err.message };
@@ -746,8 +1229,17 @@ export async function cancelOrder(
     throw err;
   }
 
+  // T6: "The order leaves the queue immediately", on either path.
+  notifyOrderChange({ type: "state_change", orderId, state: "cancelled", at: new Date().toISOString() }).catch(() => {});
   return { ok: true, data: undefined };
 }
+
+/** PRD §6.0.1 copy for TENDER_IN_PROGRESS (P4). */
+const TENDER_IN_PROGRESS = {
+  ok: false as const,
+  code: "TENDER_IN_PROGRESS",
+  message: "This order is at the card machine — finish or cancel the payment first",
+};
 
 // ─── L03 free weekday cup (AT-183 / AT-184) ──────────────────────────────────
 // createOrder applies it automatically; applyFreeCoffee is the PRD-named action
@@ -759,13 +1251,12 @@ export async function cancelOrder(
 type FreeCupClient = Pick<DB, "select">;
 
 /** Everything the decision needs about the beneficiary, read in parallel. */
-async function readFreeCupContext(client: FreeCupClient, customerId: string, day: string) {
-  const [customerRows, sessionRows, claimedRows] = await Promise.all([
+async function readFreeCupContext(client: FreeCupClient, customerId: string, day: string, at: Date) {
+  const [customerRows, till, claimedRows] = await Promise.all([
     client.select({ status: customers.status }).from(customers).where(eq(customers.id, customerId)),
-    client
-      .select({ mode: openingSessions.mode })
-      .from(openingSessions)
-      .where(eq(openingSessions.sessionDate, day)),
+    // The mode in force at `at` — a Wednesday's evening event never makes the
+    // morning's weekday orders paid, and vice versa (src/lib/till-mode.ts).
+    readTillMode(client, day, at),
     client
       .select({ id: staffEntitlementLog.id })
       .from(staffEntitlementLog)
@@ -774,7 +1265,8 @@ async function readFreeCupContext(client: FreeCupClient, customerId: string, day
   ]);
   return {
     customer: customerRows[0] ?? null,
-    modes: sessionRows.map((r) => r.mode),
+    modes: till.modes as string[],
+    event: till.event,
     alreadyClaimed: claimedRows.length > 0,
   };
 }
@@ -838,7 +1330,7 @@ export async function applyFreeCoffee(
     const [current] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
     if (!current) return { ok: false, code: "NOT_FOUND", message: "Order not found." };
     if (current.state !== "ordered") return ORDER_MOVED_ON;
-    const { payment, refusal } = await lockPaymentForTotalChange(tx, current);
+    const { hasPayments, refusal } = await lockPaymentForTotalChange(tx, current);
     if (refusal) return refusal;
     if (current.isStaffDiscount) {
       return { ok: false, code: "NOT_ELIGIBLE", message: "This order already has a free cup." };
@@ -857,7 +1349,7 @@ export async function applyFreeCoffee(
       .innerJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
       .where(eq(orderItems.orderId, orderId));
 
-    const ctx = await readFreeCupContext(tx as unknown as FreeCupClient, beneficiaryCustomerId, day);
+    const ctx = await readFreeCupContext(tx as unknown as FreeCupClient, beneficiaryCustomerId, day, now);
     const decision = decideFreeCup({
       customer: ctx.customer,
       customerBound: true,
@@ -879,7 +1371,7 @@ export async function applyFreeCoffee(
     const totalZar = current.totalZar - decision.discountZar;
     // REQ-153 wants an R0 order to have no payments row, and no payments row
     // is ever deleted — so a row-carrying order cannot be taken to R0 here.
-    if (payment && totalZar === 0) return CHECKOUT_EXISTS;
+    if (hasPayments && totalZar === 0) return CHECKOUT_EXISTS;
 
     if (!(await insertEntitlement(tx, beneficiaryCustomerId, session.id, orderId, day))) {
       await writeFreeCupReject(txDb, orderId, session, beneficiaryCustomerId, day, "ENTITLEMENT_USED", "already_claimed");
@@ -892,10 +1384,6 @@ export async function applyFreeCoffee(
       .update(orders)
       .set({ totalZar, isStaffDiscount: true, paymentMode: totalZar === 0 ? "free" : current.paymentMode })
       .where(eq(orders.id, orderId));
-    if (payment) {
-      // A pending row with no checkout: keep its amount equal to the order's.
-      await tx.update(payments).set({ amountZar: totalZar }).where(eq(payments.id, payment.id));
-    }
     await writeAudit(
       {
         entityKind: "order", entityId: orderId, action: "free_cup",
@@ -911,29 +1399,53 @@ export async function applyFreeCoffee(
 
 /**
  * The barista's one tap to decline an automatically applied free cup
- * (REQ-024). Removes the beneficiary's entitlement row for this order — so the
+ * (REQ-024). On a weekday it is refused with MODE_FORBIDDEN and writes only
+ * the reject audit (AT-212 follow-up, owner decision 3 Nov 2026). Removes the beneficiary's entitlement row for this order — so the
  * cup is still available to that person later today — clears the discount on
  * the line it paid for, restores the order total, and audits it. Only while
- * the order is `ordered` and no card checkout exists (owner rule). If the
- * order was free (no payments row, REQ-153) it becomes chargeable: a pending
- * payments row at the new total is written first, then a checkout is created
- * from that committed total.
+ * the order is `ordered` and no tender attempt is open (owner rule, P4). If the
+ * order was free (no payments row, REQ-153) it becomes chargeable; this writes
+ * no payments row itself — the screen then begins a tender (beginTender) at
+ * the committed new total, before anything is sent (REQ-026).
  */
 export async function declineFreeCoffee(
   orderId: string
-): Promise<ActionResult<{ totalZar: number; yocoClientSecret: string }>> {
+): Promise<ActionResult<{ totalZar: number }>> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
   const session = auth.session;
 
-  const result = await db.transaction(
-    async (tx): Promise<ActionResult<{ totalZar: number; rowCreated: boolean }>> => {
+  return db.transaction(
+    async (tx): Promise<ActionResult<{ totalZar: number }>> => {
       const txDb = tx as unknown as DB;
       const [current] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
       if (!current) return { ok: false, code: "NOT_FOUND", message: "Order not found." };
       if (current.state !== "ordered") return ORDER_MOVED_ON;
-      const { payment, refusal } = await lockPaymentForTotalChange(tx, current);
+      const { refusal } = await lockPaymentForTotalChange(tx, current);
       if (refusal) return refusal;
+
+      // AT-212 follow-up (owner decision, Mia, 3 Nov 2026: "on a weekday nobody
+      // pays, so the 'Decline free cup' control is removed"). On a weekday the
+      // decline is refused: the entitlement row is never removed (so no fresh
+      // cup can be claimed the same day), nothing is written but the reject
+      // audit, and it is returned, not thrown, so the audit commits.
+      // The mode in force when the order was rung (src/lib/till-mode.ts).
+      const { modes: placedModes } = await readTillMode(txDb, current.revenueDay, current.placedAt);
+      if (isFreeCupWeekday(placedModes, current.placedAt)) {
+        await writeAudit(
+          {
+            entityKind: "order", entityId: orderId, action: "reject",
+            actorId: session.id, actorRole: session.role,
+            after: {
+              attempted: "decline_free_cup", code: "MODE_FORBIDDEN",
+              beneficiaryCustomerId: current.customerId, day: current.revenueDay,
+            },
+            reason: "MODE_FORBIDDEN",
+          },
+          txDb
+        );
+        return { ok: false, code: "MODE_FORBIDDEN", message: FREE_CUP_COPY.declineNotOnWeekday };
+      }
 
       // Pair the cup with its line: the order carries at most one free cup
       // (createOrder applies one; applyFreeCoffee refuses a second), and the
@@ -962,19 +1474,10 @@ export async function declineFreeCoffee(
       await tx.update(orderItems).set({ discountZar: 0 }).where(eq(orderItems.id, line.id));
       await tx
         .update(orders)
-        .set({ totalZar, isStaffDiscount: false, paymentMode: totalZar === 0 ? "free" : null })
+        // A free order that owes money again keeps a tender already chosen
+        // (deferred, fund) and is otherwise the card, 'yoco' — never NULL (§10.6).
+        .set({ totalZar, isStaffDiscount: false, paymentMode: totalZar === 0 ? "free" : chargeableMode(current.paymentMode) })
         .where(eq(orders.id, orderId));
-      let rowCreated = false;
-      if (totalZar > 0) {
-        if (payment) {
-          // A pending row with no checkout: keep its amount equal to the order's.
-          await tx.update(payments).set({ amountZar: totalZar }).where(eq(payments.id, payment.id));
-        } else {
-          // Was free (no row). The row is written BEFORE anything is sent.
-          await tx.insert(payments).values({ orderId, amountZar: totalZar, status: "pending" });
-          rowCreated = true;
-        }
-      }
       await writeAudit(
         {
           entityKind: "order", entityId: orderId, action: "decline_free_cup",
@@ -983,112 +1486,22 @@ export async function declineFreeCoffee(
             totalZar: current.totalZar, beneficiaryCustomerId: entitlement.customerId,
             day: entitlement.day, orderItemId: line.id, discountZar: line.discountZar,
           },
-          after: { totalZar, paymentRow: payment ? "repriced" : rowCreated ? "created" : "none" },
+          after: { totalZar },
         },
         txDb
       );
-      return { ok: true, data: { totalZar, rowCreated } };
+      return { ok: true, data: { totalZar } };
     }
   );
-
-  if (!result.ok) return result;
-  let yocoClientSecret = "";
-  if (result.data.rowCreated) {
-    // The pending row exists and is committed; now price the checkout from it.
-    const intent = await createPaymentIntent({
-      amountZar: result.data.totalZar,
-      metadata: { orderId },
-    }).catch(() => null);
-    if (intent?.id) {
-      await db
-        .update(payments)
-        .set({ yocoCheckoutId: intent.id })
-        .where(and(eq(payments.orderId, orderId), eq(payments.status, "pending")));
-    }
-    yocoClientSecret = intent?.clientSecret ?? "";
-  }
-  return { ok: true, data: { totalZar: result.data.totalZar, yocoClientSecret } };
 }
 
-/**
- * Confirm a manually-tendered payment (cash / card machine / EFT) — the path
- * the café actually uses for the large majority of orders (the Yoco online
- * checkout + webhook is the exception). The barista taps "paid in person" and
- * this marks the order's payment `successful` (so the AT-122 start-gate opens).
- *
- * Idempotent: confirming an already-successful payment is a no-op success.
- * A failed/refunded payment cannot be confirmed (CONFLICT).
- */
-export async function confirmManualPayment(
-  orderId: string
-): Promise<ActionResult<{ alreadyConfirmed: boolean }>> {
-  const auth = await authorize(...POS_ROLES);
-  if (!auth.ok) return auth;
-  const session = auth.session;
-
-  if (!orderId) {
-    return { ok: false, code: "VALIDATION_ERROR", message: "orderId is required." };
-  }
-
-  let alreadyConfirmed = false;
-
-  try {
-    await db.transaction(async (tx) => {
-      const txDb = tx as unknown as DB;
-
-      // Lock the payment row so two concurrent confirmations (or a confirmation
-      // racing the Yoco webhook) cannot both apply — matches the webhook's
-      // SELECT FOR UPDATE discipline.
-      const [pmt] = await tx
-        .select({ id: payments.id, status: payments.status })
-        .from(payments)
-        .where(eq(payments.orderId, orderId))
-        .for("update")
-        .limit(1);
-
-      if (!pmt) {
-        throw new ManualPaymentError("NOT_FOUND", "No payment record for this order.");
-      }
-      if (pmt.status === "successful") {
-        alreadyConfirmed = true; // idempotent no-op
-        return;
-      }
-      if (pmt.status === "failed" || pmt.status === "refunded") {
-        throw new ManualPaymentError(
-          "CONFLICT",
-          `Payment cannot be confirmed — it is already ${pmt.status}.`
-        );
-      }
-
-      // pending / deferred → confirm it. webhookReceivedAt doubles as the
-      // "confirmed at" timestamp; there is no Yoco webhook on the manual path.
-      await tx
-        .update(payments)
-        .set({ status: "successful", webhookReceivedAt: new Date() })
-        .where(eq(payments.id, pmt.id));
-
-      await writeAudit(
-        {
-          entityKind: "payment",
-          entityId: pmt.id,
-          action: "payment.manual_confirmed",
-          actorId: session.id,
-          actorRole: session.role,
-          before: { status: pmt.status },
-          after: { orderId, status: "successful" },
-        },
-        txDb
-      );
-    });
-  } catch (err) {
-    if (err instanceof ManualPaymentError) {
-      return { ok: false, code: err.code, message: err.message };
-    }
-    throw err;
-  }
-
-  return { ok: true, data: { alreadyConfirmed } };
-}
+// confirmManualPayment ("Mark as paid") is gone (AT-201 part 2b). It let a
+// barista's tap set payments.status='successful' — a human assertion creating
+// revenue, which PRD v7.0 §10.2.1 removes ("Exactly two paths may write
+// status='successful' … and no others"; confirmExternalTender, §11.1). The
+// PRD's manual path is deferred mode (§6.0.4 T3: setDeferredMode, then
+// settleDeferredOrder — a lookup, a fresh send, or the standalone machine's
+// reference), which is not built yet.
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -1097,7 +1510,7 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
   const [o] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!o) return { ok: false, code: "NOT_FOUND", message: "Order not found." };
 
-  const [itemRows, paymentRow, customerRow] = await Promise.all([
+  const [itemRows, attemptRows, customerRow] = await Promise.all([
     db
       .select({
         id: orderItems.id,
@@ -1107,15 +1520,17 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
         unitPriceZar: orderItems.unitPriceZar,
         discountZar: orderItems.discountZar,
         modifications: orderItems.modifications,
+        shots: orderItems.shots,
+        surchargeZar: orderItems.surchargeZar,
       })
       .from(orderItems)
       .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
       .where(eq(orderItems.orderId, orderId)),
     db
-      .select({ status: payments.status, yocoCheckoutId: payments.yocoCheckoutId, yocoPaymentId: payments.yocoPaymentId })
+      .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId })
       .from(payments)
       .where(eq(payments.orderId, orderId))
-      .limit(1),
+      .orderBy(payments.attempt),
     o.customerId
       ? db
           .select({ name: customers.name })
@@ -1124,6 +1539,7 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
           .limit(1)
       : Promise.resolve([]),
   ]);
+  const payState = summarisePayments(attemptRows);
 
   const order: Order = {
     id: o.id,
@@ -1135,8 +1551,11 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
     completedAt: o.completedAt ? o.completedAt.toISOString() : null,
     totalZar: o.totalZar,
     isStaffDiscount: o.isStaffDiscount,
-    paymentStatus: paymentRow[0]?.status ?? null,
-    cardCheckout: !!(paymentRow[0]?.yocoCheckoutId || paymentRow[0]?.yocoPaymentId),
+    paymentStatus: payState.paymentStatus,
+    // AT-203 / REQ-167: a fund-settled order is frozen too.
+    cardCheckout: payState.totalFrozen || o.paymentMode === "donor_fund",
+    paymentAwaitingLookup: payState.awaitingLookup,
+    fundSettled: o.paymentMode === "donor_fund",
     items: itemRows.map((it) => ({
       id: it.id,
       menuItemId: it.menuItemId,
@@ -1147,6 +1566,8 @@ async function loadOrder(orderId: string): Promise<ActionResult<Order>> {
       modifications:
         (it.modifications as { id: string; name: string; priceDeltaZar: number }[]) ??
         [],
+      shots: it.shots,
+      surchargeZar: it.surchargeZar,
     })),
   };
   return { ok: true, data: order };

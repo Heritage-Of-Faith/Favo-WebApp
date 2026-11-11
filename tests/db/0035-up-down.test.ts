@@ -26,13 +26,28 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0048, stepDown0049, stepDown0050, stepDown0051, stepDown0052, stepDown0053, stepDown0054, stepDown0055, stepDown0056 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
 const UP = "0035_at188_order_cogs.sql";
 const DOWN = "down/0035_at188_order_cogs.down.sql";
 const WHEN_0035 = 1792752696811; // drizzle/meta/_journal.json, idx 35
+// L28: 0042 adds orders.notification_target on top of this; stepped down first.
+const DOWN_0042 = "down/0042_l28_notification_target.down.sql";
+// AT-201 part 2a: 0044 adds orders.client_uuid and is newer still; stepped down before 0042.
+const DOWN_0044 = "down/0044_at201_orders_client_uuid.down.sql";
+// AT-209: 0045 re-creates v_daily_revenue over orders and payments.status, and
+// adds FKs from waste_log to orders and audit_log to staff. It is the newest
+// migration, so it steps down before all others (a view blocks ALTER COLUMN TYPE).
+const DOWN_0045 = "down/0045_at209_comps_cancel_abandon.down.sql";
+// AT-203: 0046 (the blessing fund) adds payments' FK to donor_fund_entries and
+// a UNIQUE on (fund_topup_id, attempt); it is now the newest migration, so it
+// steps down before 0045 and payments reads as 0035 left it.
+const DOWN_0046 = "down/0046_at203_blessing_fund.down.sql";
+// AT-202: 0047 adds order_items.surcharge_zar (and seeds three shot settings)
+// on top of 0046, so it steps down before 0046.
+const DOWN_0047 = "down/0047_at202_order_item_surcharge.down.sql";
 
 type Shape = { columns: string[]; constraints: string[]; indexes: string[] };
 
@@ -101,6 +116,24 @@ maybe("0035 order_cogs: up → down → up, and the refusals (AT-188)", () => {
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        // CI now migrates past 0042, which adds a column to orders. Step it
+        // back (rolled back with everything else) so orders reads as 0035 left it.
+        // 0044 (orders.client_uuid) goes first, newest first. AT-209: 0045
+        // (the newest; a view and an FK over orders) steps down before 0044.
+        await stepDown0056(tx); // the barista rota: 0056 (barista_shifts, FK → opening_sessions) is newest of all, before 0055
+        await stepDown0055(tx); // DEC-28 d: 0055 (orders.event_window_id, FK → event_windows) is newest of all, before 0054
+        await stepDown0054(tx); // 0054 (deferred mode, settled_at) is newest of all, before 0053
+        await stepDown0053(tx); // REQ-127: 0053 (is_lid; v_weekly_variance reads app_config) is newest of all, before 0052
+        await stepDown0052(tx); // REQ-130: 0052 (price_history.set_by_staff_id), before 0051
+        await stepDown0051(tx); // 0051 (orders.payment_mode NOT NULL), before 0050
+        await stepDown0050(tx); // AT-203 follow-up: 0050 (v_daily_revenue reads donor_fund_entries) is newest of all, before 0049
+        await stepDown0049(tx); // AT-174: 0049 (refunds dropped) is newest of all, before 0048
+        await stepDown0048(tx); // AT-207: 0048 (daily_closes, orders.written_off_at) is newest of all, first
+        await tx.unsafe(migrationSql(DOWN_0047)); // AT-202: newer still, before 0046
+        await tx.unsafe(migrationSql(DOWN_0046)); // AT-203: newest of all, first
+        await tx.unsafe(migrationSql(DOWN_0045));
+        await tx.unsafe(migrationSql(DOWN_0044));
+        await tx.unsafe(migrationSql(DOWN_0042));
         await fn(tx);
         throw new Rollback();
       });

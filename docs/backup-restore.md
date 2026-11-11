@@ -1,124 +1,109 @@
-# Backup & Disaster Recovery Runbook — AT-85 (G27)
+# Backup and Restore
 
-**Owner:** Gian | **PRD references:** §10 (R2 — data loss tolerance: 24h max)
+**Spec of record:** `docs/FAVO_PRD_v7.md` §9.4 (DEC-05). The ordered go-live path is in `docs/GO_LIVE_RUNBOOK.md` (steps 4 and 5).
+
+> This page replaces an older version that described Supabase point-in-time recovery, an RPO of 24 hours and an RTO of 2 hours. Those numbers and that host are superseded. Do not use them.
+
+Nothing here has been run against a live system. FAVO's database is on Transformate infrastructure, and the backup tooling is not built yet. Anything the repo and the PRD do not state is marked **to confirm with Nikao** or **to confirm with Matt**.
 
 ---
 
-## Backup strategy
+## 1. Targets
 
-| Layer | Method | Cadence | Retention | Location |
+| Target | Value | Source |
+|---|---|---|
+| **RPO** (most data we may lose) | **5 minutes or less** | PRD §9.4 |
+| **RTO** (time to the café transacting again) | **4 hours or less** | PRD §9.4 |
+
+The RTO is measured from the decision to restore until the café can take orders again. The café runs on paper in the meantime.
+
+**The four-hour promise has no contractually responsible party until OPEN-08 is answered** (PRD §9.4, §16.2). The fourth OPEN-08 question is the gate: who is on the hook if the server dies at 08:00 on a Sunday. Do not treat the RTO as a commitment until that is answered in writing.
+
+Nightly-only backups were rejected. They would put a whole Sunday's takings inside the loss window.
+
+---
+
+## 2. What is backed up
+
+| What | How | How often | Kept for | Where |
 |---|---|---|---|---|
-| PostgreSQL | Supabase PITR (point-in-time recovery) | Continuous WAL archiving | 7 days PITR + 30-day daily snapshots | Supabase-managed S3 (eu-west-1) |
-| Application files | Cloudflare R2 (`hofmi-favo`) | None — app is stateless | N/A | — |
-| Schema / migrations | Git + GitHub | Every commit | Forever | `Heritage-Of-Faith/Favo-WebApp` |
-| Secrets | Infisical | Versioned | Forever | Infisical project `hofmi/favo` |
+| The Postgres database, as a stream | **Continuous WAL archiving**, to encrypted off-site storage (PRD §9.4) | Continuous | To confirm with Nikao and Matt | Destination: **to confirm with Matt** |
+| The Postgres database, as a base | **Nightly full base backup** (PRD §9.4) | Nightly | At least 5 years, because financial records are kept for 5 years or more (PRD §9.4) | **To confirm with Matt** |
+| Code and migrations | Git and GitHub | Every commit | Forever | `Heritage-Of-Faith/Favo-WebApp` |
+| The app image | GHCR, tagged by commit sha | Every push to `main` | **To confirm with Nikao** | `ghcr.io/heritage-of-faith/favo-webapp` |
+| Secrets | Infisical | n/a | n/a | Infisical. Not part of a database restore. |
 
-**Recovery point objective (RPO):** 24 hours maximum data loss (PRD §10 R2). Supabase PITR
-exceeds this (continuous WAL archiving achieves near-zero RPO for recent writes).
+Residency is EU (PRD §9.4).
 
-**Recovery time objective (RTO):** 2 hours to full operational state (new DB instance
-provisioned + app redeployed + smoke passing).
+**To confirm with Nikao and Matt:**
 
----
+- Which backup tool is used (the repo does not name one).
+- The WAL archive destination, and who holds its credentials.
+- Who holds the encryption key, and where a copy is kept.
+- Who gets the alert when archiving stops or a rehearsal fails.
 
-## Supabase point-in-time recovery
-
-### When to use
-- Accidental mass-delete or data corruption
-- Bug that wrote incorrect data to many rows
-- Ransom/compromise scenario (if DB credentials are rotated first)
-
-### Steps
-
-1. **Notify the team** — post in the café WhatsApp group: "DB restore in progress — service is degraded"
-
-2. **Determine the recovery timestamp** (SAST = UTC+2):
-   ```bash
-   # Find the last known-good transaction before the incident
-   # Check audit_log for the last clean row:
-   psql $DATABASE_URL -c "SELECT MAX(at) FROM audit_log WHERE at < '<incident-time>'::timestamptz"
-   ```
-
-3. **Initiate PITR in Supabase dashboard:**
-   - Navigate to: Dashboard → Project → Database → Backups → Point in Time Recovery
-   - Enter the target timestamp (UTC)
-   - Confirm restore — this creates a **new** Supabase project; the original is preserved
-
-4. **Update Infisical / Coolify** with the new database's `DATABASE_URL` (one direct URL since AT-168)
-
-5. **Redeploy** via Coolify → force a fresh container start (picks up new env vars)
-
-6. **Verify:**
-   ```bash
-   curl -s https://favo.hofmi.net/api/healthz | python3 -c "import json,sys; d=json.load(sys.stdin); print('Postgres:', 'OK' if d['checks']['postgres']['ok'] else 'FAIL')"
-   ```
-
-7. **Run smoke + audit coverage check** (see deploy-runbook.md steps 4–5)
-
-8. **Post resolution notice** in the café WhatsApp group with root cause and actions taken
+Backups are sized for retention, not for data volume. The database stays small (PRD §9.9).
 
 ---
 
-## Warden R2 snapshot restoration
+## 3. Restore to a point in time
 
-Warden takes nightly snapshots of `hofmi-favo` R2 bucket to a secondary location.
+The commands depend on the tool Matt sets up (go-live step 4). The steps below are the shape of it. Fill in the commands once the tool is chosen.
 
-```bash
-# List available snapshots
-warden snapshots list --project hofmi-favo
+1. **Decide to restore.** Write down the time of the decision. The RTO clock starts here. Tell the baristas to run on paper.
+2. **Pick the recovery time.** Use the last moment you know the data was good. Times in the database are UTC. The café works in SAST (UTC+2). Write both down.
+3. **Provision a fresh Postgres** on the Transformate host. Do not restore over the damaged one. Keep it for inspection. **To confirm with Matt:** who does this and how fast.
+4. **Restore the latest base backup, then replay the WAL archive up to the recovery time.** Commands: **to confirm with Matt**.
+5. **Open the restored database and check it.** Row counts look right. The newest `orders` and `payments` rows are near the recovery time.
+6. **Point the app at it.** Change `DATABASE_URL` in Infisical to the restored database. It must be a **direct** connection, never a pooler. Leave `DATABASE_URL_SESSION` as `docs/GO_LIVE_RUNBOOK.md` step 8 says for the PR #262 state.
+7. **Restart the container.** The entrypoint runs the migrator first. On a restored database it normally finds nothing pending. Read the `[migrate] FATAL` line if it refuses.
+8. **Check health.** `GET https://favo.hofmi.net/api/healthz` returns `{"ok":true,...}`. Load a page that reads the database.
+9. **Reconcile.** Orders taken on paper, and anything after the recovery time, have to be re-entered or accounted for. Card payments in that window must be checked against Yoco. **Who does this: to confirm with Mia.**
+10. **Write down the elapsed time** and what went wrong.
 
-# Restore a specific snapshot
-warden snapshots restore --project hofmi-favo --date 2026-06-12 --target hofmi-favo
-```
-
----
-
-## Full DR drill template (run quarterly)
-
-Run this drill on the second Tuesday of each quarter during off-peak hours (07:00 SAST,
-before café opens at 09:00).
-
-**Prerequisites:**
-- Create a temporary `favo-dr-drill` Supabase project (separate from production)
-- Set `DRILL_DATABASE_URL` pointing to the drill project
-
-```bash
-# 1. Export current schema + seed data from production
-pg_dump $DATABASE_URL --schema-only > /tmp/favo-schema.sql
-bun db:seed  # verify seed script runs cleanly
-
-# 2. Restore to drill project
-psql $DRILL_DATABASE_URL < /tmp/favo-schema.sql
-DATABASE_URL=$DRILL_DATABASE_URL bun db:seed
-
-# 3. Start the app against the drill DB
-DATABASE_URL=$DRILL_DATABASE_URL bun dev
-
-# 4. Run full smoke suite
-PUBLIC_BASE_URL=http://localhost:3000 bun test:e2e:ci tests/e2e/prod-smoke.spec.ts
-
-# 5. Time the recovery
-# Record: drill start time → smoke passing time → total RTO
-echo "DR drill RTO: <X> minutes"
-
-# 6. Clean up
-# Delete the drill Supabase project from the dashboard
-```
-
-**Acceptance criteria:**
-- Smoke suite passes against drill DB within 30 minutes of starting the drill
-- All pre-deploy checklist items are verified against drill environment
-- Document results in Confluence under "FAVO DR Drill Log"
-
-**Schedule:** Second Tuesday of March, June, September, December.
+No scheduled job may start a payment or create revenue (PRD §9.6.2). So nothing re-sends a card payment after a restore. A person checks.
 
 ---
 
-## Incident severity matrix
+## 4. The restore drill (before go-live)
 
-| Severity | Condition | Response | SLA |
-|---|---|---|---|
-| P0 | Audit coverage gap > 0 OR orders being lost | Halt new orders, rollback immediately | Resolve in < 30 min |
-| P1 | Service down (healthz 503) OR payments failing | Rollback or hotfix, all hands | Resolve in < 1 hour |
-| P2 | Push latency > 10s OR deferred payments > 5 | Investigate next business hour | Resolve in < 4 hours |
-| P3 | Dashboard stale OR minor UI bug | Scheduled fix | Next working day |
+A backup that has never been restored is not a backup (PRD §9.4). The drill is go-live step 5. It must pass before the Friday go/no-go. Without a verified restore, Sunday runs on the Yoco machine.
+
+1. Restore the latest backup onto a **fresh** database, away from production.
+2. Use the steps in section 3, up to step 5.
+3. Time it from start to "database opens and row counts match". **This is the first measurement of RTO.** The target is 4 hours or less.
+4. Do it once with a point-in-time target, to prove the WAL replay works, not only the base backup.
+5. Write down the date, the elapsed time and who did it. Nikao signs.
+
+**A failed rehearsal is an immediate alert** (PRD §9.6.3), not a line in a report. Who receives it: **to confirm with Nikao**.
+
+**Quarterly.** Redo the drill every quarter (PRD §9.4, §9.8). It is a calendared item with an owner. The owner and the dates are **to confirm with Nikao**. No drill has been run yet.
+
+---
+
+## 5. Backups and risky migrations (`FAVO_APPROVE_MIGRATION`)
+
+A risky migration needs a **verified backup first**.
+
+The rule, from the header of `scripts/migrate.ts`:
+
+> Risky migrations need an opt-in (owner decision, Nikao, 21 Oct 2026): a pending file marked `-- favo:requires-approval` (or, from GATED_FROM_IDX on, matching a risky pattern) is refused unless FAVO_APPROVE_MIGRATION names its exact tag. Refusal happens before any SQL — nothing is partly applied.
+
+The operator message in `src/server/deploy/migration-approval.ts` says: "Take a full backup AND verify it restores."
+
+So, before setting `FAVO_APPROVE_MIGRATION`:
+
+1. Take a full backup of the database.
+2. Verify it restores (a drill as in section 4, or the latest passed drill plus a fresh base backup. **To confirm with Nikao** which one counts).
+3. Only then set `FAVO_APPROVE_MIGRATION` to the exact tag or tags, for this deploy only. It is a comma-separated list.
+4. After the migration applies, **remove** the variable.
+
+On a brand-new empty database the backup holds nothing. "Verified" then means the backup tooling works (`docs/GO_LIVE_RUNBOOK.md` section 3).
+
+A migration that drops data cannot be undone by its down file. The data comes back only from a backup. See `docs/deploy-runbook.md`.
+
+---
+
+## 6. If the server or database is lost
+
+Follow section 3. Paper trading meanwhile. Who fixes it and how fast is what OPEN-08 question 4 must answer. Until it is answered, there is no contractually responsible party.

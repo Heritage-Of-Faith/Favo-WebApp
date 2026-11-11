@@ -59,12 +59,51 @@ describe("draftOrder store", () => {
     expect(store().totalZar).toBe(4500);
   });
 
-  it("addItem increments quantity when same item + mods added again", () => {
+  // CHANGED (was: a repeat tap incremented the quantity to 2). REQ-053 / L37 /
+  // §6.2.2: tapping a drink already on the order never changes its quantity;
+  // the matching line flashes, and quantity changes only on the stepper.
+  it("REQ-053: tapping the same drink again does not change the quantity; the matching line flashes", () => {
     store().addItem(item1);
     store().addItem(item1);
     expect(store().items).toHaveLength(1);
+    expect(store().items[0].quantity).toBe(1);
+    expect(store().totalZar).toBe(4500);
+    expect(store().flashKey).toBe(lineKey(item1));
+  });
+
+  it("REQ-053: every repeat tap flashes again; the quantity never moves", () => {
+    store().addItem(item1);
+    store().addItem(item1);
+    const first = store().flashSeq;
+    store().addItem(item1);
+    expect(store().flashSeq).toBe(first + 1);
+    expect(store().items[0].quantity).toBe(1);
+  });
+
+  it("REQ-053: the flash names the line whose configuration matches, not another line of the same drink", () => {
+    const mod = { id: "mod-1", name: "Oat Milk", priceDeltaZar: 500 };
+    store().addItem(item1);
+    store().addItem({ ...item1, modifications: [mod] });
+    store().addItem({ ...item1, modifications: [mod] });
+    expect(store().flashKey).toBe(lineKey({ ...item1, modifications: [mod] }));
+    expect(store().items.map((i) => i.quantity)).toEqual([1, 1]);
+  });
+
+  it("REQ-053: quantity changes only on the stepper, and stepping to zero removes the line", () => {
+    store().addItem(item1);
+    store().updateQuantity(lineKey(item1), 2);
     expect(store().items[0].quantity).toBe(2);
-    expect(store().totalZar).toBe(9000);
+    store().updateQuantity(lineKey(item1), 1);
+    store().updateQuantity(lineKey(item1), 0);
+    expect(store().items).toHaveLength(0);
+  });
+
+  it("the flash is display state: it is never saved with the draft", () => {
+    store().addItem(item1);
+    store().addItem(item1);
+    const saved = JSON.parse(sessionStorage.getItem("favo-pos-draft") ?? "{}");
+    expect(saved.state).not.toHaveProperty("flashKey");
+    expect(saved.state).not.toHaveProperty("flashSeq");
   });
 
   it("addItem keeps distinct lines for different modifications", () => {
@@ -114,16 +153,15 @@ describe("draftOrder store", () => {
 
   it("setOrderCreated stores orderId and moves to pay step", () => {
     store().addItem(item1);
-    store().setOrderCreated("ord-1", "secret-abc");
+    store().setOrderCreated("ord-1");
     expect(store().orderId).toBe("ord-1");
-    expect(store().yocoClientSecret).toBe("secret-abc");
     expect(store().step).toBe("pay");
   });
 
   it("reset returns to initial state", () => {
     store().addItem(item1);
     store().setCustomer({ id: "c1", name: "Louis" });
-    store().setOrderCreated("ord-1", "secret");
+    store().setOrderCreated("ord-1");
     store().reset();
     const s = store();
     expect(s.items).toHaveLength(0);
@@ -133,9 +171,10 @@ describe("draftOrder store", () => {
     expect(s.totalZar).toBe(0);
   });
 
+  // CHANGED (was: a second addItem pushed 98 + 5 to the cap). REQ-053: a repeat
+  // add no longer steps the quantity, so the cap is exercised on add and on +.
   it("caps a line at 99 cups (add and +)", () => {
-    store().addItem({ ...item1, quantity: 98 });
-    store().addItem({ ...item1, quantity: 5 });
+    store().addItem({ ...item1, quantity: 150 });
     expect(store().items[0].quantity).toBe(99);
     store().updateQuantity(lineKey(item1), 150);
     expect(store().items[0].quantity).toBe(99);
@@ -153,5 +192,37 @@ describe("draftOrder store", () => {
     expect(store().customer?.name).toBe("Louis");
     expect(store().items[0].quantity).toBe(2);
     expect(store().totalZar).toBe(9000);
+  });
+});
+
+// AT-202 / L37: one line per distinct configuration — menu item + shots +
+// modifications. PRD fixture: a R20.00 cappuccino at 3 shots on a Sunday is
+// R30.00; a quantity-2 line at 3 shots is R60.00 (the surcharge is per unit).
+describe("draftOrder store — shots (AT-202)", () => {
+  beforeEach(() => useDraftOrder.getState().reset());
+  const capp = { menuItemId: "mi-capp", menuItemName: "Cappuccino", unitPriceZar: 2000, modifications: [] };
+
+  it("the same drink at different shot counts stays two lines", () => {
+    store().addItem({ ...capp, shots: 2, surchargeZar: 0 });
+    store().addItem({ ...capp, shots: 3, surchargeZar: 1000 });
+    expect(store().items).toHaveLength(2);
+    expect(store().totalZar).toBe(2000 + 3000);
+  });
+
+  // CHANGED (was: the second addItem stepped the line to 2). REQ-053: the repeat
+  // tap leaves one line at quantity 1; the stepper takes it to 2.
+  it("the same drink at the same shot count is one line; the surcharge counts per unit", () => {
+    store().addItem({ ...capp, shots: 3, surchargeZar: 1000 });
+    store().addItem({ ...capp, shots: 3, surchargeZar: 1000 });
+    expect(store().items).toHaveLength(1);
+    expect(store().items[0].quantity).toBe(1);
+    store().updateQuantity(lineKey({ ...capp, shots: 3 }), 2);
+    expect(store().items[0].quantity).toBe(2);
+    expect(store().totalZar).toBe(6000);
+  });
+
+  it("lineKey distinguishes shots; an item with no shots reads as 1", () => {
+    expect(lineKey({ ...capp, shots: 3 })).not.toBe(lineKey({ ...capp, shots: 2 }));
+    expect(lineKey(capp)).toBe(lineKey({ ...capp, shots: 1 }));
   });
 });

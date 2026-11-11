@@ -72,7 +72,7 @@ Set in `.env.local` (local). Production target: Infisical (PRD v7 §9.7, not set
 DATABASE_URL              # ONE direct connection (PRD v7 §9.2, AT-168) — queries, SSE LISTEN, migrations
 AUTH_SECRET               # Auth.js signing secret
 AUTH_URL                  # https://favo.hofmi.net (production)
-YOCO_SECRET_KEY · YOCO_WEBHOOK_SECRET · NEXT_PUBLIC_YOCO_PUBLIC_KEY
+YOCO_SECRET_KEY · YOCO_WEBHOOK_SECRET
 VAPID_PUBLIC_KEY · VAPID_PRIVATE_KEY · NEXT_PUBLIC_VAPID_PUBLIC_KEY
 PUBLIC_BASE_URL · TZ=Africa/Johannesburg
 SCHEDULER_ENABLED         # in-app job scheduler on/off (default: on in production)

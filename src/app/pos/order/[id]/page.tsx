@@ -7,9 +7,12 @@ import type { Route } from "next";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, orderItems, menuItems, payments } from "@db/schema";
+import { isFreeCupWeekday } from "@/server/orders/free-coffee";
+import { readTillMode } from "@/server/orders/till-mode-read";
 import { getSession } from "@/lib/auth/session";
 import ActiveOrder from "@/components/pos/ActiveOrder";
 import { liveVoucherCountsByLine } from "@/server/orders/voucher-session";
+import { summarisePayments } from "@/server/tender/summary";
 import type { Order } from "@/lib/types";
 
 type Props = { params: Promise<{ id: string }> };
@@ -23,7 +26,7 @@ export default async function ActiveOrderPage({ params }: Props) {
   const [row] = await db.select().from(orders).where(eq(orders.id, id));
   if (!row) notFound();
 
-  const [itemRows, paymentRow, vouchersByLine] = await Promise.all([
+  const [itemRows, paymentRow, vouchersByLine, till] = await Promise.all([
     db
       .select({
         id: orderItems.id,
@@ -33,17 +36,24 @@ export default async function ActiveOrderPage({ params }: Props) {
         unitPriceZar: orderItems.unitPriceZar,
         discountZar: orderItems.discountZar,
         modifications: orderItems.modifications,
+        shots: orderItems.shots,
+        surchargeZar: orderItems.surchargeZar,
       })
       .from(orderItems)
       .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
       .where(eq(orderItems.orderId, id)),
     db
-      .select({ status: payments.status, yocoCheckoutId: payments.yocoCheckoutId, yocoPaymentId: payments.yocoPaymentId })
+      .select({ status: payments.status, sentAt: payments.sentAt, yocoPaymentId: payments.yocoPaymentId })
       .from(payments)
       .where(eq(payments.orderId, id))
-      .limit(1),
+      .orderBy(payments.attempt), // one row per attempt: the LATEST decides (§10.3.3)
     liveVoucherCountsByLine(db, id),
+    // AT-212 follow-up: the same weekday test declineFreeCoffee applies — the
+    // mode in force when the order was rung (src/lib/till-mode.ts).
+    readTillMode(db, row.revenueDay, row.placedAt),
   ]);
+  const payState = summarisePayments(paymentRow);
+  const weekdayFree = isFreeCupWeekday(till.modes, row.placedAt);
 
   const order: Order = {
     id: row.id,
@@ -55,8 +65,9 @@ export default async function ActiveOrderPage({ params }: Props) {
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
     totalZar: row.totalZar,
     isStaffDiscount: row.isStaffDiscount,
-    paymentStatus: paymentRow[0]?.status ?? null,
-    cardCheckout: !!(paymentRow[0]?.yocoCheckoutId || paymentRow[0]?.yocoPaymentId),
+    paymentStatus: payState.paymentStatus,
+    cardCheckout: payState.totalFrozen,
+    paymentAwaitingLookup: payState.awaitingLookup,
     items: itemRows.map((i) => ({
       id: i.id,
       menuItemId: i.menuItemId,
@@ -67,12 +78,14 @@ export default async function ActiveOrderPage({ params }: Props) {
       voucherCount: vouchersByLine.get(i.id) ?? 0,
       modifications:
         (i.modifications as { id: string; name: string; priceDeltaZar: number }[]) ?? [],
+      shots: i.shots,
+      surchargeZar: i.surchargeZar,
     })),
   };
 
   return (
     <main className="flex h-screen flex-col p-[var(--spacing-m)]">
-      <ActiveOrder order={order} />
+      <ActiveOrder order={order} weekdayFree={weekdayFree} />
     </main>
   );
 }

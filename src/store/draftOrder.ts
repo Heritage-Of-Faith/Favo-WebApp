@@ -17,18 +17,24 @@ export type DraftItem = {
   modifications: MenuCustomisation[];
   /** §6.9 Untracked vouchers on this line, 0..quantity (L41). Absent = 0. */
   voucherCount?: number;
+  /** AT-202: the shot count picked (§6.2.3c). Absent = 1. */
+  shots?: number;
+  /** AT-202: the extra-shot surcharge for ONE unit, integer cents, as the POS
+   *  priced it for display. The server re-prices; it is never sent. Absent = 0. */
+  surchargeZar?: number;
 };
 
 /**
- * Stable per-line identity key: menuItemId + sorted modifier IDs.
- * Allows the same menu item to appear multiple times with different modifier sets.
+ * Stable per-line identity key: menuItemId + sorted modifier IDs + shots.
+ * L37: one line per distinct configuration — the same menu item at a
+ * different shot count or with different modifiers is a different line.
  */
-export function lineKey(item: Pick<DraftItem, "menuItemId" | "modifications">): string {
+export function lineKey(item: Pick<DraftItem, "menuItemId" | "modifications" | "shots">): string {
   const modPart = item.modifications
     .map((m) => m.id)
     .sort()
     .join(",");
-  return `${item.menuItemId}:${modPart}`;
+  return `${item.menuItemId}:${modPart}:${item.shots ?? 1}`;
 }
 
 export type DraftOrderState = {
@@ -48,14 +54,21 @@ export type DraftOrderState = {
 
   // Set after createOrder succeeds
   orderId: string | null;
-  yocoClientSecret: string | null;
   /** Who the saved draft belongs to: "<staffId>|<SAST date>". A draft for anyone/any other day is discarded. */
   draftOwner: string | null;
+
+  /** REQ-053 / L37: the line a repeat tap matched — the POS flashes it and draws
+   *  the eye to its stepper. Display only; never saved with the draft. */
+  flashKey: string | null;
+  /** Bumped on every repeat tap, so tapping the same line twice flashes it twice. */
+  flashSeq: number;
 };
 
 export type DraftOrderActions = {
   setStep: (step: DraftOrderState["step"]) => void;
   setCustomer: (customer: DraftCustomer | null) => void;
+  /** REQ-053 / L37: adds a NEW configuration as a line. A configuration already
+   *  on the order is never changed — its line flashes instead (flashKey). */
   addItem: (item: Omit<DraftItem, "quantity"> & { quantity?: number }) => void;
   /** Remove the exact line identified by its lineKey (menuItemId + mods). */
   removeItem: (key: string) => void;
@@ -63,7 +76,7 @@ export type DraftOrderActions = {
   updateQuantity: (key: string, quantity: number) => void;
   /** Set the line's voucher count (§6.9.3 chip), clamped to 0..quantity. */
   setVoucherCount: (key: string, count: number) => void;
-  setOrderCreated: (orderId: string, yocoClientSecret: string) => void;
+  setOrderCreated: (orderId: string) => void;
   reset: () => void;
 };
 
@@ -73,14 +86,15 @@ const INITIAL: DraftOrderState = {
   items: [],
   totalZar: 0,
   orderId: null,
-  yocoClientSecret: null,
   draftOwner: null,
+  flashKey: null,
+  flashSeq: 0,
 };
 
 function calcTotal(items: DraftItem[]): number {
   return items.reduce((sum, item) => {
     const modsTotal = item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0);
-    return sum + (item.unitPriceZar + modsTotal) * item.quantity;
+    return sum + (item.unitPriceZar + modsTotal + (item.surchargeZar ?? 0)) * item.quantity;
   }, 0);
 }
 
@@ -106,17 +120,14 @@ export const useDraftOrder = create<DraftOrderState & DraftOrderActions>()(persi
     set((state) => {
       const qty = item.quantity ?? 1;
       const key = lineKey(item);
-      // Same menu item + exact same mods → increment quantity on existing line.
-      const existingIdx = state.items.findIndex((i) => lineKey(i) === key);
-      let updated: DraftItem[];
-      if (existingIdx >= 0) {
-        updated = state.items.map((i, idx) =>
-          idx === existingIdx ? { ...i, quantity: clampQty(i.quantity + qty) } : i
-        );
-      } else {
-        updated = [...state.items, { ...item, quantity: clampQty(qty) }];
+      // REQ-053 / L37 / §6.2.2: tapping a drink already on the order never
+      // changes its quantity. The line whose configuration matches flashes;
+      // quantity changes only on the stepper (updateQuantity).
+      if (state.items.some((i) => lineKey(i) === key)) {
+        return { flashKey: key, flashSeq: state.flashSeq + 1 };
       }
-      return { items: updated, totalZar: calcTotal(updated) };
+      const updated = [...state.items, { ...item, quantity: clampQty(qty) }];
+      return { items: updated, totalZar: calcTotal(updated), flashKey: null };
     }),
 
   removeItem: (key) =>
@@ -147,8 +158,8 @@ export const useDraftOrder = create<DraftOrderState & DraftOrderActions>()(persi
       ),
     })),
 
-  setOrderCreated: (orderId, yocoClientSecret) =>
-    set({ orderId, yocoClientSecret, step: "pay" }),
+  setOrderCreated: (orderId) =>
+    set({ orderId, step: "pay" }),
 
   reset: () => set((s) => ({ ...INITIAL, draftOwner: s.draftOwner })),
 }), {
@@ -159,6 +170,19 @@ export const useDraftOrder = create<DraftOrderState & DraftOrderActions>()(persi
   skipHydration: true,
   partialize: (s) => ({ customer: s.customer, items: s.items, totalZar: s.totalZar, draftOwner: s.draftOwner }),
 }));
+
+/** REQ-061: the owner mark of a draft kept through *Hand over* or the idle lock. */
+export const HANDED_OVER = "handed-over";
+
+/**
+ * REQ-061 / §9.5.1: *Hand over* and the idle lock return to the PIN screen
+ * "with all work preserved" — the order in progress stays saved on this tab,
+ * and whoever signs in next, the same revenue day, takes it on. (Sign-out is
+ * different: it throws the draft away, below.)
+ */
+export function keepDraftForNextSignIn(day: string): void {
+  useDraftOrder.setState({ draftOwner: `${HANDED_OVER}|${day}` });
+}
 
 /** Sign-out: empty the draft and remove the saved copy so the next person never inherits it. */
 export function clearDraftOnSignOut(): void {

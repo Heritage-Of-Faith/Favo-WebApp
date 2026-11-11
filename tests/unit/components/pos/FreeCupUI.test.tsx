@@ -17,6 +17,15 @@ vi.mock("@/server/actions/orders", () => ({
   declineFreeCoffee: (...a: unknown[]) => mockDecline(...a),
   transitionOrder: vi.fn(), cancelOrder: vi.fn(),
 }));
+// AT-201 part 2b: the card tender runs through server actions. They never
+// settle here, so the payment screen stays on its first step.
+const mockBegin = vi.fn((..._a: unknown[]) => new Promise(() => {}));
+const mockSend = vi.fn((..._a: unknown[]) => new Promise(() => {}));
+vi.mock("@/server/actions/tender", () => ({
+  beginTender: (...a: unknown[]) => mockBegin(...a),
+  sendToTerminal: (...a: unknown[]) => mockSend(...a),
+  pollTenderResult: vi.fn(() => new Promise(() => {})),
+}));
 vi.mock("@/server/actions/auth", () => ({ signOut: vi.fn() }));
 vi.mock("@/server/actions/favo", () => ({ getFavo: vi.fn().mockResolvedValue({ ok: true, data: { favo: null } }), setFavo: vi.fn(), clearFavo: vi.fn() }));
 vi.mock("@/server/actions/customers", () => ({ searchCustomer: vi.fn() }));
@@ -65,7 +74,7 @@ describe("POSWorkspace — free cup at ring-up", () => {
     mockCreateOrder.mockResolvedValue({
       ok: true,
       data: {
-        orderId: "ord_1", yocoClientSecret: "", totalZar: 0,
+        orderId: "ord_1", tender: null, totalZar: 0,
         freeCup: { applied: true, code: null, message: "Free cup applied", discountZar: 3000 },
       },
     });
@@ -77,66 +86,65 @@ describe("POSWorkspace — free cup at ring-up", () => {
     // CHANGED (QA r1): the order already exists, so the free screen offers "New order", not a second send.
     expect(screen.getByRole("button", { name: /^new order$/i })).toBeDefined(); // R0 → no card
     expect(screen.queryByRole("button", { name: /send to queue/i })).toBeNull();
-
-    mockDecline.mockResolvedValue({ ok: true, data: { totalZar: 3000 } });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Decline" })); });
-    expect(mockDecline).toHaveBeenCalledWith("ord_1");
-    expect(screen.queryByText("Free cup applied")).toBeNull();
+    // Off a weekday (no shotPolicy = not weekday mode) the one-tap Decline is offered.
+    expect(screen.getByRole("button", { name: "Decline" })).toBeDefined();
+    // CHANGED (AT-212 follow-up): owner decision, Mia, 3 Nov 2026 — "on a weekday
+    // nobody pays, so the 'Decline free cup' control is REMOVED." The R0
+    // weekday-decline step that was here (decline → still R0, no card) is gone;
+    // the weekday case is now asserted in the AT-212 block below (no Decline).
   });
 
-  it("ENTITLEMENT_USED: the barista is told once and the order goes on as paid", async () => {
-    mockCreateOrder.mockResolvedValue({
-      ok: true,
-      data: {
-        orderId: "ord_2", yocoClientSecret: "cs_1", totalZar: 3000,
-        freeCup: { applied: false, code: "ENTITLEMENT_USED", message: "Free cup already claimed today", discountZar: 0 },
-      },
-    });
+  // CHANGED (AT-212): was "ENTITLEMENT_USED: … the order goes on as paid". DEC-18
+  // reverses that: "`ENTITLEMENT_USED` refuses the drink by default, reversing
+  // v7.0's 'continues as paid'", and DEC-19 offers "Give another free cup".
+  it("ENTITLEMENT_USED: the barista is told once, the drink is refused, nothing is charged, and 'Give another free cup' is offered", async () => {
+    mockCreateOrder.mockResolvedValue({ ok: false, code: "ENTITLEMENT_USED", message: "Free cup already claimed today" });
     await placeOrder();
-    expect(toast.message).toHaveBeenCalledTimes(1);
-    expect(toast.message).toHaveBeenCalledWith("Free cup already claimed today");
+    expect(screen.getAllByText("Free cup already claimed today")).toHaveLength(1);
     expect(screen.queryByText("Free cup applied")).toBeNull();
+    expect(screen.getByRole("button", { name: "Give another free cup" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /^new order$/i })).toBeNull(); // no order was created
+    expect(mockBegin).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
   });
 
-  it("Decline disappears once the card step begins (P4 — round-2 item 2)", async () => {
-    process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY = "pk_test_123";
-    (globalThis as unknown as { YocoSDK?: unknown }).YocoSDK = function () { return { showPopup: vi.fn() }; } as unknown;
+  it("the card step begins on Place: createOrder's attempt 1 is sent and no Decline is offered (P4 — round-2 item 2)", async () => {
     mockCreateOrder.mockResolvedValue({
       ok: true,
       data: {
-        orderId: "ord_3", yocoClientSecret: "cs_3", totalZar: 3000,
+        orderId: "ord_3", tender: { ok: true, attempt: 1, amountZar: 3000 }, cardCheckout: true, totalZar: 3000,
         freeCup: { applied: true, code: null, message: "Free cup applied", discountZar: 3000 },
       },
     });
     await placeOrder();
-    expect(screen.getByRole("button", { name: "Decline" })).toBeDefined();
-    await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /charge card/i })); });
+    expect(mockSend).toHaveBeenCalledWith("ord_3", 1);
+    expect(mockBegin).not.toHaveBeenCalled(); // never a second attempt
     expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
   });
 
-  it("declining a FREE order with no checkout says where to take payment — not 'retry when online' (round-2 item 3)", async () => {
+  it("declining a FREE order begins a tender at the new total — not 'retry when online' (round-2 item 3)", async () => {
     mockCreateOrder.mockResolvedValue({
       ok: true,
       data: {
-        orderId: "ord_4", yocoClientSecret: "", totalZar: 0,
+        orderId: "ord_4", tender: null, totalZar: 0,
         freeCup: { applied: true, code: null, message: "Free cup applied", discountZar: 3000 },
       },
     });
     await placeOrder();
-    mockDecline.mockResolvedValue({ ok: true, data: { totalZar: 3000, yocoClientSecret: "" } });
+    expect(mockBegin).not.toHaveBeenCalled(); // R0: no tender (REQ-153)
+    mockDecline.mockResolvedValue({ ok: true, data: { totalZar: 3000 } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Decline" })); });
-    expect(screen.getByText(/no online card checkout for this order/i)).toBeDefined();
+    expect(mockBegin).toHaveBeenCalledWith("ord_4");
+    expect(screen.getByText(/to the card machine/i)).toBeDefined();
     expect(screen.queryByText(/retry when online/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /confirm — send to queue/i })).toBeNull(); // no longer free
   });
 
-  it("no Decline at all once the server set up a card checkout (owner rule, round 3)", async () => {
-    process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY = "pk_test_123";
-    (globalThis as unknown as { YocoSDK?: unknown }).YocoSDK = function () { return { showPopup: vi.fn() }; } as unknown;
+  it("no Decline at all once the server began a tender attempt (owner rule, round 3)", async () => {
     mockCreateOrder.mockResolvedValue({
       ok: true,
       data: {
-        orderId: "ord_5", yocoClientSecret: "cs_5", cardCheckout: true, totalZar: 3000,
+        orderId: "ord_5", tender: { ok: true, attempt: 1, amountZar: 3000 }, cardCheckout: true, totalZar: 3000,
         freeCup: { applied: true, code: null, message: "Free cup applied", discountZar: 3000 },
       },
     });
@@ -170,7 +178,7 @@ describe("ActiveOrder — free cup", () => {
     expect(screen.queryByLabelText(/staff member id/i)).toBeNull();
   });
 
-  it("no Decline when the order has a card checkout (server state)", () => {
+  it("no Decline when the order's total is frozen by a tender attempt (server state)", () => {
     render(<ActiveOrder order={{ ...ORDER, cardCheckout: true }} />);
     expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
   });
@@ -184,5 +192,75 @@ describe("ActiveOrder — free cup", () => {
     // Line (2 × R30,00) and total both read R60,00; the "Free cup −R30,00" note is gone.
     expect(screen.getAllByText(/60,00/)).toHaveLength(2);
     expect(screen.queryByText(/30,00/)).toBeNull();
+  });
+
+  // AT-212 follow-up (owner decision, Mia, 3 Nov 2026): no Decline on a weekday.
+  it("a weekday free order: 'Free cup applied' is shown, but no Decline control", () => {
+    render(<ActiveOrder order={{ ...ORDER, totalZar: 0, paymentStatus: null }} weekdayFree />);
+    expect(screen.getByText("Free cup applied")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
+    expect(mockDecline).not.toHaveBeenCalled();
+  });
+});
+
+// ─── AT-212: weekday orders never take a payment (L19, DEC-18, DEC-19) ───────
+describe("POSWorkspace — weekday mode has no payment step (AT-212)", () => {
+  const WEEKDAY = { mode: "weekday" as const, maxShots: 2, surchargeInForce: false, extraShotZar: 1000 };
+  function renderWeekday() {
+    render(<POSWorkspace staffName="Louis" staffId="staff_louis" role="barista" shotPolicy={WEEKDAY} />);
+  }
+
+  it("the Place button reads 'Send to queue' — no 'Charge' on a weekday", async () => {
+    renderWeekday();
+    expect(await screen.findByRole("button", { name: /^send to queue$/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /^charge/i })).toBeNull();
+  });
+
+  it("a placed weekday order (R0, no tender) shows no card step and sends nothing to the machine", async () => {
+    mockCreateOrder.mockResolvedValue({
+      ok: true,
+      data: {
+        orderId: "ord_w1", tender: null, cardCheckout: false, totalZar: 0,
+        freeCup: { applied: true, code: null, message: "Free cup applied", discountZar: 3000 },
+      },
+    });
+    renderWeekday();
+    await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /^send to queue$/i })); });
+    expect(screen.getByRole("button", { name: /^new order$/i })).toBeDefined();
+    expect(screen.queryByText(/tap or insert the customer/i)).toBeNull();
+    expect(mockBegin).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
+    // AT-212 follow-up (owner decision, Mia, 3 Nov 2026): "on a weekday nobody
+    // pays, so the 'Decline free cup' control is REMOVED."
+    expect(screen.getByText("Free cup applied")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
+  });
+
+  it("ENTITLEMENT_USED refuses the drink; 'Give another free cup' re-places it in one tap with extraFreeCup (DEC-19)", async () => {
+    mockCreateOrder.mockResolvedValueOnce({ ok: false, code: "ENTITLEMENT_USED", message: "Free cup already claimed today" });
+    renderWeekday();
+    await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /^send to queue$/i })); });
+    expect(screen.getByRole("alert").textContent).toBe("Free cup already claimed today");
+    expect(mockCreateOrder.mock.calls[0][0]).not.toHaveProperty("extraFreeCup");
+
+    mockCreateOrder.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        orderId: "ord_w2", tender: null, cardCheckout: false, totalZar: 0, extraFreeCup: true,
+        freeCup: { applied: false, code: null, message: null, discountZar: 0 },
+      },
+    });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Give another free cup" })); });
+    expect(mockCreateOrder).toHaveBeenCalledTimes(2);
+    expect(mockCreateOrder.mock.calls[1][0]).toMatchObject({ customerId: "cust_thabo", extraFreeCup: true });
+    expect(mockBegin).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("no 'Give another free cup' for any other refusal", async () => {
+    mockCreateOrder.mockResolvedValueOnce({ ok: false, code: "OUT_OF_STOCK", message: "Americano is unavailable right now — out of Beans." });
+    renderWeekday();
+    await act(async () => { fireEvent.click(await screen.findByRole("button", { name: /^send to queue$/i })); });
+    expect(screen.queryByRole("button", { name: "Give another free cup" })).toBeNull();
   });
 });

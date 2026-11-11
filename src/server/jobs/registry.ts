@@ -3,14 +3,18 @@
 // means adding a row there. Times are SAST.
 //
 // Wired today:   1 checkLowStock · 2 closeDaily (+ its 06:00 missing-close
-//                alert) · 3 generateWeeklyPnL · 5 the `collected` sweep
-// Deferred:      4 unconfirmed-payment reconciliation, 6 importYocoTransactions,
-//                7 donor-fund dormancy — Sunday/fund work, build-plan Day 11.
+//                alert) · 3 generateWeeklyPnL · 4 unconfirmed-payment
+//                reconciliation (paid days + carry-over, DEC-27) · 5 the
+//                `collected` sweep
+// Deferred:      6 importYocoTransactions, 7 donor-fund dormancy — Sunday/fund
+//                work, build-plan Day 11.
 
 import { checkLowStock } from "@/server/crons/check-low-stock";
 import { closeDaily, closedDays } from "@/server/crons/close-daily";
 import { sweepCollected } from "@/server/crons/collected-sweep";
-import { generateWeeklyPnL, hasWeeklyReport, weekBounds } from "@/server/crons/generate-weekly-pnl";
+import { hasWeeklyReport, weekBounds } from "@/server/crons/generate-weekly-pnl";
+import { runWeeklyPnLJob } from "@/server/crons/weekly-pnl-job";
+import { reconcileUnconfirmedPayments, shouldRunUnconfirmedPayments } from "@/server/crons/unconfirmed-payments";
 import { checkMissingCloses } from "./close-watch";
 import { sastDate, sastMiddayDaysBack, sastMinute } from "./schedule";
 import type { JobDefinition } from "./scheduler";
@@ -64,7 +68,25 @@ export const JOBS: JobDefinition[] = [
     missedRun: "catchUp",
     periodFor: (firedAt) => weekBounds(completedWeek(firedAt)).weekStarting,
     isDone: (weekStarting) => hasWeeklyReport(weekStarting),
-    run: (firedAt) => generateWeeklyPnL(completedWeek(firedAt)),
+    // AT-206: the run also pushes REQ-123's "for week ending …" (Admin only
+    // when late); see weekly-pnl-job.ts.
+    run: (firedAt, late) => runWeeklyPnLJob(completedWeek(firedAt), late),
+  },
+  {
+    // §9.6.2 #4 — every 15 min. Missed run: "Skip, and the ageing does not
+    // reset" — every run ages from payments.at, so a gap delays the 30-minute
+    // Admin push and never cancels it. Looks payments up through
+    // resolveTenderByLookup only; never sends, never writes payments itself.
+    // DEC-27 (Mia, 10 Nov 2026): acts only on a paid day — a Sunday, or an
+    // event session with a paying posture — and on attempts carried over from
+    // one until resolved. Any other firing is gated off and writes nothing,
+    // not even a run row.
+    name: "unconfirmedPayments",
+    cron: "*/15 * * * *",
+    missedRun: "skip",
+    periodFor: sastMinute,
+    runsAt: (firedAt) => shouldRunUnconfirmedPayments(firedAt),
+    run: () => reconcileUnconfirmedPayments(),
   },
   {
     // §9.6.2 #5 — every 5 min, `ready` → `collected` 20 min after completed_at

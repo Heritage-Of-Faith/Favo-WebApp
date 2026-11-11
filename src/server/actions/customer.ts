@@ -6,7 +6,7 @@
 // Implements the CustomerDataApi contract from src/lib/customer/contract.ts.
 // Docs: docs/API.md · BUSINESS_RULES.md L05
 
-import { eq, desc, inArray, sql } from "drizzle-orm";
+import { and, eq, desc, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
@@ -23,7 +23,9 @@ import { surnameSchema } from "@/lib/customer/identity";
 import type {
   CustomerSummary,
   CustomerOrder,
+  CustomerVisibleOrderState,
 } from "@/lib/customer/contract";
+import { CUSTOMER_VISIBLE_ORDER_STATES } from "@/lib/customer/contract";
 
 // Row shape returned by the order_items + menu_items join in listCustomerOrders.
 type CustomerOrderItemRow = {
@@ -34,6 +36,9 @@ type CustomerOrderItemRow = {
   quantity: number;
   unitPriceZar: number;
   modifications: unknown;
+  /** AT-202: shot count and per-unit extra-shot surcharge, so a line priced from this adds up to the total. */
+  shots: number;
+  surchargeZar: number;
 };
 
 // ─── Session guard ────────────────────────────────────────────────────────────
@@ -82,12 +87,16 @@ export async function getCustomerSummary(): Promise<ActionResult<CustomerSummary
 
 // ─── listCustomerOrders ───────────────────────────────────────────────────────
 
+function isCustomerVisibleState(state: string): state is CustomerVisibleOrderState {
+  return (CUSTOMER_VISIBLE_ORDER_STATES as readonly string[]).includes(state);
+}
+
 export async function listCustomerOrders(limit = 10): Promise<ActionResult<CustomerOrder[]>> {
   const session = await requireCustomer();
   if (!session.ok) return session;
 
   const { customerOrders, items } = await withCustomerScope(session.customerId, async (tx) => {
-    const customerOrders = await tx
+    const fetched = await tx
       .select({
         id: orders.id,
         state: orders.state,
@@ -96,9 +105,20 @@ export async function listCustomerOrders(limit = 10): Promise<ActionResult<Custo
         totalZar: orders.totalZar,
       })
       .from(orders)
-      .where(eq(orders.customerId, session.customerId))
+      // REQ-049 / L23: only Done orders reach a customer — never ordered / in_progress.
+      .where(
+        and(
+          eq(orders.customerId, session.customerId),
+          inArray(orders.state, [...CUSTOMER_VISIBLE_ORDER_STATES]),
+        ),
+      )
       .orderBy(desc(orders.placedAt))
       .limit(limit);
+    // Belt and braces: the state filter above is the guarantee; this narrows the
+    // type and drops anything an unexpected enum value would let through.
+    const customerOrders = fetched.flatMap((o) =>
+      isCustomerVisibleState(o.state) ? [{ ...o, state: o.state }] : [],
+    );
 
     if (customerOrders.length === 0) {
       return { customerOrders, items: [] as CustomerOrderItemRow[] };
@@ -114,6 +134,8 @@ export async function listCustomerOrders(limit = 10): Promise<ActionResult<Custo
         quantity: orderItems.quantity,
         unitPriceZar: orderItems.unitPriceZar,
         modifications: orderItems.modifications,
+        shots: orderItems.shots,
+        surchargeZar: orderItems.surchargeZar,
       })
       .from(orderItems)
       .leftJoin(menuItems, eq(orderItems.menuItemId, menuItems.id))
@@ -146,6 +168,8 @@ export async function listCustomerOrders(limit = 10): Promise<ActionResult<Custo
       quantity: i.quantity,
       unitPriceZar: i.unitPriceZar,
       modifications: (i.modifications as { id: string; name: string; priceDeltaZar: number }[]) ?? [],
+      shots: i.shots,
+      surchargeZar: i.surchargeZar,
     })),
   }));
 

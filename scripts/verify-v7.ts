@@ -252,6 +252,16 @@ mustBePresent("REQ-106: an order_cogs column/field exists", "order_cogs\\|orderC
   );
 }
 
+// REQ-104 / REQ-136 (DEC-16, T09): the surcharge is extra_shot_zar × MAX(0, shots − 2).
+// T09 renames config.double_shot_surcharge_zar → extra_shot_zar because "the old
+// name is what would keep the old rule alive in the code". This gate checks only
+// that the old name is gone; the arithmetic is asserted by the shot-pricing
+// fixture in tests/unit/server/shot-surcharge.test.ts, never by a grep.
+mustBeAbsent(
+  "REQ-136: the superseded double-shot surcharge name is gone (DEC-16)",
+  "double_shot_surcharge\\|doubleShotSurcharge"
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. THE THREE RENDER STATES — REQ-110, REQ-129, REQ-131
 // ─────────────────────────────────────────────────────────────────────────────
@@ -323,13 +333,18 @@ mustBePresent(
     both ? "BOTH proxy.ts and src/middleware.ts exist — only one runs, and the role check is in proxy.ts" : "single gate",
   );
 }
-record(
-  "the audit-coverage test endpoint is gone from production code",
-  !existsSync("src/app/api/admin/audit-coverage/route.ts"),
-  existsSync("src/app/api/admin/audit-coverage/route.ts")
-    ? "still present — no session check, secret via query param"
-    : "removed",
-  "WARN"
+// The PRD keeps GET /api/admin/audit-coverage as an admin endpoint (§05 reads
+// it; access matrix: admin only). What must never come back is the old gate: no
+// session check, a `?secret=` query param that lands in access logs.
+fileMustContain(
+  "audit-coverage is gated by an admin session",
+  "src/app/api/admin/audit-coverage/route.ts",
+  'authorize\\("admin"\\)'
+);
+fileMustNotContain(
+  "audit-coverage takes no secret (no TEST_AUDIT_SECRET, no ?secret= param)",
+  "src/app/api/admin/audit-coverage/route.ts",
+  "TEST_AUDIT_SECRET|searchParams|[\"']secret[\"']"
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -339,7 +354,8 @@ record(
 // The old pattern matched retry-deferred's `resolvedBy: "retry_cron"`; that file is
 // gone (#241), and the pattern's quote broke the shell (exit 2 = GATE IS BROKEN).
 // src/server/jobs/ is the scheduler (AT-169); it runs these jobs, so it is held to the same rule.
-const CRON_PATHS = "src/server/crons/ src/server/jobs/";
+// src/server/close/ is closeDaily()'s write-off sweep (AT-207): run by job 2, so held to it too.
+const CRON_PATHS = "src/server/crons/ src/server/jobs/ src/server/close/";
 // Known gaps (code review must cover them): calls split across lines, lowercase or
 // quoted SQL table names, and a cron calling a helper outside these folders.
 mustBeAbsent("no cron writes payments (Drizzle)", "\\(update\\|insert\\|delete\\)( *\\(schema\\.\\)\\?payments *)", CRON_PATHS);
@@ -348,6 +364,15 @@ mustBeAbsent("no cron writes payments (SQL)", "\\(UPDATE\\|INSERT INTO\\|DELETE 
 // The in-app scheduler (src/server/jobs) is the only caller (AT-169).
 mustBeAbsent("no live /api/crons/* endpoint (§10.7)", "api/crons", "src/");
 mustBeAbsent("no voided payment status", "voided", "db/enums.ts src/lib/types.ts");
+// L44 / REQ-160 / CLAUDE.md §7: no customer-reachable route increases (or reads)
+// a fund balance. The customer app and the customer actions never reach the
+// fund tables or the fund module. (tests/unit/server/funds/no-customer-topup.test.ts
+// holds the full allow-list and proves the actions refuse a non-staff session.)
+mustBeAbsent(
+  "REQ-160: no customer-reachable code reaches a blessing fund",
+  "donorFund\\|donor_fund\\|server/funds\\|actions/funds",
+  "\"src/app/(customer)/\" src/server/actions/customer.ts src/server/actions/customer-auth.ts src/server/actions/public.ts src/app/api/"
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 9. TEST-COUNT BAND — the cheapest regression check in the project

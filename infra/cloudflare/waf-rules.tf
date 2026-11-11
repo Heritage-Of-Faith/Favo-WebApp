@@ -32,6 +32,7 @@ resource "cloudflare_ruleset" "favo_rate_limits" {
   # Yoco retry policy can send multiple events per payment (up to ~10 retries).
   # 60 req/min/IP matches Yoco's documented retry budget (R8 in the PRD) while
   # still blocking flood attacks from non-Yoco IPs.
+  # The Yoco webhook is retired (404), PRD v7.0 §11.1; this rule now guards a dead path.
   # Note: Yoco IP allow-listing (Yoco's documented egress CIDRs) is the primary
   # protection here — rate limiting is a defence-in-depth layer.
   rules {

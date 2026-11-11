@@ -82,6 +82,26 @@ vi.mock("@/server/push/payload", () => ({
   isValidPushSubscription: (x: unknown) => x != null,
 }));
 
+// AT-207: the write-off sweep and the daily_closes row live in their own module
+// (tested in close/write-offs.test.ts and close-daily-writeoffs.test.ts). Here
+// they are stubbed to "nothing to write off, no close row yet" so these tests
+// keep asserting the reconciliation and AT-193's idempotency unchanged.
+vi.mock("@/server/close/write-offs", () => ({
+  sweepWriteOffs: vi.fn().mockResolvedValue({ written: [], dayCount: 0, dayZar: 0 }),
+  hasDailyClose: vi.fn().mockResolvedValue(false),
+  recordDailyClose: vi.fn().mockResolvedValue(undefined),
+  buildWriteOffAlert: vi.fn(),
+  // CHANGED (Sunday skip): closeDaily now asks whether the day is a Sunday
+  // taken outside FAVO. DAY is a Monday, so the answer is false; no assertion changed.
+  isSundayOutsideFavo: vi.fn().mockReturnValue(false),
+  // CHANGED (DEC-28 b): closeDaily now also asks whether cards are still taken
+  // on the Yoco machine (paid events). Stubbed off so these tests keep reading
+  // the plain revenue sum; no assertion changed. The paid-event path is proved
+  // in close-daily-writeoffs.test.ts.
+  sundayCardSalesOnMachine: vi.fn().mockReturnValue(false),
+}));
+vi.mock("@/server/push/admin-alert", () => ({ alertAdmins: vi.fn() }));
+
 const DAY = new Date("2026-06-08T10:00:00Z");
 const ADMIN = { id: "staff-admin-1", pushSubscription: { endpoint: "https://push.example/1", keys: { p256dh: "x", auth: "y" } } };
 
@@ -153,6 +173,36 @@ describe("closeDaily — reconciliation", () => {
     expect(vi.mocked(writeAudit)).toHaveBeenCalledOnce();
     const auditCall = vi.mocked(writeAudit).mock.calls[0][0];
     expect(auditCall.action).toBe("daily_close");
+  });
+
+  // AT-209 / L02: a paid order cancelled after start keeps its money. Revenue
+  // adds the cancelled-with-successful-payment case to the non-cancelled rule
+  // (#260), so it covers the same orders as the payments query and that order
+  // raises no variance alert.
+  it("revenue also counts a cancelled order holding a successful payment; no false alert", async () => {
+    const { db } = await import("@db/index");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const { CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL } = await import("@/server/reports/revenue-scope");
+    vi.mocked(db.transaction).mockImplementation(((fn: (tx: unknown) => unknown) => fn(db)) as never);
+    vi.mocked(db.execute).mockResolvedValueOnce([] as unknown as Awaited<ReturnType<typeof db.execute>>); // lock
+    vi.mocked(db.select).mockReturnValueOnce(selectResolving([])); // no close record yet
+    let whereArg: unknown;
+    vi.mocked(db.select).mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn((w: unknown) => { whereArg = w; return Promise.resolve([{ total: 3000 }]); }),
+      }),
+    } as unknown as ReturnType<typeof db.select>);
+    vi.mocked(db.execute).mockResolvedValueOnce([{ total: "3000" }] as unknown as Awaited<ReturnType<typeof db.execute>>);
+
+    const { closeDaily } = await import("@/server/crons/close-daily");
+    const result = await closeDaily(DAY);
+
+    const rendered = new PgDialect().sqlToQuery(whereArg as import("drizzle-orm").SQL).sql;
+    expect(rendered).toContain(`"orders"."state" <> $`);
+    expect(rendered).toContain(` or ${CANCELLED_WITH_SUCCESSFUL_PAYMENT_SQL}`);
+    expect(rendered).toContain(`"orders"."revenue_day" = $`);
+    expect(result).toMatchObject({ alreadyClosed: false, band: "ok" });
+    expect(sendNotification).not.toHaveBeenCalled();
   });
 });
 

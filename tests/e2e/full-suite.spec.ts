@@ -9,7 +9,6 @@
  *
  * Prerequisites:
  *   - Seed applied (G3 + phase2 seed)
- *   - TEST_AUDIT_SECRET env var set (otherwise audit-coverage block skips)
  *
  * Seeded data:
  *   Barista: Sam Barista  PIN 1234  id: staff_barista_sam
@@ -234,20 +233,16 @@ test.describe("Phase 3 — Offline Sync + Reports + Cron", () => {
 
 // ─── Audit Coverage ───────────────────────────────────────────────────────────
 // Asserts that no mutations executed during this test run lack an audit row.
-// Requires TEST_AUDIT_SECRET env var — skipped silently in envs without it.
+// The endpoint is admin-only (PRD v7 access matrix): sign in as the seeded admin.
 
 test.describe("Audit coverage", () => {
-  test("no recent orders lack a corresponding audit row", async ({ request }) => {
-    const secret = process.env.TEST_AUDIT_SECRET ?? "";
-    if (!secret) {
-      test.skip();
-      return;
-    }
-    const res = await request.get(
-      `/api/admin/audit-coverage?secret=${encodeURIComponent(secret)}`
-    );
+  test("no recent orders lack a corresponding audit row", async ({ page }) => {
+    await loginAsAdmin(page);
+    const res = await page.context().request.get("/api/admin/audit-coverage");
     expect(res.status()).toBe(200);
     const body = await res.json();
-    expect(body.gapCount, `${body.gapCount} order(s) created without an audit row`).toBe(0);
+    expect(body.gaps, `${body.gaps.length} row(s) created without an audit row (entity:id)`).toEqual([]);
+    // Nothing measured in the window -> null, never a claimed 100 (REQ-064).
+    expect(body.coverage_pct).toBe(body.mutations === 0 ? null : 100);
   });
 });

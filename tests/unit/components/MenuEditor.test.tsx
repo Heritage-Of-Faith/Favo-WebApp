@@ -46,6 +46,22 @@ describe("MenuEditor", () => {
     confirm.mockRestore();
   });
 
+  // REQ-130: price history shows who set each price.
+  it("price history shows who set each price", async () => {
+    const { getMenuItemPriceHistory } = await import("@/server/actions/menu");
+    vi.mocked(getMenuItemPriceHistory).mockResolvedValueOnce({
+      ok: true,
+      data: [{
+        id: "ph1", priceZar: 4600, effectiveFrom: "2026-08-16T06:00:00.000Z", effectiveUntil: null,
+        setByStaffId: "staff_admin_mia", setByStaffName: "Mia",
+      }],
+    });
+    render(<MenuEditor />);
+    fireEvent.click(await screen.findByRole("button", { name: /History/ }));
+    expect(await screen.findByRole("columnheader", { name: "Set by" })).toBeTruthy();
+    expect(await screen.findByRole("cell", { name: "Mia" })).toBeTruthy();
+  });
+
   it("deactivate proceeds after you confirm", async () => {
     const { setMenuItemActive } = await import("@/server/actions/menu");
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);

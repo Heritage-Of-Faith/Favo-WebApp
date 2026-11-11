@@ -15,6 +15,12 @@ vi.mock("@/server/actions/orders", () => ({
   createOrder: (...a: unknown[]) => mockCreateOrder(...a),
   transitionOrder: vi.fn(), cancelOrder: vi.fn(), declineFreeCoffee: vi.fn(),
 }));
+// AT-201 part 2b: the card tender's server actions never settle here.
+vi.mock("@/server/actions/tender", () => ({
+  beginTender: vi.fn(() => new Promise(() => {})),
+  sendToTerminal: vi.fn(() => new Promise(() => {})),
+  pollTenderResult: vi.fn(() => new Promise(() => {})),
+}));
 vi.mock("@/server/actions/auth", () => ({ signOut: (...a: unknown[]) => mockSignOut(...a) }));
 vi.mock("@/server/actions/favo", () => ({ getFavo: vi.fn().mockResolvedValue({ ok: true, data: { favo: null } }), setFavo: vi.fn(), clearFavo: vi.fn() }));
 const mockResolve = vi.fn();
@@ -48,7 +54,7 @@ const OWNER = `s1|${revenueDay()}`;
 const AMERICANO = { menuItemId: "ame", menuItemName: "Americano", unitPriceZar: 3000, modifications: [] };
 const FREE_RESULT = {
   ok: true as const,
-  data: { orderId: "o1", yocoClientSecret: "", totalZar: 0, cardCheckout: false, freeCup: { applied: true, message: "" } },
+  data: { orderId: "o1", tender: null, totalZar: 0, cardCheckout: false, freeCup: { applied: true, message: "" } },
 };
 
 beforeEach(() => {
@@ -63,12 +69,17 @@ beforeEach(() => {
 
 const sendButton = () => screen.findByRole("button", { name: /^charge r/i });
 const mount = () => render(<POSWorkspace staffName="Sam" staffId="s1" role="barista" />);
+// L28 / REQ-046: with no customer attached the barista taps "No notification" before sending.
+const tapNoNotification = async () => {
+  await act(async () => { fireEvent.click(await screen.findByRole("button", { name: "No notification" })); });
+};
 
 describe("Send button", () => {
   it("ignores a double tap: one order, cart kept until the first result", async () => {
     let resolve!: (v: unknown) => void;
     mockCreateOrder.mockReturnValue(new Promise((r) => { resolve = r; }));
     mount();
+    await tapNoNotification();
     const btn = await sendButton();
     fireEvent.click(btn);
     fireEvent.click(btn);
@@ -92,6 +103,7 @@ describe("after the order is sent", () => {
   it("offers New order, not Back to order or a second send, and never restores the sent cart", async () => {
     mockCreateOrder.mockResolvedValue(FREE_RESULT);
     mount();
+    await tapNoNotification();
     await act(async () => { fireEvent.click(await sendButton()); });
     expect(screen.queryByText(/back to order/i)).toBeNull();
     expect(screen.queryByText(/send to queue/i)).toBeNull();
@@ -173,9 +185,10 @@ describe("a sent cart never comes back (review blocker)", () => {
   it("after a successful send the saved draft is empty, and a rehydrate restores nothing", async () => {
     mockCreateOrder.mockResolvedValue({
       ok: true,
-      data: { orderId: "o9", yocoClientSecret: "cs_1", totalZar: 3000, cardCheckout: true, freeCup: { applied: false, message: "" } },
+      data: { orderId: "o9", tender: { ok: true, attempt: 1, amountZar: 3000 }, totalZar: 3000, cardCheckout: true, freeCup: { applied: false, message: "" } },
     });
     mount();
+    await tapNoNotification();
     await act(async () => { fireEvent.click(await sendButton()); });
     expect(useDraftOrder.getState().items).toHaveLength(0);
     expect(sessionStorage.getItem("favo-pos-draft")).not.toContain("Americano");

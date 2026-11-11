@@ -23,6 +23,19 @@ export function isValidPushSubscription(x: unknown): x is PushSubscriptionShape 
   return typeof keys.p256dh === "string" && typeof keys.auth === "string";
 }
 
+/**
+ * The shift-start push to the rostered barista (PRD §6.3, COL-23). Plain, not
+ * decorated, like §6.3's broadcast. Opens the POS.
+ */
+export function buildShiftStartPayload(opensAt: string): string {
+  return JSON.stringify({
+    title: "You're on duty",
+    body: `FAVO opened at ${opensAt}.`,
+    data: { url: "/pos" },
+    tag: "favo-shift-start",
+  });
+}
+
 /** The "your order is ready" notification content. */
 export function buildOrderReadyPayload(
   orderId: string,

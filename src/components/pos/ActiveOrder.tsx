@@ -13,9 +13,16 @@ import { CheckCircle, Loader2, AlertCircle, ChevronRight } from "lucide-react";
 import { transitionOrder, cancelOrder, declineFreeCoffee } from "@/server/actions/orders";
 import FreeCupRow from "@/components/pos/FreeCupRow";
 import { formatZar, formatDate } from "@/lib/format";
+import { computeLineTotalZar } from "@/server/orders/pricing";
+import { shotsLabel } from "@/server/orders/shot-surcharge";
 import type { Order, OrderState } from "@/lib/types";
 
-export type Props = { order: Order };
+export type Props = {
+  order: Order;
+  /** AT-212 follow-up (owner, 3 Nov 2026): the order's day is weekday mode —
+   *  nobody pays, so no Decline is offered (the server refuses it too). */
+  weekdayFree?: boolean;
+};
 
 type ActionState = "idle" | "loading" | "error";
 
@@ -31,7 +38,7 @@ const ADVANCE_LABEL: Partial<Record<OrderState, string>> = {
   ready:       "Done — collected",
 };
 
-export default function ActiveOrder({ order }: Props) {
+export default function ActiveOrder({ order, weekdayFree = false }: Props) {
   const router = useRouter();
   const [currentOrder, setCurrentOrder] = useState<Order>(order);
   const [actionState, setActionState] = useState<ActionState>("idle");
@@ -94,6 +101,8 @@ export default function ActiveOrder({ order }: Props) {
     try {
       const result = await declineFreeCoffee(currentOrder.id);
       if (result.ok) {
+        // AT-212 follow-up: a decline only succeeds off a weekday (the server
+        // refuses it on one), where the line's price comes back.
         setCurrentOrder((o) => ({
           ...o,
           totalZar: result.data.totalZar,
@@ -144,6 +153,9 @@ export default function ActiveOrder({ order }: Props) {
                   )}
                   {item.menuItemName || `Item #${item.id.slice(-4)}`}
                 </p>
+                {(item.shots ?? 1) > 1 && (
+                  <p className="favo-small text-cool-steel">{shotsLabel(item.shots ?? 1)}</p>
+                )}
                 {item.modifications.length > 0 && (
                   <p className="favo-small text-cool-steel">
                     {item.modifications.map((m) => m.name).join(", ")}
@@ -158,11 +170,8 @@ export default function ActiveOrder({ order }: Props) {
                 )}
               </div>
               <span className="favo-small text-coffee-bean shrink-0 ml-[var(--spacing-m)]">
-                {formatZar(
-                  (item.unitPriceZar +
-                    item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) *
-                    item.quantity
-                )}
+                {/* AT-202: the line price includes the per-unit extra-shot surcharge (§7.0.2). */}
+                {formatZar(computeLineTotalZar(item))}
               </span>
             </li>
           ))}
@@ -188,7 +197,7 @@ export default function ActiveOrder({ order }: Props) {
           only while no card checkout exists (the server refuses otherwise) ── */}
       {currentOrder.state === "ordered" && currentOrder.isStaffDiscount && currentOrder.paymentStatus !== "successful"
         && !currentOrder.cardCheckout && (
-        <FreeCupRow busy={declining} onDecline={handleDeclineFreeCup} />
+        <FreeCupRow busy={declining} onDecline={weekdayFree ? undefined : handleDeclineFreeCup} />
       )}
       {freeCupMsg && <p className="favo-small text-cool-steel" role="status">{freeCupMsg}</p>}
       {/* ── Cancel (only while ordered) ─────────────────────────────────────── */}

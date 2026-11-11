@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -25,7 +26,7 @@ import {
   type CurrentSession, type OpeningSession,
 } from "@/server/actions/opening";
 import {
-  resolveSessionMode, describeEvent, switchLines, dateModeLabel, postureIsInTill, sastClock, sastInstant,
+  resolveSessionMode, describeEvent, switchLines, dateModeLabel, eventSwitchesInTill, sastClock, sastInstant,
   type EventProfileView, type EventWindowView, type ModeResolution,
 } from "@/lib/session-mode";
 import { SESSION_CHANGED_EVENT } from "@/lib/pos-vouchers";
@@ -57,6 +58,7 @@ const linkClass = "favo-small text-cool-steel underline underline-offset-4 hover
 const inputClass = "w-full rounded-[4px] border border-cool-steel/30 bg-coffee-bean/5 px-3 py-2.5 text-coffee-bean text-lg tabular-nums focus:border-crimson-carrot focus:outline-none min-h-[48px]";
 
 export default function OpeningTimePrompt() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<Step | null>(null);
   const [time, setTime] = useState("");
@@ -130,6 +132,10 @@ export default function OpeningTimePrompt() {
     else toast.message("Session confirmed — already open.");
     setOpen(false);
     announceSessionChange();
+    // AT-202: the session sets today's mode, which decides the shot picker's
+    // segments. Re-render the page's server data; client state (cart,
+    // customer) is kept.
+    router.refresh();
   }
 
   /**
@@ -162,7 +168,8 @@ export default function OpeningTimePrompt() {
     await load({ initial: false, time: sastClock(res.data.window.startsAt) });
   }
 
-  const startable = data.profiles.filter((p) => postureIsInTill(p.paymentPosture));
+  // Only profiles whose switches the till honours (no event prices, no custom menu yet).
+  const startable = data.profiles.filter((p) => eventSwitchesInTill(p));
   const event = resolution?.kind === "event"
     ? resolution.source === "window"
       ? { name: resolution.window.name, switches: resolution.window, endsAt: resolution.window.endsAt }

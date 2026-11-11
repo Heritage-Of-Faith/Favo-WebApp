@@ -60,18 +60,14 @@ export const stockMovementKind = pgEnum("stock_movement_kind", [
 
 export const stockTakeKind = pgEnum("stock_take_kind", ["full", "spot"]);
 
+// AT-201 / PRD §10.3.3: exactly these four. `failed` became `declined`;
+// the L02 value went; `deferred` is an order payment_mode, not a
+// payment status; no void value is ever added — there is no void (§6.8.4).
 export const paymentStatus = pgEnum("payment_status", [
   "pending",
   "successful",
-  "failed",
-  "refunded",
-  "deferred",
-]);
-
-export const refundStatus = pgEnum("refund_status", [
-  "pending",
-  "approved",
-  "rejected",
+  "declined",
+  "unresolved",
 ]);
 
 export const wasteCategory = pgEnum("waste_category", [
@@ -80,6 +76,9 @@ export const wasteCategory = pgEnum("waste_category", [
   "spilled",
   "overproduction",
   "other",
+  // AT-209 / PRD §10.3, T6 step 2b, REQ-041: a drink made for a customer who
+  // left mid-make. Written with waste_log.order_id.
+  "abandoned",
 ]);
 
 export const purchaseKind = pgEnum("purchase_kind", [
@@ -159,3 +158,35 @@ export const reportCostState = pgEnum("report_cost_state", [
 // trustworthy. NOT NULL DEFAULT 'estimate' on inventory_lots; 'invoice' only by
 // an Admin recost through /admin/yield, audited.
 export const costSource = pgEnum("cost_source", ["estimate", "invoice"]);
+
+// L28 / REQ-046 / PRD §10.3: who to tell when an order is ready, bound at
+// ring-up. `customer` = orders.customer_id; `none` is an explicit tap.
+export const notificationTarget = pgEnum("notification_target", [
+  "customer",
+  "none",
+]);
+
+// AT-203 / PRD §10.3 (donor_fund_entries): every movement on a blessing fund's
+// append-only ledger. The balance is the sum of the entries (§6.10.5).
+export const donorFundEntryKind = pgEnum("donor_fund_entry_kind", [
+  "top_up",
+  "spend",
+  "sweep",
+  "adjustment",
+]);
+
+// AT-203 / PRD §6.10.3, L44: how a top-up's money arrived — a card payment at
+// the counter that Yoco confirms, or a cash/EFT gift an Admin records.
+export const fundingMethod = pgEnum("funding_method", [
+  "card",
+  "cash",
+  "eft",
+]);
+
+// PRD §10.3 (opening_sessions.deferred_entered_by, "enum manual | health_check")
+// and §6.0.4 T3: who put the session into deferred mode. Only a health_check
+// entry may exit on a passing check; a barista cannot clear it (REQ-006).
+export const deferredEnteredBy = pgEnum("deferred_entered_by", [
+  "manual",
+  "health_check",
+]);

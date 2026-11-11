@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { useDraftOrder, lineKey } from "@/store/draftOrder";
 import {
   draftLineNetZar, draftNetZar, nextVoucherCount, voucherContextFor, NO_VOUCHERS,
+  draftLineGrossZar, draftLineTakesVoucher, draftUnitZar,
 } from "@/lib/pos-vouchers";
 
 // §6.9.2a's own example prices: a R20 cappuccino, a R20 hot chocolate.
@@ -21,10 +22,18 @@ describe("REQ-148 / L37 — one line per distinct configuration", () => {
     expect(s().items).toHaveLength(2);
   });
 
-  it("the same item with a matching configuration steps that line up and no second line appears", () => {
+  // CHANGED (was: the repeat add itself stepped the line to 2). §15 DEF-E with
+  // REQ-053 / L37: two cappuccinos, one with macadamia, are two lines; a third
+  // matching the first opens no third line and leaves its quantity alone (it
+  // flashes); the stepper then takes that line to quantity 2.
+  it("the same item with a matching configuration opens no new line; the stepper steps that line to 2", () => {
     s().addItem(capp);
     s().addItem({ ...capp, modifications: [macadamia] });
     s().addItem(capp);
+    expect(s().items).toHaveLength(2);
+    expect(s().items.find((i) => i.modifications.length === 0)?.quantity).toBe(1);
+    expect(s().flashKey).toBe(lineKey(capp));
+    s().updateQuantity(lineKey(capp), 2);
     expect(s().items).toHaveLength(2);
     expect(s().items.find((i) => i.modifications.length === 0)?.quantity).toBe(2);
   });
@@ -79,6 +88,30 @@ describe("draft display arithmetic (§6.9.2a: one voucher = one whole unit)", ()
     expect(nextVoucherCount({ quantity: 1, voucherCount: 1 })).toBe(0);
     expect(nextVoucherCount({ quantity: 3, voucherCount: 2 })).toBe(3);
     expect(nextVoucherCount({ quantity: 3, voucherCount: 3 })).toBe(0);
+  });
+});
+
+describe("AT-202 interim: a surcharge line takes no voucher; its surcharge stays owed", () => {
+  // A R20 cappuccino at 3 shots on a Sunday: R10 surcharge per unit → R30.00.
+  const triple = { ...capp, shots: 3, surchargeZar: 1000 };
+
+  it("draftLineTakesVoucher: no on a surcharge line, yes on a 1- or 2-shot line", () => {
+    expect(draftLineTakesVoucher(triple)).toBe(false);
+    expect(draftLineTakesVoucher({ surchargeZar: 0 })).toBe(true); // 1 or 2 shots
+    expect(draftLineTakesVoucher({ surchargeZar: undefined })).toBe(true); // no picker (absent = 0)
+  });
+
+  it("gross includes the surcharge per unit: a quantity-2 triple is R60.00", () => {
+    expect(draftLineGrossZar({ ...triple, quantity: 2 })).toBe(6000);
+  });
+
+  it("a stray voucherCount on a surcharge line is never counted: the net stays R30.00", () => {
+    expect(draftLineNetZar({ ...triple, quantity: 1, voucherCount: 1 })).toBe(3000);
+    expect(draftNetZar([{ ...triple, quantity: 1, voucherCount: 1 }])).toBe(3000);
+  });
+
+  it("draftUnitZar is listed price + modifications only (a voucher never zeroes a surcharge)", () => {
+    expect(draftUnitZar({ ...triple, quantity: 1 })).toBe(2000);
   });
 });
 

@@ -22,7 +22,8 @@ export type MenuCategory =
   | "merchandise"
   | "other";
 
-export type PaymentStatus = "pending" | "successful" | "failed" | "refunded" | "deferred";
+// AT-201 / PRD §10.3.3 — mirrors db/enums.ts paymentStatus.
+export type PaymentStatus = "pending" | "successful" | "declined" | "unresolved";
 
 // ─── Domain Types ─────────────────────────────────────────────────────────────
 
@@ -72,6 +73,8 @@ export type MenuItem = {
   currentPriceZar: number;
   active: boolean;
   customisations: MenuCustomisation[];
+  /** AT-202 / L48: the recipe holds coffee (an ingredient of kind 'bean'), so the shot picker applies. */
+  takesShots?: boolean;
 };
 
 export type OrderItem = {
@@ -85,6 +88,10 @@ export type OrderItem = {
   discountZar?: number;
   /** §6.9: live (unreversed) Untracked voucher redemptions on this line. Absent = 0. */
   voucherCount?: number;
+  /** AT-202: the line's shot count (order_items.shots). Absent = 1. */
+  shots?: number;
+  /** AT-202: the extra-shot surcharge for ONE unit, integer cents. Absent = 0. */
+  surchargeZar?: number;
 };
 
 export type Order = {
@@ -98,8 +105,20 @@ export type Order = {
   totalZar: number;
   isStaffDiscount: boolean;
   paymentStatus: PaymentStatus | null;
-  /** A Yoco card checkout exists for this order — its total is frozen (owner rule, PRD P4). */
+  /** Paid, or a tender attempt is open — the order's total is frozen (owner rule, PRD P4). */
   cardCheckout?: boolean;
+  /** REQ-008 / S4: a SENT attempt ended unresolved — the drink is made while recovery asks Yoco. */
+  paymentAwaitingLookup?: boolean;
+  /** AT-203 / L47: paid from a blessing fund — no payments row, nothing owed. */
+  fundSettled?: boolean;
+  /** orders.payment_mode — the payment gate opens for 'yoco_deferred' (T3 step 2, §6.7). */
+  paymentMode?: string | null;
+  /** orders.revenue_day (YYYY-MM-DD, SAST) — the payment gate's Sunday rule (DEC-21). */
+  revenueDay?: string;
+  /** The latest payment attempt was sent to the terminal (DEC-21: it keeps the normal gate). */
+  latestAttemptSent?: boolean;
+  /** DEC-28 (b): payment_posture of the order's event window (orders.event_window_id), or null. */
+  eventPaymentPosture?: string | null;
   items: OrderItem[];
 };
 
@@ -108,16 +127,6 @@ export type Order = {
 export type ActionResult<T = void> =
   | { ok: true; data: T }
   | { ok: false; code: string; message: string };
-
-// ─── Yoco ─────────────────────────────────────────────────────────────────────
-
-export type YocoPaymentIntent = {
-  id: string;
-  clientSecret: string;
-  amountZar: number;
-  currency: "ZAR";
-  status: PaymentStatus;
-};
 
 // ─── SSE Queue ────────────────────────────────────────────────────────────────
 
@@ -285,8 +294,31 @@ export type CogsLive = {
 export type PosTodaySummary = {
   date: string; // YYYY-MM-DD in Africa/Johannesburg
   orderCount: number;
+  /** Gross charged (v_daily_revenue). */
   revenueZar: number;
   wasteCount: number;
+  // REQ-128 / PRD §7.5, §7.0.2 — the rest of the Day summary.
+  /** Σ order_items.quantity on the day's orders. */
+  drinks: number;
+  /** processing_fee. NULL = UNAVAILABLE, "settles overnight" — never R0.00 (REQ-108, REQ-129). */
+  feeZar: number | null;
+  /** net_settled. NULL = UNAVAILABLE, "settles overnight" (REQ-108, REQ-129). */
+  netSettledZar: number | null;
+  /** written_off_zar = Σ total_zar WHERE written_off_at IS NOT NULL. */
+  writtenOffZar: number;
+  /** comps_zar = Σ order_items.discount_zar WHERE comp_reason IS NOT NULL (L33). */
+  compsZar: number;
+  /** entitlement_cups = COUNT(staff_entitlement_log rows) — one row is one cup (L03). */
+  entitlementCups: number;
+  /** walk_in_cups = Σ walk_ins.quantity (REQ-116). */
+  walkInCups: number;
+  /**
+   * §7.5 "Deferred: open · settled · written off" (REQ-133): Σ total_zar of the
+   * day's yoco_deferred orders split by settled_at / written_off_at. Cents.
+   */
+  deferredOpenZar: number;
+  deferredSettledZar: number;
+  deferredWrittenOffZar: number;
 };
 
 // ─── Phase 2: Purchases ───────────────────────────────────────────────────────

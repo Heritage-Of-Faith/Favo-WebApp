@@ -35,11 +35,10 @@ services:
       - DATABASE_URL_SESSION    # Supabase Session pooler (port 5432, for SSE/LISTEN)
       # Auth
       - AUTH_SECRET             # Auth.js signing secret (≥ 32 random bytes)
-      - AUTH_URL                # https://favo.hofmi.org
+      - AUTH_URL                # https://favo.hofmi.net
       # Yoco payments
       - YOCO_SECRET_KEY
       - YOCO_WEBHOOK_SECRET
-      - NEXT_PUBLIC_YOCO_PUBLIC_KEY
       # Web Push / VAPID
       - VAPID_PUBLIC_KEY
       - VAPID_PRIVATE_KEY
@@ -51,7 +50,7 @@ services:
       # Timezone (required for Africa/Johannesburg wall-clock logic)
       - TZ=Africa/Johannesburg
       # Runtime base URL (used by scripts/preflight.sh and E2E tests)
-      - PUBLIC_BASE_URL=https://favo.hofmi.org
+      - PUBLIC_BASE_URL=https://favo.hofmi.net
 
     # ── Resource limits ───────────────────────────────────────────────────────
     # Next.js with Turbopack is memory-hungry on first boot; 512 MB is the

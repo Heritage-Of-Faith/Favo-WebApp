@@ -8,6 +8,9 @@
 
 import { authorize } from "@/server/auth/guard";
 import { getCogsLive as computeCogsLive, todaySast } from "@/server/cogs/compute";
+import { readMarginByShot, type ShotMarginRow } from "@/server/cogs/period-cogs";
+import { readModeSplit } from "@/server/cogs/mode-figures";
+import type { ModeSplit } from "@/lib/mode-split";
 import type { ActionResult, CogsLive } from "@/lib/types";
 
 const ADMIN_ROLES = ["admin"] as const;
@@ -27,6 +30,45 @@ export async function getCogsLive(input?: {
   const date = input?.date ?? todaySast();
   const data = await computeCogsLive(date);
   return { ok: true, data };
+}
+
+// ─── getMarginByShot ──────────────────────────────────────────────────────────
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * AT-208 · REQ-139: margin broken out by shot count over SAST revenue days
+ * from..to inclusive (each defaults to today). Admin only.
+ */
+export async function getMarginByShot(input?: {
+  from?: string;
+  to?: string;
+}): Promise<ActionResult<{ from: string; to: string; rows: ShotMarginRow[] }>> {
+  const auth = await authorize(...ADMIN_ROLES);
+  if (!auth.ok) return auth;
+
+  const today = todaySast();
+  const from = input?.from && DATE_RE.test(input.from) ? input.from : today;
+  const to = input?.to && DATE_RE.test(input.to) ? input.to : today;
+  const rows = await readMarginByShot(from, to);
+  return { ok: true, data: { from, to, rows } };
+}
+
+// ─── getModeSplit ─────────────────────────────────────────────────────────────
+
+/**
+ * REQ-121 · §7.1: revenue, COGS, margin and the profit flag per mode
+ * (weekday / Sunday / event), and the period's expenses, over SAST revenue
+ * days from..to inclusive (each defaults to today). Admin only.
+ */
+export async function getModeSplit(input?: { from?: string; to?: string }): Promise<ActionResult<ModeSplit>> {
+  const auth = await authorize(...ADMIN_ROLES);
+  if (!auth.ok) return auth;
+
+  const today = todaySast();
+  const from = input?.from && DATE_RE.test(input.from) ? input.from : today;
+  const to = input?.to && DATE_RE.test(input.to) ? input.to : today;
+  return { ok: true, data: await readModeSplit(from, to) };
 }
 
 // ─── getCogsHistory ───────────────────────────────────────────────────────────

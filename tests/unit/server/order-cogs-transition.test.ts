@@ -47,7 +47,8 @@ vi.mock("@/lib/db", () => {
     db: {
       select: vi.fn().mockImplementation(() => ({
         from: () => ({
-          where: () => Object.assign(rows(), { limit: () => Promise.resolve([]) }),
+          // orderBy: loadOrder reads every payment attempt ORDER BY attempt (AT-201 part 2b).
+          where: () => Object.assign(rows(), { limit: () => Promise.resolve([]), orderBy: () => Promise.resolve([]) }),
           leftJoin: () => ({ where: () => Promise.resolve([]) }),
           limit: () => Promise.resolve([]),
         }),
@@ -105,7 +106,11 @@ describe("transitionOrder → order_cogs (AT-188)", () => {
 
     const res = await transitionOrder("ord-1", "in_progress");
 
-    expect(res).toEqual({ ok: false, code: "OUT_OF_STOCK", message: "No beans left" });
+    // REQ-022 / S8b: the S1 code and copy with the resolution path, not the deduction's own.
+    expect(res).toEqual({
+      ok: false, code: "STOCK_EXHAUSTED_AT_MAKE",
+      message: "Out of beans — this order is paid and cannot be made. Get an admin. An admin cancels it with the admin PIN and comps a later order (no money is returned), or opens a container.",
+    });
     expect(writeOrderCogs).not.toHaveBeenCalled();
   });
 
@@ -127,7 +132,7 @@ describe("transitionOrder → order_cogs (AT-188)", () => {
   it("a retried ordered → in_progress on an order already in_progress is refused: no second deduction or row", async () => {
     setOrder({ state: "in_progress" });
     const res = await transitionOrder("ord-1", "in_progress");
-    expect(res).toEqual(expect.objectContaining({ ok: false, code: "INVALID_TRANSITION" }));
+    expect(res).toEqual(expect.objectContaining({ ok: false, code: "STALE_STATE" })); // REQ-023
     expect(deductForOrder).not.toHaveBeenCalled();
     expect(writeOrderCogs).not.toHaveBeenCalled();
   });

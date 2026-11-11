@@ -11,9 +11,9 @@ const securityHeaders = [
 // SEC-4 Content-Security-Policy. Static header (no nonces), so script-src
 // needs 'unsafe-inline' for Next's inline bootstrap scripts; 'unsafe-eval' only
 // in `next dev` (React's dev tooling). External origins are only the ones the
-// app really loads: Google Fonts (root layout), the Yoco Web SDK (existing
-// POS card flow — REQ-071 removes it later, it is not removed here), and the
-// Supabase project for the customer session. No upgrade-insecure-requests:
+// app really loads: Google Fonts (root layout) and the Supabase project for the
+// customer session. The Yoco card SDK script origin is gone (REQ-071: the
+// browser loads no Yoco script and holds no Yoco key). No upgrade-insecure-requests:
 // the practice host serves plain http on the LAN.
 function originOf(url: string | undefined): string | null {
   if (!url || !/^https?:\/\//i.test(url.trim())) return null;
@@ -31,7 +31,7 @@ function contentSecurityPolicy(): string {
   const connect = ["'self'", supabase, supabaseWs, "https://*.yoco.com"].filter(Boolean).join(" ");
   return [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://js.yoco.com`,
+    `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",

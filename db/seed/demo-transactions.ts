@@ -150,11 +150,15 @@ async function main() {
           .values({
             id: orderId,
             customerId: customerId ?? null,
+            // L28 / §10.3 CHECK: 'customer' exactly when a customer is bound.
+            notificationTarget: customerId ? "customer" : "none",
             staffId: STAFF_BARISTA,
             state: "collected",
             placedAt,
             completedAt: new Date(placedAt.getTime() + 5 * 60 * 1000),
             totalZar: drink.priceZar,
+            // §10.6: never NULL — a paid demo sale is a card sale.
+            paymentMode: "yoco",
             revenueDay: revenueDay(placedAt),
           })
           .onConflictDoNothing();

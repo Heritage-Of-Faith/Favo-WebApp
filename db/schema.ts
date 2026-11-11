@@ -14,6 +14,8 @@ import {
   uuid,
   date,
   primaryKey,
+  foreignKey,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -28,7 +30,6 @@ import {
   stockMovementKind,
   stockTakeKind,
   paymentStatus,
-  refundStatus,
   wasteCategory,
   purchaseKind,
   expenseCategory,
@@ -38,6 +39,10 @@ import {
   eventMenuScope,
   eventPaymentPosture,
   eventAudience,
+  notificationTarget,
+  donorFundEntryKind,
+  fundingMethod,
+  deferredEnteredBy,
 } from "./enums";
 
 const TENANT = "hofmi";
@@ -116,6 +121,9 @@ export const priceHistory = pgTable("price_history", {
   priceZar: integer("price_zar").notNull(),
   effectiveFrom: timestamp("effective_from", { withTimezone: true }).defaultNow().notNull(),
   effectiveUntil: timestamp("effective_until", { withTimezone: true }),
+  // REQ-130 / PRD §10.3: who set this price. NOT NULL, so a price change
+  // without an actor fails rather than writing an anonymous row (§11).
+  setByStaffId: text("set_by_staff_id").notNull().references(() => staff.id),
 });
 
 // ─── Recipes ──────────────────────────────────────────────────────────────────
@@ -146,6 +154,10 @@ export const inventoryItems = pgTable("inventory_items", {
   unit: inventoryUnit("unit").notNull(),
   lowStockThreshold: integer("low_stock_threshold").default(0).notNull(),
   origin: text("origin"),
+  // REQ-127 / T08: a lid is judged against config.variance_bands.lid (0–25%
+  // ok) in v_weekly_variance, not T01, because lid declines are deliberately
+  // unmodelled (§7.4). Cups stay on T01.
+  isLid: boolean("is_lid").default(false).notNull(),
 });
 
 export const inventoryLots = pgTable("inventory_lots", {
@@ -256,14 +268,57 @@ export const orders = pgTable("orders", {
   totalZar: integer("total_zar").notNull(),
   yocoPaymentId: text("yoco_payment_id"),
   isStaffDiscount: boolean("is_staff_discount").default(false).notNull(),
-  // Tracks how offline orders were tendered. null = normal Yoco flow.
+  // How the order is tendered: `yoco` (card), `yoco_deferred` (taken while the
+  // machine was unreachable), `free` (nothing to pay, L42/S7a).
+  // AT-203 / L47: `donor_fund` — settled from a blessing fund (one spend entry
+  // in donor_fund_entries, never a payments row).
+  // §10.3 L2499 / §10.6: NOT NULL, no default — every writer names the mode.
+  // Migration 0051 backfilled the old NULLs ("'yoco' by convention").
   paymentMode: text("payment_mode", {
-    enum: ["yoco", "yoco_deferred", "free"],
-  }),
+    enum: ["yoco", "yoco_deferred", "free", "donor_fund"],
+  }).notNull(),
   // AT-181 / L07 · REQ-039: the SAST revenue day, from the server's clock at
   // receipt (never the client's). Midnight SAST is the boundary.
   revenueDay: date("revenue_day").notNull(),
-});
+  // L28 / REQ-046 / PRD §10.3: bound at ring-up, never null, no default —
+  // `none` is chosen, never defaulted into. The target customer is customer_id.
+  notificationTarget: notificationTarget("notification_target").notNull(),
+  // AT-201 / PRD §10.3, P3, REQ-027: the root of every tender reference —
+  // payments.client_reference = client_uuid || ':' || attempt. NOT NULL,
+  // UNIQUE. The DB default stays (migration 0044): createOrder, the offline
+  // replay (apply-outbox) and the demo seed do not pass a POS-minted uuid yet
+  // (S7b's repeat-submission rule is not built).
+  clientUuid: text("client_uuid").default(sql`gen_random_uuid()`).notNull().unique(),
+  // AT-207 / PRD §10.3.3, §6.0.5, S3a: closeDaily()'s write-off. Set once, by
+  // the close sweep, on an order with no successful payment and no fund spend.
+  // The reason lives on the sweep's audit_log row (action `write_off`).
+  writtenOffAt: timestamp("written_off_at", { withTimezone: true }),
+  // PRD §10.3 (orders: settled_at · settlement_ref), §6.0.4 T3 steps 3a/3b,
+  // §6.7: when a deferred order was settled, and the standalone machine's
+  // reference (path B). payment_mode stays 'yoco_deferred' forever (§10.3.3).
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+  settlementRef: text("settlement_ref"),
+  // DEC-28 (d) / PRD §10.3 ("Event attribution (§6.6)"), §11 createOrder ("Tags
+  // event_window_id when an event is in force"), R6. NULL = rung under no
+  // event. Stamped once at ring-up (createOrder, the offline replay); the
+  // reports' per-mode split buckets these orders as Event.
+  eventWindowId: text("event_window_id").references(() => eventWindows.id),
+}, (t) => [
+  // §6.7 path B: one standalone-machine slip settles one order, never two.
+  uniqueIndex("orders_settlement_ref_unique")
+    .on(t.settlementRef)
+    .where(sql`settlement_ref IS NOT NULL`),
+  // PRD §10.3: a row can never claim it will notify someone and carry no customer.
+  check(
+    "orders_notification_target_customer",
+    sql`(notification_target = 'customer') = (customer_id IS NOT NULL)`
+  ),
+  // PRD §10.3: "`settled_at` and `written_off_at` are mutually exclusive".
+  check(
+    "orders_settled_xor_written_off",
+    sql`settled_at IS NULL OR written_off_at IS NULL`
+  ),
+]);
 
 export const orderItems = pgTable("order_items", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -278,12 +333,17 @@ export const orderItems = pgTable("order_items", {
   // AT-181 / PRD §10.3: the shot count is a column, never part of a name.
   // The DB CHECK enforces the outer ceiling (T15 max_shots_per_line = 4).
   shots: integer("shots").default(1).notNull(),
+  // AT-202 / PRD §7.0.2, DEC-16: the extra-shot surcharge for ONE unit,
+  // extra_shot_zar × MAX(0, shots − 2) where in force, else 0 — landed on the
+  // line so revenue stays attributable. Integer cents.
+  surchargeZar: integer("surcharge_zar").default(0).notNull(),
   // AT-181 / PRD §10.3: the one place a line's discount lives (L03 free cup,
   // L33 comp, §6.9 voucher). Integer cents.
   discountZar: integer("discount_zar").default(0).notNull(),
   compReason: compReason("comp_reason"),
 }, () => [
   check("order_items_shots_range", sql`shots BETWEEN 1 AND 4`),
+  check("order_items_surcharge_nonnegative", sql`surcharge_zar >= 0`),
   // DEF-A's floor: a line can never be discounted past its own value.
   check("order_items_discount_within_line", sql`discount_zar <= quantity * (unit_price_zar + mods_zar)`),
   check("order_items_quantity_positive", sql`quantity >= 1`),
@@ -317,17 +377,41 @@ export const orderCogs = pgTable("order_cogs", {
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
+// AT-201 / PRD §10.3.3: one row per payment ATTEMPT, not per order.
 export const payments = pgTable("payments", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: tenantId(),
-  orderId: text("order_id").notNull().references(() => orders.id),
-  // Checkout ID from Yoco's POST /checkouts response — stored at order creation.
-  // Different from yocoPaymentId which arrives later via the webhook.
+  // The payment's subject: an order OR a fund top-up, exactly one (CHECK below).
+  orderId: text("order_id").references(() => orders.id),
+  // → donor_fund_entries.id: a card `top_up` entry (AT-203, §6.10.3, §10.3).
+  fundTopupId: text("fund_topup_id").references((): AnyPgColumn => donorFundEntries.id),
+  // 1, 2, 3 … per subject. A re-attempt adds a row; it never overwrites.
+  attempt: integer("attempt").notNull(),
+  // `client_uuid:attempt` (P3, REQ-027), written BEFORE the send.
+  clientReference: text("client_reference").notNull().unique(),
+  // Legacy Yoco Online checkout id. Nothing writes or reads it since AT-201
+  // part 2b removed that flow; kept so old rows keep their history. Dropping
+  // the column is a separate migration.
   yocoCheckoutId: text("yoco_checkout_id"),
-  // Payment ID from Yoco's webhook — null until the webhook fires.
+  // Yoco's payment id, persisted the moment the send returns (REQ-029).
   yocoPaymentId: text("yoco_payment_id").unique(),
+  // Which machine took the money, read once from config at beginTender (REQ-065).
+  webposDeviceId: text("webpos_device_id").notNull(),
+  // What was sent to the machine — integer cents, frozen (P4).
   amountZar: integer("amount_zar").notNull(),
+  // What the machine actually charged — NULL until an outcome is known (REQ-030).
+  chargedAmountZar: integer("charged_amount_zar"),
+  // Yoco's actual fee from the daily import — NULL, never 0, while unknown.
+  feeZar: integer("fee_zar"),
+  // No tip column (DEC-17): a stray tip is a T10 variance, never stored.
+  receiptNo: text("receipt_no"),
+  settlementRef: text("settlement_ref"),
   status: paymentStatus("status").default("pending").notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+  at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
+  // Legacy webhook timestamp. Nothing writes or reads it since AT-201 part 2b
+  // retired the webhook (§11.1); kept for old rows, dropped separately.
   webhookReceivedAt: timestamp("webhook_received_at", { withTimezone: true }),
 }, (t) => [
   // AT-181 / REQ-011: an order has at most one successful payment, and the
@@ -335,18 +419,118 @@ export const payments = pgTable("payments", {
   uniqueIndex("payments_one_successful_per_order")
     .on(t.orderId)
     .where(sql`status = 'successful'`),
+  // AT-201 / §10.6 (COL-5): the same guarantee for fund top-ups — NULLs are
+  // distinct, so the order index alone leaves top-ups unguarded.
+  uniqueIndex("payments_one_successful_per_fund_topup")
+    .on(t.fundTopupId)
+    .where(sql`status = 'successful'`),
+  // AT-201 / §10.3.3: attempt is "1, 2, 3 … per order" — one row per attempt.
+  unique("payments_order_attempt_unique").on(t.orderId, t.attempt),
+  // AT-203: the same "1, 2, 3 … per subject" for a fund top-up.
+  unique("payments_fund_topup_attempt_unique").on(t.fundTopupId, t.attempt),
+  // AT-201 / §10.3: a payment points at exactly one subject.
+  check("payments_exactly_one_subject", sql`num_nonnulls(${t.orderId}, ${t.fundTopupId}) = 1`),
 ]);
 
-export const refunds = pgTable("refunds", {
+// ─── Blessing funds (AT-203, PRD §6.10, §10.3, L44–L47) ──────────────────────
+// A named, non-refundable balance that pays for other people's coffee. There
+// is NO balance column: the ledger is the truth and the balance is the sum of
+// donor_fund_entries (§6.10.5, §6.10.7). A card top-up counts toward it only
+// while its payment is `successful`.
+
+export const donorFunds = pgTable("donor_funds", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: tenantId(),
-  orderId: text("order_id").notNull().references(() => orders.id),
+  // `FVO-` + four characters from ABCDEFGHJKMNPQRSTUVWXYZ23456789 (§6.10.3).
+  code: text("code").notNull().unique(),
+  // NULL = an unnamed fund (found by code; an Admin push fires at creation, R22).
+  displayName: text("display_name"),
+  donorCustomerId: text("donor_customer_id").references(() => customers.id, { onDelete: "set null" }),
+  // L45: the non-refundability acknowledgement, recorded on the row. The staff
+  // member who told the donor at intake.
+  nonRefundableAckBy: text("non_refundable_ack_by").notNull().references(() => staff.id),
+  active: boolean("active").default(true).notNull(),
+  createdByStaffId: text("created_by_staff_id").notNull().references(() => staff.id),
+  at: now(),
+}, (t) => [
+  // The target of donor_fund_members' (fund_id, fund_active) foreign key.
+  unique("donor_funds_id_active_unique").on(t.id, t.active),
+  check("donor_funds_code_shape", sql`${t.code} ~ '^FVO-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$'`),
+]);
+
+// Append-only (trigger-enforced in 0046): never UPDATE or DELETE a row (§10.6).
+// Amounts are signed integer cents: top_up > 0; spend and sweep < 0;
+// adjustment > 0 and tied to an order (a cancelled fund-paid order's draw, given back).
+export const donorFundEntries = pgTable("donor_fund_entries", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: tenantId(),
+  fundId: text("fund_id").notNull().references(() => donorFunds.id),
+  kind: donorFundEntryKind("kind").notNull(),
   amountZar: integer("amount_zar").notNull(),
-  reason: text("reason").notNull(),
-  requestedBy: text("requested_by").notNull().references(() => staff.id),
-  approvedBy: text("approved_by").references(() => staff.id),
-  status: refundStatus("status").default("pending").notNull(),
-});
+  orderId: text("order_id").references(() => orders.id),
+  // §10.3 lists it; a card top-up is linked from payments.fund_topup_id
+  // instead (the entry is written before its payment exists, and is never
+  // updated), so nothing writes this today.
+  paymentId: text("payment_id").references((): AnyPgColumn => payments.id),
+  fundingMethod: fundingMethod("funding_method"),
+  reference: text("reference"),
+  // §6.10.3 step 5: a card top-up mints its own client_uuid, the root of
+  // payments.client_reference (client_uuid:attempt), so S4 can find it.
+  clientUuid: text("client_uuid").unique(),
+  recordedByStaffId: text("recorded_by_staff_id").notNull().references(() => staff.id),
+  reason: text("reason"),
+  at: now(),
+}, (t) => [
+  index("donor_fund_entries_fund_idx").on(t.fundId),
+  check(
+    "donor_fund_entries_sign",
+    sql`(${t.kind} = 'top_up' AND ${t.amountZar} > 0) OR (${t.kind} IN ('spend', 'sweep') AND ${t.amountZar} < 0) OR (${t.kind} = 'adjustment' AND ${t.amountZar} > 0)`
+  ),
+  // An adjustment only gives back a cancelled order's draw (REQ-168): never a
+  // way for money to enter a fund without external proof (L44).
+  check("donor_fund_entries_adjustment_order", sql`${t.kind} <> 'adjustment' OR ${t.orderId} IS NOT NULL`),
+  // A top-up names how the money arrived; nothing else does.
+  check("donor_fund_entries_method", sql`(${t.kind} = 'top_up') = (${t.fundingMethod} IS NOT NULL)`),
+  // Card top-ups carry their own client_uuid; nothing else does.
+  check(
+    "donor_fund_entries_card_uuid",
+    sql`(${t.kind} = 'top_up' AND ${t.fundingMethod} = 'card') = (${t.clientUuid} IS NOT NULL)`
+  ),
+  // L44 / REQ-161: a cash or EFT gift carries its external proof.
+  check(
+    "donor_fund_entries_offline_reference",
+    sql`${t.fundingMethod} IS NULL OR ${t.fundingMethod} = 'card' OR length(btrim(coalesce(${t.reference}, ''))) > 0`
+  ),
+  check("donor_fund_entries_spend_order", sql`${t.kind} <> 'spend' OR ${t.orderId} IS NOT NULL`),
+  check("donor_fund_entries_sweep_reason", sql`${t.kind} <> 'sweep' OR length(btrim(coalesce(${t.reason}, ''))) > 0`),
+  // One draw per order, and at most one compensating entry per order.
+  uniqueIndex("donor_fund_entries_one_spend_per_order").on(t.orderId).where(sql`kind = 'spend'`),
+  uniqueIndex("donor_fund_entries_one_adjustment_per_order")
+    .on(t.orderId)
+    .where(sql`kind = 'adjustment' AND order_id IS NOT NULL`),
+]);
+
+// The linked names. Empty = barista discretion; non-empty gates every draw on
+// the list (§6.10.2). There is no fund-type column — this table is the switch.
+// Personal data: deleted with the customer (§9.4), while the ledger stays.
+export const donorFundMembers = pgTable("donor_fund_members", {
+  fundId: text("fund_id").notNull(),
+  customerId: text("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  // Mirrors donor_funds.active through the composite FK below (ON UPDATE
+  // CASCADE), so the partial unique index can read "over active funds".
+  fundActive: boolean("fund_active").default(true).notNull(),
+  addedByStaffId: text("added_by_staff_id").notNull().references(() => staff.id),
+  at: now(),
+}, (t) => [
+  primaryKey({ name: "donor_fund_members_pkey", columns: [t.fundId, t.customerId] }),
+  foreignKey({
+    name: "donor_fund_members_fund_fk",
+    columns: [t.fundId, t.fundActive],
+    foreignColumns: [donorFunds.id, donorFunds.active],
+  }).onUpdate("cascade"),
+  // L46 / REQ-172: one person, at most one active linked fund — by the DB.
+  uniqueIndex("donor_fund_members_one_active_fund_per_customer").on(t.customerId).where(sql`fund_active`),
+]);
 
 // ─── Staff Entitlement ────────────────────────────────────────────────────────
 
@@ -398,6 +582,8 @@ export const wasteLog = pgTable("waste_log", {
   reason: text("reason"),
   byStaffId: text("by_staff_id").notNull().references(() => staff.id),
   at: now(),
+  // AT-209 / PRD §10.3, T6 step 2b: the order an `abandoned` row records.
+  orderId: text("order_id").references(() => orders.id),
 });
 
 export const purchases = pgTable(
@@ -460,6 +646,14 @@ export const openingSessions = pgTable(
     voucherKindsActive: text("voucher_kinds_active").array().default(sql`'{}'::text[]`).notNull(),
     // Set by closeSession; the one-open-session index is defined over it.
     closedAt: timestamp("closed_at", { withTimezone: true }),
+    // PRD §10.3 (opening_sessions: deferred_since · deferred_reason ·
+    // deferred_by_staff_id · deferred_entered_by), §6.0.4 T3, §6.7.
+    // `deferred_since IS NOT NULL` IS the deferred state. Session-scoped: a
+    // new session starts with all four NULL (it does not survive the close).
+    deferredSince: timestamp("deferred_since", { withTimezone: true }),
+    deferredReason: text("deferred_reason"),
+    deferredByStaffId: text("deferred_by_staff_id").references(() => staff.id),
+    deferredEnteredBy: deferredEnteredBy("deferred_entered_by"),
   },
   (t) => [
     // KEEP (CLAUDE.md §3, COL-14): v7.0 retains this; it is not narrowed.
@@ -468,6 +662,34 @@ export const openingSessions = pgTable(
     uniqueIndex("opening_sessions_one_open")
       .on(t.tenantId)
       .where(sql`closed_at IS NULL`),
+  ]
+);
+
+// ─── Barista rota (PRD §6.3, §10.2, §10.3 barista_shifts, §6.11.1 COL-23) ─────
+// "Who is on duty on which date", keyed to the session: `session_id, or
+// shift_date + slot`. An Admin plans by date + slot before the session exists;
+// when a session opens it is attached here and the shift-start push fires once
+// (notified_at). `slot` is the session's order of opening that revenue day:
+// 1 = the first session, 2 = the second (a Sunday's evening session, COL-23).
+
+export const baristaShifts = pgTable(
+  "barista_shifts",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: tenantId(),
+    staffId: text("staff_id").notNull().references(() => staff.id),
+    shiftDate: text("shift_date").notNull(), // YYYY-MM-DD (SAST revenue day), as opening_sessions.session_date
+    slot: integer("slot").notNull(),
+    // Set when the session for (shift_date, slot) opens. A deleted session detaches it.
+    sessionId: text("session_id").references(() => openingSessions.id, { onDelete: "set null" }),
+    // Set when the shift-start push was sent — the dedupe record.
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    createdByStaffId: text("created_by_staff_id").notNull().references(() => staff.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("barista_shifts_date_slot_staff_unique").on(t.shiftDate, t.slot, t.staffId),
+    check("barista_shifts_slot_positive", sql`${t.slot} >= 1`),
   ]
 );
 
@@ -587,6 +809,8 @@ export const expenses = pgTable("expenses", {
   amountZar: integer("amount_zar").notNull(),
   incurredAt: timestamp("incurred_at", { withTimezone: true }).defaultNow().notNull(),
   loggedBy: text("logged_by").notNull().references(() => staff.id),
+  // AT-205 / PRD §11.2: logExpense(category, amount_zar, incurred_at, note?).
+  note: text("note"),
 });
 
 // ─── Audit Log (append-only — trigger-enforced) ───────────────────────────────
@@ -603,10 +827,38 @@ export const auditLog = pgTable("audit_log", {
   before: jsonb("before"),
   after: jsonb("after"),
   reason: text("reason"),
+  // AT-209 / PRD §10.3.2, §6.0.7, REQ-040, REQ-063: the overriding admin, where
+  // an admin PIN authorised a barista's action. NULL otherwise.
+  onBehalfOfStaffId: text("on_behalf_of_staff_id").references(() => staff.id),
 }, (t) => [
   index("audit_log_entity_idx").on(t.entityKind, t.entityId),
   index("audit_log_actor_idx").on(t.actorId),
   index("audit_log_at_idx").on(t.at),
+]);
+
+// ─── Daily closes (AT-207, PRD §10.2, §6.0.5, §9.6.2 job 2) ──────────────────
+// The close record: one row per closed revenue day, written by closeDaily() in
+// the same transaction as the write-off sweep. A reconciliation mismatch blocks
+// only this record (status `blocked` + reason), never the write-offs.
+
+export const dailyCloses = pgTable("daily_closes", {
+  revenueDay: date("revenue_day").primaryKey(),
+  // Integer cents. The day's written-off orders, count and Σ orders.total_zar.
+  writtenOffCount: integer("written_off_count").default(0).notNull(),
+  writtenOffZar: integer("written_off_zar").default(0).notNull(),
+  reconciliationStatus: text("reconciliation_status", { enum: ["payments_matched", "blocked"] }).notNull(),
+  blockedReason: text("blocked_reason"),
+  closedAt: timestamp("closed_at", { withTimezone: true }).defaultNow().notNull(),
+  wasCatchUp: boolean("was_catch_up").default(false).notNull(),
+}, (t) => [
+  check("daily_closes_written_off_count_nonneg", sql`${t.writtenOffCount} >= 0`),
+  check("daily_closes_written_off_zar_nonneg", sql`${t.writtenOffZar} >= 0`),
+  check("daily_closes_status", sql`${t.reconciliationStatus} IN ('payments_matched', 'blocked')`),
+  // A blocked close names why; a payments_matched one carries no reason.
+  check(
+    "daily_closes_blocked_reason",
+    sql`(${t.reconciliationStatus} = 'blocked') = (${t.blockedReason} IS NOT NULL)`
+  ),
 ]);
 
 // ─── Monthly reports (G15 dual-sign) ─────────────────────────────────────────

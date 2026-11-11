@@ -27,10 +27,42 @@ async function loginAsBarista(page: Page) {
   });
 }
 
+/** Mon–Fri in SAST (Africa/Johannesburg), the day the server prices against. */
+function isSastWeekday(now = new Date()): boolean {
+  const wd = new Intl.DateTimeFormat("en-US", { timeZone: "Africa/Johannesburg", weekday: "short" }).format(now);
+  return ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(wd);
+}
+
+/**
+ * The opening step (AT-134) mounts after its own fetch and blocks the till.
+ * No session: Confirm opens today's session in its date mode (weekday on
+ * Mon–Fri), through the app's own path. A session already open: Remind me later.
+ */
+async function ensureSessionOpen(page: Page) {
+  const dialog = page.getByRole("dialog", { name: "Opening step" });
+  try {
+    await dialog.waitFor({ state: "visible", timeout: 10_000 });
+  } catch {
+    return; // never appeared: snoozed earlier in this browser session with a session open
+  }
+  if (await dialog.getByRole("heading", { name: "Open the session first" }).isVisible()) {
+    await dialog.getByRole("button", { name: "Confirm" }).click();
+  } else {
+    await dialog.getByRole("button", { name: /remind me later/i }).click();
+  }
+  await expect(dialog).toBeHidden({ timeout: 15_000 });
+}
+
 test("barista can take an order and drive it through the full queue lifecycle", async ({
   page,
 }) => {
+  // DEC-26: a priced order needs a card payment before Start Making appears,
+  // and no terminal is reachable here. Only a weekday session makes every order
+  // R0 (L19), so the lifecycle is driven on Mon–Fri SAST and skipped otherwise.
+  test.skip(!isSastWeekday(), "Needs a Mon–Fri SAST weekday session: every other day's order needs a card payment first (DEC-26).");
+
   await loginAsBarista(page);
+  await ensureSessionOpen(page);
 
   // ── 1. Build the order ──────────────────────────────────────────────────────
   // Clicking a menu item opens the modification sheet; "Add to order" commits it.
@@ -41,7 +73,10 @@ test("barista can take an order and drive it through the full queue lifecycle", 
   await expect(page.getByText(/R\s*\d+[,.]\d{2}/).first()).toBeVisible();
 
   // ── 2. Place the order ───────────────────────────────────────────────────────
-  await page.getByRole("button", { name: /^charge r/i }).click();
+  // L28 / REQ-046: a walk-in binds target `none` with one explicit tap.
+  await page.getByRole("button", { name: "No notification" }).click();
+  // L19: on a weekday there is no payment step, so the button reads "Send to queue".
+  await page.getByRole("button", { name: /^send to queue$/i }).click();
 
   // ── 3. The order appears in the live queue as "Waiting" ─────────────────────
   // createOrder auto-expands the new order, so its card body is open.

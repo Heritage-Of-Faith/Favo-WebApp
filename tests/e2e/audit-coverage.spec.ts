@@ -1,53 +1,65 @@
 /**
- * Standalone Audit Coverage Spec — AT-81 (G23)
+ * Standalone Audit Coverage Spec — AT-81 (G23), REQ-064
  *
  * Run this spec after any integration or E2E flow to assert no mutations escaped
- * the audit log. Requires TEST_AUDIT_SECRET env var pointing to a live server with
- * the /api/admin/audit-coverage endpoint available.
+ * the audit log. GET /api/admin/audit-coverage is admin-only (PRD v7 access
+ * matrix) and answers `200 {mutations, audited, coverage_pct, gaps:[...]}`.
  *
- * Skip condition: TEST_AUDIT_SECRET not set (safe to omit in dev environments).
+ * Seeded data:
+ *   Barista: Sam Barista  PIN 1234  id: staff_barista_sam
+ *   Admin:   Mia Manager  PIN 4321  id: staff_manager_mia
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+async function loginWithPin(page: Page, pin: string): Promise<void> {
+  await page.goto("/pos", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: /enter your pin/i })).toBeVisible();
+  await expect(page.getByLabel(`Digit ${pin[0]}`)).toBeEnabled({ timeout: 15_000 });
+  for (const digit of pin) {
+    await page.getByLabel(`Digit ${digit}`).click();
+  }
+  await expect(page.getByLabel("Confirm PIN")).toBeEnabled({ timeout: 5_000 });
+  await page.getByLabel("Confirm PIN").click();
+  await expect(page.getByRole("heading", { name: /enter your pin/i })).not.toBeVisible({
+    timeout: 30_000,
+  });
+}
 
 test.describe("audit-coverage", () => {
-  test("GET /api/admin/audit-coverage → 403 when secret is missing", async ({
-    request,
-  }) => {
-    // Endpoint must refuse access without the secret regardless of environment.
+  test("GET /api/admin/audit-coverage without a session → 401", async ({ request }) => {
     const res = await request.get("/api/admin/audit-coverage");
-    expect([403, 404]).toContain(res.status());
+    expect(res.status()).toBe(401);
   });
 
-  test("GET /api/admin/audit-coverage with wrong secret → 403", async ({
-    request,
-  }) => {
-    const res = await request.get(
-      "/api/admin/audit-coverage?secret=definitely-not-the-right-secret"
-    );
-    // 403 when endpoint exists; 404 if env var not set and endpoint returns 403 via JSON.
+  test("a ?secret= query parameter grants nothing → 401", async ({ request }) => {
+    const res = await request.get("/api/admin/audit-coverage?secret=anything");
+    expect(res.status()).toBe(401);
+  });
+
+  test("barista session → 403", async ({ page }) => {
+    await loginWithPin(page, "1234");
+    const res = await page.context().request.get("/api/admin/audit-coverage");
     expect(res.status()).toBe(403);
   });
 
-  test("no recent orders lack an audit row (requires TEST_AUDIT_SECRET)", async ({
-    request,
-  }) => {
-    const secret = process.env.TEST_AUDIT_SECRET ?? "";
-    if (!secret) {
-      test.skip();
-      return;
-    }
-
-    const res = await request.get(
-      `/api/admin/audit-coverage?secret=${encodeURIComponent(secret)}`
-    );
+  test("admin session: no recently created row lacks an audit row (0 orphans)", async ({ page }) => {
+    await loginWithPin(page, "4321");
+    const res = await page.context().request.get("/api/admin/audit-coverage");
     expect(res.status()).toBe(200);
 
-    const body = (await res.json()) as { ok: boolean; gapCount: number };
+    const body = (await res.json()) as {
+      mutations: number;
+      audited: number;
+      coverage_pct: number | null;
+      gaps: string[];
+    };
     expect(
-      body.gapCount,
-      `Audit gap detected: ${body.gapCount} order(s) have no audit_log row`
-    ).toBe(0);
-    expect(body.ok).toBe(true);
+      body.gaps,
+      `Audit gap detected: ${body.gaps.length} row(s) have no audit_log row (entity:id)`
+    ).toEqual([]);
+    // Nothing measured in the window -> null, never a claimed 100 (REQ-064).
+    expect(body.coverage_pct).toBe(body.mutations === 0 ? null : 100);
+    expect(body.audited).toBe(body.mutations);
   });
 });

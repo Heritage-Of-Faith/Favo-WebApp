@@ -33,6 +33,8 @@ type DraftLine = {
   quantity: number;
   modifications: { priceDeltaZar: number }[];
   voucherCount?: number;
+  /** AT-202: the per-unit extra-shot surcharge the POS priced the line with. Absent = 0. */
+  surchargeZar?: number;
 };
 
 /** §6.9.2a: one voucher zeroes one whole unit — listed price plus its modifications. */
@@ -40,14 +42,24 @@ export function draftUnitZar(line: DraftLine): number {
   return line.unitPriceZar + line.modifications.reduce((s, m) => s + m.priceDeltaZar, 0);
 }
 
-export function draftLineGrossZar(line: DraftLine): number {
-  return draftUnitZar(line) * line.quantity;
+/**
+ * AT-202 part 1, interim: a line carrying an extra-shot surcharge takes no
+ * voucher (the server refuses VOUCHER_NOT_ON_EXTRA_SHOTS), so the POS offers
+ * no voucher control on it and never counts one.
+ */
+export function draftLineTakesVoucher(line: Pick<DraftLine, "surchargeZar">): boolean {
+  return (line.surchargeZar ?? 0) === 0;
 }
 
-/** REQ-147: the line's remaining price after its m vouchers. */
+/** The line's gross: quantity × (unit + mods + the per-unit surcharge, which stays owed). */
+export function draftLineGrossZar(line: DraftLine): number {
+  return (draftUnitZar(line) + (line.surchargeZar ?? 0)) * line.quantity;
+}
+
+/** REQ-147: the line's remaining price after its m vouchers. The surcharge is never vouchered. */
 export function draftLineNetZar(line: DraftLine): number {
-  const m = Math.min(Math.max(line.voucherCount ?? 0, 0), line.quantity);
-  return draftUnitZar(line) * (line.quantity - m);
+  const m = draftLineTakesVoucher(line) ? Math.min(Math.max(line.voucherCount ?? 0, 0), line.quantity) : 0;
+  return draftUnitZar(line) * (line.quantity - m) + (line.surchargeZar ?? 0) * line.quantity;
 }
 
 export function draftNetZar(lines: DraftLine[]): number {

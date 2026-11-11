@@ -13,23 +13,31 @@ import { searchCustomer, resolveCustomer } from "@/server/actions/customers";
 import { getMenu } from "@/server/actions/menu";
 import { getActiveBeanLot } from "@/server/actions/inventory";
 import { createOrder, transitionOrder, cancelOrder, declineFreeCoffee } from "@/server/actions/orders";
+import type { CreateOrderTender } from "@/server/actions/orders";
 import { getFavo } from "@/server/actions/favo";
 import { getVoucherContext } from "@/server/actions/vouchers";
 import {
-  NO_VOUCHERS, SESSION_CHANGED_EVENT, draftLineGrossZar, draftLineNetZar, draftNetZar, nextVoucherCount,
+  NO_VOUCHERS, SESSION_CHANGED_EVENT, draftLineGrossZar, draftLineNetZar, draftLineTakesVoucher, draftNetZar, nextVoucherCount,
   type VoucherContext,
 } from "@/lib/pos-vouchers";
 import type { FavoView } from "@/server/favo/schema";
 import FavoPicker from "@/components/favo/FavoPicker";
 import { useOrderStream } from "@/hooks/useOrderStream";
-import { useDraftOrder, lineKey } from "@/store/draftOrder";
+import { useDraftOrder, lineKey, HANDED_OVER, keepDraftForNextSignIn } from "@/store/draftOrder";
 import { formatZar, formatDate, revenueDay } from "@/lib/format";
+import { computeLineTotalZar } from "@/server/orders/pricing";
+import { FAIL_CLOSED_POLICY, shotSurchargeZar, shotsLabel, type ShotPolicy } from "@/server/orders/shot-surcharge";
+import { isEventFree, menuScopeAllows, type TillEventView } from "@/lib/till-mode";
+import { FREE_CUP_COPY } from "@/server/orders/free-coffee";
+import { decideQueueCardGate } from "@/server/orders/payment-gate";
 import { freshness, daysSinceRoast } from "@/lib/status/freshness";
 import {
   Search, Plus, Minus, Trash2, ChevronDown, ChevronUp,
   Loader2, Wifi, WifiOff, RefreshCw, Coffee, LogOut,
-  CheckCircle, AlertCircle, ShieldCheck, CreditCard,
+  CheckCircle, AlertCircle, ShieldCheck, CreditCard, Users,
 } from "lucide-react";
+import { endTillSession, type TillLockReason } from "@/server/actions/hand-over";
+import { useIdleLock } from "@/hooks/useIdleLock";
 import { toast } from "sonner";
 import ActiveBeanCard from "@/components/pos/ActiveBeanCard";
 import OpenContainersCard from "@/components/pos/OpenContainersCard";
@@ -44,9 +52,15 @@ import PaymentBadge, { paymentBadgeKind } from "@/components/pos/PaymentBadge";
 import DraftLineButton from "@/components/pos/DraftLineButton";
 import { useDraftNotice } from "@/components/pos/useDraftNotice";
 import DeferredPaymentNotice from "@/components/pos/DeferredPaymentNotice";
-import YocoOrderForm from "@/components/pos/YocoOrderForm";
 import ChargeOrderDialog from "@/components/pos/ChargeOrderDialog";
+import TenderPanel from "@/components/pos/TenderPanel";
 import FreeCupRow from "@/components/pos/FreeCupRow";
+import FundChips from "@/components/pos/FundChips";
+import RecentsGrid from "@/components/pos/RecentsGrid";
+import type { RecentsTile } from "@/server/recents/grid";
+import type { FundOptions } from "@/server/funds/funds";
+import DeferredModeBar from "@/components/pos/DeferredModeBar";
+import { DEFERRED_ORDER_NOTICE } from "@/lib/deferred-copy";
 import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
@@ -109,10 +123,19 @@ type Props = {
   staffId: string;
   role: import("@/lib/types").StaffRole;
   initialOrders?: { orderId: string; state: import("@/lib/types").OrderState; lastUpdatedAt: string; customerName: string | null }[];
+  /** DEC-21: Sunday card sales are taken on the Yoco machine (SUNDAY_ORDERS_NEVER_SWEPT_UNTIL_WEBPOS_LIVE),
+   *  read by the page. Absent = false: every paid order needs a FAVO payment. */
+  sundayCardOnMachine?: boolean;
+  /** AT-202: today's shot ceiling and surcharge, read by the page (T09, T15).
+   *  Absent = fail closed: weekday ceiling, no surcharge. The server re-checks. */
+  shotPolicy?: ShotPolicy & { event?: TillEventView | null };
+  /** AT-203 / §6.10.6: fundOptionsForOrder, passed by the page. Absent = no fund chips. */
+  fundOptions?: (input: { customerId: string | null; netZar: number }) => Promise<{ ok: true; data: FundOptions } | { ok: false; code: string; message: string }>;
+  /** §6.2.1 / REQ-052: getRecentsGrid, passed by the page. Absent = no recents grid. */
+  recents?: () => Promise<{ ok: true; data: RecentsTile[] } | { ok: false; code: string; message: string }>;
 };
 
-export default function POSWorkspace({ staffName, staffId, role, initialOrders }: Props) {
-  const yocoConfigured = !!process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY;
+export default function POSWorkspace({ staffName, staffId, role, initialOrders, sundayCardOnMachine = false, shotPolicy = FAIL_CLOSED_POLICY, fundOptions, recents }: Props) {
   const router = useRouter();
 
   // ── Left panel ─────────────────────────────────────────────────────────────
@@ -120,20 +143,26 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const [menuLoading, setMenuLoading] = useState(true);
   const [modTarget, setModTarget] = useState<MenuItem | null>(null);
   const [selectedMods, setSelectedMods] = useState<MenuCustomisation[]>([]);
+  // AT-202 / §6.2.3c: the shot count picked for the drink being customised. Default 1.
+  const [selectedShots, setSelectedShots] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const placingRef = useRef(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  // AT-212 / DEC-19: createOrder refused a second weekday drink (ENTITLEMENT_USED);
+  // the till offers one control, "Give another free cup", and nothing else.
+  const [entitlementRefused, setEntitlementRefused] = useState(false);
+  // AT-212 / L19: on a weekday no order has a payment step — no Charge, no card.
+  // The page reads today's mode with the shot policy; the server decides.
+  // L25 / REQ-045: a free-posture event in force has no payment step either.
+  const weekdayFree = shotPolicy.mode === "weekday" || isEventFree(shotPolicy.event);
   const [showPayment, setShowPayment] = useState(false);
-  // Yoco checkout id from createOrder (created server-side, keyed to the pending
-  // payments row). Presence of an id means the card form can be shown.
-  const [yocoCheckoutId, setYocoCheckoutId] = useState("");
   const { notice: orderSuccess, setNotice: setOrderSuccess, clearOnDraft } = useDraftNotice();
   // The order already in `ordered` state that the payment step is settling.
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
   // Connectivity — drives the offline banner gate and the payment-screen swap
-  // between the Yoco card form (online) and the deferred-payment notice (offline).
+  // between the online payment view and the deferred-payment notice (offline).
   const [online, setOnline] = useState(true);
   const deferredGuard = useRef(false);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -148,7 +177,21 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const searchSeq = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draft = useDraftOrder();
-  const { customer, items, totalZar, reset } = draft;
+  const { customer, items, totalZar } = draft;
+  // L28 / REQ-046: every order binds a notification target before it is placed —
+  // the attached customer, or an explicit "No notification" tap. Never defaulted.
+  const [noNotification, setNoNotification] = useState(false);
+  const notificationTarget: "customer" | "none" | null = customer ? "customer" : noNotification ? "none" : null;
+  // Attaching a customer replaces an earlier "none" — so detaching them later
+  // needs a fresh tap rather than silently falling back to `none` (L28).
+  const attachedCustomerId = customer?.id ?? null;
+  useEffect(() => {
+    if (attachedCustomerId) setNoNotification(false);
+    setEntitlementRefused(false); // the override belongs to the refused customer only
+  }, [attachedCustomerId]);
+  // L28: a reset draft (order sent, paid, abandoned or signed out) binds its own
+  // target next time — the "none" tap never carries over to the next order.
+  const reset = () => { draft.reset(); setNoNotification(false); };
   // Clear removes the lines only — the attached customer stays (never detached silently).
   const clearItems = () => { for (const i of items) draft.removeItem(lineKey(i)); };
   // Starting a new draft drops the previous order's "sent to the queue" message.
@@ -157,6 +200,20 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   const removeItem = clearOnDraft(draft.removeItem);
   const updateQuantity = clearOnDraft(draft.updateQuantity);
   const setVoucherCount = clearOnDraft(draft.setVoucherCount);
+
+  // REQ-053 / L37: a repeat tap on a drink already on the order changes nothing
+  // about its quantity — the store names the matching line, and it flashes here
+  // for a moment so the barista's eye goes to that line's stepper.
+  const [flashLine, setFlashLine] = useState<string | null>(null);
+  const flashKey = draft.flashKey ?? null;
+  const flashSeq = draft.flashSeq ?? 0;
+  const mountFlashSeq = useRef(flashSeq); // a tap made before this screen mounted never flashes
+  useEffect(() => {
+    if (!flashKey || flashSeq === mountFlashSeq.current) return;
+    setFlashLine(flashKey);
+    const t = setTimeout(() => setFlashLine(null), 1500);
+    return () => clearTimeout(t);
+  }, [flashKey, flashSeq]);
 
   // §6.9.3 / L48: the voucher chip exists only while the open session carries
   // a voucher kind. Re-read whenever the opening step opens or closes a session.
@@ -174,8 +231,47 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   }, []);
   const vouchersLive = voucherCtx.available && voucherCtx.kind !== null;
   // The draft's net after vouchers (display only — createOrder prices the order).
-  const vouchersOnDraft = vouchersLive && items.some(i => (i.voucherCount ?? 0) > 0);
+  // AT-202 interim: a line with an extra-shot surcharge never carries a voucher.
+  const voucherCountOf = (i: (typeof items)[number]) => (draftLineTakesVoucher(i) ? i.voucherCount ?? 0 : 0);
+  const vouchersOnDraft = vouchersLive && items.some(i => voucherCountOf(i) > 0);
   const draftDueZar = vouchersOnDraft ? draftNetZar(items) : totalZar;
+
+  // AT-203 / §6.10.6 — the footer's fund chips. L48: an order with no net
+  // charge (a weekday order, or one vouchered to R0) offers no fund at all, so
+  // options are not even asked for. The linked fund arrives lit (REQ-164);
+  // `fundPick` is the barista's tap: undefined = no tap yet, null = the card.
+  const fundNetZar = weekdayFree || !online ? 0 : draftDueZar;
+  const [fundOpts, setFundOpts] = useState<FundOptions | null>(null);
+  const [fundPick, setFundPick] = useState<string | null | undefined>(undefined);
+  // REQ-164: a bound person's linked fund is applied without a tap — so until
+  // their options have loaded, "no fund applies" is unknown, never assumed.
+  const [fundCheck, setFundCheck] = useState<"idle" | "loading" | "loaded" | "failed">("idle");
+  const [fundRetry, setFundRetry] = useState(0);
+  useEffect(() => {
+    setFundOpts(null);
+    if (!fundOptions || fundNetZar <= 0) { setFundCheck("idle"); return; }
+    setFundCheck("loading");
+    let stale = false;
+    fundOptions({ customerId: attachedCustomerId, netZar: fundNetZar })
+      .then(r => {
+        if (stale) return;
+        setFundOpts(r.ok ? r.data : null);
+        setFundCheck(r.ok ? "loaded" : "failed");
+      })
+      .catch(() => { if (!stale) { setFundOpts(null); setFundCheck("failed"); } });
+    return () => { stale = true; };
+  }, [fundOptions, attachedCustomerId, fundNetZar, fundRetry]);
+  // Only a bound person can have a fund applied without a tap; a stranger's
+  // open fund needs an explicit tap, so their order is never held back.
+  const fundCheckBlocksPlace = attachedCustomerId !== null && (fundCheck === "loading" || fundCheck === "failed");
+  // A new person bound to the order: their own fund decides again (REQ-164).
+  useEffect(() => { setFundPick(undefined); }, [attachedCustomerId]);
+  const tappableFundIds = [
+    ...(fundOpts?.linked?.canCover ? [fundOpts.linked.fundId] : []),
+    ...(fundOpts?.open ? [fundOpts.open.fundId] : []),
+  ];
+  const wantedFundId = fundPick === undefined ? (fundOpts?.linked?.lit ? fundOpts.linked.fundId : null) : fundPick;
+  const selectedFundId = wantedFundId !== null && tappableFundIds.includes(wantedFundId) ? wantedFundId : null;
 
   // AT-144 — the attached customer's Favo (saved usual order) + the Manage
   // Favo blocking modal (wireframe screens 6 + 2a).
@@ -234,18 +330,19 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   // offer the one-tap Decline.
   const [placedTotalZar, setPlacedTotalZar] = useState<number | null>(null);
   const [placedFreeCup, setPlacedFreeCup] = useState(false);
-  // Whether a Yoco card checkout was set up for the order just placed.
+  // Whether a tender attempt was begun for the order just placed (P4: frozen).
   const [placedCardCheckout, setPlacedCardCheckout] = useState(false);
+  // §6.0.4 T3 step 2: the order just placed was taken unpaid in deferred mode.
+  const [placedDeferred, setPlacedDeferred] = useState(false);
+  // The tender attempt createOrder began (or why it could not) — the card
+  // tender sends and polls it server-side (AT-201; no card form in the browser).
+  const [placedTender, setPlacedTender] = useState<CreateOrderTender>(null);
   const [declining, setDeclining] = useState<string | null>(null);
   // The server guarantee (owner rule, 12 Oct 2026): declineFreeCoffee and
-  // applyFreeCoffee refuse with TENDER_IN_PROGRESS — under the payments-row
-  // lock — once a card checkout exists for the order. So Decline is shown only
-  // for orders with no checkout (server state: Order.cardCheckout / the
-  // createOrder result). cardStepStarted is extra, device-local hiding once the
-  // card popup or the Take-payment dialog opens; it is not the guarantee.
-  const [cardStepStarted, setCardStepStarted] = useState<Set<string>>(() => new Set());
-  const markCardStep = (orderId: string) =>
-    setCardStepStarted(prev => { const n = new Set(prev); n.add(orderId); return n; });
+  // applyFreeCoffee refuse with TENDER_IN_PROGRESS — under the order lock —
+  // once a tender attempt is open for the order. So Decline is shown only for
+  // orders with none (server state: Order.cardCheckout / the createOrder
+  // result). It is also hidden while the Take-payment dialog is open.
   const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
   const [wasteOpen, setWasteOpen] = useState(false);
   const [wasteCategory, setWasteCategory] = useState<LogWasteInput["category"]>("spilled");
@@ -310,7 +407,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       if (cancelled) return;
       const owner = `${staffId}|${revenueDay()}`;
       const s = store.getState();
-      if (s.draftOwner !== owner) {
+      // REQ-061: a draft kept through Hand over / the idle lock passes to whoever signs in next today.
+      if (s.draftOwner === `${HANDED_OVER}|${revenueDay()}`) store.setState({ draftOwner: owner });
+      else if (s.draftOwner !== owner) {
         s.reset();
         store.setState({ draftOwner: owner });
         return;
@@ -344,6 +443,19 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     }, 320);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
+
+  // §6.2.1 recents grid: re-read whenever the order has no customer (first
+  // render, a detach, or a placed order's reset), so served marks stay current.
+  // REQ-140 / L35: issued in the background; nothing on the ordering path waits on it.
+  const [recentTiles, setRecentTiles] = useState<RecentsTile[]>([]);
+  useEffect(() => {
+    if (!recents || attachedCustomerId) return;
+    let stale = false;
+    recents()
+      .then(r => { if (!stale && r.ok) setRecentTiles(r.data); })
+      .catch(() => { /* the grid stays as it was; search still works */ });
+    return () => { stale = true; };
+  }, [recents, attachedCustomerId]);
 
   function pickCustomer(c: CustomerSearchResult) {
     setCustomer({ id: c.id, name: c.name });
@@ -387,45 +499,69 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
 
   // ── Order building ─────────────────────────────────────────────────────────
 
-  async function handlePlaceOrder() {
+  async function handlePlaceOrder(extraFreeCup = false) {
     // A ref, not just state: a fast double tap fires twice before React re-renders,
     // and the second tap must be ignored, never create a second order.
-    if (items.length === 0 || submitting || placingRef.current) return;
+    if (items.length === 0 || submitting || placingRef.current || !notificationTarget || fundCheckBlocksPlace) return;
     placingRef.current = true;
     setSubmitting(true);
     setOrderError(null);
+    setEntitlementRefused(false);
     try {
-      await placeOrder();
+      await placeOrder(extraFreeCup);
     } finally {
       placingRef.current = false;
       setSubmitting(false);
     }
   }
 
-  async function placeOrder() {
+  async function placeOrder(extraFreeCup = false) {
+    if (!notificationTarget) return; // L28: no order without a bound target.
     // Offline at place-order — createOrder can't run. Go straight to the payment
     // screen, which (being offline) shows the deferred-payment notice. There's no
     // order in the DB yet, so confirming queues it to the outbox.
     if (!navigator.onLine) {
       setPaymentOrderId(null);
-      setYocoCheckoutId("");
+      setPlacedTender(null);
       setShowPayment(true);
       return;
     }
     const r = await createOrder({
       customerId: customer?.id,
+      notificationTarget,
       items: items.map(i => ({
         menuItemId: i.menuItemId, quantity: i.quantity, modifications: i.modifications.map(m => m.id),
+        shots: i.shots ?? 1,
         // §6.9: vouchers ride the line they were tapped on (L41) — only while a kind is live.
-        ...(vouchersOnDraft && (i.voucherCount ?? 0) > 0 ? { voucherCount: i.voucherCount } : {}),
+        ...(vouchersOnDraft && voucherCountOf(i) > 0 ? { voucherCount: i.voucherCount } : {}),
       })),
       ...(vouchersOnDraft && voucherCtx.kind ? { voucherKind: voucherCtx.kind } : {}),
+      ...(extraFreeCup ? { extraFreeCup: true } : {}),
+      // AT-203 / L47: the fund is the tender — createOrder draws it, nothing goes to the machine.
+      ...(selectedFundId ? { donorFundId: selectedFundId } : {}),
     }).catch(() => ({ ok: false as const, code: "ERR", message: "Failed to place order." }));
+    if (r.ok && r.data.fundDraw?.ok) {
+      // Paid from the fund: the order is settled and in the queue (REQ-162).
+      setExpandedId(r.data.orderId);
+      handleOrderPaid(r.data.orderId);
+      startNewOrder();
+      setFundPick(undefined);
+      setOrderSuccess("Order paid — sent to the queue.");
+      setTimeout(() => setOrderSuccess(null), 4000);
+      return;
+    }
     if (r.ok) {
       // Auto-expand the new order in the queue so barista sees it immediately
       setExpandedId(r.data.orderId);
-      setYocoCheckoutId(r.data.yocoClientSecret);
       setPaymentOrderId(r.data.orderId);
+      // AT-203: the fund refused (FUND_INSUFFICIENT, FUND_NOT_LINKED, …). The
+      // order is in the queue, unpaid; the reason is shown and nothing is sent
+      // to the card machine from here.
+      const fundRefused = r.data.fundDraw && !r.data.fundDraw.ok
+        ? { ok: false as const, code: r.data.fundDraw.code, message: r.data.fundDraw.message, retryOffered: false }
+        : null;
+      setPlacedTender(fundRefused ?? r.data.tender ?? null);
+      setFundPick(undefined);
       // L03 free cup: the server decided it — show the net total, and tell the
       // barista once (applied, already claimed, not eligible, pick a customer).
       const net = typeof r.data.totalZar === "number" ? r.data.totalZar : null;
@@ -435,20 +571,20 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       reset();
       setPlacedFreeCup(r.data.freeCup?.applied === true);
       setPlacedCardCheckout(r.data.cardCheckout === true);
+      setPlacedDeferred(r.data.deferred === true);
       if (r.data.freeCup?.message) {
         if (r.data.freeCup.applied) toast.success(r.data.freeCup.message);
         else toast.message(r.data.freeCup.message);
       }
-      if (r.data.yocoClientSecret || net === 0) {
-        setShowPayment(true);
-      } else {
-        // Yoco unavailable — order is in the queue; barista must collect payment via card reader when online.
-        setOrderError("Card payment unavailable — Yoco could not be reached. The order is in the queue; take payment via the queue when online.");
-        setPaymentOrderId(null);
-        reset();
-      }
+      // The server accepted the order: open the payment screen. A net-R0 order
+      // confirms straight to the queue; otherwise the card tender takes over
+      // (it shows why if createOrder could not begin one).
+      setShowPayment(true);
     } else {
       setOrderError(r.message);
+      // DEC-18: refused, never charged — the draft stays, and DEC-19's one
+      // control can give it free (weekday, customer attached).
+      setEntitlementRefused(r.code === "ENTITLEMENT_USED");
     }
   }
 
@@ -457,7 +593,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   //    in `ordered` state and advances normally — nothing to queue.
   //  • Order never created (offline at place-order): queue it to the outbox so it
   //    syncs when the connection returns.
-  async function handleDeferredConfirm() {
+  // AT-212 / S7a: on a weekday the offline order is queued 'free' — nobody
+  // pays (L19); the server re-decides the mode on replay either way.
+  async function handleDeferredConfirm(paymentMode: "yoco_deferred" | "free" = "yoco_deferred") {
     if (deferredGuard.current) return;
     deferredGuard.current = true;
     try {
@@ -470,8 +608,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             menuItemId: i.menuItemId,
             quantity: i.quantity,
             modifications: i.modifications.map(m => m.id),
+            shots: i.shots ?? 1,
           })),
-          paymentMode: "yoco_deferred",
+          paymentMode,
           clientTotalZar: totalZar,
           clientTimestamp: new Date().toISOString(),
         });
@@ -479,8 +618,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       reset();
       setShowPayment(false);
       setPaymentOrderId(null);
-      setYocoCheckoutId("");
-      toast.success("Paid in person — order confirmed");
+      toast.success(paymentMode === "free" ? "Order saved offline — it syncs when the connection returns" : "Paid in person — order confirmed");
     } catch {
       setOrderError("Failed to save order offline. Please retry.");
     } finally {
@@ -546,18 +684,47 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     if (orderId === paymentOrderId) {
       setPlacedTotalZar(r.data.totalZar);
       setPlacedFreeCup(false);
-      // A free order became chargeable: the server wrote its payments row and
-      // then created the checkout at the new total ("" if Yoco is unavailable).
-      setYocoCheckoutId(r.data.yocoClientSecret ?? "");
-      setPlacedCardCheckout(Boolean(r.data.yocoClientSecret));
+      // A free order became chargeable: no attempt exists yet, so the card
+      // tender begins one at the committed new total (REQ-026).
+      setPlacedTender(null);
+      setPlacedCardCheckout(false);
     }
     setFullOrders(prev => {
       const o = prev[orderId];
       if (!o) return prev;
-      return { ...prev, [orderId]: { ...o, totalZar: r.data.totalZar, isStaffDiscount: false, items: o.items.map(i => ({ ...i, discountZar: 0 })) } };
+      // AT-212 follow-up: a decline only succeeds off a weekday (the server
+      // refuses it on one), where the line's price comes back.
+      const items = o.items.map(i => ({ ...i, discountZar: 0 }));
+      return { ...prev, [orderId]: { ...o, totalZar: r.data.totalZar, isStaffDiscount: false, items } };
     });
     toast.message("Free cup declined — the order is charged in full.");
   }
+
+  // REQ-061 / §9.5.1: Hand over and the idle lock both return to the PIN screen
+  // with all work preserved — the draft stays saved for whoever signs in next,
+  // and orders in flight are not touched (they live on the server and the queue).
+  const [handingOver, setHandingOver] = useState(false);
+  async function lockTill(reason: TillLockReason): Promise<boolean> {
+    const r = await endTillSession(reason);
+    // A session that already ended (12-hour ceiling) goes to the PIN screen too.
+    if (!r.ok && r.code !== "UNAUTHORIZED") return false;
+    keepDraftForNextSignIn(revenueDay());
+    router.push("/pos");
+    return true;
+  }
+  async function handleHandOver() {
+    if (handingOver) return;
+    setHandingOver(true);
+    try {
+      if (!(await lockTill("hand_over"))) toast.error("Could not hand over. Try again.");
+    } catch {
+      toast.error("Could not hand over. Try again.");
+    } finally {
+      setHandingOver(false);
+    }
+  }
+  // 5 minutes idle: the server decides — it refuses inside an opening window (L36).
+  useIdleLock(async () => { await lockTill("idle_lock"); });
 
   async function handleSignOut() {
     // The kept draft must not carry over to whoever signs in next on this tab.
@@ -571,11 +738,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
   function startNewOrder() {
     reset();
     setShowPayment(false);
-    setYocoCheckoutId("");
     setPaymentOrderId(null);
     setPlacedTotalZar(null);
     setPlacedFreeCup(false);
     setPlacedCardCheckout(false);
+    setPlacedTender(null);
+    setPlacedDeferred(false);
   }
 
   // ── Zone A top — customer search/attach panel (Phase 5 wireframe states A1-A4) ──
@@ -584,6 +752,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
       <div className="zone flex flex-col gap-2 p-3 border-b border-cool-steel/20 shrink-0">
         <span className="favo-label text-cool-steel">Customer</span>
         {!customer ? (
+          <>
+          {/* §6.2.1: the recents grid leads, above the search field. Offline the
+              customer read is unavailable (T1 step 2), so the grid is not offered. */}
+          {online && <RecentsGrid tiles={recentTiles} onPick={t => setCustomer({ id: t.id, name: t.name })} />}
           <div className="relative">
             <Search size={13} strokeWidth={2} className="absolute left-2 top-1/2 -translate-y-1/2 text-cool-steel pointer-events-none" />
             <input type="search" inputMode="text" autoComplete="off"
@@ -629,7 +801,23 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 })}
               </ul>
             )}
+            {/* L28 / REQ-046: "none" is one explicit tap, never a default. */}
+            {noNotification ? (
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <p className="favo-small text-coffee-bean font-semibold">No notification</p>
+                <button type="button" onClick={() => setNoNotification(false)}
+                  className="favo-caption text-cool-steel hover:text-coffee-bean underline underline-offset-2 min-h-[44px]">
+                  Undo
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setNoNotification(true)}
+                className="mt-2 w-full rounded-[4px] border border-cool-steel/30 px-3 py-2 favo-small text-coffee-bean hover:bg-coffee-bean/8 min-h-[44px]">
+                No notification
+              </button>
+            )}
           </div>
+          </>
         ) : (
           <>
             <p className="favo-small text-coffee-bean font-semibold">{customer.name}</p>
@@ -670,6 +858,29 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
     return (
       <div className="zone flex-1 flex flex-col gap-2 p-3 min-h-0 overflow-y-auto">
         <span className="favo-label text-cool-steel">{modTarget.name} · {formatZar(modTarget.currentPriceZar)}</span>
+        {/* AT-202 / §6.2.3c: a segmented picker, one tap to any value — never a
+            −/+ stepper. Only the segments the mode allows are drawn (weekday
+            `1 2`, Sunday `1 2 3 4`, T15), and none on a drink with no coffee
+            (L48). 44 px targets, 8 px apart (gap-2), under one "Shots" label. */}
+        {modTarget.takesShots && (
+          <div role="group" aria-label="Shots" className="flex flex-col gap-1">
+            <span className="favo-label text-cool-steel">Shots</span>
+            <div className="flex gap-2">
+              {Array.from({ length: shotPolicy.maxShots }, (_, i) => i + 1).map(n => {
+                const on = selectedShots === n;
+                return (
+                  <button key={n} type="button" aria-pressed={on} aria-label={shotsLabel(n)}
+                    onClick={() => setSelectedShots(n)}
+                    className={["flex h-11 w-11 items-center justify-center rounded-[2px] border favo-small font-semibold transition-colors",
+                      on ? "border-crimson-carrot bg-crimson-carrot/10 text-coffee-bean" : "border-cool-steel/30 bg-coffee-bean/5 text-coffee-bean hover:bg-coffee-bean/8",
+                    ].join(" ")}>
+                    {n}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {modTarget.customisations.length === 0 ? (
           <p className="favo-small text-cool-steel">No customisations.</p>
         ) : (
@@ -728,7 +939,16 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
         )}
         <button type="button"
           onClick={() => {
-            addItem({ menuItemId: modTarget.id, menuItemName: modTarget.name, unitPriceZar: modTarget.currentPriceZar, modifications: selectedMods });
+            // AT-202: a coffee drink carries its shot count and the per-unit
+            // surcharge it shows on the draft line; the server re-prices both.
+            const shots = modTarget.takesShots ? Math.min(selectedShots, shotPolicy.maxShots) : undefined;
+            addItem({
+              menuItemId: modTarget.id, menuItemName: modTarget.name, unitPriceZar: modTarget.currentPriceZar, modifications: selectedMods,
+              ...(shots !== undefined && {
+                shots,
+                surchargeZar: shotSurchargeZar(shots, shotPolicy.extraShotZar, shotPolicy.surchargeInForce),
+              }),
+            });
             setModTarget(null);
           }}
           className="mt-auto flex w-full items-center justify-center rounded-[4px] py-2.5 min-h-[44px]"
@@ -750,11 +970,15 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
         ) : (
           <div className="space-y-1.5 overflow-y-auto">
             {items.map(item => {
-              const m = vouchersLive ? Math.min(item.voucherCount ?? 0, item.quantity) : 0;
+              const m = vouchersLive ? Math.min(voucherCountOf(item), item.quantity) : 0;
               const grossZar = draftLineGrossZar(item);
+              // REQ-053 / L37: a repeat tap flashes the matching line and rings its stepper.
+              const flashing = flashLine !== null && flashLine === lineKey(item);
               return (
-              <div key={lineKey(item)} data-line className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
+              <div key={lineKey(item)} data-line data-flash={flashing || undefined}
+                className={["flex items-center gap-2 rounded-[2px] transition-colors", flashing ? "bg-crimson-carrot/15" : ""].join(" ")}>
+                <div className={["flex items-center gap-1 rounded-[2px]", flashing ? "ring-2 ring-crimson-carrot animate-pulse" : ""].join(" ")}
+                  data-stepper>
                   <DraftLineButton onClick={() => updateQuantity(lineKey(item), item.quantity - 1)} aria-label={`Decrease ${item.menuItemName} quantity`}
                     className="rounded-[2px] border border-cool-steel/30 text-cool-steel hover:bg-coffee-bean/8">
                     <Minus size={12} strokeWidth={2} />
@@ -767,7 +991,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 </div>
                 {/* §6.9.3 voucher chip — rendered only while a kind is live (L48 / REQ-146).
                     One tap, no confirm: the struck-through line is the confirmation. */}
-                {vouchersLive && grossZar > 0 && (
+                {/* AT-202 interim: no chip on a line with an extra-shot surcharge (VOUCHER_NOT_ON_EXTRA_SHOTS). */}
+                {vouchersLive && grossZar > 0 && draftLineTakesVoucher(item) && (
                   <button type="button" aria-pressed={m > 0}
                     onClick={() => setVoucherCount(lineKey(item), nextVoucherCount({ quantity: item.quantity, voucherCount: m }))}
                     className={["flex h-11 min-w-11 items-center justify-center rounded-[999px] border px-3 favo-caption transition-colors",
@@ -778,8 +1003,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="favo-small text-coffee-bean truncate">{item.menuItemName}</p>
-                  {item.modifications.length > 0 && (
-                    <p className="favo-caption text-cool-steel truncate">{formatModifications(item.modifications)}</p>
+                  {(item.shots !== undefined || item.modifications.length > 0) && (
+                    <p className="favo-caption text-cool-steel truncate">
+                      {[item.shots !== undefined ? shotsLabel(item.shots) : null, item.modifications.length > 0 ? formatModifications(item.modifications) : null]
+                        .filter(Boolean).join(" · ")}
+                    </p>
                   )}
                   {/* REQ-147: m of n, so a partly vouchered line never reads as fully vouchered. */}
                   {m > 0 && <p className="favo-caption text-cool-steel">{`${m} of ${item.quantity}`}</p>}
@@ -802,6 +1030,29 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           </div>
         )}
         {orderError && <p className="favo-small text-[var(--color-error)]" role="alert">{orderError}</p>}
+        {/* AT-203 / §6.10.6: who pays — the fund chips, only when a fund applies (L48). */}
+        {fundOpts && items.length > 0 && (
+          <FundChips options={fundOpts} selectedFundId={selectedFundId} onSelect={setFundPick} />
+        )}
+        {/* REQ-164: Place waits until the bound person's fund has been checked. */}
+        {fundCheckBlocksPlace && items.length > 0 && (fundCheck === "loading" ? (
+          <p className="favo-small text-cool-steel" role="status" data-fund-check="loading">Checking the blessing fund…</p>
+        ) : (
+          <div className="flex items-center gap-2" role="alert" data-fund-check="failed">
+            <p className="favo-small text-[var(--color-error)]">Couldn&apos;t check the blessing fund.</p>
+            <button type="button" onClick={() => setFundRetry(n => n + 1)}
+              className="rounded-[4px] border border-cool-steel/30 px-3 py-2 min-h-[44px] favo-small text-coffee-bean hover:bg-coffee-bean/8">
+              Try again
+            </button>
+          </div>
+        ))}
+        {/* AT-212 / DEC-19: one tap, no PIN, no reason, no second screen. */}
+        {entitlementRefused && customer && (
+          <button type="button" onClick={() => handlePlaceOrder(true)} disabled={submitting || items.length === 0}
+            className="self-start rounded-[4px] border border-cool-steel/30 px-3 py-2 min-h-[44px] favo-small text-coffee-bean hover:bg-coffee-bean/8 disabled:opacity-40">
+            {FREE_CUP_COPY.giveExtraCup}
+          </button>
+        )}
         {orderSuccess && (
           <p className="favo-small rounded px-3 py-2" role="status" aria-live="polite"
             style={{ background: "color-mix(in srgb, var(--color-success) 15%, transparent)", color: "var(--color-success)" }}>
@@ -841,13 +1092,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 Clear
               </button>
             )}
-            <button type="button" onClick={handlePlaceOrder} disabled={submitting || items.length === 0}
+            <button type="button" onClick={() => handlePlaceOrder()} disabled={submitting || items.length === 0 || !notificationTarget || fundCheckBlocksPlace}
               className="flex items-center gap-2 whitespace-nowrap rounded-[4px] px-4 py-2 min-h-[44px] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-40"
               style={{ background: "var(--color-crimson-carrot)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
               {submitting
                 ? <Loader2 size={14} strokeWidth={2} className="animate-spin" />
-                : vouchersOnDraft && draftDueZar === 0
-                  ? "Send to queue" /* L42: nothing owed, no tender */
+                : (vouchersOnDraft && draftDueZar === 0) || weekdayFree || selectedFundId
+                  ? "Send to queue" /* L42: nothing owed, no tender · L19: no weekday payment step · L47: the fund pays, nothing goes to the machine */
                   : `Charge ${formatZar(draftDueZar)}`}
             </button>
           </div>
@@ -864,6 +1115,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
 
       {/* ════════ OUT-OF-STOCK BANNER (M9) ════════ */}
       <StockBanner outOfStockItems={outOfStockItems} />
+
+      {/* ════════ DEFERRED MODE (§6.0.4 T3): the persistent banner and its one tap ════════ */}
+      <DeferredModeBar />
 
       {/* ════════ STAFF PUSH OPT-IN (M10) — in-flow, never overlays a button ════════ */}
       <StaffPushOptIn />
@@ -895,6 +1149,12 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             Admin
           </a>
         )}
+        {/* REQ-061 / §9.5.1: shift change — ends this session, keeps all work, back to the PIN screen. */}
+        <button type="button" onClick={() => void handleHandOver()} disabled={handingOver}
+          className="flex min-h-[44px] shrink-0 items-center gap-1 px-2 rounded-[4px] favo-caption text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors disabled:opacity-40">
+          <Users size={14} strokeWidth={2} aria-hidden />
+          Hand over
+        </button>
         <button type="button" onClick={() => (items.length > 0 ? setConfirmSignOut(true) : handleSignOut())} aria-label="Sign out"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] text-cool-steel hover:bg-coffee-bean/8 hover:text-coffee-bean transition-colors">
           <LogOut size={16} strokeWidth={2} />
@@ -949,13 +1209,14 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               </div>
             ) : (
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-                {menu.map(item => {
+                {/* §6.6 menu scope: an event in force shows only its menu; the server refuses the rest. */}
+                {menu.filter(item => menuScopeAllows(shotPolicy.event, item.category)).map(item => {
                   const stock = menuItemStock(item.id);
                   const oos = stock === "out";
                   return (
                     <button key={item.id} type="button"
                       disabled={oos}
-                      onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); } }}
+                      onClick={() => { if (!oos) { setModTarget(item); setSelectedMods([]); setSelectedShots(1); } }}
                       className="relative flex flex-col items-start rounded-[2px] border border-cool-steel/20 bg-porcelain/5 p-3 min-h-[72px] text-left transition-all hover:bg-porcelain/10 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-carrot disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-porcelain/5">
                       <span className="favo-small text-coffee-bean font-semibold leading-tight">{item.name}</span>
                       <span className="favo-caption text-coffee-bean/70 mt-auto pt-1">{formatZar(item.currentPriceZar)}</span>
@@ -977,20 +1238,36 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           {(() => {
             // The server's net total once the order exists (L03 free cup taken
             // off); the draft total only while offline with no order yet.
-            const amountDueZar = paymentOrderId && placedTotalZar !== null ? placedTotalZar : totalZar;
-            // Free only when nothing is owed — skip the Yoco form and confirm directly.
+            // AT-212 / DEC-18: offline on a weekday the order will be written R0.
+            const amountDueZar = paymentOrderId && placedTotalZar !== null ? placedTotalZar : weekdayFree ? 0 : totalZar;
+            // Free only when nothing is owed — no tender, confirm directly (REQ-153).
             const isFree = amountDueZar === 0;
 
             // After the order is paid (or free-confirmed): clear everything.
             const finishPayment = () => {
               reset();
               setShowPayment(false);
-              setYocoCheckoutId("");
               setPaymentOrderId(null);
               setPlacedTotalZar(null);
               setPlacedFreeCup(false);
+              setPlacedTender(null);
               setOrderSuccess("Order paid — sent to the queue.");
               setTimeout(() => setOrderSuccess(null), 4000);
+            };
+            // The card tender settled the order (the server read `successful`).
+            const finishCardPayment = () => {
+              if (paymentOrderId) handleOrderPaid(paymentOrderId);
+              startNewOrder();
+              setOrderSuccess("Order paid — sent to the queue.");
+              setTimeout(() => setOrderSuccess(null), 4000);
+            };
+            // S4: no determinate answer — the order goes to the queue and the
+            // drink is made; the money is settled by asking Yoco, never by a
+            // second send. Drop the cached copy so the queue refetches it.
+            const finishUnresolved = () => {
+              const id = paymentOrderId;
+              if (id) setFullOrders(prev => { const n = { ...prev }; delete n[id]; return n; });
+              startNewOrder();
             };
 
             // Offline on the payment screen (R2 — Yoco outage): take payment on
@@ -1000,11 +1277,11 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
               return (
                 <DeferredPaymentNotice
                   totalZar={amountDueZar}
-                  onConfirmDeferred={handleDeferredConfirm}
+                  onConfirmDeferred={() => handleDeferredConfirm()}
                   onBack={() => {
                     // Order already created: the cart was sent, so start fresh — never restore it.
                     if (paymentOrderId) { startNewOrder(); return; }
-                    setShowPayment(false); setPaymentOrderId(null); setYocoCheckoutId("");
+                    setShowPayment(false); setPaymentOrderId(null);
                   }}
                 />
               );
@@ -1016,13 +1293,17 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                 <div className="text-center">
                   <p className="favo-label text-cool-steel mb-1">Amount due</p>
                   <p className="favo-h2 text-coffee-bean">{formatZar(amountDueZar)}</p>
-                  <p className="favo-small text-cool-steel mt-1">
-                    Tap or insert the customer's card
-                  </p>
-                  {placedFreeCup && paymentOrderId && !placedCardCheckout && !cardStepStarted.has(paymentOrderId) && (
+                  {/* REQ-153 / L19: nothing owed, no card step. */}
+                  {!isFree && !(placedDeferred && paymentOrderId) && (
+                    <p className="favo-small text-cool-steel mt-1">
+                      Tap or insert the customer&apos;s card
+                    </p>
+                  )}
+                  {placedFreeCup && paymentOrderId && !placedCardCheckout && (
                     <FreeCupRow
                       busy={declining === paymentOrderId}
-                      onDecline={() => handleDeclineFreeCup(paymentOrderId)}
+                      /* AT-212 follow-up (owner, 3 Nov 2026): no Decline on a weekday — nobody pays. */
+                      onDecline={weekdayFree ? undefined : () => handleDeclineFreeCup(paymentOrderId)}
                     />
                   )}
                 </div>
@@ -1031,37 +1312,46 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                   {isFree ? (
                     /* Free order. Once it exists it is already in the queue, so this is
                        not a second send: it only starts the next order. */
-                    <button type="button" onClick={paymentOrderId ? startNewOrder : finishPayment}
+                    <button type="button"
+                      onClick={paymentOrderId ? startNewOrder
+                        // AT-212: offline on a weekday — queue it 'free' (S7a), never deferred.
+                        : weekdayFree && !online ? () => handleDeferredConfirm("free")
+                        : finishPayment}
                       className="flex w-full items-center justify-center gap-2 rounded-[4px] py-4 min-h-[52px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-porcelain"
                       style={{ background: "var(--color-success)", color: "var(--color-porcelain)", fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "var(--text-small)", letterSpacing: "var(--tracking-cta)", textTransform: "uppercase" }}>
                       <CheckCircle size={16} strokeWidth={2} className="mr-1" />
                       {paymentOrderId ? "New order" : "Confirm — send to queue"}
                     </button>
-                  ) : paymentOrderId && yocoCheckoutId ? (
-                    /* Real card capture via Yoco; backend webhook + poll confirm. */
-                    <YocoOrderForm
-                      orderId={paymentOrderId}
-                      amountZar={amountDueZar}
-                      onPaid={finishPayment}
-                      onCardStepStart={() => markCardStep(paymentOrderId)}
-                    />
-                  ) : paymentOrderId ? (
-                    /* The order exists but has no online card checkout (Yoco
-                       unreachable or not configured, or the checkout could not
-                       be re-priced after a decline). It is in the queue. */
+                  ) : paymentOrderId && placedDeferred ? (
+                    /* §6.0.4 T3: while deferred "the tender step is replaced, not
+                       skipped" — nothing is sent; the order is in the queue, unpaid. */
                     <div className="flex flex-col gap-2">
-                      <p className="favo-small text-center text-cool-steel py-2">
-                        No online card checkout for this order. It&apos;s in the queue — take payment there with Take payment.
+                      <p role="status" className="favo-small text-center text-coffee-bean py-2">
+                        {DEFERRED_ORDER_NOTICE}
                       </p>
                       <button type="button"
-                        onClick={() => {
-                          reset();
-                          setShowPayment(false);
-                          setYocoCheckoutId("");
-                          setPaymentOrderId(null);
-                          setPlacedTotalZar(null);
-                          setPlacedFreeCup(false);
-                        }}
+                        onClick={startNewOrder}
+                        className="favo-small rounded-[4px] border border-cool-steel/30 px-3 py-2 min-h-[44px] text-coffee-bean hover:bg-coffee-bean/8">
+                        Done — back to the till
+                      </button>
+                    </div>
+                  ) : paymentOrderId ? (
+                    /* The card tender: the amount is pushed to the machine and the
+                       outcome fetched server-side (T2 steps 3–5). No Yoco key,
+                       SDK or card form is in the browser (REQ-071). The order is
+                       in the queue either way; Done leaves it there unpaid. */
+                    <div className="flex flex-col gap-2">
+                      <TenderPanel
+                        key={paymentOrderId}
+                        orderId={paymentOrderId}
+                        amountZar={amountDueZar}
+                        attempt={placedTender?.ok ? placedTender.attempt : undefined}
+                        initialFailure={placedTender && !placedTender.ok ? placedTender : undefined}
+                        onPaid={finishCardPayment}
+                        onUnresolved={finishUnresolved}
+                      />
+                      <button type="button"
+                        onClick={startNewOrder}
                         className="favo-small rounded-[4px] border border-cool-steel/30 px-3 py-2 min-h-[44px] text-coffee-bean hover:bg-coffee-bean/8">
                         Done — back to the till
                       </button>
@@ -1127,14 +1417,13 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
             const nextState = STATE_NEXT[o.state];
             const isDone = o.state === "collected" || o.state === "cancelled";
             const isReady = o.state === "ready";
-            // L01: payment gate — only enforced when Yoco is configured.
-            // Without Yoco keys the gate is bypassed so baristas can start making immediately.
-            const needsPayment = yocoConfigured
-              && !!full
+            // L01: the payment gate, the same decision transitionOrder makes
+            // (decidePaymentGate): free, fund-paid, paid, a SENT unresolved
+            // attempt (REQ-008 / S4) and — DEC-21 — a Sunday order with its card
+            // on the Yoco machine may start. A YOCO key never switches it off.
+            const needsPayment = !!full
               && o.state === "ordered"
-              // L03: a free cup discounts one unit only — whatever is left is still owed.
-              && full.totalZar > 0
-              && full.paymentStatus !== "successful"
+              && decideQueueCardGate(full, sundayCardOnMachine) === "payment_required"
               && !paidLocally.has(o.orderId);
 
             return (
@@ -1193,6 +1482,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                                   {item.quantity > 1 && <span className="text-crimson-carrot mr-1">{item.quantity}×</span>}
                                   {item.menuItemName || `Item #${item.id.slice(-4)}`}
                                 </p>
+                                {(item.shots ?? 1) > 1 && (
+                                  <p className="favo-caption text-cool-steel">{shotsLabel(item.shots ?? 1)}</p>
+                                )}
                                 {item.modifications.length > 0 && (
                                   <p className="favo-caption text-cool-steel">{formatModifications(item.modifications)}</p>
                                 )}
@@ -1205,7 +1497,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
                                 )}
                               </div>
                               <span className="favo-small text-coffee-bean shrink-0 ml-3">
-                                {formatZar((item.unitPriceZar + item.modifications.reduce((s, m) => s + m.priceDeltaZar, 0)) * item.quantity)}
+                                {formatZar(computeLineTotalZar(item))}
                               </span>
                             </div>
                           ))}
@@ -1236,8 +1528,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
 
                     {/* L03 free cup — applied automatically at ring-up; one tap to decline */}
                     {full && o.state === "ordered" && full.isStaffDiscount && full.paymentStatus !== "successful" && !full.cardCheckout
-                      && !cardStepStarted.has(o.orderId) && chargeOrder?.id !== o.orderId && (
-                      <FreeCupRow busy={declining === o.orderId} onDecline={() => handleDeclineFreeCup(o.orderId)} />
+                      && chargeOrder?.id !== o.orderId && (
+                      <FreeCupRow busy={declining === o.orderId}
+                        /* AT-212 follow-up (owner, 3 Nov 2026): no Decline on a weekday — nobody pays. */
+                        onDecline={weekdayFree ? undefined : () => handleDeclineFreeCup(o.orderId)} />
                     )}
 
                     {/* Cancel */}
@@ -1389,7 +1683,6 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders }
           order={chargeOrder}
           onPaid={handleOrderPaid}
           onClose={() => setChargeOrder(null)}
-          onCardStepStart={markCardStep}
         />
       )}
     </main>

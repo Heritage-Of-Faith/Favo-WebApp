@@ -11,6 +11,7 @@ import webpush from "web-push";
 import { initVapid } from "./vapid";
 import {
   buildOrderReadyPayload,
+  buildShiftStartPayload,
   type PushSubscriptionShape,
 } from "./payload";
 
@@ -22,6 +23,44 @@ export const PUSH_REQUEST_TIMEOUT_MS = 2500;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
+ * What actually happened to one payload: delivered, the subscription is gone
+ * (404/410), or it was not delivered (a permanent client error, or every
+ * attempt failed). Throws only if VAPID cannot be initialised.
+ */
+export type PushOutcome = "sent" | "gone" | "failed";
+
+async function deliverOutcome(
+  subscription: PushSubscriptionShape,
+  payload: string
+): Promise<PushOutcome> {
+  initVapid();
+  for (let attempt = 1; attempt <= PUSH_MAX_ATTEMPTS; attempt++) {
+    try {
+      await webpush.sendNotification(subscription, payload, { timeout: PUSH_REQUEST_TIMEOUT_MS });
+      return "sent";
+    } catch (err) {
+      const statusCode = (err as { statusCode?: number }).statusCode;
+      if (statusCode === 404 || statusCode === 410) {
+        // Subscription expired/unsubscribed — terminal, signal the caller to prune.
+        return "gone";
+      }
+      if (statusCode === 400 || statusCode === 403 || statusCode === 413) {
+        // Permanent client error: retrying cannot help, but the subscription
+        // is not known dead, so it is kept. Log the status only.
+        console.error("[push] permanent push error, not retrying", { statusCode });
+        return "failed";
+      }
+      if (attempt === PUSH_MAX_ATTEMPTS) {
+        console.error("[push] giving up after retries", { statusCode, attempts: attempt });
+        return "failed";
+      }
+      await sleep(PUSH_BACKOFF_BASE_MS * 2 ** (attempt - 1));
+    }
+  }
+  return "failed";
+}
+
+/**
  * Deliver one payload. Returns false only when the subscription is gone
  * (404/410). Returns true on success AND when every attempt failed for a
  * transient reason (the subscription is not known to be dead, so it is kept).
@@ -30,31 +69,7 @@ async function deliver(
   subscription: PushSubscriptionShape,
   payload: string
 ): Promise<boolean> {
-  initVapid();
-  for (let attempt = 1; attempt <= PUSH_MAX_ATTEMPTS; attempt++) {
-    try {
-      await webpush.sendNotification(subscription, payload, { timeout: PUSH_REQUEST_TIMEOUT_MS });
-      return true;
-    } catch (err) {
-      const statusCode = (err as { statusCode?: number }).statusCode;
-      if (statusCode === 404 || statusCode === 410) {
-        // Subscription expired/unsubscribed — terminal, signal the caller to prune.
-        return false;
-      }
-      if (statusCode === 400 || statusCode === 403 || statusCode === 413) {
-        // Permanent client error: retrying cannot help, but the subscription
-        // is not known dead, so it is kept. Log the status only.
-        console.error("[push] permanent push error, not retrying", { statusCode });
-        return true;
-      }
-      if (attempt === PUSH_MAX_ATTEMPTS) {
-        console.error("[push] giving up after retries", { statusCode, attempts: attempt });
-        return true;
-      }
-      await sleep(PUSH_BACKOFF_BASE_MS * 2 ** (attempt - 1));
-    }
-  }
-  return true;
+  return (await deliverOutcome(subscription, payload)) !== "gone";
 }
 
 /**
@@ -114,4 +129,15 @@ export async function sendOpeningPush(
     tag: "favo-opening",
   });
   return deliver(subscription, payload);
+}
+
+/**
+ * Push the shift-start notification to a rostered barista (PRD §6.3, COL-23).
+ * Returns the real outcome, so a send that gave up is never recorded as sent.
+ */
+export async function sendShiftStartPush(
+  subscription: PushSubscriptionShape,
+  opensAt: string
+): Promise<PushOutcome> {
+  return deliverOutcome(subscription, buildShiftStartPayload(opensAt));
 }

@@ -1,0 +1,200 @@
+// AT-201 part 2a: the shapes the tender chain works on (PRD v7.0 §6.8, §11.2).
+//
+// The tender functions in ./tender.ts take their collaborators as arguments —
+// a TenderStore (Postgres in production, ./drizzle-store.ts), a YocoWebPosPort
+// (FakeYocoWebPosPort in every test; the live HTTP adapter is a later step), a
+// clock, the configured device id, and a notifier for the Admin pushes. Nothing
+// here is a server action: authentication and wiring are AT-201 part 2b.
+//
+// Money is integer cents throughout. Nothing multiplies or divides by 100.
+
+import type { WebPosPayment, YocoWebPosPort } from "@/server/yoco/webpos-port";
+
+export type PaymentStatus = "pending" | "successful" | "declined" | "unresolved";
+
+export type TenderOrder = {
+  id: string;
+  state: string;
+  /** Integer cents. The amount the machine is asked for. */
+  totalZar: number;
+  clientUuid: string;
+  /** AT-203 / §11.2: settled from a blessing fund (payment_mode='donor_fund') — never tendered. */
+  fundSettled?: boolean;
+  /** AT-207 / §10.3.3: written off by closeDaily() — never tendered again. */
+  writtenOff?: boolean;
+  /** §6.0.4 T3: taken in deferred mode (payment_mode='yoco_deferred'). */
+  deferred?: boolean;
+  /** §10.3 orders.settled_at — when a deferred order was settled; NULL while open. */
+  settledAt?: Date | null;
+};
+
+export type TenderPayment = {
+  id: string;
+  orderId: string;
+  attempt: number;
+  clientReference: string;
+  yocoPaymentId: string | null;
+  webposDeviceId: string;
+  amountZar: number;
+  chargedAmountZar: number | null;
+  // No tip (DEC-17): a stray tip is a T10 variance at reconciliation, never stored.
+  status: PaymentStatus;
+  sentAt: Date | null;
+  lastCheckedAt: Date | null;
+  at: Date;
+};
+
+export type NewTenderPayment = {
+  orderId: string;
+  attempt: number;
+  clientReference: string;
+  webposDeviceId: string;
+  amountZar: number;
+  at: Date;
+};
+
+/** Every column the chain writes EXCEPT status. */
+export type PaymentPatch = Partial<{
+  yocoPaymentId: string;
+  sentAt: Date | null;
+  lastCheckedAt: Date;
+  chargedAmountZar: number;
+}>;
+
+export type TenderAudit = {
+  entityKind: "payment" | "order";
+  entityId: string;
+  action: string;
+  actorId?: string;
+  actorRole?: string;
+  before?: unknown;
+  after?: unknown;
+  reason?: string;
+};
+
+/** What one S4 lookup read, as recorded on its audit row (S4 step 3's memory). */
+export type LookupRead = "successful" | "failed" | "pending" | "not_found" | "fetch_error";
+
+export interface TenderTx {
+  /** SELECT … FOR UPDATE on orders — every tender function takes this lock first. */
+  lockOrder(orderId: string): Promise<TenderOrder | null>;
+  /** Every payment attempt on the order, ORDER BY attempt ASC. */
+  listPayments(orderId: string): Promise<TenderPayment[]>;
+  /** SELECT … FOR UPDATE on one attempt. */
+  lockPayment(orderId: string, attempt: number): Promise<TenderPayment | null>;
+  insertPayment(row: NewTenderPayment): Promise<TenderPayment>;
+  /** Writes anything but status. */
+  updatePayment(id: string, patch: PaymentPatch): Promise<void>;
+  /**
+   * The only write of payments.status in the chain. Called from exactly two
+   * functions — recordTenderResult and resolveTenderByLookup (§10.2.1).
+   */
+  setPaymentStatus(id: string, status: PaymentStatus, patch?: PaymentPatch): Promise<void>;
+  audit(row: TenderAudit): Promise<void>;
+  /** The newest `payment.lookup` audit row for this payment, if any. */
+  lastLookupRead(paymentId: string): Promise<{ read: LookupRead; at: Date } | null>;
+  /**
+   * §10.3 / T3 3a–3b: stamp orders.settled_at (and settlement_ref for path B)
+   * on a deferred order that is neither settled nor written off. Writes the
+   * order only — never payments.status. Optional: the fund top-up store has
+   * no orders to settle.
+   */
+  markOrderSettled?(orderId: string, at: Date, settlementRef: string | null): Promise<void>;
+  /** §6.7 path B: true when another order already carries this settlement_ref. */
+  settlementRefTaken?(settlementRef: string, orderId: string): Promise<boolean>;
+  /**
+   * REQ-034: the reason on the order's newest `write_off` audit row (the
+   * close's sweep), or null. Optional: the fund top-up store has no orders.
+   */
+  writeOffReason?(orderId: string): Promise<string | null>;
+  /**
+   * REQ-034: clear orders.written_off_at on a written-off order. Writes the
+   * order only — never payments.status. True when a row changed.
+   */
+  reverseWriteOff?(orderId: string): Promise<boolean>;
+}
+
+export interface TenderStore {
+  transaction<T>(fn: (tx: TenderTx) => Promise<T>): Promise<T>;
+}
+
+/** The Admin pushes the chain owes (S4a, REQ-011). Called after the commit. */
+export interface TenderNotifier {
+  paymentUnresolved(info: { orderId: string; attempt: number; amountZar: number; cause: string }): Promise<void>;
+  duplicateCharge(info: { orderId: string; yocoPaymentIds: string[]; amountZar: number }): Promise<void>;
+  /**
+   * AT-207: a successful payment attached to an order the close wrote off.
+   * Optional: only the order chain's notifier implements it (a fund top-up is
+   * never written off). Amounts are integer cents.
+   */
+  /**
+   * §6.7 path B: every standalone-machine settlement is pushed to the Admin —
+   * the order, its amount (integer cents), the slip reference and the barista.
+   * Optional: only the order chain's notifier implements it.
+   */
+  standaloneSettled?(info: { orderId: string; amountZar: number; settlementRef: string; staffId: string | null }): Promise<void>;
+  lateSuccessOnWrittenOff?(info: {
+    orderId: string;
+    paymentId: string;
+    attempt: number;
+    chargedAmountZar: number;
+    orderTotalZar: number;
+    /** REQ-034: true when the write-off was `unresolved_at_close` and has been reversed. */
+    reversed?: boolean;
+  }): Promise<void>;
+}
+
+export type TenderActor =
+  | { kind: "staff"; staffId: string; role: string }
+  | { kind: "system" };
+
+export type TenderDeps = {
+  store: TenderStore;
+  port: YocoWebPosPort;
+  now: () => Date;
+  /** app_config.webpos_device_id (§10.4) — read ONCE, by beginTender only. */
+  readDeviceId: () => Promise<string | null>;
+  notify: TenderNotifier;
+};
+
+export type TenderErrorCode =
+  | "VALIDATION"
+  | "STALE_STATE"
+  | "ALREADY_RESOLVED"
+  | "TENDER_IN_PROGRESS"
+  | "TERMINAL_UNREACHABLE"
+  | "GATEWAY_UNAVAILABLE"
+  | "PAYMENT_UNKNOWN"
+  | "PAYMENT_DECLINED"
+  // AT-207: the close wrote this order off; it is not tendered again.
+  | "ORDER_WRITTEN_OFF";
+
+export type TenderFailure = {
+  ok: false;
+  code: TenderErrorCode;
+  message: string;
+  /** REQ-010: true only for GATEWAY_UNAVAILABLE — the one failure where a new attempt is safe to offer. */
+  retryOffered?: boolean;
+};
+
+/**
+ * What recordTenderResult may be told. `successful` and `failed` carry the
+ * payment exactly as the server read it from Yoco through the port — never a
+ * client-supplied claim (that would be a human assertion creating revenue,
+ * which §10.2.1 removed).
+ */
+export type TenderResult =
+  | { kind: "read"; payment: WebPosPayment }
+  /** No determinate answer: the 180 s ceiling, or a send that timed out. */
+  | { kind: "unresolved"; cause: "ceiling" | "send_timeout" }
+  /** The send returned an error with no payment id: nothing was sent. */
+  | { kind: "not_sent"; code: "GATEWAY_UNAVAILABLE" | "TERMINAL_UNREACHABLE" };
+
+/** REQ-003 / S2: FAVO stops waiting 180 s after the send. */
+export const TENDER_CEILING_MS = 180_000;
+/** S4 step 3(b): two failed reads at least 60 s apart. */
+export const SECOND_NEGATIVE_GAP_MS = 60_000;
+/** S4 step 3(c): at least 120 s since the send. */
+export const MIN_SINCE_SEND_FOR_DECLINE_MS = 120_000;
+/** S2: the status fetch is retried at most twice. */
+export const FETCH_RETRIES = 2;

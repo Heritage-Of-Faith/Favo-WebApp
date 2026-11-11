@@ -49,10 +49,11 @@ vi.mock("@/lib/db", () => {
                   Promise.resolve(txState.order ? [txState.order] : []),
               };
             }
-            // Second: payments lookup
-            return Promise.resolve(
-              txState.payment ? [txState.payment] : []
-            );
+            // Second: payments lookup — every attempt, ORDER BY attempt (AT-201)
+            const attempts = txState.payment ? [txState.payment] : [];
+            return Object.assign(Promise.resolve(attempts), {
+              orderBy: () => Promise.resolve(attempts),
+            });
           },
           leftJoin: () => ({ where: () => Promise.resolve([]) }),
           limit: () => Promise.resolve([]),
@@ -75,6 +76,7 @@ vi.mock("@/lib/db", () => {
           self.where = () => {
             const w: Record<string, unknown> = {};
             w.limit = () => Promise.resolve([]);
+            w.orderBy = () => Promise.resolve([]); // loadOrder's payments read (AT-201)
             // Make it awaitable (returns the full order for the first select call).
             Object.assign(w, Promise.resolve(txState.order ? [txState.order] : []));
             w.then = (resolve: (v: unknown[]) => void) =>
@@ -110,11 +112,10 @@ function setOrder(overrides: Record<string, unknown> = {}) {
   };
 }
 
-// The payment gate is only active when YOCO_SECRET_KEY is set (dev simulation
-// bypass: when the key is absent the gate is skipped so tests can exercise
-// the full order flow without a real Yoco integration).
-// vi.stubEnv saves the original value and restores it on vi.unstubAllEnvs(),
-// so this is safe even when run alongside other suites that may set the key.
+// The gate no longer depends on YOCO_SECRET_KEY (owner, Mia, 9 Nov 2026); the
+// key is still stubbed so this suite proves the gate with a key set, and
+// transition-gate-stock.test.ts proves it with the key unset. These orders
+// carry no revenueDay, which the gate reads as "not a Sunday" (fails closed).
 beforeAll(() => { vi.stubEnv("YOCO_SECRET_KEY", "test-key"); });
 afterAll(() => { vi.unstubAllEnvs(); });
 
@@ -164,6 +165,29 @@ describe("transitionOrder — cash-remove guard (AT-122)", () => {
   it("returns PAYMENT_REQUIRED when payment.status is 'failed'", async () => {
     setOrder({ totalZar: 3800 });
     txState.payment = { orderId: "ord-1", status: "failed" };
+    const res = await transitionOrder("ord-1", "in_progress");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("PAYMENT_REQUIRED");
+  });
+
+  it("returns PAYMENT_REQUIRED when the attempt was declined", async () => {
+    setOrder({ totalZar: 3800 });
+    txState.payment = { orderId: "ord-1", status: "declined", sentAt: new Date("2026-10-25T07:00:00Z") };
+    const res = await transitionOrder("ord-1", "in_progress");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("PAYMENT_REQUIRED");
+  });
+
+  it("REQ-008 / S4: a SENT attempt that ended unresolved lets the drink be made", async () => {
+    setOrder({ totalZar: 3800 });
+    txState.payment = { orderId: "ord-1", status: "unresolved", sentAt: new Date("2026-10-25T07:00:00Z") };
+    const res = await transitionOrder("ord-1", "in_progress");
+    if (!res.ok) expect(res.code).not.toBe("PAYMENT_REQUIRED");
+  });
+
+  it("an unresolved attempt that was NEVER sent (closed out) does not open the gate", async () => {
+    setOrder({ totalZar: 3800 });
+    txState.payment = { orderId: "ord-1", status: "unresolved", sentAt: null };
     const res = await transitionOrder("ord-1", "in_progress");
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe("PAYMENT_REQUIRED");

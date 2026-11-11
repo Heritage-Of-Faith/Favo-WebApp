@@ -281,6 +281,118 @@
       "when": 1793040474308,
       "tag": "0039_at191_lot_cost_source",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793195043526,
+      "tag": "0041_at205_expense_note",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1793200000000,
+      "tag": "0042_l28_notification_target",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793205000000,
+      "tag": "0043_at201_tender_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793210000000,
+      "tag": "0044_at201_orders_client_uuid",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1793215000000,
+      "tag": "0045_at209_comps_cancel_abandon",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793219500000,
+      "tag": "0046_at203_blessing_fund",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793219600000,
+      "tag": "0047_at202_order_item_surcharge",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793219700000,
+      "tag": "0048_at207_daily_closes_writeoffs",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793219800000,
+      "tag": "0049_at174_drop_refunds",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793219900000,
+      "tag": "0050_at203_fund_abandon_revenue",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1793220000000,
+      "tag": "0051_payment_mode_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1793220100000,
+      "tag": "0052_at130_price_history_set_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793220200000,
+      "tag": "0053_at127_lid_variance_band",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1793220300000,
+      "tag": "0054_deferred_mode_settlement",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1793220400000,
+      "tag": "0055_at204_orders_event_window",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1793220500000,
+      "tag": "0056_barista_rota",
+      "breakpoints": true
     }
   ]
 }

@@ -73,6 +73,23 @@ describe("decideRedeem", () => {
     expect(other).toMatchObject({ status: "refused", code: "VOUCHER_NOT_IN_MODE" });
   });
 
+  it("AT-202 interim: a line carrying an extra-shot surcharge → VOUCHER_NOT_ON_EXTRA_SHOTS", () => {
+    const d = decideRedeem({
+      session: UNTRACKED, kind: KIND,
+      line: { ...cappuccinoX2, surchargeZar: 1000 }, live: { count: 0, discountZar: 0 },
+    });
+    expect(d).toEqual({
+      status: "refused", code: "VOUCHER_NOT_ON_EXTRA_SHOTS",
+      message: "Vouchers cover up to two shots; take the extra shots off or pay for this drink.",
+    });
+    // planLineVouchers (createOrder) shares the rule.
+    expect(planLineVouchers({ session: UNTRACKED, kind: KIND, line: { ...cappuccinoX2, surchargeZar: 1000 }, count: 1 }))
+      .toMatchObject({ status: "refused", code: "VOUCHER_NOT_ON_EXTRA_SHOTS" });
+    // surcharge 0 (one or two shots) is unaffected.
+    expect(decideRedeem({ session: UNTRACKED, kind: KIND, line: { ...cappuccinoX2, surchargeZar: 0 }, live: { count: 0, discountZar: 0 } }))
+      .toEqual({ status: "apply", discountZar: 3800, lineDiscountZar: 3800 });
+  });
+
   it("no open session → NO_SESSION", () => {
     const d = decideRedeem({ session: null, kind: KIND, line: cappuccinoX2, live: { count: 0, discountZar: 0 } });
     expect(d).toMatchObject({ status: "refused", code: "NO_SESSION" });
