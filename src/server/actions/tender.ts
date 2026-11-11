@@ -27,6 +27,8 @@ export type TenderActionFailure = {
   message: string;
   retryOffered?: boolean;
   openAttempt?: OpenAttempt;
+  /** TERMINAL_UNREACHABLE from a linked machine: the till offers deferred mode in one tap (§6.7). */
+  deferredOffered?: true;
 };
 export type TenderActionResult<T> = { ok: true; data: T } | TenderActionFailure;
 

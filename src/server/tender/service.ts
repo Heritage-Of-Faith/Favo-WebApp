@@ -32,10 +32,10 @@ export const NO_SESSION_COPY = "No session is open today — set the opening tim
 
 /**
  * TERMINAL_UNREACHABLE when NO Web POS device is linked to FAVO at all (no
- * app_config.webpos_device_id, or the port is the unlinked one). The PRD's own
- * copy offers "switch to deferred", and deferred mode is not built, so it would
- * point the barista at a switch that does not exist. When a device IS linked,
- * the PRD's copy stands.
+ * app_config.webpos_device_id, or the port is the unlinked one): no deferred
+ * offer, because with no machine linked the card sale is taken on the Yoco app
+ * (DEC-21). When a device IS linked, the PRD's copy stands and deferred mode is
+ * offered one tap away (sendTender's deferredOffered).
  */
 export const NO_TERMINAL_LINKED_COPY =
   "No card terminal is linked to FAVO yet. Take this payment on the Yoco app, or cancel the order.";
@@ -93,11 +93,18 @@ async function begin(actor: TenderActor, orderId: string): Promise<BeginTenderOk
   return open ? { ...r, openAttempt: { attempt: open.attempt, status: open.status, sent: open.sentAt !== null } } : r;
 }
 
-export async function sendTender(actor: TenderActor, orderId: string, attempt: number): Promise<SendToTerminalOk | TenderFailure> {
+export async function sendTender(
+  actor: TenderActor,
+  orderId: string,
+  attempt: number
+): Promise<SendToTerminalOk | (TenderFailure & { deferredOffered?: true })> {
   const deps = getTenderDeps();
   const r = await sendToTerminal(deps, actor, orderId, attempt);
-  if (!r.ok && r.code === "TERMINAL_UNREACHABLE" && deps.port === unlinkedWebPosPort) {
-    return { ...r, message: NO_TERMINAL_LINKED_COPY };
+  if (!r.ok && r.code === "TERMINAL_UNREACHABLE") {
+    if (deps.port === unlinkedWebPosPort) return { ...r, message: NO_TERMINAL_LINKED_COPY };
+    // §6.0.2 / §6.8.4 / §6.7: a LINKED machine that does not answer offers
+    // deferred mode one tap away (setDeferredMode). Nothing is sent or retried.
+    return { ...r, deferredOffered: true };
   }
   return r;
 }

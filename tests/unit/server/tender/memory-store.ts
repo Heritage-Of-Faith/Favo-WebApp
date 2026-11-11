@@ -23,6 +23,8 @@ export type MemoryState = {
   statusWrites: { id: string; status: PaymentStatus }[];
   /** orders.settlement_ref by order id (deferred settlement, §6.7 path B). */
   settlementRefs: Record<string, string | null>;
+  /** REQ-034: the close's write-off reason by order id (its `write_off` audit row). */
+  writeOffReasons: Record<string, string>;
 };
 
 export class MemoryTenderStore implements TenderStore {
@@ -30,7 +32,7 @@ export class MemoryTenderStore implements TenderStore {
   private seq = 0;
 
   constructor(orders: TenderOrder[]) {
-    this.state = { orders: orders.map((o) => ({ ...o })), payments: [], audit: [], statusWrites: [], settlementRefs: {} };
+    this.state = { orders: orders.map((o) => ({ ...o })), payments: [], audit: [], statusWrites: [], settlementRefs: {}, writeOffReasons: {} };
   }
 
   order(id: string): TenderOrder | undefined {
@@ -146,6 +148,13 @@ export class MemoryTenderStore implements TenderStore {
         }
         o.settledAt = at;
         this.state.settlementRefs[orderId] = settlementRef;
+      },
+      writeOffReason: async (orderId) => this.state.writeOffReasons[orderId] ?? null,
+      reverseWriteOff: async (orderId) => {
+        const o = this.order(orderId);
+        if (!o || o.writtenOff !== true) return false;
+        o.writtenOff = false;
+        return true;
       },
       lastLookupRead: async (paymentId) => {
         const rows = this.state.audit.filter(

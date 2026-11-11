@@ -15,13 +15,20 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auditLog, staff } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
-import { applyDeferredMode, type DeferredActor } from "@/server/deferred/mode";
+import {
+  applyDeferredMode,
+  enterDeferredAfterUnreachable as enterDeferred,
+  type DeferredActor,
+} from "@/server/deferred/mode";
 import {
   createDeferredAdminNotifier,
   createDrizzleDeferredStore,
   readOpenSessionDeferred,
+  readOpenSessionForDeviceCheck,
   type OpenSessionDeferred,
 } from "@/server/deferred/drizzle-store";
+import { checkDeviceHealth, processStreak } from "@/server/deferred/health-check";
+import { readWebPosDeviceId, selectWebPosPort, unlinkedWebPosPort } from "@/server/tender/runtime";
 import { settleDeferredOrder as settle } from "@/server/deferred/settle";
 import { readOpenDeferredOrders, readUnpaidOrders, type UnpaidOrderRow } from "@/server/deferred/unpaid";
 import { revenueDay } from "@/lib/format";
@@ -76,6 +83,51 @@ export async function setDeferredMode(
   );
   if (!r.ok) return r;
   return { ok: true, data: { deferred: r.deferred, changed: r.changed } };
+}
+
+function deferredDeps() {
+  return { store: createDrizzleDeferredStore(db), now: () => new Date(), notifyEntered: createDeferredAdminNotifier(db) };
+}
+
+/**
+ * §6.7 "TERMINAL_UNREACHABLE offers deferred mode one tap away": the one tap
+ * from the tender screen. setDeferredMode on the open session with a fixed
+ * reason (no typing), deferred_entered_by='manual', audited, S2a's push.
+ * Barista or admin. Never touches orders or payments.
+ */
+export async function enterDeferredAfterUnreachable(): Promise<ActionResult<{ deferred: boolean; changed: boolean }>> {
+  const auth = await authorize(...POS_ROLES);
+  if (!auth.ok) return auth;
+  const open = await readOpenSessionDeferred(db);
+  const r = await enterDeferred(
+    deferredDeps(),
+    { kind: "staff", staffId: auth.session.id, role: auth.session.role },
+    open?.sessionId ?? null
+  );
+  if (!r.ok) return r;
+  return { ok: true, data: { deferred: r.deferred, changed: r.changed } };
+}
+
+/**
+ * §6.7's 60 s device check, called by the open till (never by a scheduler).
+ * The device is read on the server through the Web POS port; a barista cannot
+ * supply a result. Deferred mode changes only as the system actor
+ * ('health_check'), so REQ-006's barista refusal still holds. Barista or admin.
+ */
+export async function runDeviceHealthCheck(): Promise<ActionResult<{ action: "entered" | "exited" | "none" }>> {
+  const auth = await authorize(...POS_ROLES);
+  if (!auth.ok) return auth;
+  const port = selectWebPosPort();
+  const out = await checkDeviceHealth({
+    now: () => new Date(),
+    live: port !== unlinkedWebPosPort,
+    readDeviceId: readWebPosDeviceId,
+    port,
+    readOpenSession: () => readOpenSessionForDeviceCheck(db),
+    streak: processStreak,
+    setDeferred: (sessionId, on, reason) => applyDeferredMode(deferredDeps(), { kind: "system" }, sessionId, on, reason),
+  });
+  return { ok: true, data: { action: out.ran ? out.action : "none" } };
 }
 
 export type SettleResult =

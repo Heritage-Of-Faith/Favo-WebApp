@@ -6,7 +6,7 @@
 //   setPaymentStatus        → the one UPDATE of payments.status in the chain (§10.2.1)
 //   audit                   → writeAudit in the SAME transaction as the change it records
 
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import type { DB } from "@/lib/db";
 import { writeAudit } from "@/server/audit";
 import { auditLog, donorFundEntries, donorFunds, orders, payments } from "@db/schema";
@@ -84,6 +84,25 @@ function makeTx(tx: DB): TenderTx {
         .update(orders)
         .set({ settledAt: at, settlementRef })
         .where(and(eq(orders.id, orderId), isNull(orders.settledAt), isNull(orders.writtenOffAt)));
+    },
+    async writeOffReason(orderId) {
+      // The close's sweep writes one `write_off` audit row per order (src/server/close/write-offs.ts).
+      const [r] = await tx
+        .select({ reason: auditLog.reason })
+        .from(auditLog)
+        .where(and(eq(auditLog.entityKind, "order"), eq(auditLog.entityId, orderId), eq(auditLog.action, "write_off")))
+        .orderBy(desc(auditLog.at))
+        .limit(1);
+      return r?.reason ?? null;
+    },
+    async reverseWriteOff(orderId) {
+      // REQ-034. The order row is already locked FOR UPDATE by lockOrder.
+      const rows = await tx
+        .update(orders)
+        .set({ writtenOffAt: null })
+        .where(and(eq(orders.id, orderId), isNotNull(orders.writtenOffAt)))
+        .returning({ id: orders.id });
+      return rows.length > 0;
     },
     async listPayments(orderId) {
       const rows = await tx.select().from(payments).where(eq(payments.orderId, orderId)).orderBy(payments.attempt);

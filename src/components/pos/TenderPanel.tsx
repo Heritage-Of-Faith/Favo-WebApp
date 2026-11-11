@@ -20,7 +20,12 @@
  *   TENDER_NOT_BEGUN    → nothing was written or sent; a retry.
  *   a send that never answered / poll says "not sent" → "Send again", which
  *                         resumes the SAME attempt via beginTender (never a second send).
- *   TERMINAL_UNREACHABLE and everything else → the server's message.
+ *   TERMINAL_UNREACHABLE and everything else → the server's message. When the
+ *                         server marks it deferredOffered (a LINKED machine did
+ *                         not answer), "Switch to deferred" — setDeferredMode one
+ *                         tap away (§6.7), no typed reason. Never a retry. The
+ *                         order in hand is not converted: the barista is told
+ *                         to cancel it and ring it again (taken unpaid then).
  *
  * No Yoco key, SDK or card form is in the browser (REQ-071): every call is a
  * server action, and the browser never submits a payment result (§10.2.1).
@@ -29,7 +34,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { beginTender, pollTenderResult, sendToTerminal } from "@/server/actions/tender";
 import type { TenderActionFailure } from "@/server/actions/tender";
+import { enterDeferredAfterUnreachable } from "@/server/actions/deferred";
 import { formatZar } from "@/lib/format";
+import { SESSION_CHANGED_EVENT } from "@/lib/pos-vouchers";
 
 export const TENDER_COPY = {
   sending: (amountZar: number) => `Sending ${formatZar(amountZar)} to the card machine…`,
@@ -41,6 +48,11 @@ export const TENDER_COPY = {
   notBegun: "Couldn't start the card payment — nothing was sent. Try again.",
   /** The send may never have reached the server. Resuming re-sends only if it was never claimed. */
   notSent: "The card machine may not have received this payment.",
+  /**
+   * After "Switch to deferred": the order in hand is NOT converted to deferred
+   * (that would rewrite its payment mode). Not PRD copy: the PRD gives none.
+   */
+  deferredOn: "Deferred mode is on. This order was not changed — cancel it and ring it again, and it will be taken unpaid.",
 } as const;
 
 /** S2: every 2 s for the first 30 s after the send, then every 5 s. */
@@ -54,7 +66,7 @@ type Phase =
   | { kind: "paid" }
   | { kind: "declined" }
   | { kind: "unknown" }
-  | { kind: "failed"; code: string; message: string; retry: boolean; retryLabel?: string };
+  | { kind: "failed"; code: string; message: string; retry: boolean; retryLabel?: string; deferredOffered?: boolean };
 
 export type Props = {
   orderId: string;
@@ -95,8 +107,29 @@ export default function TenderPanel({ orderId, amountZar, attempt, initialFailur
     else if (f.code === "PAYMENT_UNKNOWN") {
       setPhase({ kind: "unknown" });
       onUnresolved?.();
-    } else setPhase({ kind: "failed", code: f.code, message: f.message, retry: f.retryOffered === true });
+    } else {
+      setPhase({
+        kind: "failed", code: f.code, message: f.message, retry: f.retryOffered === true,
+        deferredOffered: f.code === "TERMINAL_UNREACHABLE" && f.deferredOffered === true,
+      });
+    }
   }, [onUnresolved]);
+
+  // §6.7: the one tap into deferred mode after TERMINAL_UNREACHABLE.
+  const [deferredNote, setDeferredNote] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const switchToDeferred = useCallback(async () => {
+    setSwitching(true);
+    const r = await enterDeferredAfterUnreachable().catch(() => null);
+    if (!alive.current) return;
+    setSwitching(false);
+    if (!r) setDeferredNote("Couldn't reach FAVO — try again.");
+    else if (!r.ok) setDeferredNote(r.message);
+    else {
+      setDeferredNote(TENDER_COPY.deferredOn);
+      window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
+    }
+  }, []);
 
   // The send may never have reached the server. "Send again" goes through
   // beginTender, which names the open attempt: if the server never claimed it
@@ -199,6 +232,15 @@ export default function TenderPanel({ orderId, amountZar, attempt, initialFailur
               className="w-full rounded-[var(--radius-btn)] border border-cool-steel/30 px-4 py-3 favo-label text-coffee-bean hover:bg-coffee-bean/8">
               {phase.retryLabel ?? "Try again"}
             </button>
+          )}
+          {phase.deferredOffered && deferredNote !== TENDER_COPY.deferredOn && (
+            <button type="button" onClick={() => void switchToDeferred()} disabled={switching}
+              className="w-full rounded-[var(--radius-btn)] border border-cool-steel/30 px-4 py-3 favo-label text-coffee-bean hover:bg-coffee-bean/8 disabled:opacity-50">
+              Switch to deferred
+            </button>
+          )}
+          {phase.deferredOffered && deferredNote && (
+            <p className="favo-small text-center text-coffee-bean">{deferredNote}</p>
           )}
         </>
       )}
