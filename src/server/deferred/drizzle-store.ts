@@ -3,6 +3,7 @@
 //   createDrizzleDeferredStore   lockSession = SELECT … FOR UPDATE; audit in the same transaction
 //   readOpenSessionDeferred      the open session's deferred state (createOrder, the POS banner)
 //   createDeferredAdminNotifier  S2a's immediate push, through alertAdmins
+//   createCardMachineAlertStore  REQ-068's incident record (audit_log) and on-duty baristas
 //   remindDeferredSessions       REQ-005's 30-minute repeat — NOT REGISTERED with
 //                                any scheduler: §9.6.2 lists seven jobs and this
 //                                is not one of them (an owner question).
@@ -11,7 +12,12 @@ import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { DB } from "@/lib/db";
 import { writeAudit } from "@/server/audit";
 import { alertAdmins } from "@/server/push/admin-alert";
-import { auditLog, eventWindows, openingSessions, staff } from "@db/schema";
+import { auditLog, baristaShifts, eventWindows, openingSessions, staff } from "@db/schema";
+import {
+  CARD_MACHINE_ALERT_ACTION,
+  CARD_MACHINE_RECOVERED_ACTION,
+  type CardMachineAlertStore,
+} from "./card-machine-alert";
 import {
   DEFERRED_ENTER_ACTION,
   DEFERRED_EXIT_ACTION,
@@ -134,6 +140,110 @@ export async function readOpenSessionForDeviceCheck(client: Pick<DB, "select">):
     deferred: s.deferredSince != null,
     enteredBy: s.deferredEnteredBy ?? null,
     deferredChanges: Number(changes?.n ?? 0),
+  };
+}
+
+/**
+ * The session's latest card_machine.alert / card_machine.recovered audit row.
+ * Ordered by the per-session `seq` written under the session lock, so a
+ * recovered row can never sort before the alert it closes, even when both
+ * carry the same `at`; then `at`, then id, for rows without a seq.
+ */
+export async function latestCardMachineRow(client: Pick<DB, "select">, sessionId: string) {
+  const [row] = await client
+    .select({ action: auditLog.action, after: auditLog.after })
+    .from(auditLog)
+    .where(and(
+      eq(auditLog.entityKind, "opening_session"),
+      eq(auditLog.entityId, sessionId),
+      inArray(auditLog.action, [CARD_MACHINE_ALERT_ACTION, CARD_MACHINE_RECOVERED_ACTION]),
+    ))
+    .orderBy(sql`(${auditLog.after}->>'seq')::int DESC NULLS LAST`, desc(auditLog.at), desc(auditLog.id))
+    .limit(1);
+  if (!row) return null;
+  const after = (row.after ?? {}) as { incidentId?: unknown; seq?: unknown; baristaTargetedStaffIds?: unknown };
+  return {
+    action: row.action,
+    incidentId: String(after.incidentId ?? ""),
+    seq: typeof after.seq === "number" ? after.seq : 0,
+    baristaTargetedStaffIds: Array.isArray(after.baristaTargetedStaffIds) ? after.baristaTargetedStaffIds.map(String) : [],
+  };
+}
+
+/**
+ * The Postgres side of the card-machine alert (./card-machine-alert.ts,
+ * REQ-068). The incident's alerted/recovered state is the session's latest
+ * card_machine.alert / card_machine.recovered audit row, read and written
+ * under a row lock on the opening_sessions row. Writes only audit_log.
+ */
+export function createCardMachineAlertStore(client: DB): CardMachineAlertStore {
+  const lockSession = (tx: DB, sessionId: string) =>
+    tx.select({ id: openingSessions.id }).from(openingSessions).where(eq(openingSessions.id, sessionId)).for("update");
+  const STAFF_FOR_PUSH = { staffId: staff.id, role: staff.role, active: staff.active, pushSubscription: staff.pushSubscription };
+
+  return {
+    async readOnDutyBaristas(sessionId) {
+      return client
+        .select(STAFF_FOR_PUSH)
+        .from(baristaShifts)
+        .innerJoin(staff, eq(baristaShifts.staffId, staff.id))
+        .where(and(eq(baristaShifts.sessionId, sessionId), eq(staff.active, true)));
+    },
+    async readStaff(staffIds) {
+      if (staffIds.length === 0) return [];
+      return client.select(STAFF_FOR_PUSH).from(staff).where(inArray(staff.id, staffIds));
+    },
+    async claimAlert(row) {
+      return client.transaction(async (t) => {
+        const tx = t as unknown as DB;
+        await lockSession(tx, row.sessionId);
+        const last = await latestCardMachineRow(tx, row.sessionId);
+        if (last?.action === CARD_MACHINE_ALERT_ACTION) return { claimed: false, incidentId: last.incidentId };
+        await writeAudit({
+          entityKind: "opening_session",
+          entityId: row.sessionId,
+          action: CARD_MACHINE_ALERT_ACTION,
+          actorRole: "system",
+          after: {
+            seq: (last?.seq ?? 0) + 1,
+            incidentId: row.incidentId,
+            firstFailAt: row.firstFailAt.toISOString(),
+            recipientKinds: row.recipientKinds,
+            rosteredStaffIds: row.rosteredStaffIds,
+            runnerStaffId: row.runnerStaffId,
+            baristaTargetedStaffIds: row.baristaTargetedStaffIds,
+          },
+        }, tx);
+        return { claimed: true, incidentId: row.incidentId };
+      });
+    },
+    async closeIncident(sessionId, at, alertDelivery) {
+      // Every passing check lands here: read without a lock first, and lock
+      // only when there is an open incident to close.
+      if ((await latestCardMachineRow(client, sessionId))?.action !== CARD_MACHINE_ALERT_ACTION) return null;
+      return client.transaction(async (t) => {
+        const tx = t as unknown as DB;
+        await lockSession(tx, sessionId);
+        const last = await latestCardMachineRow(tx, sessionId);
+        if (last?.action !== CARD_MACHINE_ALERT_ACTION) return null;
+        await writeAudit({
+          entityKind: "opening_session",
+          entityId: sessionId,
+          action: CARD_MACHINE_RECOVERED_ACTION,
+          actorRole: "system",
+          after: {
+            seq: last.seq + 1,
+            incidentId: last.incidentId,
+            recoveredAt: at.toISOString(),
+            // The alert's real per-barista outcome; null when this process did
+            // not send it (a restart) or its sends had not yet settled.
+            alertDelivery,
+            resolutionTargetedStaffIds: last.baristaTargetedStaffIds,
+          },
+        }, tx);
+        return { incidentId: last.incidentId, baristaTargetedStaffIds: last.baristaTargetedStaffIds };
+      });
+    },
   };
 }
 

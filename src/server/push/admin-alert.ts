@@ -16,14 +16,23 @@ import { auditLog, staff } from "@db/schema";
 import { initVapid } from "@/server/push/vapid";
 import { isValidPushSubscription } from "@/server/push/payload";
 
-export async function alertAdmins(title: string, body: string, data: Record<string, unknown> = {}): Promise<void> {
+/**
+ * `tag` (optional): a notification tag, so a device reached by two pushes about
+ * one thing shows one notification (the card-machine alert, REQ-068).
+ */
+export async function alertAdmins(
+  title: string,
+  body: string,
+  data: Record<string, unknown> = {},
+  tag?: string
+): Promise<void> {
   try {
     const admins = await db
       .select({ pushSubscription: staff.pushSubscription })
       .from(staff)
       .where(and(eq(staff.role, "admin"), isNotNull(staff.pushSubscription)));
     initVapid();
-    const payload = JSON.stringify({ title, body, data });
+    const payload = JSON.stringify(tag ? { title, body, data, tag } : { title, body, data });
     for (const a of admins) {
       if (!isValidPushSubscription(a.pushSubscription)) continue;
       await webpush.sendNotification(a.pushSubscription, payload).catch(() => {});
