@@ -28,7 +28,7 @@ import {
   willDepleteLot,
   DeductionError,
 } from "@/server/inventory/lot-picker";
-import { isCupOrLid, dayConsumesCupAndLid } from "@/server/orders/cup-lid";
+import { isCupOrLid, orderConsumesCupAndLid } from "@/server/orders/cup-lid";
 import { costShotFactor, type Consumption, type LotDraw } from "@/server/orders/order-cogs";
 import { shotFactor } from "@/server/orders/shots";
 
@@ -108,13 +108,14 @@ export async function deductForOrder(
   const consumesCupLid = async (): Promise<boolean> => {
     if (cupLid === undefined) {
       const [order] = await tx
-        .select({ revenueDay: orders.revenueDay, placedAt: orders.placedAt })
+        .select({ revenueDay: orders.revenueDay, placedAt: orders.placedAt, eventWindowId: orders.eventWindowId })
         .from(orders)
         .where(eq(orders.id, orderId));
       // Unreachable: transitionOrder holds this order's row lock.
       if (!order) throw new Error(`deductForOrder: order ${orderId} not found`);
-      // L24 / L26: the mode (or event switch) in force when the order was rung.
-      cupLid = await dayConsumesCupAndLid(order.revenueDay, tx, order.placedAt);
+      // L24 / L26: the mode (or event switch) the order was priced under —
+      // its stamped event window first (DEC-28 d), else its placed_at.
+      cupLid = await orderConsumesCupAndLid(order, tx);
     }
     return cupLid;
   };

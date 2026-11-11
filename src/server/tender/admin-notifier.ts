@@ -88,6 +88,23 @@ export function lateSuccessOnWrittenOffAlert(
   };
 }
 
+/**
+ * §6.7 path B: a deferred order settled on the standalone machine. Every one
+ * is pushed, naming the order, the amount, the slip reference and the barista.
+ * The PRD gives no wording; this names those four facts only.
+ */
+export function standaloneSettledAlert(
+  orderRefText: string,
+  info: { orderId: string; amountZar: number; settlementRef: string },
+  baristaName: string | null
+): AdminAlert {
+  return {
+    title: `Settled on the standalone machine — order ${orderRefText}`,
+    body: `${formatZar(info.amountZar)} · slip ${info.settlementRef} · ${baristaName ?? "unknown barista"}`,
+    data: { ...info, url: "/admin/unpaid-orders" },
+  };
+}
+
 function orderRef(orderId: string): string {
   return orderId.slice(0, 8);
 }
@@ -158,6 +175,15 @@ export function createAdminTenderNotifier(now: () => Date = () => new Date()): T
     },
     async duplicateCharge(info) {
       const a = duplicateChargeAlert(orderRef(info.orderId), info);
+      await alertAdmins(a.title, a.body, a.data);
+    },
+    async standaloneSettled(info) {
+      let name: string | null = null;
+      if (info.staffId) {
+        const [s] = await db.select({ name: staff.name }).from(staff).where(eq(staff.id, info.staffId));
+        name = s?.name ?? null;
+      }
+      const a = standaloneSettledAlert(orderRef(info.orderId), info, name);
       await alertAdmins(a.title, a.body, a.data);
     },
     async lateSuccessOnWrittenOff(info) {

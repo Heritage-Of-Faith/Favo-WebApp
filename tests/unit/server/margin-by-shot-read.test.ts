@@ -57,6 +57,10 @@ describe("readMarginByShot", () => {
     );
     expect(text).toContain("CASE WHEN o.event_window_id IS NULL THEN (");
     expect(text).toContain("ELSE 'event' END AS day_mode");
+    // The same rest-of-day rule as the weekly summary: on a day with a
+    // non-event session, event sessions do not decide an unstamped order.
+    expect(text).toContain("s2.mode <> 'event'");
+    expect(text).not.toContain("JOIN event_windows");
   });
 
   it("FIXTURE-A double-shot orders: 5 × 1352 + 2 × 2704 = R121.68 on R180.00 (PRD L1883–1886)", async () => {

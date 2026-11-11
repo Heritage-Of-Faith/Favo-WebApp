@@ -59,6 +59,8 @@ export type FundOrder = {
   customerId: string | null;
   /** AT-207 / §10.3.3: written off by closeDaily() — never drawn on. */
   writtenOff?: boolean;
+  /** §10.3 orders.settled_at: a deferred order already settled (e.g. a standalone slip) — never drawn on. */
+  settledAt?: Date | null;
 };
 
 export type NewDonorFund = {

@@ -175,9 +175,19 @@ describe("DEC-28 (d): event-stamped orders read as Event", () => {
     expect(s.unassigned.orderCount).toBe(0);
   });
 
-  it("a mixed day with NO stamped event order is still never guessed (orders from before the column)", () => {
+  // CHANGED (review of DEC-28 d): the rest-of-day rule applies to any day that
+  // holds a non-event session, stamped event orders or not.
+  it("a Sunday + event day with no stamped event order: its unstamped orders are Sunday's", () => {
     const s = splitByMode([day("2026-08-16", { revenueZar: 35000, cogs: cogs(1588, 9) })], new Map([["2026-08-16", ["sunday", "event"]]]));
-    expect(s.unassigned).toMatchObject({ revenueZar: 35000, orderCount: 9 });
+    expect(s.sunday).toMatchObject({ revenueZar: 35000, orderCount: 9 });
+    expect(s.unassigned.orderCount).toBe(0);
+  });
+
+  it("a day with only event sessions still reads Event for its unstamped orders; weekday + Sunday sessions stay unassigned", () => {
+    const sat = splitByMode([day("2026-08-15", { revenueZar: 3800, cogs: cogs(529, 1) })], new Map([["2026-08-15", ["event"]]]));
+    expect(sat.event).toMatchObject({ revenueZar: 3800, orderCount: 1 });
+    const odd = splitByMode([day("2026-08-12", { cogs: cogs(451, 1) })], new Map([["2026-08-12", ["weekday", "sunday", "event"]]]));
+    expect(odd.unassigned.orderCount).toBe(1);
   });
 
   it("the sections still partition the week: Σ sections = Σ days", () => {

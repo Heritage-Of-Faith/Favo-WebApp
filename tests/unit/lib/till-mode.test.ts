@@ -5,6 +5,7 @@ import {
   resolveTillMode, isEventFree, menuScopeAllows, offMenuScopeMessage, tillConsumesCupAndLid,
   eventSurchargeInForce, tillEventView, type TillSessionRow,
 } from "@/lib/till-mode";
+import { resolveSessionMode } from "@/lib/session-mode";
 
 // Wednesday 7 Oct 2026. Discipleship 101: 18:30–20:30 SAST (§6.6 worked example).
 const D101_WINDOW = {
@@ -84,6 +85,17 @@ describe("DEC-28 (a): a bound event applies from the session's opening", () => {
   it("REQ-042 still holds: at ends_at (20:30) the event stops applying", () => {
     expect(resolveTillMode(SUNDAY, sun("20:29")).event).not.toBeNull();
     expect(resolveTillMode(SUNDAY, sun("20:30")).event).toBeNull();
+  });
+
+  it("the opening step and the till agree: the window resolveSessionMode binds at 17:45 is in force at 17:46", () => {
+    const view = { ...UNTRACKED, eventProfileId: null, voucherKinds: [] as string[] };
+    const r = resolveSessionMode({ sessionDate: "2026-10-11", opensAt: "17:45", closesAt: null, windows: [view], profiles: [] });
+    expect(r).toMatchObject({ kind: "event", source: "window" });
+    const bound: TillSessionRow[] = [{ sessionDate: "2026-10-11", mode: "event", opensAt: "17:45", window: { ...UNTRACKED, voucherKinds: [] } }];
+    expect(resolveTillMode(bound, sun("17:46")).event?.windowId).toBe("evw_untracked");
+    // A 07:30 opening binds nothing, so the morning till never sees the event.
+    expect(resolveSessionMode({ sessionDate: "2026-10-11", opensAt: "07:30", closesAt: null, windows: [view], profiles: [] }))
+      .toEqual({ kind: "date", mode: "sunday" });
   });
 
   it("a session opened after the window start applies from the window start, as before", () => {

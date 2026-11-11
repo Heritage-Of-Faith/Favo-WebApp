@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import {
   defaultSessionMode, SATURDAY_CLOSED, resolveSessionMode, effectiveSessionMode,
   eventSwitchesInForce, validateWindowSpan, describeEvent, forcedCloseAt, sastInstant,
-  profileOccurrence, forcedClose, eventSwitchesInTill,
+  profileOccurrence, forcedClose, eventSwitchesInTill, EVENT_EARLY_BIND_MINUTES,
   type EventWindowView, type EventProfileView,
 } from "@/lib/session-mode";
 
@@ -148,6 +148,35 @@ describe("resolveSessionMode — §6.6 precedence and L18", () => {
     expect(p).toMatchObject({ kind: "event", source: "profile", startsAt: "2026-10-07T16:30:00.000Z", endsAt: "2026-10-07T18:30:00.000Z" });
     // The same Wednesday's morning stays plain weekday.
     expect(resolveSessionMode({ sessionDate: "2026-10-07", opensAt: "08:00", closesAt: null, windows: [w], profiles: [d101] }))
+      .toEqual({ kind: "date", mode: "weekday" });
+  });
+
+  // DEC-28 (a) (owner, Mia, 11 Nov 2026): an open-ended session binds to a
+  // window starting up to EVENT_EARLY_BIND_MINUTES (30) after it opens.
+  it("DEC-28 (a): EVENT_EARLY_BIND_MINUTES is 30", () => {
+    expect(EVENT_EARLY_BIND_MINUTES).toBe(30);
+  });
+
+  it("DEC-28 (a): opened 17:45 (no close time) for an 18:00 window → the event; 17:30 exactly too; 17:29 not", () => {
+    const w = windowOf(); // 18:00–20:30 SAST, Sunday 11 Oct 2026
+    for (const opensAt of ["17:45", "17:30"]) {
+      const r = resolveSessionMode({ sessionDate: "2026-10-11", opensAt, closesAt: null, windows: [w], profiles: [] });
+      expect(r).toMatchObject({ kind: "event", source: "window", overridesSunday: true });
+    }
+    expect(resolveSessionMode({ sessionDate: "2026-10-11", opensAt: "17:29", closesAt: null, windows: [w], profiles: [] }))
+      .toEqual({ kind: "date", mode: "sunday" });
+  });
+
+  it("DEC-28 (a): a 07:30 Sunday opening (no close time) never binds the 18:00 event", () => {
+    expect(resolveSessionMode({ sessionDate: "2026-10-11", opensAt: "07:30", closesAt: null, windows: [windowOf()], profiles: [] }))
+      .toEqual({ kind: "date", mode: "sunday" });
+  });
+
+  it("DEC-28 (a): a recurring profile is found 30 minutes early too (Discipleship 101 at 18:30, opened 18:00)", () => {
+    const d101 = profileOf({ name: "Discipleship 101", recurrence: "FREQ=WEEKLY;BYDAY=WE", paymentPosture: "free" });
+    expect(resolveSessionMode({ sessionDate: "2026-10-07", opensAt: "18:00", closesAt: null, windows: [], profiles: [d101] }))
+      .toMatchObject({ kind: "event", source: "profile" });
+    expect(resolveSessionMode({ sessionDate: "2026-10-07", opensAt: "17:59", closesAt: null, windows: [], profiles: [d101] }))
       .toEqual({ kind: "date", mode: "weekday" });
   });
 

@@ -42,6 +42,7 @@ import {
   notificationTarget,
   donorFundEntryKind,
   fundingMethod,
+  deferredEnteredBy,
 } from "./enums";
 
 const TENANT = "hofmi";
@@ -292,16 +293,30 @@ export const orders = pgTable("orders", {
   // the close sweep, on an order with no successful payment and no fund spend.
   // The reason lives on the sweep's audit_log row (action `write_off`).
   writtenOffAt: timestamp("written_off_at", { withTimezone: true }),
+  // PRD §10.3 (orders: settled_at · settlement_ref), §6.0.4 T3 steps 3a/3b,
+  // §6.7: when a deferred order was settled, and the standalone machine's
+  // reference (path B). payment_mode stays 'yoco_deferred' forever (§10.3.3).
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+  settlementRef: text("settlement_ref"),
   // DEC-28 (d) / PRD §10.3 ("Event attribution (§6.6)"), §11 createOrder ("Tags
   // event_window_id when an event is in force"), R6. NULL = rung under no
   // event. Stamped once at ring-up (createOrder, the offline replay); the
   // reports' per-mode split buckets these orders as Event.
   eventWindowId: text("event_window_id").references(() => eventWindows.id),
-}, () => [
+}, (t) => [
+  // §6.7 path B: one standalone-machine slip settles one order, never two.
+  uniqueIndex("orders_settlement_ref_unique")
+    .on(t.settlementRef)
+    .where(sql`settlement_ref IS NOT NULL`),
   // PRD §10.3: a row can never claim it will notify someone and carry no customer.
   check(
     "orders_notification_target_customer",
     sql`(notification_target = 'customer') = (customer_id IS NOT NULL)`
+  ),
+  // PRD §10.3: "`settled_at` and `written_off_at` are mutually exclusive".
+  check(
+    "orders_settled_xor_written_off",
+    sql`settled_at IS NULL OR written_off_at IS NULL`
   ),
 ]);
 
@@ -631,6 +646,14 @@ export const openingSessions = pgTable(
     voucherKindsActive: text("voucher_kinds_active").array().default(sql`'{}'::text[]`).notNull(),
     // Set by closeSession; the one-open-session index is defined over it.
     closedAt: timestamp("closed_at", { withTimezone: true }),
+    // PRD §10.3 (opening_sessions: deferred_since · deferred_reason ·
+    // deferred_by_staff_id · deferred_entered_by), §6.0.4 T3, §6.7.
+    // `deferred_since IS NOT NULL` IS the deferred state. Session-scoped: a
+    // new session starts with all four NULL (it does not survive the close).
+    deferredSince: timestamp("deferred_since", { withTimezone: true }),
+    deferredReason: text("deferred_reason"),
+    deferredByStaffId: text("deferred_by_staff_id").references(() => staff.id),
+    deferredEnteredBy: deferredEnteredBy("deferred_entered_by"),
   },
   (t) => [
     // KEEP (CLAUDE.md §3, COL-14): v7.0 retains this; it is not narrowed.

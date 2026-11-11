@@ -1,6 +1,6 @@
 -- favo:requires-approval adds a nullable column orders.event_window_id (FK to event_windows) — a migration on orders (CLAUDE.md §2.2, Tier A); no existing row is rewritten, no money column is touched
--- DEC-28 (d) (owner, Mia, 11 Nov 2026). PROVISIONAL number 0054 — renumbered
--- in merge order (PR #327 also holds a 0054 on its own branch).
+-- DEC-28 (d) (owner, Mia, 11 Nov 2026). Number 0055: renumbered from a
+-- provisional 0054 after #327's 0054_deferred_mode_settlement merged first.
 -- Spec: docs/FAVO_PRD_v7.md §10.3 ("orders | event_window_id … Event
 -- attribution (§6.6)"), §11 createOrder ("Tags event_window_id when an event
 -- is in force"), R6 ("affected orders are identifiable by event_window_id"),
@@ -18,7 +18,7 @@
 -- exactly as before). Re-running fails on the existing column, as every
 -- drizzle-generated ADD COLUMN does; the migrator applies it once.
 --
--- The reverse is drizzle/down/0054_at204_orders_event_window.down.sql.
+-- The reverse is drizzle/down/0055_at204_orders_event_window.down.sql.
 
 ALTER TABLE "orders" ADD COLUMN "event_window_id" text;--> statement-breakpoint
 ALTER TABLE "orders" ADD CONSTRAINT "orders_event_window_id_event_windows_id_fk" FOREIGN KEY ("event_window_id") REFERENCES "public"."event_windows"("id") ON DELETE no action ON UPDATE no action;

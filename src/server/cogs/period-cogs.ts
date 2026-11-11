@@ -293,16 +293,12 @@ export async function readMarginByShot(from: string, to: string, db: DB = defaul
         END
         FROM opening_sessions s
         WHERE s.session_date = TO_CHAR(o.revenue_day, 'YYYY-MM-DD')
-          -- DEC-28 (d): on a day whose event orders are stamped, the rest are
-          -- the non-event sessions' (restOfDayMode, src/lib/weekly-summary.ts).
+          -- DEC-28 (d): an unstamped order on a day that holds a non-event
+          -- session takes the non-event sessions' mode — the same rule as
+          -- restOfDayMode (src/lib/weekly-summary.ts).
           AND NOT (
             s.mode = 'event'
             AND EXISTS (SELECT 1 FROM opening_sessions s2 WHERE s2.session_date = s.session_date AND s2.mode <> 'event')
-            AND EXISTS (
-              SELECT 1 FROM orders eo JOIN event_windows ew ON ew.id = eo.event_window_id
-              WHERE eo.revenue_day = o.revenue_day
-                AND eo.state IN ('in_progress', 'ready', 'collected')
-            )
           )
       ) ELSE 'event' END AS day_mode,
       oc.cogs_zar,

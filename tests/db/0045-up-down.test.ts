@@ -19,7 +19,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql, stepDown0048, stepDown0049, stepDown0050, stepDown0051, stepDown0052, stepDown0053, stepDown0054 } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0048, stepDown0049, stepDown0050, stepDown0051, stepDown0052, stepDown0053, stepDown0054, stepDown0055 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -76,7 +76,8 @@ maybe("0045 comps/cancel/abandon: up → down → up, and the refusal (AT-209)",
       await sql.begin(async (tx) => {
         // AT-203: CI migrates past 0045; 0046 is the newest, so it steps down
         // first (rolled back with everything else).
-        await stepDown0054(tx); // DEC-28 d: 0054 (orders.event_window_id, FK → event_windows) is newest of all, before 0053
+        await stepDown0055(tx); // DEC-28 d: 0055 (orders.event_window_id, FK → event_windows) is newest of all, before 0054
+        await stepDown0054(tx); // 0054 (deferred mode, settled_at) is newest of all, before 0053
         await stepDown0053(tx); // REQ-127: 0053 (is_lid; v_weekly_variance reads app_config) is newest of all, before 0052
         await stepDown0052(tx); // REQ-130: 0052 (price_history.set_by_staff_id), before 0051
         await stepDown0051(tx); // 0051 (orders.payment_mode NOT NULL), before 0050

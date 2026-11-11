@@ -60,6 +60,7 @@ function makeTx(tx: DB): FundTx {
           paymentMode: orders.paymentMode,
           customerId: orders.customerId,
           writtenOffAt: orders.writtenOffAt,
+          settledAt: orders.settledAt,
         })
         .from(orders)
         .where(eq(orders.id, orderId))

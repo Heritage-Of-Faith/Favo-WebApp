@@ -41,6 +41,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { applyOutboxItem, outboxItemSchema } from "@/server/sync/apply-outbox";
+import { writeAudit } from "@/server/audit";
 
 const CAPP = { id: "mi-capp", name: "Cappuccino", currentPriceZar: 2000, active: true, recipeId: "rec_capp" };
 const CHOC = { id: "mi-choc", name: "Hot Chocolate", currentPriceZar: 2000, active: true, recipeId: "rec_choc" };
@@ -271,6 +272,47 @@ describe("applyOutboxItem — the mode at the client's ring-up time (DEC-28)", (
     given([eventOn("2026-10-14", "standard")]);
     await applyOutboxItem(at("2026-10-14T12:30:00+02:00")); // after the window, and in the future
     expect(insertsInto(orders)[0]).toMatchObject({ eventWindowId: "evw_2026-10-14_standard", paymentMode: "yoco_deferred" });
+  });
+
+  // SAFE DEFAULT (owner has not ruled): the client clock may never turn a paid
+  // order free. Free at the client's time + paid at receipt → receipt time.
+  it("free event at the client's 11:30, a paid event in force at the 12:30 receipt → the receipt decides: owed, stamped paid", async () => {
+    vi.setSystemTime(new Date("2026-10-14T12:30:00+02:00"));
+    const paid = eventOn("2026-10-14", "standard");
+    given([
+      eventOn("2026-10-14", "free"),
+      { mode: "event", window: { ...paid.window, startsAt: new Date("2026-10-14T12:00:00+02:00"), endsAt: new Date("2026-10-14T16:00:00+02:00") } },
+    ]);
+    const res = await applyOutboxItem(at("2026-10-14T11:30:00+02:00"));
+    expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 2000 });
+    expect(insertsInto(orders)[0]).toMatchObject({
+      paymentMode: "yoco_deferred", totalZar: 2000, eventWindowId: "evw_2026-10-14_standard",
+      placedAt: new Date("2026-10-14T12:30:00+02:00"),
+    });
+  });
+
+  it("free at the client's Saturday 23:50 event, Sunday at the 00:10 receipt → the receipt decides: owed R20.00", async () => {
+    vi.setSystemTime(new Date("2026-10-11T00:10:00+02:00"));
+    given([
+      "sunday",
+      { mode: "event", window: { ...eventOn("2026-10-10", "free").window, startsAt: new Date("2026-10-10T20:00:00+02:00"), endsAt: new Date("2026-10-10T23:59:00+02:00") } },
+    ]);
+    const res = await applyOutboxItem(at("2026-10-10T23:50:00+02:00"));
+    expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 2000 });
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "yoco_deferred", totalZar: 2000, eventWindowId: null });
+  });
+
+  it("the sync_applied audit row always carries clientTimestamp, modeAt and eventWindowId; placed_at is modeAt", async () => {
+    vi.setSystemTime(new Date("2026-10-14T12:30:00+02:00"));
+    given([eventOn("2026-10-14", "free")]);
+    await applyOutboxItem(at("2026-10-14T11:30:00+02:00"));
+    const row = vi.mocked(writeAudit).mock.calls.filter((c) => (c[0] as Row).action === "order.sync_applied").pop()?.[0] as Row;
+    expect(row.after).toMatchObject({
+      clientTimestamp: new Date("2026-10-14T11:30:00+02:00").toISOString(),
+      modeAt: new Date("2026-10-14T11:30:00+02:00").toISOString(),
+      eventWindowId: "evw_2026-10-14_free",
+    });
+    expect(insertsInto(orders)[0]).toMatchObject({ placedAt: new Date("2026-10-14T11:30:00+02:00"), revenueDay: "2026-10-14" });
   });
 
   it("a client time more than 12 hours old (REQ-039) is not used — the receipt time decides", async () => {

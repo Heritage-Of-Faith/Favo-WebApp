@@ -33,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/ministry" as Route, label: "Ministry rollup" },
   { href: "/admin/expenses" as Route, label: "Expenses" },
   { href: "/admin/write-downs" as Route, label: "Write-downs" },
+  { href: "/admin/unpaid-orders" as Route, label: "Unpaid orders" },
   { href: "/admin/funds" as Route, label: "Blessing funds" },
   { href: "/admin/hours" as Route, label: "Hours" },
   { href: "/admin/menu", label: "Menu" },

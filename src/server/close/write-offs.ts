@@ -4,7 +4,7 @@
 // the closeDaily() row of the action catalogue; REQ-007, REQ-035, REQ-166.
 //
 // ONE definition of unpaid, used by the sweep and by the admin unpaid-orders
-// read (GET /api/admin/unpaid-orders, not built yet, must call listUnpaidOrders):
+// read (GET /api/admin/unpaid-orders, src/app/api/admin/unpaid-orders/route.ts, calls listUnpaidOrders):
 // an order is SETTLED if it holds a successful payment, or a donor_fund_entries
 // `spend` entry, or payment_mode = 'donor_fund' (L47: a fund draw writes no
 // payments row). It is UNPAID when it is not settled, not cancelled, not
@@ -57,6 +57,12 @@ export type OrderSettlementFacts = {
   writtenOff: boolean;
   hasSuccessfulPayment: boolean;
   hasFundSpend: boolean;
+  /**
+   * orders.settled_at IS NOT NULL (§10.3, T3 3a/3b). A standalone-machine
+   * settlement (§6.7 path B) holds no payment row, so without this the close
+   * would write a settled order off. Optional: absent reads as false.
+   */
+  settled?: boolean;
   /** The highest-numbered payment attempt, or null when none exists. */
   latestAttempt: { status: string; sent: boolean } | null;
   /**
@@ -66,9 +72,15 @@ export type OrderSettlementFacts = {
   paidEvent?: boolean;
 };
 
-/** L47 / REQ-166 / catalogue: settled = a successful payment OR a fund spend (OR taken as a fund order). */
-export function isSettled(o: Pick<OrderSettlementFacts, "hasSuccessfulPayment" | "hasFundSpend" | "paymentMode">): boolean {
-  return o.hasSuccessfulPayment || o.hasFundSpend || o.paymentMode === "donor_fund";
+/**
+ * L47 / REQ-166 / catalogue: settled = a successful payment OR a fund spend (OR
+ * taken as a fund order) — OR settled_at set by settleDeferredOrder (§10.3:
+ * settled_at and written_off_at are mutually exclusive).
+ */
+export function isSettled(
+  o: Pick<OrderSettlementFacts, "hasSuccessfulPayment" | "hasFundSpend" | "paymentMode" | "settled">
+): boolean {
+  return o.hasSuccessfulPayment || o.hasFundSpend || o.paymentMode === "donor_fund" || o.settled === true;
 }
 
 /**
@@ -190,6 +202,7 @@ type FactsRow = {
   written_off: boolean;
   has_successful_payment: boolean;
   has_fund_spend: boolean;
+  settled?: boolean;
   latest_status: string | null;
   latest_sent: boolean | null;
   paid_event?: boolean | null;
@@ -207,6 +220,7 @@ function toFacts(r: FactsRow): OrderSettlementFacts {
     writtenOff: r.written_off,
     hasSuccessfulPayment: r.has_successful_payment,
     hasFundSpend: r.has_fund_spend,
+    settled: r.settled === true,
     latestAttempt: r.latest_status === null ? null : { status: r.latest_status, sent: r.latest_sent === true },
     paidEvent: r.paid_event === true,
   };
@@ -224,6 +238,7 @@ async function readFacts(client: DB, opts: { revenueDay?: string; lock?: boolean
     SELECT o.id, o.staff_id, o.total_zar, to_json(o.placed_at) #>> '{}' AS placed_at, o.revenue_day::text AS revenue_day,
            o.state::text AS state, o.payment_mode,
            (o.written_off_at IS NOT NULL) AS written_off,
+           (o.settled_at IS NOT NULL) AS settled,
            EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id AND p.status = 'successful') AS has_successful_payment,
            EXISTS (SELECT 1 FROM donor_fund_entries e WHERE e.order_id = o.id AND e.kind = 'spend') AS has_fund_spend,
            la.status::text AS latest_status,

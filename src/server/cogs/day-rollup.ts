@@ -37,6 +37,8 @@ export type DayOrder = {
   /** orders.payment_mode as read. Anything but the four enum values throws. */
   paymentMode: string | null;
   writtenOff: boolean;
+  /** orders.settled_at IS NOT NULL (§10.3). Absent reads as false. */
+  settled?: boolean;
   /** The order's settled card payment, or null when none (e.g. an R0 order). */
   payment: { feeZar: number | null; tipZar: number } | null;
   cogs: OrderCogsRow;
@@ -72,6 +74,14 @@ export type DayRollup = {
   compsZar: number;
   drinks: number;
   doubleShots: number;
+  /**
+   * REQ-133 / §10.3.3: `yoco_deferred` split by settled_at and written_off_at —
+   * the mode records how the order was taken, not how it ended. Σ
+   * order_net_charged of the day's deferred orders, integer cents; the three
+   * sum to the deferred part of card_gross_zar. §7.5 "Deferred: open · settled
+   * · written off".
+   */
+  deferred: { openZar: number; settledZar: number; writtenOffZar: number };
 };
 
 export function rollupDay(orders: readonly DayOrder[], topups: readonly DayTopup[] = []): DayRollup {
@@ -86,10 +96,16 @@ export function rollupDay(orders: readonly DayOrder[], topups: readonly DayTopup
   let doubleShots = 0;
   let outreach = 0;
   let outreachUnknown = false;
+  const deferred = { openZar: 0, settledZar: 0, writtenOffZar: 0 };
 
   for (const o of orders) {
     const mode = assertPaymentMode(o.paymentMode);
     if (mode === "yoco" || mode === "yoco_deferred") cardGrossZar += o.netChargedZar;
+    if (mode === "yoco_deferred") {
+      if (o.writtenOff) deferred.writtenOffZar += o.netChargedZar;
+      else if (o.settled === true) deferred.settledZar += o.netChargedZar;
+      else deferred.openZar += o.netChargedZar;
+    }
     else if (mode === "donor_fund") fundGrossZar += o.netChargedZar;
     if (o.writtenOff) writtenOffZar += o.netChargedZar;
     if (o.payment) {
@@ -141,5 +157,6 @@ export function rollupDay(orders: readonly DayOrder[], topups: readonly DayTopup
     compsZar,
     drinks,
     doubleShots,
+    deferred,
   };
 }

@@ -182,3 +182,11 @@ export const fundingMethod = pgEnum("funding_method", [
   "cash",
   "eft",
 ]);
+
+// PRD §10.3 (opening_sessions.deferred_entered_by, "enum manual | health_check")
+// and §6.0.4 T3: who put the session into deferred mode. Only a health_check
+// entry may exit on a passing check; a barista cannot clear it (REQ-006).
+export const deferredEnteredBy = pgEnum("deferred_entered_by", [
+  "manual",
+  "health_check",
+]);

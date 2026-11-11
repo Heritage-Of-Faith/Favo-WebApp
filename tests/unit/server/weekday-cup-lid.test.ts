@@ -49,7 +49,7 @@ function d101Window(consumesCupLid: boolean, over: Record<string, unknown> = {})
   };
 }
 
-function buildTx(modes: string[], windows: Record<string, unknown>[] = []) {
+function buildTx(modes: string[], windows: Record<string, unknown>[] = [], order: Record<string, unknown> = {}) {
   const values = vi.fn().mockResolvedValue([]);
   const select = vi.fn().mockImplementation((fields: Record<string, unknown>) => {
     const keys = Object.keys(fields ?? {});
@@ -59,7 +59,7 @@ function buildTx(modes: string[], windows: Record<string, unknown>[] = []) {
     } else if (keys.includes("itemKind")) {
       rows = CAPPUCCINO_INGREDIENTS;
     } else if (keys.includes("revenueDay")) {
-      rows = [{ revenueDay: "2026-10-21", placedAt: PLACED_AT }];
+      rows = [{ revenueDay: "2026-10-21", placedAt: PLACED_AT, ...order }];
     } else if (keys.includes("consumesCupLid")) {
       rows = windows;
     } else if (keys.includes("mode")) {
@@ -88,7 +88,7 @@ function buildTx(modes: string[], windows: Record<string, unknown>[] = []) {
   };
 }
 
-async function deductWithMode(modes: string[], windows: Record<string, unknown>[] = []) {
+async function deductWithMode(modes: string[], windows: Record<string, unknown>[] = [], order: Record<string, unknown> = {}) {
   const lotPicker = await import("@/server/inventory/lot-picker");
   vi.spyOn(lotPicker, "pickOpenContainer").mockImplementation(async (itemId: string) => ({
     id: LOT_BY_ITEM[itemId], currentStock: 100, isLegacyLot: true,
@@ -97,7 +97,7 @@ async function deductWithMode(modes: string[], windows: Record<string, unknown>[
     id: LOT_BY_ITEM[itemId], currentStock: 100, isLegacyLot: true,
   }));
   const { deductForOrder } = await import("@/server/orders/deduction");
-  const { tx, values } = buildTx(modes, windows);
+  const { tx, values } = buildTx(modes, windows, order);
   await deductForOrder("order_001", tx as never, "staff_sam");
   const lots = values.mock.calls.map((c) => (c[0] as { inventoryLotId: string }).inventoryLotId);
   return { lots, pickActiveLot };
@@ -140,6 +140,29 @@ describe("REQ-125 / L24 — cup and lid deduction follows the mode", () => {
     });
     const { lots } = await deductWithMode(["event"], [ended]);
     expect(lots).toEqual(["lot_beans_open", "lot_milk_open"]);
+  });
+
+  // DEC-28 (d): an order stamped with event_window_id deducts by that window's
+  // switch — the same window that priced it — even when it reaches in_progress
+  // (or was replayed) after the window ended.
+  it("DEC-28: an order stamped with Discipleship 101, placed 21:00 after the window: cup and lid ARE deducted", async () => {
+    const { lots } = await deductWithMode(["weekday"], [d101Window(true)], {
+      eventWindowId: "evw_d101", placedAt: new Date("2026-10-21T21:00:00+02:00"),
+    });
+    expect(lots).toEqual(["lot_beans_open", "lot_milk_open", "lot_cup_12oz_001", "lot_lid_001"]);
+  });
+
+  it("DEC-28: a stamped own-mugs event order deducts no cup or lid, whatever the day's sessions say", async () => {
+    const { lots } = await deductWithMode(["sunday"], [d101Window(false)], { eventWindowId: "evw_d101" });
+    expect(lots).toEqual(["lot_beans_open", "lot_milk_open"]);
+  });
+
+  it("DEC-28: an unstamped replay deducts by its placed_at (the instant it was priced under), not by now", async () => {
+    // Weekday session + D101 in force at 19:00, read at placed_at; at 21:00 it would be weekday (no cups).
+    const { lots } = await deductWithMode(["weekday", "event"], [d101Window(true)], { placedAt: PLACED_AT, eventWindowId: null });
+    expect(lots).toContain("lot_cup_12oz_001");
+    const after = await deductWithMode(["weekday", "event"], [d101Window(true)], { placedAt: new Date("2026-10-21T21:00:00+02:00"), eventWindowId: null });
+    expect(after.lots).toEqual(["lot_beans_open", "lot_milk_open"]);
   });
 
   it("no session for the order's day: not a weekday order, so cup and lid deduct", async () => {

@@ -56,7 +56,11 @@ import ChargeOrderDialog from "@/components/pos/ChargeOrderDialog";
 import TenderPanel from "@/components/pos/TenderPanel";
 import FreeCupRow from "@/components/pos/FreeCupRow";
 import FundChips from "@/components/pos/FundChips";
+import RecentsGrid from "@/components/pos/RecentsGrid";
+import type { RecentsTile } from "@/server/recents/grid";
 import type { FundOptions } from "@/server/funds/funds";
+import DeferredModeBar from "@/components/pos/DeferredModeBar";
+import { DEFERRED_ORDER_NOTICE } from "@/lib/deferred-copy";
 import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
 import type { LogWasteInput } from "@/server/actions/waste";
@@ -127,9 +131,11 @@ type Props = {
   shotPolicy?: ShotPolicy & { event?: TillEventView | null };
   /** AT-203 / §6.10.6: fundOptionsForOrder, passed by the page. Absent = no fund chips. */
   fundOptions?: (input: { customerId: string | null; netZar: number }) => Promise<{ ok: true; data: FundOptions } | { ok: false; code: string; message: string }>;
+  /** §6.2.1 / REQ-052: getRecentsGrid, passed by the page. Absent = no recents grid. */
+  recents?: () => Promise<{ ok: true; data: RecentsTile[] } | { ok: false; code: string; message: string }>;
 };
 
-export default function POSWorkspace({ staffName, staffId, role, initialOrders, sundayCardOnMachine = false, shotPolicy = FAIL_CLOSED_POLICY, fundOptions }: Props) {
+export default function POSWorkspace({ staffName, staffId, role, initialOrders, sundayCardOnMachine = false, shotPolicy = FAIL_CLOSED_POLICY, fundOptions, recents }: Props) {
   const router = useRouter();
 
   // ── Left panel ─────────────────────────────────────────────────────────────
@@ -326,6 +332,8 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   const [placedFreeCup, setPlacedFreeCup] = useState(false);
   // Whether a tender attempt was begun for the order just placed (P4: frozen).
   const [placedCardCheckout, setPlacedCardCheckout] = useState(false);
+  // §6.0.4 T3 step 2: the order just placed was taken unpaid in deferred mode.
+  const [placedDeferred, setPlacedDeferred] = useState(false);
   // The tender attempt createOrder began (or why it could not) — the card
   // tender sends and polls it server-side (AT-201; no card form in the browser).
   const [placedTender, setPlacedTender] = useState<CreateOrderTender>(null);
@@ -435,6 +443,19 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
     }, 320);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
+
+  // §6.2.1 recents grid: re-read whenever the order has no customer (first
+  // render, a detach, or a placed order's reset), so served marks stay current.
+  // REQ-140 / L35: issued in the background; nothing on the ordering path waits on it.
+  const [recentTiles, setRecentTiles] = useState<RecentsTile[]>([]);
+  useEffect(() => {
+    if (!recents || attachedCustomerId) return;
+    let stale = false;
+    recents()
+      .then(r => { if (!stale && r.ok) setRecentTiles(r.data); })
+      .catch(() => { /* the grid stays as it was; search still works */ });
+    return () => { stale = true; };
+  }, [recents, attachedCustomerId]);
 
   function pickCustomer(c: CustomerSearchResult) {
     setCustomer({ id: c.id, name: c.name });
@@ -550,6 +571,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       reset();
       setPlacedFreeCup(r.data.freeCup?.applied === true);
       setPlacedCardCheckout(r.data.cardCheckout === true);
+      setPlacedDeferred(r.data.deferred === true);
       if (r.data.freeCup?.message) {
         if (r.data.freeCup.applied) toast.success(r.data.freeCup.message);
         else toast.message(r.data.freeCup.message);
@@ -721,6 +743,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
     setPlacedFreeCup(false);
     setPlacedCardCheckout(false);
     setPlacedTender(null);
+    setPlacedDeferred(false);
   }
 
   // ── Zone A top — customer search/attach panel (Phase 5 wireframe states A1-A4) ──
@@ -729,6 +752,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       <div className="zone flex flex-col gap-2 p-3 border-b border-cool-steel/20 shrink-0">
         <span className="favo-label text-cool-steel">Customer</span>
         {!customer ? (
+          <>
+          {/* §6.2.1: the recents grid leads, above the search field. Offline the
+              customer read is unavailable (T1 step 2), so the grid is not offered. */}
+          {online && <RecentsGrid tiles={recentTiles} onPick={t => setCustomer({ id: t.id, name: t.name })} />}
           <div className="relative">
             <Search size={13} strokeWidth={2} className="absolute left-2 top-1/2 -translate-y-1/2 text-cool-steel pointer-events-none" />
             <input type="search" inputMode="text" autoComplete="off"
@@ -790,6 +817,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
               </button>
             )}
           </div>
+          </>
         ) : (
           <>
             <p className="favo-small text-coffee-bean font-semibold">{customer.name}</p>
@@ -1088,6 +1116,9 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       {/* ════════ OUT-OF-STOCK BANNER (M9) ════════ */}
       <StockBanner outOfStockItems={outOfStockItems} />
 
+      {/* ════════ DEFERRED MODE (§6.0.4 T3): the persistent banner and its one tap ════════ */}
+      <DeferredModeBar />
+
       {/* ════════ STAFF PUSH OPT-IN (M10) — in-flow, never overlays a button ════════ */}
       <StaffPushOptIn />
 
@@ -1263,7 +1294,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                   <p className="favo-label text-cool-steel mb-1">Amount due</p>
                   <p className="favo-h2 text-coffee-bean">{formatZar(amountDueZar)}</p>
                   {/* REQ-153 / L19: nothing owed, no card step. */}
-                  {!isFree && (
+                  {!isFree && !(placedDeferred && paymentOrderId) && (
                     <p className="favo-small text-cool-steel mt-1">
                       Tap or insert the customer&apos;s card
                     </p>
@@ -1291,6 +1322,19 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                       <CheckCircle size={16} strokeWidth={2} className="mr-1" />
                       {paymentOrderId ? "New order" : "Confirm — send to queue"}
                     </button>
+                  ) : paymentOrderId && placedDeferred ? (
+                    /* §6.0.4 T3: while deferred "the tender step is replaced, not
+                       skipped" — nothing is sent; the order is in the queue, unpaid. */
+                    <div className="flex flex-col gap-2">
+                      <p role="status" className="favo-small text-center text-coffee-bean py-2">
+                        {DEFERRED_ORDER_NOTICE}
+                      </p>
+                      <button type="button"
+                        onClick={startNewOrder}
+                        className="favo-small rounded-[4px] border border-cool-steel/30 px-3 py-2 min-h-[44px] text-coffee-bean hover:bg-coffee-bean/8">
+                        Done — back to the till
+                      </button>
+                    </div>
                   ) : paymentOrderId ? (
                     /* The card tender: the amount is pushed to the machine and the
                        outcome fetched server-side (T2 steps 3–5). No Yoco key,

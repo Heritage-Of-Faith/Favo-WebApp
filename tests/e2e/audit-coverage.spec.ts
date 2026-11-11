@@ -43,7 +43,7 @@ test.describe("audit-coverage", () => {
     expect(res.status()).toBe(403);
   });
 
-  test("admin session: no recent orders lack an audit row (0 orphans)", async ({ page }) => {
+  test("admin session: no recently created row lacks an audit row (0 orphans)", async ({ page }) => {
     await loginWithPin(page, "4321");
     const res = await page.context().request.get("/api/admin/audit-coverage");
     expect(res.status()).toBe(200);
@@ -51,14 +51,15 @@ test.describe("audit-coverage", () => {
     const body = (await res.json()) as {
       mutations: number;
       audited: number;
-      coverage_pct: number;
+      coverage_pct: number | null;
       gaps: string[];
     };
     expect(
       body.gaps,
-      `Audit gap detected: ${body.gaps.length} order(s) have no audit_log row`
+      `Audit gap detected: ${body.gaps.length} row(s) have no audit_log row (entity:id)`
     ).toEqual([]);
-    expect(body.coverage_pct).toBe(100);
+    // Nothing measured in the window -> null, never a claimed 100 (REQ-064).
+    expect(body.coverage_pct).toBe(body.mutations === 0 ? null : 100);
     expect(body.audited).toBe(body.mutations);
   });
 });

@@ -1,5 +1,5 @@
 {
-  "id": "f179c787-d41f-4846-8cff-7893930c12de",
+  "id": "7ee9d646-25ec-4730-b7cb-ffacd37c4b26",
   "prevId": "54492acd-8140-4f7d-8006-5f945eef83f4",
   "version": "7",
   "dialect": "postgresql",
@@ -1950,6 +1950,31 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "deferred_since": {
+          "name": "deferred_since",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deferred_reason": {
+          "name": "deferred_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deferred_by_staff_id": {
+          "name": "deferred_by_staff_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deferred_entered_by": {
+          "name": "deferred_entered_by",
+          "type": "deferred_entered_by",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1990,6 +2015,19 @@
           "tableTo": "event_windows",
           "columnsFrom": [
             "event_window_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "opening_sessions_deferred_by_staff_id_staff_id_fk": {
+          "name": "opening_sessions_deferred_by_staff_id_staff_id_fk",
+          "tableFrom": "opening_sessions",
+          "tableTo": "staff",
+          "columnsFrom": [
+            "deferred_by_staff_id"
           ],
           "columnsTo": [
             "id"
@@ -2378,14 +2416,37 @@
           "primaryKey": false,
           "notNull": false
         },
-        "event_window_id": {
-          "name": "event_window_id",
+        "settled_at": {
+          "name": "settled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "settlement_ref": {
+          "name": "settlement_ref",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "orders_settlement_ref_unique": {
+          "name": "orders_settlement_ref_unique",
+          "columns": [
+            {
+              "expression": "settlement_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "settlement_ref IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "orders_customer_id_customers_id_fk": {
           "name": "orders_customer_id_customers_id_fk",
@@ -2412,19 +2473,6 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "orders_event_window_id_event_windows_id_fk": {
-          "name": "orders_event_window_id_event_windows_id_fk",
-          "tableFrom": "orders",
-          "tableTo": "event_windows",
-          "columnsFrom": [
-            "event_window_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2442,6 +2490,10 @@
         "orders_notification_target_customer": {
           "name": "orders_notification_target_customer",
           "value": "(notification_target = 'customer') = (customer_id IS NOT NULL)"
+        },
+        "orders_settled_xor_written_off": {
+          "name": "orders_settled_xor_written_off",
+          "value": "settled_at IS NULL OR written_off_at IS NULL"
         }
       },
       "isRLSEnabled": false
@@ -2733,6 +2785,14 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
+        "payments_order_attempt_unique": {
+          "name": "payments_order_attempt_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "order_id",
+            "attempt"
+          ]
+        },
         "payments_client_reference_unique": {
           "name": "payments_client_reference_unique",
           "nullsNotDistinct": false,
@@ -2745,14 +2805,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "yoco_payment_id"
-          ]
-        },
-        "payments_order_attempt_unique": {
-          "name": "payments_order_attempt_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "order_id",
-            "attempt"
           ]
         },
         "payments_fund_topup_attempt_unique": {
@@ -4099,6 +4151,14 @@
       "values": [
         "office_staff",
         "church_member"
+      ]
+    },
+    "public.deferred_entered_by": {
+      "name": "deferred_entered_by",
+      "schema": "public",
+      "values": [
+        "manual",
+        "health_check"
       ]
     },
     "public.donor_fund_entry_kind": {

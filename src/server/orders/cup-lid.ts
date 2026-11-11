@@ -16,10 +16,16 @@
 // instant (an event whose window is not in force reads as the date default),
 // is mode='weekday'. No session is not a weekday. Unlike the free cup this
 // does not also test the calendar date (L24 follows the mode).
-// Known limit: orders carry no event_window_id (PRD §10.3 lists it; no
-// migration adds it yet), so the event is found by placed_at, not by a link.
+// DEC-28 (d): an order stamped with orders.event_window_id follows that
+// window's switch by the link, never by a fresh read at placed_at. An
+// unstamped order reads the sessions of its placed_at instant — for an offline
+// replay placed_at is the instant it was priced under (apply-outbox replayTill),
+// so pricing and deduction always agree.
 
+import { eq } from "drizzle-orm";
+import { eventWindows } from "@db/schema";
 import type { DB } from "@/lib/db";
+import { revenueDay } from "@/lib/format";
 import { readTillMode } from "@/server/orders/till-mode-read";
 import { tillConsumesCupAndLid } from "@/lib/till-mode";
 
@@ -48,4 +54,26 @@ export async function dayConsumesCupAndLid(
   at: Date = new Date()
 ): Promise<boolean> {
   return tillConsumesCupAndLid(await readTillMode(executor, day, at));
+}
+
+/**
+ * L24 for one order (DEC-28): its stamped event window's consumes_cup_lid
+ * when it has one; otherwise the mode in force at its placed_at, read from
+ * the sessions of placed_at's own SAST day (equal to revenue_day for every
+ * order createOrder writes; for a replay crossing midnight, the day it was
+ * rung — REQ-039 keeps revenue_day on the receipt day).
+ */
+export async function orderConsumesCupAndLid(
+  order: { revenueDay: string; placedAt: Date | null | undefined; eventWindowId?: string | null },
+  executor: Pick<DB, "select">
+): Promise<boolean> {
+  if (order.eventWindowId) {
+    const [w] = await executor
+      .select({ consumesCupLid: eventWindows.consumesCupLid })
+      .from(eventWindows)
+      .where(eq(eventWindows.id, order.eventWindowId));
+    if (w) return w.consumesCupLid;
+  }
+  const at = order.placedAt instanceof Date && !Number.isNaN(order.placedAt.getTime()) ? order.placedAt : null;
+  return at ? dayConsumesCupAndLid(revenueDay(at), executor, at) : dayConsumesCupAndLid(order.revenueDay, executor);
 }

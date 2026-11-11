@@ -113,6 +113,20 @@ export function defaultSessionMode(sessionDate: string): DateMode | null {
   return "weekday";
 }
 
+/**
+ * Monday–Friday by the date alone (the recents grid's office-staff sections,
+ * src/server/recents/grid.ts). Restored in the main merge: this branch had
+ * removed it with the weekday-event block, and main's recents grid uses it.
+ * An unreadable date is not a weekday.
+ */
+export function isWeekdayDate(sessionDate: string): boolean {
+  try {
+    return defaultSessionMode(sessionDate) === "weekday";
+  } catch {
+    return false;
+  }
+}
+
 /** Refusal for a Saturday session with no event window in force (REQ-057). */
 export const SATURDAY_CLOSED = {
   code: "SATURDAY_CLOSED",
@@ -156,10 +170,19 @@ export function isWindowInForce(w: { startsAt: string | Date; endsAt: string | D
 type SessionSlot = { sessionDate: string; opensAt: string; closesAt: string | null };
 
 /**
+ * DEC-28 (a) (owner, Mia, 11 Nov 2026): a session with no close time binds to
+ * an event window that starts up to this many minutes AFTER the session opens
+ * — "an evening session opened at 17:45 for an 18:00 service still finds it"
+ * (§4.2), while a 07:30 Sunday morning never picks up the 18:00 event.
+ */
+export const EVENT_EARLY_BIND_MINUTES = 30;
+
+/**
  * L18 / COL-8: does a session's own window meet an event window? With a known
  * close time this is an overlap test. With none (the barista never records one)
- * the session's window is its opening instant, so the event must be in force
- * when the session opens — a Sunday morning never picks up the evening event.
+ * the event must be in force when the session opens, or start no more than
+ * EVENT_EARLY_BIND_MINUTES after it (DEC-28 a). Once bound, the till applies
+ * the event from the session's opening (src/lib/till-mode.ts eventAppliesAt).
  */
 export function sessionMatchesWindow(s: SessionSlot, w: { startsAt: string; endsAt: string }): boolean {
   const open = sastInstant(s.sessionDate, s.opensAt).getTime();
@@ -169,7 +192,7 @@ export function sessionMatchesWindow(s: SessionSlot, w: { startsAt: string; ends
     const close = sastInstant(s.sessionDate, s.closesAt).getTime();
     if (close > open) return open < we && ws < close;
   }
-  return ws <= open && open < we;
+  return ws - EVENT_EARLY_BIND_MINUTES * 60 * 1000 <= open && open < we;
 }
 
 const BYDAY: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };

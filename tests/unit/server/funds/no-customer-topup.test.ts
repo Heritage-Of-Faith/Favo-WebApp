@@ -46,6 +46,9 @@ const ALLOWED = new Set([
   "src/server/tender/types.ts",
   "src/server/tender/tender.ts",
   "src/server/crons/close-daily.ts", // reads payment_mode to leave fund-paid orders out of the card reconciliation
+  // CHANGED (job 4): a server-side timer, no route. Looks up an unresolved card top-up's
+  // payment through resolveTenderByLookup (getTopupTenderDeps); never writes a fund entry.
+  "src/server/crons/unconfirmed-payments.ts",
   "src/server/close/write-offs.ts", // AT-207 / REQ-166: reads spend entries so a fund-paid order is never written off
   "src/server/reports/revenue-scope.ts", // AT-203 follow-up: the revenue predicate reads spend/adjustment entries (read only; POS/admin readers)
   // §7.0.2 money reporting — read only, never a write, every reader admin-authorised:

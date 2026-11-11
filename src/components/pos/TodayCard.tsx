@@ -72,6 +72,11 @@ export default function TodayCard() {
         <Metric label="Entitlement cups" value={count(data?.entitlementCups)} />
         <Metric label="Walk-in cups" value={count(data?.walkInCups)} />
         <Metric label="Waste events" value={count(data?.wasteCount)} />
+        {/* §7.5 "Deferred: open · settled · written off" (REQ-133). */}
+        <Metric
+          label="Deferred: open · settled · written off"
+          value={data ? `${zar(data.deferredOpenZar)} · ${zar(data.deferredSettledZar)} · ${zar(data.deferredWrittenOffZar)}` : "—"}
+        />
       </div>
 
       {data && (

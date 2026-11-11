@@ -21,7 +21,8 @@ import {
 import { writeAudit } from "@/server/audit";
 import { isFreeCupWeekday, weekdayLineDiscountZar } from "@/server/orders/free-coffee";
 import { readTillMode } from "@/server/orders/till-mode-read";
-import { isEventFree } from "@/lib/till-mode";
+import { isEventFree, type TillMode } from "@/lib/till-mode";
+import { isPaidEventPosture } from "@/server/orders/payment-gate";
 import { computeOrderTotalZar } from "@/server/orders/pricing";
 import { shotSurchargeZar, type ShotPolicy } from "@/server/orders/shot-surcharge";
 import { readShotPolicy, readCoffeeRecipeIds } from "@/server/orders/shot-policy";
@@ -85,13 +86,39 @@ export function replayModeInstant(clientTimestamp: string | undefined, receivedA
   return rung;
 }
 
+/** The modes under which people pay: Sunday, or a paid-posture event (DEC-28 b). */
+function isPaidTill(till: TillMode): boolean {
+  if (till.event) return isPaidEventPosture(till.event.paymentPosture);
+  return till.modes.includes("sunday");
+}
+
+function isFreeTill(till: TillMode, at: Date): boolean {
+  return isFreeCupWeekday(till.modes, at) || isEventFree(till.event);
+}
+
+/**
+ * The instant, and the mode, a replay is priced, stamped and deducted under.
+ * DEC-28: the ring-up time when replayModeInstant accepts it. SAFE DEFAULT
+ * (the owner has not ruled on this direction): the client's clock may never
+ * turn a paid order free — if the mode at the client's time is free (weekday
+ * or a free event) but the mode at receipt is a paid one (Sunday, or a
+ * standard/override event in force), the receipt time is used. Paid at the
+ * client's time stays paid whatever the receipt reads.
+ */
+async function replayTill(clientTimestamp: string | undefined, receivedAt: Date): Promise<{ modeAt: Date; till: TillMode }> {
+  const candidate = replayModeInstant(clientTimestamp, receivedAt);
+  const atCandidate = await readTillMode(db, revenueDay(candidate), candidate);
+  if (candidate === receivedAt || !isFreeTill(atCandidate, candidate)) return { modeAt: candidate, till: atCandidate };
+  const atReceipt = await readTillMode(db, revenueDay(receivedAt), receivedAt);
+  return isPaidTill(atReceipt) ? { modeAt: receivedAt, till: atReceipt } : { modeAt: candidate, till: atCandidate };
+}
+
 // ─── applyOutboxItem ──────────────────────────────────────────────────────────
 
 export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResult> {
   // REQ-039: the server's receipt time decides the revenue day; DEC-28: the
-  // ring-up time (bounded) decides the mode.
+  // ring-up time (bounded, see replayTill) decides the mode.
   const receivedAt = new Date();
-  const modeAt = replayModeInstant(item.clientTimestamp, receivedAt);
   // ── Idempotency check ──────────────────────────────────────────────────────
   const [existing] = await db
     .select()
@@ -136,6 +163,11 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     }
   }
 
+  // DEC-28: the instant and mode this replay is priced, stamped and deducted
+  // under — read once, when first needed (the shot ceiling, or the free test).
+  let replay: Promise<{ modeAt: Date; till: TillMode }> | null = null;
+  const getReplay = () => (replay ??= replayTill(item.clientTimestamp, receivedAt));
+
   // ── AT-202: shots — the same ceiling and surcharge createOrder applies ────
   // CHANGED (DEC-28): the mode is the one in force when the order was rung
   // (modeAt — the client's time, bounded by replayModeInstant), so the price
@@ -157,7 +189,8 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     if (multiShot.some((i) => { const r = recipeOf(i.menuItemId); return !(r && coffee.has(r)); })) {
       return { outcome: "rejected", reason: "shots_not_allowed" };
     }
-    shotPolicy = await readShotPolicy(db, revenueDay(modeAt), modeAt);
+    const { modeAt: shotsAt } = await getReplay();
+    shotPolicy = await readShotPolicy(db, revenueDay(shotsAt), shotsAt);
     const policy = shotPolicy;
     if (item.items.some((i) => shotsOf(i) > policy.maxShots)) {
       return { outcome: "rejected", reason: "shots_above_ceiling" };
@@ -185,11 +218,11 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
   // client queued, every line zeroed by discount_zar (DEC-18), total R0 — so
   // the close never writes it off as a phantom loss (S3a).
   // The mode in force when the order was rung (DEC-28: modeAt, see
-  // replayModeInstant; src/lib/till-mode.ts): a Wednesday's evening event
+  // replayTill; src/lib/till-mode.ts): a Wednesday's evening event
   // does not make the morning's replays paid. S7a: 'free' also on a
   // free-posture event in force (L25) — the same zeroing, the same R0.
-  const till = await readTillMode(db, revenueDay(modeAt), modeAt);
-  const weekdayFree = isFreeCupWeekday(till.modes, modeAt) || isEventFree(till.event);
+  const { modeAt, till } = await getReplay();
+  const weekdayFree = isFreeTill(till, modeAt);
   const lineDiscountZar = (idx: number) => (weekdayFree ? weekdayLineDiscountZar(lines[idx]) : 0);
   const orderTotalZar = weekdayFree ? 0 : serverTotalZar;
   // The till's 'free' is never trusted: only the server's own weekday read
@@ -213,8 +246,12 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     state: "ordered",
     totalZar: orderTotalZar,
     paymentMode,
-    // REQ-039: the server's receipt time decides the revenue day, never the client's.
+    // REQ-039: the server's receipt time decides the revenue day, never the
+    // client's placed_at (T5 step 4).
     revenueDay: revenueDay(receivedAt),
+    // DEC-28: placed_at is the instant the order was priced under (modeAt), so
+    // the cup/lid deduction at in_progress reads the same mode (cup-lid.ts).
+    placedAt: modeAt,
     // DEC-28 (d): the event the order was rung under, else NULL.
     eventWindowId: till.event?.windowId ?? null,
   });
@@ -245,7 +282,12 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     action: "order.sync_applied",
     entityKind: "order",
     entityId: orderId,
-    after: { clientUuid: item.clientUuid, paymentMode, totalZar: orderTotalZar },
+    after: {
+      clientUuid: item.clientUuid, paymentMode, totalZar: orderTotalZar,
+      // DEC-28: what the mode was read at, always recorded.
+      clientTimestamp: item.clientTimestamp, modeAt: modeAt.toISOString(),
+      eventWindowId: till.event?.windowId ?? null,
+    },
   });
 
   return { outcome: "applied", orderId, serverTotalZar: orderTotalZar };
