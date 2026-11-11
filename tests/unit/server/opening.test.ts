@@ -18,6 +18,11 @@
 // CHANGED (event switches story): events run Mon–Fri again (§4.2, L18, T7);
 // free posture and the coffee-only / cup / audience / surcharge switches are
 // honoured; only event prices (override) and a custom menu are refused.
+//
+// CHANGED (barista rota, §6.3 / COL-23): the shift-start trigger module is
+// mocked, and a new block asserts a newly opened session fires it once with its
+// (sessionId, date, opensAt), and a re-confirm or refusal does not. No existing
+// assertion changed.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -45,6 +50,11 @@ vi.mock("@/server/push/send", () => ({
   sendOpeningPush: (...a: unknown[]) => mockSendOpeningPush(...a),
 }));
 vi.mock("@/server/push/payload", () => ({ isValidPushSubscription: () => true }));
+
+const mockFireShiftStart = vi.fn();
+vi.mock("@/server/rota/shift-start", () => ({
+  fireShiftStart: (...a: unknown[]) => mockFireShiftStart(...a),
+}));
 
 // db mock: every select() (on db or tx) consumes the next row-set from a FIFO
 // queue via a self-returning thenable chain.
@@ -1006,5 +1016,71 @@ describe("REQ-056: derived opening-push audience", () => {
     expect(res.ok).toBe(true);
     expect([...(mockInArray.mock.calls[0]![1] as string[])].sort()).toEqual(["church_member", "office_staff"]);
     expect(mockSendOpeningPush).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── Barista rota: the shift-start push fires per session (§6.3, COL-23) ─────
+describe("shift-start trigger on open (§6.3, §6.11.1 COL-23)", () => {
+  it("the first session of the day fires the shift-start once, for that session", async () => {
+    mockAuthorize.mockResolvedValue(BARISTA);
+    queueOpeningReads();
+    selectQueue.push([]);            // no sessions yet today
+    selectQueue.push(SUBS);
+    selectQueue.push([SESSION_ROW]);
+    const res = await submitOpeningTime("07:30");
+    await flush();
+    expect(res.ok).toBe(true);
+    expect(mockFireShiftStart).toHaveBeenCalledTimes(1);
+    expect(mockFireShiftStart).toHaveBeenCalledWith(
+      { sessionId: "os_1", sessionDate: "2026-07-09", opensAt: "07:30" },
+      { id: "staff_sam", role: "barista" }
+    );
+  });
+
+  it("the second session of the day (the evening) fires it for its own session (the slot is read from the audit counter in shift-start.ts)", async () => {
+    mockAuthorize.mockResolvedValue(BARISTA);
+    const closed = { ...SESSION_ROW };
+    queueOpeningReads();
+    selectQueue.push([closed]);      // the morning session exists, closed
+    selectQueue.push(SUBS);
+    selectQueue.push([closed, { ...SESSION_ROW, id: "os_2", opensAt: "18:30" }]);
+    mockReturning.mockResolvedValue([{ ...SESSION_ROW, id: "os_2", opensAt: "18:30" }]);
+    await submitOpeningTime("18:30");
+    await flush();
+    expect(mockFireShiftStart).toHaveBeenCalledWith(
+      { sessionId: "os_2", sessionDate: "2026-07-09", opensAt: "18:30" },
+      { id: "staff_sam", role: "barista" }
+    );
+  });
+
+  it("an Admin-added session fires it too, even with the customer push off", async () => {
+    mockAuthorize.mockResolvedValue(ADMIN);
+    mockReturning.mockResolvedValue([{ ...SESSION_ROW, id: "os_9", opensAt: "14:00" }]);
+    queueOpeningReads();
+    selectQueue.push([]);
+    selectQueue.push([SESSION_ROW]);
+    await addTodaySession({ opensAt: "14:00" });
+    await flush();
+    expect(mockSendOpeningPush).not.toHaveBeenCalled();
+    expect(mockFireShiftStart).toHaveBeenCalledWith(
+      { sessionId: "os_9", sessionDate: "2026-07-09", opensAt: "14:00" },
+      { id: "staff_gian", role: "admin" }
+    );
+  });
+
+  it("re-confirming the open session does not fire it again", async () => {
+    mockAuthorize.mockResolvedValue(BARISTA);
+    selectQueue.push([OPEN_ROW]);
+    selectQueue.push([SESSION_ROW]);
+    await submitOpeningTime("07:30");
+    await flush();
+    expect(mockFireShiftStart).not.toHaveBeenCalled();
+  });
+
+  it("a refused open does not fire it", async () => {
+    mockAuthorize.mockResolvedValue(BARISTA);
+    selectQueue.push([OPEN_ROW]);
+    await submitOpeningTime("14:00");
+    expect(mockFireShiftStart).not.toHaveBeenCalled();
   });
 });

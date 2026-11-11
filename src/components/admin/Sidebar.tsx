@@ -38,6 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/hours" as Route, label: "Hours" },
   { href: "/admin/menu", label: "Menu" },
   { href: "/admin/staff", label: "Staff" },
+  { href: "/admin/rota" as Route, label: "Barista rota" },
   { href: "/admin/customers" as Route, label: "Customers" },
   { href: "/admin/audit", label: "Audit log" },
   { href: "/pos" as Route, label: "↗ POS" },

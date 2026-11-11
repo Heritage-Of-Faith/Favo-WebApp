@@ -43,6 +43,7 @@ import { audienceForMode, type CustomerStatus } from "@/lib/push/audience";
 import { sendOpeningPush } from "@/server/push/send";
 import { isValidPushSubscription } from "@/server/push/payload";
 import { pushVoucherVariance, slipVariance } from "@/server/push/admin-alert";
+import { fireShiftStart } from "@/server/rota/shift-start";
 import type { ActionResult } from "@/lib/types";
 
 const POS_ROLES = ["barista", "admin"] as const;
@@ -360,6 +361,11 @@ async function openSessionCore(input: CoreInput): Promise<CoreResult> {
         : resolved.source === "window" ? resolved.window.audience : resolved.profile.audience;
     fanOutOpeningPush(input.opensAt, isReopening, mode, eventAudience);
   }
+
+  // §6.3 / COL-23: the shift-start push fires per session, to whoever the rota
+  // has on this session's (date, slot); the slot is read from the day's audited
+  // session creates (src/server/rota/slot.ts). Independent of the customer `notify` switch.
+  fireShiftStart({ sessionId: inserted.id, sessionDate: date, opensAt: input.opensAt }, input.actor);
 
   const sessions = await listToday();
   return { ok: true, data: { session: toView(inserted), notified: input.notify, sessions } };
