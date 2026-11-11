@@ -80,6 +80,18 @@ export default function DailyDigestCard({ digest }: { digest: AdminDigest }) {
             </span>
           )}
         </Row>
+        <Row label="Yoco import (T10)" testId="digest-yoco-import">
+          {digest.yocoImport === null ? (
+            <span style={warn(true)}>
+              No Yoco export imported for {digest.day} — its fees stay unavailable. Upload it on Reports.
+            </span>
+          ) : (
+            <span style={warn(digest.yocoImport.toCheck > 0)}>
+              {digest.yocoImport.unmatchedRows} of {digest.yocoImport.totalRows} rows unmatched ·{" "}
+              {digest.yocoImport.toCheck} to check
+            </span>
+          )}
+        </Row>
         <Row label="Storage" testId="digest-storage">
           {NOT_MEASURED}
         </Row>

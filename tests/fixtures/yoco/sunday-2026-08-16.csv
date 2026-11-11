@@ -1,0 +1,15 @@
+Date,Payment ID,Receipt Number,Items,Amount,Fee,Net,Tip,Status
+2026-08-16 08:05:51,yp_20260816_2636,2636,Cappuccino (double) x2,R40.00,R1.06,R38.94,R0.00,Successful
+2026-08-16 08:11:04,yp_20260816_2637,2637,Cappuccino (single) x1,R20.00,R0.53,R19.47,R0.00,Successful
+2026-08-16 08:16:40,yp_20260816_2638,2638,Mocha x2,R50.00,R1.32,R48.68,R0.00,Successful
+2026-08-16 08:22:13,yp_20260816_2639,2639,Cappuccino (double) x1,R20.00,R0.53,R19.47,R0.00,Successful
+2026-08-16 08:27:58,yp_20260816_2640,2640,Cappuccino (double) x1,R20.00,R0.53,R19.47,R0.00,Successful
+2026-08-16 08:33:20,yp_20260816_2641,2641,Hot Chocolate x1,R20.00,R0.53,R19.47,R0.00,Successful
+2026-08-16 08:38:47,yp_20260816_2642,2642,Cappuccino (double) x1,R20.00,R0.53,R19.47,R0.00,Successful
+2026-08-16 08:44:09,yp_20260816_2643,2643,Cappuccino (double) x1,R20.00,R0.53,R19.47,R0.00,Successful
+2026-08-16 08:49:36,yp_20260816_2644,2644,Hot Chocolate x1,R20.00,R0.53,R19.47,R0.00,Successful
+2026-08-16 08:55:02,yp_20260816_2645,2645,Cappuccino (double) x2,R40.00,R1.06,R38.94,R0.00,Successful
+2026-08-16 09:00:31,yp_20260816_2646,2646,250ml Cups (25s) x1,R0.00,R0.00,R0.00,R0.00,Successful
+2026-08-16 09:05:15,yp_20260816_2647,2647,Americano x1,R20.00,R0.53,R19.47,R0.00,Successful
+2026-08-16 09:10:44,yp_20260816_2648,2648,"Cappuccino (double) x1, Cappuccino (single) x1",R40.00,R1.06,R38.94,R0.00,Successful
+2026-08-16 09:16:02,yp_20260816_2649,2649,Cappuccino (double) x1,R20.00,R0.53,R19.47,R0.00,Successful

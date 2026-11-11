@@ -92,4 +92,9 @@ export type AdminDigest = {
   lastClose: LastClose | null;
   /** True when yesterday has no close record yet. */
   yesterdayUnclosed: boolean;
+  /**
+   * §9.6.2 job 6 / §6.8.3: the latest Yoco export import for `day` (T10), or
+   * null when none has been uploaded — that day's fees stay UNAVAILABLE.
+   */
+  yocoImport: { unmatchedRows: number; totalRows: number; toCheck: number } | null;
 };

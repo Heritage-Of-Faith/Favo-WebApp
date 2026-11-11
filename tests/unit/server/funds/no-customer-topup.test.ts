@@ -65,6 +65,12 @@ const ALLOWED = new Set([
   "src/components/pos/FundChips.tsx", // the chips themselves: a type import only
   // DEC-23: the Admin banners — reads only, every export authorises "admin" first:
   "src/server/actions/admin-digest.ts", // getFundAlerts / getAdminDigest: dormancy + total balance, no write
+  // CHANGED (T10, §11.2 importYocoTransactions): a card top-up is a Yoco transaction
+  // like any other, so T10 reads payments.fund_topup_id to list one Yoco does not hold
+  // (REQ-032). Read only; reached through the admin-only actions/reconciliation.ts.
+  "src/server/reconciliation/t10.ts", // pure: carries fundTopupId on a payment
+  "src/server/reconciliation/drizzle-store.ts", // SELECTs payments.fund_topup_id; never touches a fund table
+  "src/components/admin/T10Panel.tsx", // /admin/reports (admin-gated): names a top-up line
 ]);
 
 describe("REQ-160 / REQ-165: no customer-reachable code reaches a fund", () => {
