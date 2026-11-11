@@ -108,6 +108,13 @@ export default function MinistryRollupView(r: Props) {
                 <td className="px-3 py-2 text-right" style={{ ...num, fontWeight: 600 }}><Zar v={r.ministryIncomeZar} /></td>
               </tr>
               <tr className={bodyRow} style={cardStyle}>
+                {/* REQ-133 · §7.5: yoco_deferred split by how it ended. Inside gross; moves no total. */}
+                <th scope="row" className="px-3 py-2">Deferred: open · settled · written off</th>
+                <td className="px-3 py-2 text-right" style={num}>
+                  {formatZar(r.deferred.openZar)} · {formatZar(r.deferred.settledZar)} · {formatZar(r.deferred.writtenOffZar)}
+                </td>
+              </tr>
+              <tr className={bodyRow} style={cardStyle}>
                 <th scope="row" className="px-3 py-2">Weekday COGS</th>
                 <td className="px-3 py-2 text-right" style={num}><Zar v={r.weekdayCogsZar} /></td>
               </tr>
@@ -173,7 +180,15 @@ export default function MinistryRollupView(r: Props) {
                     <tr key={d.date} className={bodyRow} style={cardStyle}>
                       <td className="px-3 py-2">{d.date}</td>
                       <td className="px-3 py-2">{dayLabel(d)}</td>
-                      <td className="px-3 py-2 text-right" style={num}><Zar v={d.grossZar} /></td>
+                      <td className="px-3 py-2 text-right" style={num}>
+                        <Zar v={d.grossZar} />
+                        {(d.deferred.openZar !== 0 || d.deferred.settledZar !== 0 || d.deferred.writtenOffZar !== 0) && (
+                          <span className="block favo-caption" style={{ textTransform: "none", letterSpacing: 0, color: "var(--color-text-muted)" }}>
+                            of which deferred: {formatZar(d.deferred.openZar)} open · {formatZar(d.deferred.settledZar)} settled ·{" "}
+                            {formatZar(d.deferred.writtenOffZar)} written off
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right" style={num}><Zar v={d.writtenOffZar} /></td>
                       <td className="px-3 py-2 text-right" style={num}><Zar v={d.collectedZar} /></td>
                       <td className="px-3 py-2 text-right" style={num}>

@@ -347,3 +347,50 @@ describe("getMinistryRollup — review fixes", () => {
     expect(res.data.unavailable).toContainEqual({ kind: "outreach_cost_absent", date: "2026-08-16", orders: 1 });
   });
 });
+
+// REQ-133 · §10.3.3: "orders.payment_mode stays yoco_deferred forever;
+// settled_at and written_off_at disambiguate the three outcomes."
+describe("getMinistryRollup — REQ-133 deferred split", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("reads yoco_deferred split by settled_at and written_off_at, inside card gross", async () => {
+    await stub({
+      cogs: THIRTEEN.map((c) => cogsRow("2026-08-16", c)),
+      gross: [
+        grossRow("2026-08-16", "yoco", 27500),
+        { ...grossRow("2026-08-16", "yoco_deferred", 7500, 2500), deferred_open_zar: 3000, deferred_settled_zar: 2000, deferred_written_off_zar: 2500 },
+      ],
+      expenses: [],
+      sessions: [session("2026-08-16", "sunday")],
+      fees: [{ day: "2026-08-16", fee_zar: 927, fee_missing: 0 }],
+      writer: true,
+    });
+    const { getMinistryRollup } = await import("@/server/actions/ministry");
+    const res = await getMinistryRollup("2026-08-16", "2026-08-16");
+    if (!res.ok) throw new Error(res.message);
+    expect(res.data.days[0]).toMatchObject({ grossZar: 35000, writtenOffZar: 2500, collectedZar: 32500 });
+    expect(res.data.days[0].deferred).toEqual({ openZar: 3000, settledZar: 2000, writtenOffZar: 2500 });
+    expect(res.data.deferred).toEqual({ openZar: 3000, settledZar: 2000, writtenOffZar: 2500 });
+
+    const { db } = await import("@db/index");
+    const texts = vi.mocked(db.execute).mock.calls.map(([q]) => dialect.sqlToQuery(q as never).sql);
+    const grossSql = texts.find((t) => t.includes("orders.payment_mode"))!;
+    expect(grossSql).toMatch(/orders\.payment_mode = 'yoco_deferred'[\s\S]*settled_at IS NULL[\s\S]*written_off_at IS NULL/);
+    expect(grossSql).toMatch(/settled_at IS NOT NULL/);
+  });
+
+  it("a day with only yoco orders splits to zeroes", async () => {
+    await stub({
+      cogs: THIRTEEN.map((c) => cogsRow("2026-08-16", c)),
+      gross: [grossRow("2026-08-16", "yoco", 35000)],
+      expenses: [],
+      sessions: [session("2026-08-16", "sunday")],
+      fees: [{ day: "2026-08-16", fee_zar: 927, fee_missing: 0 }],
+      writer: true,
+    });
+    const { getMinistryRollup } = await import("@/server/actions/ministry");
+    const res = await getMinistryRollup("2026-08-16", "2026-08-16");
+    if (!res.ok) throw new Error(res.message);
+    expect(res.data.days[0].deferred).toEqual({ openZar: 0, settledZar: 0, writtenOffZar: 0 });
+  });
+});
