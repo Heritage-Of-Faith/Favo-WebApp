@@ -11,7 +11,7 @@
 
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "@/lib/db";
+import { db, type DB } from "@/lib/db";
 import {
   outboxLog,
   orders,
@@ -60,18 +60,33 @@ export type ApplyOutboxResult =
   | { outcome: "duplicate"; orderId: string | null; appliedAt: Date | null }
   | {
       outcome: "rejected";
-      reason: "unknown_menu_item" | "amount_mismatch" | "shots_above_ceiling" | "shots_not_allowed";
+      reason: "unknown_menu_item" | "amount_mismatch" | "shots_above_ceiling" | "shots_not_allowed" | "replay_too_old";
     };
 
 // ─── The instant a replay's mode is read at (DEC-28) ─────────────────────────
 
 /**
- * REQ-039's 12 hours, used here ONLY as the limit beyond which the client's
- * clock is not trusted for the mode. REQ-039's rejection of an order older
- * than 12 hours (REPLAY_TOO_OLD, admin exception list) is NOT built: such an
- * order is still applied, under the receipt-time mode.
+ * REQ-039 / T5 step 5: an outbox order more than 12 hours old at replay is
+ * rejected (REPLAY_TOO_OLD) and surfaced on the admin exception list. Exactly
+ * 12 hours is not "more than" and is applied.
  */
 export const REPLAY_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+/** The audit action the admin exception list reads (src/server/actions/exceptions.ts). */
+export const REPLAY_TOO_OLD_ACTION = "order.sync_rejected_too_old";
+
+/** Age of an entry at receipt, in ms; null when the client time is absent or unreadable. */
+function replayAgeMs(clientTimestamp: unknown, receivedAt: Date): number | null {
+  if (typeof clientTimestamp !== "string") return null;
+  const age = receivedAt.getTime() - new Date(clientTimestamp).getTime();
+  return Number.isNaN(age) ? null : age;
+}
+
+/** REQ-039: more than 12 hours between the client's ring-up and the server's receipt. */
+export function isReplayTooOld(clientTimestamp: unknown, receivedAt: Date): boolean {
+  const age = replayAgeMs(clientTimestamp, receivedAt);
+  return age !== null && age > REPLAY_MAX_AGE_MS;
+}
 
 /**
  * DEC-28 (owner, Mia, 11 Nov 2026): an offline order is priced under the mode
@@ -79,8 +94,9 @@ export const REPLAY_MAX_AGE_MS = 12 * 60 * 60 * 1000;
  * order replayed after the window ended stays free, and a paid one stays
  * owed. The server still decides what was in force at that instant from its
  * own sessions and windows; the till's own claim ('free') is never trusted. A
- * client time after the receipt, unreadable, or more than 12 hours old falls
- * back to the receipt time (a fallback, not REQ-039's rejection). This instant
+ * client time after the receipt, or unreadable, falls back to the receipt
+ * time. (One more than 12 hours old never reaches here: applyOutboxItem
+ * rejects it first, REQ-039; the age guard below stays as a backstop.) This instant
  * picks the mode and prices only: placed_at and the revenue day are always
  * the receipt (REQ-039).
  */
@@ -132,9 +148,58 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     .where(eq(outboxLog.clientUuid, item.clientUuid));
 
   if (existing) {
+    // REQ-039: a uuid already rejected as too old stays rejected on every
+    // re-replay — decided from the stored receipt, no second audit row.
+    const stored = existing.payload as { clientTimestamp?: unknown } | null | undefined;
+    if (!existing.appliedAt && existing.receivedAt && isReplayTooOld(stored?.clientTimestamp, existing.receivedAt)) {
+      return { outcome: "rejected", reason: "replay_too_old" };
+    }
     // Already processed — return stored result without re-applying.
     const existingOrderId = await findOrderForOutboxEntry(existing.id);
     return { outcome: "duplicate", orderId: existingOrderId, appliedAt: existing.appliedAt };
+  }
+
+  // ── REQ-039 / T5 step 5: more than 12 hours old → REPLAY_TOO_OLD ──────────
+  // Rejected, never silently accepted: no order, no order_items, no stock
+  // movement. The receipt (appliedAt stays null, so the uuid is consumed) and
+  // the audit row the admin exception list reads commit together.
+  if (isReplayTooOld(item.clientTimestamp, receivedAt)) {
+    const ageMs = replayAgeMs(item.clientTimestamp, receivedAt)!;
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(outboxLog)
+        .values({
+          clientUuid: item.clientUuid,
+          customerId: item.customerId,
+          staffId: item.staffId,
+          payload: item as unknown as Record<string, unknown>,
+          receivedAt,
+        })
+        .returning({ id: outboxLog.id });
+      await writeAudit(
+        {
+          actorId: item.staffId,
+          actorRole: "barista",
+          action: REPLAY_TOO_OLD_ACTION,
+          entityKind: "outbox_log",
+          entityId: row?.id ?? item.clientUuid,
+          reason: "REPLAY_TOO_OLD",
+          // No customer id: the exception list shows only what the till rang.
+          after: {
+            clientUuid: item.clientUuid,
+            staffId: item.staffId,
+            clientTimestamp: item.clientTimestamp,
+            receivedAt: receivedAt.toISOString(),
+            ageMs,
+            clientTotalZar: item.clientTotalZar,
+            paymentMode: item.paymentMode,
+            items: item.items.map((i) => ({ menuItemId: i.menuItemId, quantity: i.quantity, shots: i.shots ?? 1 })),
+          },
+        },
+        tx as unknown as DB
+      );
+    });
+    return { outcome: "rejected", reason: "replay_too_old" };
   }
 
   // ── Write to outbox_log (before applying — so we record receipt even on failure) ─
@@ -177,10 +242,10 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
   // ── AT-202: shots — the same ceiling and surcharge createOrder applies ────
   // CHANGED (DEC-28): the mode is the one in force when the order was rung
   // (modeAt — the client's time, bounded by replayModeInstant), so the price
-  // the till showed is the price checked. Outside the bound it is the
-  // receipt time, as before: a Sunday triple replayed the next day is above
-  // that day's ceiling and refused — never silently re-priced without the
-  // surcharge. A 1-shot line cannot be affected, so the policy is read only
+  // the till showed is the price checked. (A Sunday entry replayed more than
+  // 12 hours later was already rejected above, REQ-039.) A line above the
+  // ceiling is refused — never silently re-priced without the surcharge.
+  // A 1-shot line cannot be affected, so the policy is read only
   // when a line carries more.
   const shotsOf = (i: OutboxItem["items"][number]) => i.shots ?? 1;
   let shotPolicy: ShotPolicy | null = null;
