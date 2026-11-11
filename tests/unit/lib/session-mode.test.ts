@@ -151,6 +151,23 @@ describe("resolveSessionMode — §6.6 precedence and L18", () => {
       .toEqual({ kind: "date", mode: "weekday" });
   });
 
+  // DEC-28 (c) (owner, Mia, 11 Nov 2026): overlapping windows are not refused;
+  // the most recently created one wins (created_at desc, then id desc).
+  it("DEC-28 (c): two overlapping windows — the newest created wins, not the earliest start", () => {
+    const early = windowOf({ id: "evw_early", startsAt: "2026-10-10T08:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z", createdAt: "2026-10-09T09:00:00.000Z" });
+    const later = windowOf({ id: "evw_later", startsAt: "2026-10-10T09:00:00.000Z", endsAt: "2026-10-10T13:00:00.000Z", createdAt: "2026-10-10T07:30:00.000Z" });
+    for (const windows of [[early, later], [later, early]]) {
+      const r = resolveSessionMode({ sessionDate: "2026-10-10", opensAt: "12:00", closesAt: null, windows, profiles: [] });
+      expect(r).toMatchObject({ kind: "event", source: "window" });
+      if (r.kind === "event" && r.source === "window") expect(r.window.id).toBe("evw_later");
+    }
+    // Same created_at: the higher id wins.
+    const twin = windowOf({ ...later, id: "evw_twin" });
+    const r = resolveSessionMode({ sessionDate: "2026-10-10", opensAt: "12:00", closesAt: null, windows: [twin, later], profiles: [] });
+    if (r.kind === "event" && r.source === "window") expect(r.window.id).toBe("evw_twin");
+    else throw new Error("expected an event window");
+  });
+
   it("a profile with no default times is never auto-found (Untracked Church times are unconfirmed)", () => {
     const p = profileOf({ recurrence: "FREQ=WEEKLY;BYDAY=SU", defaultStart: null, defaultEnd: null });
     expect(profileOccurrence(p, "2026-10-11")).toBeNull();

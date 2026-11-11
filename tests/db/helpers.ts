@@ -59,6 +59,17 @@ export function migrationSql(file: string): string {
 }
 
 /**
+ * Step 0054 (DEC-28 d: orders.event_window_id, FK → event_windows) down inside
+ * the caller's always-rolled-back transaction. Its FK hangs on event_windows,
+ * which 0036 down drops, and it adds a column to orders, which the older
+ * suites compare with their own snapshots. It is the newest migration, so it
+ * steps down first, before 0053. PROVISIONAL number 0054.
+ */
+export async function stepDown0054(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
+  await tx.unsafe(migrationSql("down/0054_at204_orders_event_window.down.sql"));
+}
+
+/**
  * Step 0053 (REQ-127: inventory_items.is_lid, app_config variance_bands, and
  * v_weekly_variance judging lids against T08) down inside the caller's
  * always-rolled-back transaction. Its view reads app_config, which 0037 down

@@ -119,7 +119,7 @@ function given(opts: { date: string; sessions: (string | Row)[]; customer?: Row 
     [customers, opts.customer ? [opts.customer] : []],
     [openingSessions, opts.sessions.map((s) => typeof s === "string"
       ? { sessionDate: opts.date, mode: s, eventWindowId: null }
-      : { sessionDate: opts.date, mode: "event", eventWindowId: s.id })],
+      : { sessionDate: opts.date, mode: "event", eventWindowId: s.id, opensAt: (s.sessionOpensAt as string | undefined) ?? null })],
     [eventWindows, windows],
     [staffEntitlementLog, []],
     [appConfig, []],
@@ -264,5 +264,71 @@ describe("a standard-posture event charges, with its own surcharge switch (§6.6
     expect(res.data.totalZar).toBe(2000);
     expect(orderRow()).toMatchObject({ paymentMode: "yoco", totalZar: 2000 });
     expect(mockStartTender).toHaveBeenCalledTimes(1);
+  });
+});
+
+// DEC-28 (owner, Mia, 11 Nov 2026).
+// (d) §10.3 / §11 createOrder "Tags event_window_id when an event is in force".
+// (a) §4.2: the event applies from the SESSION's opening ("an evening session
+//     opened at 17:45 for an 18:00 service still finds it").
+// (b) a paid event on a weekday (Thursday) is allowed and charges.
+describe("DEC-28: event attribution, the session's opening, and a paid weekday event", () => {
+  const THU_SOCIAL = {
+    id: "evw_thu", name: "Thursday Social",
+    startsAt: new Date("2026-10-08T18:00:00+02:00"), endsAt: new Date("2026-10-08T21:00:00+02:00"),
+    menuScope: "full", paymentPosture: "standard", consumesCupLid: true, audience: "both",
+    extraShotSurcharge: true, voucherKinds: [], sessionOpensAt: "17:45",
+  };
+
+  it("(d) a paid event order is stamped with its window; a free event order too", async () => {
+    vi.setSystemTime(SAT_NOON);
+    given({ date: "2026-10-10", sessions: [SAT_SOCIAL] });
+    await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO)] });
+    expect(orderRow()).toMatchObject({ eventWindowId: "evw_social", paymentMode: "yoco", totalZar: 2000 });
+
+    inserts.length = 0;
+    vi.setSystemTime(WED_EVENING);
+    given({ date: "2026-10-07", sessions: ["weekday", D101] });
+    await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO)] });
+    expect(orderRow()).toMatchObject({ eventWindowId: "evw_d101", paymentMode: "free", totalZar: 0 });
+  });
+
+  it("(d) no event in force → event_window_id NULL (the weekday morning, and after ends_at)", async () => {
+    vi.setSystemTime(WED_MORNING);
+    given({ date: "2026-10-07", sessions: ["weekday", D101] });
+    await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO)] });
+    expect(orderRow()).toMatchObject({ eventWindowId: null, paymentMode: "free" });
+
+    inserts.length = 0;
+    vi.setSystemTime(SAT_AFTER);
+    given({ date: "2026-10-10", sessions: [SAT_SOCIAL] });
+    await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO)] });
+    expect(orderRow()).toMatchObject({ eventWindowId: null });
+  });
+
+  it("(a) Thursday 17:50, session opened 17:45 for an 18:00 paid event: the event already applies — R30.00 triple, stamped", async () => {
+    vi.setSystemTime(new Date("2026-10-08T17:50:00+02:00"));
+    given({ date: "2026-10-08", sessions: [THU_SOCIAL] });
+    const res = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO, 1, 3)] });
+    expect(res.ok && res.data.totalZar).toBe(3000);
+    expect(orderRow()).toMatchObject({ eventWindowId: "evw_thu", paymentMode: "yoco", totalZar: 3000 });
+  });
+
+  it("(a) a free event opened 17:45 for 18:00: a 17:50 order is free, never charged", async () => {
+    vi.setSystemTime(new Date("2026-10-08T17:50:00+02:00"));
+    given({ date: "2026-10-08", sessions: [{ ...THU_SOCIAL, paymentPosture: "free", extraShotSurcharge: false }] });
+    const res = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO)] });
+    expect(res.ok && res.data.totalZar).toBe(0);
+    expect(orderRow()).toMatchObject({ eventWindowId: "evw_thu", paymentMode: "free", totalZar: 0 });
+    expect(mockStartTender).not.toHaveBeenCalled();
+  });
+
+  it("(b) a paid Thursday event is not weekday-free: R20.00 owed, payment_mode 'yoco', no entitlement row", async () => {
+    vi.setSystemTime(new Date("2026-10-08T19:00:00+02:00"));
+    given({ date: "2026-10-08", sessions: [THU_SOCIAL], customer: OFFICE });
+    const res = await createOrder({ notificationTarget: "customer", customerId: OFFICE.id, items: [line(CAPPUCCINO)] });
+    expect(res.ok && res.data.totalZar).toBe(2000);
+    expect(orderRow()).toMatchObject({ eventWindowId: "evw_thu", paymentMode: "yoco", totalZar: 2000 });
+    expect(insertsInto(staffEntitlementLog)).toEqual([]);
   });
 });

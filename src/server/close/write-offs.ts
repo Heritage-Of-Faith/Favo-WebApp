@@ -59,6 +59,11 @@ export type OrderSettlementFacts = {
   hasFundSpend: boolean;
   /** The highest-numbered payment attempt, or null when none exists. */
   latestAttempt: { status: string; sent: boolean } | null;
+  /**
+   * DEC-28 (b): rung under a paid-posture event window (orders.event_window_id
+   * → payment_posture 'standard' | 'override'). Absent = false.
+   */
+  paidEvent?: boolean;
 };
 
 /** L47 / REQ-166 / catalogue: settled = a successful payment OR a fund spend (OR taken as a fund order). */
@@ -103,6 +108,9 @@ function isWeekdayRevenueDay(revenueDay: string): boolean {
  * which keeps the normal rules — so no written_off_at, no write-off audit row. closeDaily() also
  * leaves those orders out of its card reconciliation (src/server/crons/close-daily.ts).
  *
+ * DEC-28 (b): the same switch covers a paid event on any day (an order bound
+ * to a 'standard'/'override' event window) — see isPaidEventOutsideFavo.
+ *
  * Flip this to false — the one place to change — when the live Web POS
  * adapter is built and drilled. Steps: docs/GO_LIVE_RUNBOOK.md, "Sunday card
  * sales: deferred until the Web POS is live".
@@ -130,13 +138,24 @@ export function isSundayOutsideFavo(revenueDay: string): boolean {
   return sundaySkipInForce && defaultSessionMode(revenueDay) === "sunday";
 }
 
+/**
+ * DEC-28 (b) (owner, Mia, 11 Nov 2026): a paid event's card sales are taken on
+ * the Yoco machine while the Web POS is not live — the same switch as Sunday's
+ * (DEC-21). True when the order was rung under a paid-posture event window
+ * and that switch is on.
+ */
+export function isPaidEventOutsideFavo(o: Pick<OrderSettlementFacts, "paidEvent">): boolean {
+  return sundaySkipInForce && o.paidEvent === true;
+}
+
 /** S3a: no successful payment, a non-zero amount owed, never `free`, never cancelled, not yet written off. */
 export function isUnpaid(o: OrderSettlementFacts): boolean {
   if (WEEKDAY_ORDERS_NEVER_SWEPT_UNTIL_S7A && isWeekdayRevenueDay(o.revenueDay)) return false;
   // Not an order whose latest attempt was SENT to the terminal: that one went
   // through FAVO, so it keeps S3a's rules (S4 step 5: unresolved_at_close,
-  // reported to T10, never silently absorbed).
-  if (isSundayOutsideFavo(o.revenueDay) && !o.latestAttempt?.sent) return false;
+  // reported to T10, never silently absorbed). DEC-28 (b): a paid-event order
+  // is treated exactly as a Sunday one.
+  if ((isSundayOutsideFavo(o.revenueDay) || isPaidEventOutsideFavo(o)) && !o.latestAttempt?.sent) return false;
   return (
     o.state !== "cancelled" &&
     !o.writtenOff &&
@@ -173,6 +192,7 @@ type FactsRow = {
   has_fund_spend: boolean;
   latest_status: string | null;
   latest_sent: boolean | null;
+  paid_event?: boolean | null;
 };
 
 function toFacts(r: FactsRow): OrderSettlementFacts {
@@ -188,6 +208,7 @@ function toFacts(r: FactsRow): OrderSettlementFacts {
     hasSuccessfulPayment: r.has_successful_payment,
     hasFundSpend: r.has_fund_spend,
     latestAttempt: r.latest_status === null ? null : { status: r.latest_status, sent: r.latest_sent === true },
+    paidEvent: r.paid_event === true,
   };
 }
 
@@ -206,7 +227,11 @@ async function readFacts(client: DB, opts: { revenueDay?: string; lock?: boolean
            EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id AND p.status = 'successful') AS has_successful_payment,
            EXISTS (SELECT 1 FROM donor_fund_entries e WHERE e.order_id = o.id AND e.kind = 'spend') AS has_fund_spend,
            la.status::text AS latest_status,
-           (la.sent_at IS NOT NULL) AS latest_sent
+           (la.sent_at IS NOT NULL) AS latest_sent,
+           EXISTS (
+             SELECT 1 FROM event_windows ew
+             WHERE ew.id = o.event_window_id AND ew.payment_posture IN ('standard', 'override')
+           ) AS paid_event
     FROM orders o
     LEFT JOIN LATERAL (
       SELECT p.status, p.sent_at FROM payments p WHERE p.order_id = o.id ORDER BY p.attempt DESC LIMIT 1

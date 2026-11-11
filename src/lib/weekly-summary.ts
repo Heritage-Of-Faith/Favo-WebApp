@@ -21,6 +21,12 @@ export type Consumption = { kind: string; unit: string; quantity: number };
 
 export type SummaryDay = {
   date: string;
+  /**
+   * DEC-28 (d): "event" = only the day's orders stamped with an
+   * orders.event_window_id; they are always reported as Event. Absent = the
+   * day's other (unstamped) orders.
+   */
+  part?: "event";
   revenueZar: number;
   cogs: {
     state: CostState;
@@ -75,6 +81,19 @@ export function dayMode(date: string, sessionModes: readonly string[]): ModeKey 
   return defaultSessionMode(date) ?? "unassigned";
 }
 
+/**
+ * DEC-28 (d): the mode of a day's UNSTAMPED orders when the same day also has
+ * orders stamped with an event window (those are Event by their own stamp).
+ * Since 0054 every event order is stamped, so the rest belong to the day's
+ * non-event sessions. With no non-event session the day reads as dayMode.
+ * Used only when the day has a stamped event part: a mixed day with none (all
+ * orders from before the column) is still never guessed into a mode.
+ */
+export function restOfDayMode(date: string, sessionModes: readonly string[]): ModeKey {
+  const nonEvent = sessionModes.filter((m) => m !== "event");
+  return nonEvent.length > 0 ? dayMode(date, nonEvent) : dayMode(date, sessionModes);
+}
+
 function section(mode: ModeKey, days: readonly SummaryDay[]): ModeSection {
   let revenueZar = 0;
   let cogsSum = 0;
@@ -112,7 +131,7 @@ function section(mode: ModeKey, days: readonly SummaryDay[]): ModeSection {
 
   return {
     mode,
-    days: days.map((d) => d.date),
+    days: [...new Set(days.map((d) => d.date))].sort(), // DEC-28 (d): a day may hold two parts
     orderCount,
     revenueZar,
     cogsZar: f.cogsZar,
@@ -135,7 +154,14 @@ export function splitByMode(
   sessionModes: ReadonlyMap<string, readonly string[]>
 ): Record<ModeKey, ModeSection> {
   const by: Record<ModeKey, SummaryDay[]> = { weekday: [], sunday: [], event: [], unassigned: [] };
-  for (const d of days) by[dayMode(d.date, sessionModes.get(d.date) ?? [])].push(d);
+  // DEC-28 (d): stamped event orders are Event; the rest of such a day reads
+  // its non-event sessions' mode.
+  const hasEventPart = new Set(days.filter((d) => d.part === "event").map((d) => d.date));
+  for (const d of days) {
+    const modes = sessionModes.get(d.date) ?? [];
+    const key = d.part === "event" ? "event" : hasEventPart.has(d.date) ? restOfDayMode(d.date, modes) : dayMode(d.date, modes);
+    by[key].push(d);
+  }
   return {
     weekday: section("weekday", by.weekday),
     sunday: section("sunday", by.sunday),

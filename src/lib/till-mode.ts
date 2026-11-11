@@ -5,9 +5,11 @@
 //
 // Which mode applies at an instant `at` on a revenue day:
 //  1. An event in force: an opening session stored as mode='event' whose event
-//     window is in force at `at` (REQ-042: starts_at ≤ at < ends_at). §6.6
-//     precedence 2 — an explicit event beats the date-derived mode, so the
-//     result is the event's own switches, never Weekday's or Sunday's.
+//     applies at `at` — from the earlier of the session's opening and the
+//     window's start, up to ends_at (DEC-28 (a); REQ-042). §6.6 precedence 2 —
+//     an explicit event beats the date-derived mode, so the result is the
+//     event's own switches, never Weekday's or Sunday's. Two events at once:
+//     the newest window wins (DEC-28 (c)).
 //  2. Otherwise every session of the day read as it behaves at `at`
 //     (effectiveSessionMode): a stored event whose window is not in force reads
 //     as the date default. So a Wednesday holding a weekday morning session and
@@ -21,7 +23,7 @@
 
 import { isCoffeeCategory } from "@/server/orders/discount";
 import {
-  effectiveSessionMode, isWindowInForce,
+  effectiveSessionMode, isWindowInForce, newestWindowFirst, sastInstant,
   type EventSwitches, type MenuScope, type PaymentPosture, type SessionMode,
 } from "@/lib/session-mode";
 
@@ -29,8 +31,36 @@ import {
 export type TillSessionRow = {
   sessionDate: string;
   mode: SessionMode;
-  window: (EventSwitches & { id: string; name: string; startsAt: string | Date; endsAt: string | Date }) | null;
+  /** opening_sessions.opens_at, SAST "HH:mm" — DEC-28 (a): a bound event applies from here. */
+  opensAt?: string | null;
+  window: (EventSwitches & {
+    id: string; name: string; startsAt: string | Date; endsAt: string | Date;
+    /** event_windows.created_at — DEC-28 (c): the newest window wins an overlap. */
+    createdAt?: string | Date | null;
+  }) | null;
 };
+
+/**
+ * DEC-28 (a) (owner, Mia, 11 Nov 2026) / §4.2 "a session's default is computed
+ * against that session's own window … an evening session opened at 17:45 for
+ * an 18:00 service still finds it": a session stored as mode='event' and bound
+ * to a window behaves as that event from the EARLIER of its own opening and
+ * the window's start, up to (not including) ends_at (REQ-042 unchanged). A row
+ * with no known opening falls back to the window alone.
+ */
+export function eventAppliesAt(row: TillSessionRow, at: Date): boolean {
+  if (row.mode !== "event" || row.window === null) return false;
+  if (isWindowInForce(row.window, at)) return true;
+  if (!row.opensAt) return false;
+  let opened: number;
+  try {
+    opened = sastInstant(row.sessionDate, row.opensAt).getTime();
+  } catch {
+    return false; // an unreadable opening never widens an event
+  }
+  const t = at.getTime();
+  return opened <= t && t < new Date(row.window.endsAt).getTime();
+}
 
 /** The event in force: its window id, name, span and six switches. */
 export type TillEvent = EventSwitches & { windowId: string; name: string; startsAt: string; endsAt: string };
@@ -45,9 +75,10 @@ export type TillMode = {
 export type TillEventView = { name: string; paymentPosture: PaymentPosture; menuScope: MenuScope };
 
 export function resolveTillMode(rows: readonly TillSessionRow[], at: Date): TillMode {
+  // DEC-28 (a): in force from the session's opening; (c): newest window wins.
   const inForce = rows
-    .filter((r) => r.mode === "event" && r.window !== null && isWindowInForce(r.window, at))
-    .sort((a, b) => new Date(a.window!.startsAt).getTime() - new Date(b.window!.startsAt).getTime())[0];
+    .filter((r) => eventAppliesAt(r, at))
+    .sort((a, b) => newestWindowFirst(a.window!, b.window!))[0];
   if (inForce && inForce.window) {
     const w = inForce.window;
     return {

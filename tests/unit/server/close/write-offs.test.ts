@@ -45,6 +45,8 @@ type FakeOrder = {
   has_fund_spend?: boolean;
   latest_status?: string | null;
   latest_sent?: boolean | null;
+  /** DEC-28 (b): bound to a paid-posture event window. */
+  paid_event?: boolean;
 };
 
 const dialect = new PgDialect();
@@ -71,6 +73,7 @@ function fakeClient(orders: FakeOrder[], revenueDay: string = DAY) {
           has_fund_spend: o.has_fund_spend ?? false,
           latest_status: o.latest_status ?? null,
           latest_sent: o.latest_sent ?? null,
+          ...(o.paid_event === undefined ? {} : { paid_event: o.paid_event }),
         }));
     }
     if (text.startsWith("\n      UPDATE orders SET written_off_at") || text.includes("UPDATE orders SET written_off_at")) {
@@ -418,5 +421,60 @@ describe("buildWriteOffAlert — §6.0.5's 00:05 push", () => {
       "deferred_unsettled",
       "unresolved_at_close",
     ]);
+  });
+});
+
+// DEC-28 (b) (owner, Mia, 11 Nov 2026): a paid event's card is taken on the
+// Yoco machine while the Web POS is not live, on any day. The sweep treats an
+// order bound to a paid-posture event window exactly as a Sunday order: not
+// swept while the switch is on, unless its latest attempt was sent.
+describe("DEC-28 (b): paid-event orders outside FAVO", () => {
+  const THU = "2026-10-22";
+  const SAT = "2026-10-24";
+  const eventOrder = () => order({ id: "o-evt", total_zar: 3800, payment_mode: "yoco", paid_event: true });
+
+  it("flag on: a Saturday R38.00 paid-event order with no FAVO payment is neither listed nor written off", async () => {
+    setSundaySkipForTests(true);
+    expect(isUnpaid(facts({ revenueDay: SAT, totalZar: 3800, paidEvent: true }))).toBe(false);
+    const f = fakeClient([eventOrder()], SAT);
+    const res = await sweepWriteOffs(f.client, SAT, NOW);
+    expect(res.written).toEqual([]);
+    expect(f.orders[0].written_off_at).toBeNull();
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it("the facts read asks for the order's event posture", async () => {
+    const f = fakeClient([eventOrder()], SAT);
+    await listUnpaidOrders(f.client, { revenueDay: SAT });
+    expect(f.statements[0]).toContain("event_windows");
+    expect(f.statements[0]).toContain("paid_event");
+  });
+
+  it("flag on: a paid-event order whose latest attempt was SENT keeps S3a — written off unresolved_at_close", async () => {
+    setSundaySkipForTests(true);
+    expect(isUnpaid(facts({ revenueDay: SAT, paidEvent: true, latestAttempt: { status: "unresolved", sent: true } }))).toBe(true);
+    const f = fakeClient([{ ...eventOrder(), latest_status: "unresolved", latest_sent: true }], SAT);
+    const res = await sweepWriteOffs(f.client, SAT, NOW);
+    expect(res.written.map((w) => [w.orderId, w.reason])).toEqual([["o-evt", "unresolved_at_close"]]);
+  });
+
+  it("flag off (Web POS live): the Saturday paid-event order is unpaid and swept as before", async () => {
+    setSundaySkipForTests(false);
+    expect(isUnpaid(facts({ revenueDay: SAT, totalZar: 3800, paidEvent: true }))).toBe(true);
+    const res = await sweepWriteOffs(fakeClient([eventOrder()], SAT).client, SAT, NOW);
+    expect(res.written.map((w) => w.orderId)).toEqual(["o-evt"]);
+  });
+
+  it("a Thursday paid-event order is never swept as free or as unpaid (the weekday fail-safe holds either way)", () => {
+    for (const on of [true, false]) {
+      setSundaySkipForTests(on);
+      expect(isUnpaid(facts({ revenueDay: THU, totalZar: 3800, paidEvent: true }))).toBe(false);
+    }
+  });
+
+  it("an order with no paid event on a Saturday is still swept (flag on)", () => {
+    setSundaySkipForTests(true);
+    expect(isUnpaid(facts({ revenueDay: SAT, totalZar: 3800, paidEvent: false }))).toBe(true);
+    expect(isUnpaid(facts({ revenueDay: SAT, totalZar: 3800 }))).toBe(true);
   });
 });

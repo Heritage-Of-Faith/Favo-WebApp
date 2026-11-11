@@ -9,12 +9,17 @@ import { writeAudit } from "@/server/audit";
 import { resolveTillMode, offMenuScopeMessage, type TillEvent, type TillMode, type TillSessionRow } from "@/lib/till-mode";
 import type { EventSwitches } from "@/lib/session-mode";
 
-type WindowRow = EventSwitches & { id: string; name: string; startsAt: Date; endsAt: Date };
+type WindowRow = EventSwitches & { id: string; name: string; startsAt: Date; endsAt: Date; createdAt?: Date | null };
 
 /** The mode(s) and event in force at `at` on revenue day `day` (YYYY-MM-DD, SAST). */
 export async function readTillMode(client: Pick<DB, "select">, day: string, at: Date): Promise<TillMode> {
   const sessions = await client
-    .select({ sessionDate: openingSessions.sessionDate, mode: openingSessions.mode, eventWindowId: openingSessions.eventWindowId })
+    .select({
+      sessionDate: openingSessions.sessionDate, mode: openingSessions.mode,
+      eventWindowId: openingSessions.eventWindowId,
+      // DEC-28 (a): a bound event applies from the session's own opening.
+      opensAt: openingSessions.opensAt,
+    })
     .from(openingSessions)
     .where(eq(openingSessions.sessionDate, day));
   const windowIds = [
@@ -27,6 +32,7 @@ export async function readTillMode(client: Pick<DB, "select">, day: string, at: 
           menuScope: eventWindows.menuScope, paymentPosture: eventWindows.paymentPosture,
           consumesCupLid: eventWindows.consumesCupLid, audience: eventWindows.audience,
           extraShotSurcharge: eventWindows.extraShotSurcharge, voucherKinds: eventWindows.voucherKinds,
+          createdAt: eventWindows.createdAt, // DEC-28 (c): newest window wins
         })
         .from(eventWindows)
         .where(inArray(eventWindows.id, windowIds))) as WindowRow[])
@@ -35,6 +41,7 @@ export async function readTillMode(client: Pick<DB, "select">, day: string, at: 
   const rows: TillSessionRow[] = sessions.map((s) => ({
     sessionDate: s.sessionDate ?? day,
     mode: s.mode,
+    opensAt: s.opensAt ?? null,
     window: s.eventWindowId ? byId.get(s.eventWindowId) ?? null : null,
   }));
   return resolveTillMode(rows, at);

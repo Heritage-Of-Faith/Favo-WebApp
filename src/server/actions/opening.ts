@@ -122,6 +122,7 @@ function openRowWindow(r: OpenRow): { endsAt: Date } | null {
 
 type WindowRow = EventSwitches & {
   id: string; name: string; eventProfileId: string | null; startsAt: Date; endsAt: Date;
+  createdAt?: Date | null;
 };
 
 function windowView(w: WindowRow): EventWindowView {
@@ -130,12 +131,14 @@ function windowView(w: WindowRow): EventWindowView {
     startsAt: new Date(w.startsAt).toISOString(), endsAt: new Date(w.endsAt).toISOString(),
     menuScope: w.menuScope, paymentPosture: w.paymentPosture, consumesCupLid: w.consumesCupLid,
     audience: w.audience, extraShotSurcharge: w.extraShotSurcharge, voucherKinds: [...w.voucherKinds],
+    // DEC-28 (c): the newest window wins an overlap (resolveSessionMode).
+    ...(w.createdAt ? { createdAt: new Date(w.createdAt).toISOString() } : {}),
   };
 }
 
 const windowCols = {
   id: eventWindows.id, name: eventWindows.name, eventProfileId: eventWindows.eventProfileId,
-  startsAt: eventWindows.startsAt, endsAt: eventWindows.endsAt,
+  startsAt: eventWindows.startsAt, endsAt: eventWindows.endsAt, createdAt: eventWindows.createdAt,
   menuScope: eventWindows.menuScope, paymentPosture: eventWindows.paymentPosture,
   consumesCupLid: eventWindows.consumesCupLid, audience: eventWindows.audience,
   extraShotSurcharge: eventWindows.extraShotSurcharge, voucherKinds: eventWindows.voucherKinds,

@@ -21,7 +21,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql, stepDown0053 } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0053, stepDown0054 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -71,6 +71,7 @@ maybe("0052 price_history.set_by_staff_id: up → down → up, and the refusals 
   async function inRolledBackTx(fn: (tx: TransactionSql) => Promise<void>) {
     try {
       await sql.begin(async (tx) => {
+        await stepDown0054(tx); // DEC-28 d: 0054 (orders.event_window_id, FK → event_windows) is newest of all, before 0053
         await stepDown0053(tx); // 0053 is newer; newest first (rolled back with everything else)
         await fn(tx);
         throw new Rollback();

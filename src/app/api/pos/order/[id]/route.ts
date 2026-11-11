@@ -2,7 +2,7 @@
 // Auth: POS roles only (barista, manager, admin, owner).
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders, orderItems, menuItems, customers, payments } from "@db/schema";
+import { orders, orderItems, menuItems, customers, payments, eventWindows } from "@db/schema";
 import { authorize } from "@/server/auth/guard";
 import { liveVoucherCountsByLine } from "@/server/orders/voucher-session";
 import { summarisePayments } from "@/server/tender/summary";
@@ -25,7 +25,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const [row] = await db.select().from(orders).where(eq(orders.id, id));
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const [items, customerRow, paymentRow, vouchersByLine] = await Promise.all([
+  // DEC-28 (b): the queue card's gate reads the posture of the order's event window.
+  const eventPosture = row.eventWindowId
+    ? db
+        .select({ paymentPosture: eventWindows.paymentPosture })
+        .from(eventWindows)
+        .where(eq(eventWindows.id, row.eventWindowId))
+    : Promise.resolve([] as { paymentPosture: string }[]);
+
+  const [items, customerRow, paymentRow, vouchersByLine, eventRow] = await Promise.all([
     db
       .select({
         id: orderItems.id,
@@ -53,6 +61,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       .where(eq(payments.orderId, id))
       .orderBy(payments.attempt), // one row per attempt: the LATEST decides (§10.3.3)
     liveVoucherCountsByLine(db, id),
+    eventPosture,
   ]);
   const payState = summarisePayments(paymentRow);
 
@@ -75,6 +84,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     paymentMode: row.paymentMode,
     revenueDay: row.revenueDay,
     latestAttemptSent: (paymentRow[paymentRow.length - 1]?.sentAt ?? null) !== null,
+    eventPaymentPosture: eventRow[0]?.paymentPosture ?? null,
     items: items.map((i) => ({
       id: i.id,
       menuItemId: i.menuItemId,

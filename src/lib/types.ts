@@ -117,6 +117,8 @@ export type Order = {
   revenueDay?: string;
   /** The latest payment attempt was sent to the terminal (DEC-21: it keeps the normal gate). */
   latestAttemptSent?: boolean;
+  /** DEC-28 (b): payment_posture of the order's event window (orders.event_window_id), or null. */
+  eventPaymentPosture?: string | null;
   items: OrderItem[];
 };
 

@@ -41,7 +41,25 @@ export type EventWindowView = EventSwitches & {
   eventProfileId: string | null;
   startsAt: string;
   endsAt: string;
+  /** event_windows.created_at (ISO) — DEC-28 (c): the newest window wins an overlap. */
+  createdAt?: string;
 };
+
+/**
+ * DEC-28 (c) (owner, Mia, 11 Nov 2026): when event windows overlap, the most
+ * recently created one applies — created_at descending, then id descending so
+ * a tie is still deterministic. Overlaps are never refused. A window with no
+ * known created_at sorts as the oldest.
+ */
+export function newestWindowFirst(
+  a: { id: string; createdAt?: string | Date | null },
+  b: { id: string; createdAt?: string | Date | null }
+): number {
+  const ta = a.createdAt ? new Date(a.createdAt).getTime() : Number.NEGATIVE_INFINITY;
+  const tb = b.createdAt ? new Date(b.createdAt).getTime() : Number.NEGATIVE_INFINITY;
+  if (ta !== tb) return tb > ta ? 1 : -1;
+  return a.id === b.id ? 0 : a.id < b.id ? 1 : -1;
+}
 
 /** An active event_profiles row. Default times are SAST wall clock, or null. */
 export type EventProfileView = EventSwitches & {
@@ -205,9 +223,10 @@ export function resolveSessionMode(input: SessionSlot & {
   // morning session is untouched by the evening's event.
 
   // (1) A window that already exists (one-off or started) beats a recurring template.
+  // DEC-28 (c): of overlapping windows, the newest created wins.
   const window = [...input.windows]
     .filter((w) => eventSwitchesInTill(w) && sessionMatchesWindow(input, w))
-    .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0];
+    .sort(newestWindowFirst)[0];
   if (window) return { kind: "event", source: "window", window, overridesSunday };
 
   for (const profile of input.profiles) {

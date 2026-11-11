@@ -25,6 +25,7 @@ import {
   hasDailyClose,
   isSundayOutsideFavo,
   recordDailyClose,
+  sundayCardSalesOnMachine,
   sweepWriteOffs,
   type WrittenOffOrder,
 } from "@/server/close/write-offs";
@@ -175,8 +176,24 @@ export async function closeDaily(
     // and one whose latest attempt was SENT to the terminal (the same test as
     // isUnpaid; the sweep writes that one off as unresolved_at_close).
     const sundayOutsideFavo = isSundayOutsideFavo(date);
+    // DEC-28 (b) (owner, Mia, 11 Nov 2026): a paid event on any other day
+    // (a Thursday, a Saturday social) is taken on the same Yoco machine while
+    // the Web POS is not live. An order bound to a paid-posture event window,
+    // with no successful FAVO payment and no latest attempt sent, was paid
+    // outside FAVO: it is on neither side, as on a Sunday, and is named on the
+    // close record (eventCardSalesOutsideFavo). One pass, no extra read.
+    const eventOutsideFavo = !sundayOutsideFavo && sundayCardSalesOnMachine();
+    const paidEventOutside = sql`(EXISTS (SELECT 1 FROM event_windows ew WHERE ew.id = ${orders.eventWindowId} AND ew.payment_posture IN ('standard', 'override')) AND NOT EXISTS (SELECT 1 FROM payments ep WHERE ep.order_id = ${orders.id} AND ep.status = 'successful') AND NOT EXISTS (SELECT 1 FROM (SELECT la.sent_at FROM payments la WHERE la.order_id = ${orders.id} ORDER BY la.attempt DESC LIMIT 1) latest WHERE latest.sent_at IS NOT NULL))`;
     const [revRow] = await txDb
-      .select({ total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` })
+      .select(
+        eventOutsideFavo
+          ? {
+              total: sql<number>`COALESCE(SUM(${orders.totalZar}) FILTER (WHERE NOT ${paidEventOutside}), 0)::int`,
+              eventOutsideCount: sql<number>`COUNT(*) FILTER (WHERE ${paidEventOutside} AND ${orders.paymentMode} IS DISTINCT FROM 'free' AND ${orders.totalZar} > 0)::int`,
+              eventOutsideZar: sql<number>`COALESCE(SUM(${orders.totalZar}) FILTER (WHERE ${paidEventOutside} AND ${orders.paymentMode} IS DISTINCT FROM 'free' AND ${orders.totalZar} > 0), 0)::bigint`,
+            }
+          : { total: sql<number>`COALESCE(SUM(${orders.totalZar}), 0)::int` }
+      )
       .from(orders)
       .where(
         and(
@@ -191,7 +208,11 @@ export async function closeDaily(
             : undefined
         )
       );
-    const revenueZar = revRow?.total ?? 0;
+    const revenueZar = Number(revRow?.total ?? 0);
+    const outsideRow = revRow as { eventOutsideCount?: number | string; eventOutsideZar?: number | string } | undefined;
+    const eventTakenOutsideFavo = eventOutsideFavo
+      ? { orderCount: Number(outsideRow?.eventOutsideCount ?? 0), orderZar: Number(outsideRow?.eventOutsideZar ?? 0) }
+      : null;
 
     // Payments = sum of amountZar for successful payments on orders of the
     // same revenue day, keyed the same way so the two figures line up.
@@ -256,6 +277,10 @@ export async function closeDaily(
           writtenOffZar: sweep.dayZar,
           reconciliationStatus,
           ...(sundayTakenOutsideFavo ? { sundayCardSalesOutsideFavo: sundayTakenOutsideFavo } : {}),
+          // DEC-28 (b): named only when there is one, so a plain weekday close reads as before.
+          ...(eventTakenOutsideFavo && eventTakenOutsideFavo.orderCount > 0
+            ? { eventCardSalesOutsideFavo: eventTakenOutsideFavo }
+            : {}),
         },
         reason: wasCatchUp ? `catch-up on startup: closes revenue day ${date}` : undefined,
       },

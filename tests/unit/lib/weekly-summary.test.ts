@@ -131,3 +131,66 @@ describe("splitByMode — weekday, Sunday and events read separately", () => {
     expect(final.sunday).toMatchObject({ costState: "final", tone: "positive", label: "profit", grossMarginZar: 33412 });
   });
 });
+
+// DEC-28 (d) (owner, Mia, 11 Nov 2026): orders carry event_window_id, so an
+// event's orders are reported in the Event column by their own stamp, and a
+// day that also held a weekday or Sunday session reads that session's mode for
+// the rest of its orders — instead of folding the whole day into unassigned.
+describe("DEC-28 (d): event-stamped orders read as Event", () => {
+  const WED = "2026-08-12";
+  const cogs = (cogsZar: number, orderCount: number) =>
+    ({ state: "final" as const, cogsZar, absentItemNames: [], ordersWithoutCost: 0, orderCount });
+
+  it("a Wednesday with a weekday session and Discipleship 101: weekday orders → Weekday, event orders → Event", () => {
+    const s = splitByMode(
+      [
+        day(WED, { cogs: cogs(1352, 3), drinks: 3, staffCoffees: 2 }),
+        day(WED, { part: "event", cogs: cogs(1059, 2), drinks: 2 }),
+      ],
+      new Map([[WED, ["weekday", "event"]]])
+    );
+    expect(s.weekday).toMatchObject({ days: [WED], cogsZar: 1352, orderCount: 3, drinks: 3, staffCoffees: 2 });
+    expect(s.event).toMatchObject({ days: [WED], revenueZar: 0, cogsZar: 1059, orderCount: 2, drinks: 2 });
+    expect(s.unassigned).toMatchObject({ days: [], orderCount: 0 });
+  });
+
+  it("a Thursday paid event: its R76.00 is Event revenue, never weekday", () => {
+    const THU = "2026-08-13";
+    const s = splitByMode(
+      [day(THU), day(THU, { part: "event", revenueZar: 7600, cogs: cogs(2118, 2) })],
+      new Map([[THU, ["event"]]])
+    );
+    expect(s.event).toMatchObject({ days: [THU], revenueZar: 7600, cogsZar: 2118, grossMarginZar: 5482, orderCount: 2 });
+    expect(s.weekday.revenueZar).toBe(0);
+  });
+
+  it("a Sunday morning and Untracked Church: Sunday orders stay Sunday, the evening's are Event", () => {
+    const SUN = "2026-08-16";
+    const s = splitByMode(
+      [day(SUN, { revenueZar: 35000, cogs: cogs(1588, 9) }), day(SUN, { part: "event", revenueZar: 7600, cogs: cogs(1059, 2) })],
+      new Map([[SUN, ["sunday", "event"]]])
+    );
+    expect(s.sunday).toMatchObject({ revenueZar: 35000, orderCount: 9 });
+    expect(s.event).toMatchObject({ revenueZar: 7600, orderCount: 2 });
+    expect(s.unassigned.orderCount).toBe(0);
+  });
+
+  it("a mixed day with NO stamped event order is still never guessed (orders from before the column)", () => {
+    const s = splitByMode([day("2026-08-16", { revenueZar: 35000, cogs: cogs(1588, 9) })], new Map([["2026-08-16", ["sunday", "event"]]]));
+    expect(s.unassigned).toMatchObject({ revenueZar: 35000, orderCount: 9 });
+  });
+
+  it("the sections still partition the week: Σ sections = Σ days", () => {
+    const days = [
+      day(WED, { revenueZar: 0, cogs: cogs(1352, 3) }),
+      day(WED, { part: "event", revenueZar: 0, cogs: cogs(1059, 2) }),
+      day("2026-08-16", { revenueZar: 35000, cogs: cogs(1588, 9) }),
+      day("2026-08-16", { part: "event", revenueZar: 7600, cogs: cogs(1059, 2) }),
+    ];
+    const s = splitByMode(days, new Map([[WED, ["weekday", "event"]], ["2026-08-16", ["sunday", "event"]]]));
+    const all = [s.weekday, s.sunday, s.event, s.unassigned];
+    expect(all.reduce((t, x) => t + x.revenueZar, 0)).toBe(42600);
+    expect(all.reduce((t, x) => t + (x.cogsZar ?? 0), 0)).toBe(1352 + 1059 + 1588 + 1059);
+    expect(all.reduce((t, x) => t + x.orderCount, 0)).toBe(16);
+  });
+});

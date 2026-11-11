@@ -14,6 +14,7 @@ import {
   openingSessions,
   voucherRedemptions,
   stockMovements,
+  eventWindows,
 } from "@db/schema";
 import { writeAudit } from "@/server/audit";
 import { authorize } from "@/server/auth/guard";
@@ -460,6 +461,9 @@ export async function createOrder(
         paymentMode: orderFree || totalZar === 0 ? "free" : "yoco",
         placedAt: receivedAt,
         revenueDay: day,
+        // DEC-28 (d) / §11 createOrder: "Tags event_window_id when an event is
+        // in force" — the window the till resolved (DEC-28 a, c), else NULL.
+        eventWindowId: event?.windowId ?? null,
       });
 
       await Promise.all([
@@ -484,7 +488,7 @@ export async function createOrder(
             after: {
               state: "ordered", totalZar, customerId: data.customerId ?? null,
               notificationTarget: data.notificationTarget,
-              // §6.6 event attribution: orders has no event_window_id column yet.
+              // §6.6 event attribution (also on orders.event_window_id, DEC-28 d).
               ...(event ? { eventWindowId: event.windowId, paymentPosture: event.paymentPosture } : {}),
             },
           },
@@ -822,14 +826,27 @@ export async function transitionOrder(
       // DEC-26 (Mia, 9 Nov 2026) / DEC-21: no YOCO_SECRET_KEY bypass; a deferred
       // order starts normally (T3 step 2); a Sunday order may start while its
       // card sale is expected on the Yoco machine — decidePaymentGate.
+      // DEC-28 (b): so may an order bound to a paid-posture event window.
       if (toState === "in_progress" && current.totalZar > 0 && current.paymentMode !== "donor_fund") {
         const attempts = await tx
           .select({ status: payments.status, sentAt: payments.sentAt })
           .from(payments)
           .where(eq(payments.orderId, orderId))
           .orderBy(payments.attempt);
+        // DEC-28 (b): the posture of the event window the order was rung under.
+        let eventPaymentPosture: string | null = null;
+        if (current.eventWindowId) {
+          const [w] = await tx
+            .select({ paymentPosture: eventWindows.paymentPosture })
+            .from(eventWindows)
+            .where(eq(eventWindows.id, current.eventWindowId));
+          eventPaymentPosture = w?.paymentPosture ?? null;
+        }
         const gate = decidePaymentGate(
-          { totalZar: current.totalZar, paymentMode: current.paymentMode, revenueDay: current.revenueDay, attempts },
+          {
+            totalZar: current.totalZar, paymentMode: current.paymentMode, revenueDay: current.revenueDay, attempts,
+            eventPaymentPosture,
+          },
           sundayCardSalesOnMachine()
         );
         if (gate === "payment_required") {
@@ -855,6 +872,22 @@ export async function transitionOrder(
               actorId: session.id, actorRole: session.role,
               after: { revenueDay: current.revenueDay, totalZar: current.totalZar, rule: "DEC-21" },
               reason: "card sale expected on the Yoco machine (DEC-21)",
+            },
+            txDb
+          );
+        }
+        if (gate === "event_machine") {
+          // DEC-28 (b): a paid event (any day) while the Web POS is not live —
+          // the card sale is expected on the Yoco machine. No money change.
+          await writeAudit(
+            {
+              entityKind: "order", entityId: orderId, action: "event_started_without_favo_payment",
+              actorId: session.id, actorRole: session.role,
+              after: {
+                revenueDay: current.revenueDay, totalZar: current.totalZar,
+                eventWindowId: current.eventWindowId, paymentPosture: eventPaymentPosture, rule: "DEC-28",
+              },
+              reason: "card sale expected on the Yoco machine (DEC-28)",
             },
             txDb
           );

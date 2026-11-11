@@ -62,9 +62,36 @@ export type ApplyOutboxResult =
       reason: "unknown_menu_item" | "amount_mismatch" | "shots_above_ceiling" | "shots_not_allowed";
     };
 
+// ─── The instant a replay's mode is read at (DEC-28) ─────────────────────────
+
+/** REQ-039: an outbox order older than this at replay is too old to be trusted. */
+export const REPLAY_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * DEC-28 (owner, Mia, 11 Nov 2026): an offline order is replayed under the
+ * mode in force when it was RUNG — the entry's clientTimestamp — so a free
+ * event's order replayed after the window ended stays free, and a paid one
+ * stays owed. The server still decides what was in force at that instant from
+ * its own sessions and windows; the till's own claim ('free') is never
+ * trusted. A client time after the receipt, unreadable, or older than
+ * REQ-039's 12 hours is not used: the receipt time is. The revenue day is
+ * always the receipt day (REQ-039), whatever this returns.
+ */
+export function replayModeInstant(clientTimestamp: string | undefined, receivedAt: Date): Date {
+  if (!clientTimestamp) return receivedAt;
+  const rung = new Date(clientTimestamp);
+  const age = receivedAt.getTime() - rung.getTime();
+  if (Number.isNaN(age) || age < 0 || age > REPLAY_MAX_AGE_MS) return receivedAt;
+  return rung;
+}
+
 // ─── applyOutboxItem ──────────────────────────────────────────────────────────
 
 export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResult> {
+  // REQ-039: the server's receipt time decides the revenue day; DEC-28: the
+  // ring-up time (bounded) decides the mode.
+  const receivedAt = new Date();
+  const modeAt = replayModeInstant(item.clientTimestamp, receivedAt);
   // ── Idempotency check ──────────────────────────────────────────────────────
   const [existing] = await db
     .select()
@@ -110,12 +137,13 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
   }
 
   // ── AT-202: shots — the same ceiling and surcharge createOrder applies ────
-  // The mode is the one in force on the SERVER'S receipt day (the day this
-  // order's revenue_day is written for, REQ-039), never the client's clock.
-  // So a Sunday triple replayed on a Sunday is charged its surcharge, and one
-  // replayed on any other day is above that day's ceiling and refused — it is
-  // never silently re-priced without the surcharge. A 1-shot line cannot be
-  // affected, so the policy is read only when a line carries more.
+  // CHANGED (DEC-28): the mode is the one in force when the order was rung
+  // (modeAt — the client's time, bounded by replayModeInstant), so the price
+  // the till showed is the price checked. Outside the bound it is the
+  // receipt time, as before: a Sunday triple replayed the next day is above
+  // that day's ceiling and refused — never silently re-priced without the
+  // surcharge. A 1-shot line cannot be affected, so the policy is read only
+  // when a line carries more.
   const shotsOf = (i: OutboxItem["items"][number]) => i.shots ?? 1;
   let shotPolicy: ShotPolicy | null = null;
   const multiShot = item.items.filter((i) => shotsOf(i) > 1);
@@ -129,7 +157,7 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     if (multiShot.some((i) => { const r = recipeOf(i.menuItemId); return !(r && coffee.has(r)); })) {
       return { outcome: "rejected", reason: "shots_not_allowed" };
     }
-    shotPolicy = await readShotPolicy(db, revenueDay());
+    shotPolicy = await readShotPolicy(db, revenueDay(modeAt), modeAt);
     const policy = shotPolicy;
     if (item.items.some((i) => shotsOf(i) > policy.maxShots)) {
       return { outcome: "rejected", reason: "shots_above_ceiling" };
@@ -156,12 +184,12 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
   // SAST, L03) nobody pays (L19): the order is written 'free' whatever the
   // client queued, every line zeroed by discount_zar (DEC-18), total R0 — so
   // the close never writes it off as a phantom loss (S3a).
-  const receivedAt = new Date();
-  // The mode in force at receipt (src/lib/till-mode.ts): a Wednesday's evening
-  // event does not make the morning's replays paid. S7a: 'free' also on a
+  // The mode in force when the order was rung (DEC-28: modeAt, see
+  // replayModeInstant; src/lib/till-mode.ts): a Wednesday's evening event
+  // does not make the morning's replays paid. S7a: 'free' also on a
   // free-posture event in force (L25) — the same zeroing, the same R0.
-  const till = await readTillMode(db, revenueDay(receivedAt), receivedAt);
-  const weekdayFree = isFreeCupWeekday(till.modes, receivedAt) || isEventFree(till.event);
+  const till = await readTillMode(db, revenueDay(modeAt), modeAt);
+  const weekdayFree = isFreeCupWeekday(till.modes, modeAt) || isEventFree(till.event);
   const lineDiscountZar = (idx: number) => (weekdayFree ? weekdayLineDiscountZar(lines[idx]) : 0);
   const orderTotalZar = weekdayFree ? 0 : serverTotalZar;
   // The till's 'free' is never trusted: only the server's own weekday read
@@ -187,6 +215,8 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     paymentMode,
     // REQ-039: the server's receipt time decides the revenue day, never the client's.
     revenueDay: revenueDay(receivedAt),
+    // DEC-28 (d): the event the order was rung under, else NULL.
+    eventWindowId: till.event?.windowId ?? null,
   });
 
   await db.insert(orderItems).values(

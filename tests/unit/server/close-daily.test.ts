@@ -94,6 +94,11 @@ vi.mock("@/server/close/write-offs", () => ({
   // CHANGED (Sunday skip): closeDaily now asks whether the day is a Sunday
   // taken outside FAVO. DAY is a Monday, so the answer is false; no assertion changed.
   isSundayOutsideFavo: vi.fn().mockReturnValue(false),
+  // CHANGED (DEC-28 b): closeDaily now also asks whether cards are still taken
+  // on the Yoco machine (paid events). Stubbed off so these tests keep reading
+  // the plain revenue sum; no assertion changed. The paid-event path is proved
+  // in close-daily-writeoffs.test.ts.
+  sundayCardSalesOnMachine: vi.fn().mockReturnValue(false),
 }));
 vi.mock("@/server/push/admin-alert", () => ({ alertAdmins: vi.fn() }));
 

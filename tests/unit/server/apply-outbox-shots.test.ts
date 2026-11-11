@@ -226,3 +226,57 @@ describe("applyOutboxItem — weekday + deferred → free (S7a, AT-212)", () => 
     expect((insertsInto(orderItems)[0] as Row[])[0]).not.toHaveProperty("discountZar");
   });
 });
+
+// DEC-28 offline replay (owner, Mia, 11 Nov 2026): the mode an offline order
+// is replayed under is the one in force when it was RUNG — the outbox entry's
+// clientTimestamp — not the server's receipt time. The revenue day stays the
+// receipt day (REQ-039). A client time in the future, or older than REQ-039's
+// 12 hours, is not trusted: the receipt time is used, as before.
+describe("applyOutboxItem — the mode at the client's ring-up time (DEC-28)", () => {
+  // Wednesday 14 Oct 2026, an event 08:00–12:00 SAST.
+  const at = (iso: string) => ({ ...entry(1, 2000), clientTimestamp: new Date(iso).toISOString() });
+
+  it("rung at 11:30 inside a free event, replayed at 12:30 after it ended → 'free', R0, stamped", async () => {
+    vi.setSystemTime(new Date("2026-10-14T12:30:00+02:00"));
+    given([eventOn("2026-10-14", "free")]);
+    const res = await applyOutboxItem(at("2026-10-14T11:30:00+02:00"));
+    expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 0 });
+    expect(insertsInto(orders)[0]).toMatchObject({
+      paymentMode: "free", totalZar: 0, eventWindowId: "evw_2026-10-14_free", revenueDay: "2026-10-14",
+    });
+    expect((insertsInto(orderItems)[0] as Row[])[0]).toMatchObject({ unitPriceZar: 2000, discountZar: 2000 });
+  });
+
+  it("rung inside a paid event, replayed after it → owed 'yoco_deferred' R20.00, stamped with the event", async () => {
+    vi.setSystemTime(new Date("2026-10-14T12:30:00+02:00"));
+    given([eventOn("2026-10-14", "standard")]);
+    const res = await applyOutboxItem(at("2026-10-14T11:30:00+02:00"));
+    expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 2000 });
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "yoco_deferred", totalZar: 2000, eventWindowId: "evw_2026-10-14_standard" });
+  });
+
+  it("REQ-039: rung 23:50 at a free event, replayed 00:10 → free and stamped, but the revenue day is the receipt day", async () => {
+    vi.setSystemTime(new Date("2026-10-15T00:10:00+02:00"));
+    given([{
+      mode: "event",
+      window: { ...eventOn("2026-10-14", "free").window, startsAt: new Date("2026-10-14T20:00:00+02:00"), endsAt: new Date("2026-10-14T23:59:00+02:00") },
+    }]);
+    const res = await applyOutboxItem(at("2026-10-14T23:50:00+02:00"));
+    expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 0 });
+    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "free", eventWindowId: "evw_2026-10-14_free", revenueDay: "2026-10-15" });
+  });
+
+  it("a client time AFTER the receipt is not trusted — the receipt time decides", async () => {
+    vi.setSystemTime(new Date("2026-10-14T11:30:00+02:00"));
+    given([eventOn("2026-10-14", "standard")]);
+    await applyOutboxItem(at("2026-10-14T12:30:00+02:00")); // after the window, and in the future
+    expect(insertsInto(orders)[0]).toMatchObject({ eventWindowId: "evw_2026-10-14_standard", paymentMode: "yoco_deferred" });
+  });
+
+  it("a client time more than 12 hours old (REQ-039) is not used — the receipt time decides", async () => {
+    vi.setSystemTime(new Date("2026-10-15T00:30:00+02:00"));
+    given([eventOn("2026-10-14", "standard")]);
+    await applyOutboxItem(at("2026-10-14T11:30:00+02:00")); // 13 h before receipt
+    expect(insertsInto(orders)[0]).toMatchObject({ eventWindowId: null });
+  });
+});

@@ -39,8 +39,12 @@ export type ModeSplit = {
   modes: Record<ModeKey, ModeFigures>;
 };
 
-/** One day's money figures, as readDailyFigures returns them. */
-export type ModeDay = Pick<SummaryDay, "date" | "revenueZar" | "cogs"> & { expensesZar: number };
+/**
+ * One day's money figures, as readDailyFigures returns them. DEC-28 (d):
+ * `part: "event"` carries only the day's event-stamped orders (expenses 0, so
+ * the period's expenses are counted once).
+ */
+export type ModeDay = Pick<SummaryDay, "date" | "revenueZar" | "cogs" | "part"> & { expensesZar: number };
 
 export const MODE_KEYS: readonly ModeKey[] = ["weekday", "sunday", "event", "unassigned"];
 
@@ -67,7 +71,10 @@ export function splitFiguresByMode(
   sessionModes: ReadonlyMap<string, readonly string[]>
 ): ModeSplit {
   const sections = splitByMode(
-    days.map((d) => ({ date: d.date, revenueZar: d.revenueZar, cogs: d.cogs, drinks: 0, staffCoffees: 0, walkInCups: 0, consumption: [] })),
+    days.map((d) => ({
+      date: d.date, revenueZar: d.revenueZar, cogs: d.cogs, drinks: 0, staffCoffees: 0, walkInCups: 0, consumption: [],
+      ...(d.part ? { part: d.part } : {}),
+    })),
     sessionModes
   );
   return {

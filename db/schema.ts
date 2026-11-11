@@ -292,6 +292,11 @@ export const orders = pgTable("orders", {
   // the close sweep, on an order with no successful payment and no fund spend.
   // The reason lives on the sweep's audit_log row (action `write_off`).
   writtenOffAt: timestamp("written_off_at", { withTimezone: true }),
+  // DEC-28 (d) / PRD §10.3 ("Event attribution (§6.6)"), §11 createOrder ("Tags
+  // event_window_id when an event is in force"), R6. NULL = rung under no
+  // event. Stamped once at ring-up (createOrder, the offline replay); the
+  // reports' per-mode split buckets these orders as Event.
+  eventWindowId: text("event_window_id").references(() => eventWindows.id),
 }, () => [
   // PRD §10.3: a row can never claim it will notify someone and carry no customer.
   check(

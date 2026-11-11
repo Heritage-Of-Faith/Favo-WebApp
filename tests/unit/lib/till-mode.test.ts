@@ -51,6 +51,74 @@ describe("resolveTillMode", () => {
   });
 });
 
+// DEC-28 (a) (owner, Mia, 11 Nov 2026) / §4.2: "an evening session opened at
+// 17:45 for an 18:00 service still finds it" — the event applies from the
+// SESSION's opening, not from the window's start, and still ends at ends_at.
+describe("DEC-28 (a): a bound event applies from the session's opening", () => {
+  // Sunday 11 Oct 2026. Untracked Church 18:00–20:30 SAST, paid (standard).
+  const UNTRACKED = {
+    id: "evw_untracked", name: "Untracked Church",
+    startsAt: "2026-10-11T16:00:00.000Z", endsAt: "2026-10-11T18:30:00.000Z",
+    menuScope: "full", paymentPosture: "standard", consumesCupLid: true,
+    audience: "both", extraShotSurcharge: true, voucherKinds: [] as string[],
+    createdAt: "2026-10-11T15:40:00.000Z",
+  } as const;
+  const SUNDAY: TillSessionRow[] = [
+    { sessionDate: "2026-10-11", mode: "sunday", opensAt: "07:30", window: null },
+    { sessionDate: "2026-10-11", mode: "event", opensAt: "17:45", window: { ...UNTRACKED, voucherKinds: [] } },
+  ];
+  const sun = (sast: string) => new Date(`2026-10-11T${sast}:00+02:00`);
+
+  it("17:50, after the 17:45 opening and before the 18:00 start: the event is already in force", () => {
+    const t = resolveTillMode(SUNDAY, sun("17:50"));
+    expect(t.modes).toEqual(["event"]);
+    expect(t.event).toMatchObject({ windowId: "evw_untracked", paymentPosture: "standard" });
+  });
+
+  it("17:45 exactly (the opening) is in force; 17:44 is not — the morning reads Sunday", () => {
+    expect(resolveTillMode(SUNDAY, sun("17:45")).event?.windowId).toBe("evw_untracked");
+    expect(resolveTillMode(SUNDAY, sun("17:44"))).toEqual({ modes: ["sunday", "sunday"], event: null });
+    expect(resolveTillMode(SUNDAY, sun("09:00")).event).toBeNull();
+  });
+
+  it("REQ-042 still holds: at ends_at (20:30) the event stops applying", () => {
+    expect(resolveTillMode(SUNDAY, sun("20:29")).event).not.toBeNull();
+    expect(resolveTillMode(SUNDAY, sun("20:30")).event).toBeNull();
+  });
+
+  it("a session opened after the window start applies from the window start, as before", () => {
+    const late: TillSessionRow[] = [{ ...SUNDAY[1], opensAt: "18:15" }];
+    expect(resolveTillMode(late, sun("18:05")).event?.windowId).toBe("evw_untracked");
+  });
+});
+
+// DEC-28 (c) (owner, Mia, 11 Nov 2026): overlapping event windows — the NEWEST
+// window wins (created_at descending, then id descending). No overlap refusal.
+describe("DEC-28 (c): overlapping windows — newest wins", () => {
+  const base = {
+    startsAt: "2026-10-10T08:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z",
+    menuScope: "full", consumesCupLid: true, audience: "both",
+    extraShotSurcharge: false, voucherKinds: [] as string[],
+  } as const;
+  const older = { ...base, id: "evw_a", name: "Youth Social", paymentPosture: "standard", createdAt: "2026-10-09T08:00:00.000Z" } as const;
+  const newer = { ...base, id: "evw_b", name: "Baptism Social", paymentPosture: "free", createdAt: "2026-10-10T07:00:00.000Z" } as const;
+  const sat = new Date("2026-10-10T11:00:00.000Z");
+  const row = (w: NonNullable<TillSessionRow["window"]>, opensAt: string): TillSessionRow =>
+    ({ sessionDate: "2026-10-10", mode: "event", opensAt, window: { ...w, voucherKinds: [] } });
+
+  it("the most recently created window applies, whatever the session order", () => {
+    expect(resolveTillMode([row(older, "10:00"), row(newer, "12:00")], sat).event?.windowId).toBe("evw_b");
+    expect(resolveTillMode([row(newer, "12:00"), row(older, "10:00")], sat).event?.windowId).toBe("evw_b");
+    expect(resolveTillMode([row(older, "10:00"), row(newer, "12:00")], sat).event?.paymentPosture).toBe("free");
+  });
+
+  it("the same created_at: the higher id wins, deterministically", () => {
+    const twin = { ...newer, id: "evw_c", name: "Twin", createdAt: newer.createdAt };
+    expect(resolveTillMode([row(newer, "10:00"), row(twin, "12:00")], sat).event?.windowId).toBe("evw_c");
+    expect(resolveTillMode([row(twin, "12:00"), row(newer, "10:00")], sat).event?.windowId).toBe("evw_c");
+  });
+});
+
 describe("the switches", () => {
   it("L25: only payment_posture='free' is free", () => {
     expect(isEventFree({ paymentPosture: "free" })).toBe(true);
