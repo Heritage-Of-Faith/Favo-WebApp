@@ -81,7 +81,7 @@ Some migrations carry `-- favo:requires-approval` in their first lines (they tou
 
 1. **Nothing loads.** `docker compose ps`. If `app` is restarting, read `docker compose logs app`.
 2. **`[migrate] FATAL` asks for approval.** Section 7.
-3. **Container refuses to start about `DATABASE_URL_SESSION`.** The kit sets it. If PR #262 has merged, delete that line from `docker-compose.yml`.
+3. **Container refuses to start about `DATABASE_URL_SESSION`.** That variable is retired (PR #262). Make sure it is not set in `.env` or `docker-compose.yml`.
 4. **Compose says a variable is missing.** Fill it in `.env`.
 5. **Platform / "exec format" error.** Image and machine chip differ (Intel versus ARM). Build locally (section 5, way 2).
 6. **The address stopped working.** Quick tunnels change on restart. Section 4, step 6.

@@ -119,7 +119,6 @@ jobs:
       - name: Migrate a clean database with no Supabase auth schema
         env:
           DATABASE_URL: postgresql://favo:favo@localhost:5432/favo_clean
-          DATABASE_URL_SESSION: postgresql://favo:favo@localhost:5432/favo_clean
         run: |
           psql postgresql://favo:favo@localhost:5432/favo_test -v ON_ERROR_STOP=1 -c "CREATE DATABASE favo_clean;"
           test "$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM pg_namespace WHERE nspname = 'auth'")" = "0"
