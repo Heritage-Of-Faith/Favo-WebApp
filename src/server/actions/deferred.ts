@@ -28,6 +28,14 @@ import {
   type OpenSessionDeferred,
 } from "@/server/deferred/drizzle-store";
 import { checkDeviceHealth, processStreak } from "@/server/deferred/health-check";
+import {
+  onDeviceRead as onCardMachineRead,
+  processIncident,
+  tillCardMachineLine,
+} from "@/server/deferred/card-machine-alert";
+import { createCardMachineAlertStore } from "@/server/deferred/drizzle-store";
+import { alertAdmins } from "@/server/push/admin-alert";
+import { sendCardMachineAlertPush } from "@/server/push/send";
 import { readWebPosDeviceId, selectWebPosPort, unlinkedWebPosPort } from "@/server/tender/runtime";
 import { settleDeferredOrder as settle } from "@/server/deferred/settle";
 import { readOpenDeferredOrders, readUnpaidOrders, type UnpaidOrderRow } from "@/server/deferred/unpaid";
@@ -113,10 +121,18 @@ export async function enterDeferredAfterUnreachable(): Promise<ActionResult<{ de
  * The device is read on the server through the Web POS port; a barista cannot
  * supply a result. Deferred mode changes only as the system actor
  * ('health_check'), so REQ-006's barista refusal still holds. Barista or admin.
+ *
+ * `cardMachineDown` (REQ-068): true while this session's card-machine incident
+ * is alerted, so the till shows its on-screen line; null when this call did
+ * not run a check (too soon after the last) — the till keeps what it shows.
  */
-export async function runDeviceHealthCheck(): Promise<ActionResult<{ action: "entered" | "exited" | "none" }>> {
+export async function runDeviceHealthCheck(): Promise<
+  ActionResult<{ action: "entered" | "exited" | "none"; cardMachineDown: boolean | null }>
+> {
   const auth = await authorize(...POS_ROLES);
   if (!auth.ok) return auth;
+  const runnerStaffId = auth.session.id;
+  let checkedSessionId: string | null = null;
   const port = selectWebPosPort();
   const out = await checkDeviceHealth({
     now: () => new Date(),
@@ -126,8 +142,30 @@ export async function runDeviceHealthCheck(): Promise<ActionResult<{ action: "en
     readOpenSession: () => readOpenSessionForDeviceCheck(db),
     streak: processStreak,
     setDeferred: (sessionId, on, reason) => applyDeferredMode(deferredDeps(), { kind: "system" }, sessionId, on, reason),
+    // REQ-068 / §9.6.3: the card-machine alert rides this check. Pushes are
+    // fire-and-forget so a slow or failing push never holds up the till.
+    onDeviceRead: (sessionId, read, at) => {
+      checkedSessionId = sessionId;
+      return onCardMachineRead(
+        {
+          track: processIncident,
+          store: createCardMachineAlertStore(db),
+          newIncidentId: () => crypto.randomUUID(),
+          pushBarista: sendCardMachineAlertPush,
+          pushAdmins: alertAdmins,
+          dispatch: (sends) => { void sends; },
+        },
+        { sessionId, read, at, runnerStaffId }
+      );
+    },
   });
-  return { ok: true, data: { action: out.ran ? out.action : "none" } };
+  return {
+    ok: true,
+    data: {
+      action: out.ran ? out.action : "none",
+      cardMachineDown: tillCardMachineLine(out, processIncident.get(), checkedSessionId),
+    },
+  };
 }
 
 export type SettleResult =

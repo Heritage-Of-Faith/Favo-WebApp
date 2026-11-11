@@ -25,7 +25,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { AlertTriangle } from "lucide-react";
 import { getDeferredState, runDeviceHealthCheck, setDeferredMode } from "@/server/actions/deferred";
-import { DEFERRED_BANNER } from "@/lib/deferred-copy";
+import { CARD_MACHINE_DOWN_LINE, DEFERRED_BANNER } from "@/lib/deferred-copy";
 import { SESSION_CHANGED_EVENT } from "@/lib/pos-vouchers";
 
 type State = { sessionId: string; mode: string | null; deferred: boolean } | null;
@@ -40,6 +40,9 @@ export default function DeferredModeBar() {
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
+  // REQ-068: shown while the server reports an alerted card-machine incident,
+  // so a barista with no saved push subscription still sees it.
+  const [machineDown, setMachineDown] = useState(false);
 
   const read = useCallback(async () => {
     const r = await getDeferredState().catch(() => null);
@@ -58,6 +61,7 @@ export default function DeferredModeBar() {
   // overlap. Off on the server unless the live Web POS port is selected.
   const sessionId = state?.sessionId ?? null;
   useEffect(() => {
+    setMachineDown(false);
     if (!sessionId) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -65,6 +69,7 @@ export default function DeferredModeBar() {
       timer = setTimeout(async () => {
         const r = await runDeviceHealthCheck().catch(() => null);
         if (stopped) return;
+        if (r && r.ok && r.data.cardMachineDown !== null) setMachineDown(r.data.cardMachineDown);
         if (r && r.ok && r.data.action !== "none") await read();
         loop();
       }, DEVICE_CHECK_EVERY_MS);
@@ -109,6 +114,12 @@ export default function DeferredModeBar() {
             <strong>{DEFERRED_BANNER}</strong>
           </span>
         </>
+      )}
+      {machineDown && (
+        <span role="status" className="favo-small text-[var(--color-error)] flex items-center gap-1">
+          <AlertTriangle size={14} strokeWidth={2} className="shrink-0" />
+          <strong>{CARD_MACHINE_DOWN_LINE}</strong>
+        </span>
       )}
       {error && <span className="favo-small text-[var(--color-error)]">{error}</span>}
       <Link

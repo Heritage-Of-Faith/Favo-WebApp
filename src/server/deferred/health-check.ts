@@ -63,6 +63,11 @@ export type HealthCheckDeps = {
   streak: { get(): DeviceStreak | null; set(s: DeviceStreak | null): void };
   /** applyDeferredMode with the SYSTEM actor (deferred_entered_by='health_check'). */
   setDeferred: (sessionId: string, on: boolean, reason: string) => Promise<SetDeferredOk | DeferredFailure>;
+  /**
+   * REQ-068 / §9.6.3: the card-machine alert (./card-machine-alert.ts), told of
+   * every counted read. Its failure never fails the check.
+   */
+  onDeviceRead?: (sessionId: string, read: CheckRead, at: Date) => Promise<unknown>;
 };
 
 export type HealthCheckOutcome =
@@ -119,6 +124,11 @@ export async function checkDeviceHealth(deps: HealthCheckDeps): Promise<HealthCh
   const read: CheckRead = device.kind === "online" ? "pass" : device.kind === "device_error" ? "fail" : "inconclusive";
   const streak = nextStreak(prev, session, read, at);
   deps.streak.set(streak);
+  if (deps.onDeviceRead) {
+    await deps.onDeviceRead(session.sessionId, read, at).catch((err: unknown) =>
+      console.error("[health-check] card-machine alert step failed", { sessionId: session.sessionId }, err)
+    );
+  }
 
   const want = decideFromStreak(streak, session);
   let action: "entered" | "exited" | "none" = "none";

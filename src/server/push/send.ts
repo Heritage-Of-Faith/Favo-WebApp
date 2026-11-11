@@ -141,3 +141,15 @@ export async function sendShiftStartPush(
 ): Promise<PushOutcome> {
   return deliverOutcome(subscription, buildShiftStartPayload(opensAt));
 }
+
+/**
+ * Push the card-machine alert to an on-duty barista (PRD §9.6.3, REQ-068).
+ * The payload is built by src/server/deferred/card-machine-alert.ts.
+ * Returns the real outcome; the caller logs a failure, never throws it on.
+ */
+export async function sendCardMachineAlertPush(
+  subscription: PushSubscriptionShape,
+  payload: string
+): Promise<PushOutcome> {
+  return deliverOutcome(subscription, payload);
+}
