@@ -17,10 +17,12 @@
 // is mode='weekday'. No session is not a weekday. Unlike the free cup this
 // does not also test the calendar date (L24 follows the mode).
 // DEC-28 (d): an order stamped with orders.event_window_id follows that
-// window's switch by the link, never by a fresh read at placed_at. An
-// unstamped order reads the sessions of its placed_at instant — for an offline
-// replay placed_at is the instant it was priced under (apply-outbox replayTill),
-// so pricing and deduction always agree.
+// window's switch by the link, never by a fresh read at placed_at — for an
+// offline replay that is the window that priced it. An unstamped order reads
+// the mode at its placed_at, which for a replay is the server's receipt time
+// (REQ-039). Known limit: an unstamped replay whose client-time mode differs
+// from the receipt-time mode (e.g. Sunday 23:50 rung, Monday 00:10 received)
+// deducts cups by the receipt-time mode.
 
 import { eq } from "drizzle-orm";
 import { eventWindows } from "@db/schema";
@@ -60,8 +62,7 @@ export async function dayConsumesCupAndLid(
  * L24 for one order (DEC-28): its stamped event window's consumes_cup_lid
  * when it has one; otherwise the mode in force at its placed_at, read from
  * the sessions of placed_at's own SAST day (equal to revenue_day for every
- * order createOrder writes; for a replay crossing midnight, the day it was
- * rung — REQ-039 keeps revenue_day on the receipt day).
+ * order: createOrder and the replay both write placed_at = receipt, REQ-039).
  */
 export async function orderConsumesCupAndLid(
   order: { revenueDay: string; placedAt: Date | null | undefined; eventWindowId?: string | null },

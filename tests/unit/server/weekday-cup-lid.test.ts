@@ -157,7 +157,7 @@ describe("REQ-125 / L24 — cup and lid deduction follows the mode", () => {
     expect(lots).toEqual(["lot_beans_open", "lot_milk_open"]);
   });
 
-  it("DEC-28: an unstamped replay deducts by its placed_at (the instant it was priced under), not by now", async () => {
+  it("DEC-28: an unstamped order deducts by the mode at its placed_at (the receipt, REQ-039), not by now", async () => {
     // Weekday session + D101 in force at 19:00, read at placed_at; at 21:00 it would be weekday (no cups).
     const { lots } = await deductWithMode(["weekday", "event"], [d101Window(true)], { placedAt: PLACED_AT, eventWindowId: null });
     expect(lots).toContain("lot_cup_12oz_001");

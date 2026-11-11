@@ -98,6 +98,25 @@ describe("DEC-28 (a): a bound event applies from the session's opening", () => {
       .toEqual({ kind: "date", mode: "sunday" });
   });
 
+  // Second review (B2): a bound event never applies earlier than
+  // EVENT_EARLY_BIND_MINUTES (30) before its window starts, however early
+  // the session opened — a 07:00–20:00 Wednesday session bound to an 18:00
+  // paid event keeps its morning free cups.
+  it("B2: Wednesday session 07:00–20:00 bound to an 18:00 paid event — 10:00 is weekday (free), 17:29 too, 17:30 and 17:35 are the event", () => {
+    const PAID = {
+      id: "evw_wed_social", name: "Wednesday Social",
+      startsAt: "2026-10-07T16:00:00.000Z", endsAt: "2026-10-07T18:00:00.000Z", // 18:00–20:00 SAST
+      menuScope: "full", paymentPosture: "standard", consumesCupLid: true,
+      audience: "both", extraShotSurcharge: true, voucherKinds: [] as string[],
+    } as const;
+    const rows: TillSessionRow[] = [{ sessionDate: "2026-10-07", mode: "event", opensAt: "07:00", window: { ...PAID, voucherKinds: [] } }];
+    expect(resolveTillMode(rows, at("10:00"))).toEqual({ modes: ["weekday"], event: null });
+    expect(resolveTillMode(rows, at("17:29")).event).toBeNull();
+    expect(resolveTillMode(rows, at("17:30")).event?.windowId).toBe("evw_wed_social");
+    expect(resolveTillMode(rows, at("17:35")).event?.paymentPosture).toBe("standard");
+    expect(resolveTillMode(rows, at("20:00")).event).toBeNull();
+  });
+
   it("a session opened after the window start applies from the window start, as before", () => {
     const late: TillSessionRow[] = [{ ...SUNDAY[1], opensAt: "18:15" }];
     expect(resolveTillMode(late, sun("18:05")).event?.windowId).toBe("evw_untracked");

@@ -178,21 +178,24 @@ type SessionSlot = { sessionDate: string; opensAt: string; closesAt: string | nu
 export const EVENT_EARLY_BIND_MINUTES = 30;
 
 /**
- * L18 / COL-8: does a session's own window meet an event window? With a known
- * close time this is an overlap test. With none (the barista never records one)
- * the event must be in force when the session opens, or start no more than
- * EVENT_EARLY_BIND_MINUTES after it (DEC-28 a). Once bound, the till applies
- * the event from the session's opening (src/lib/till-mode.ts eventAppliesAt).
+ * L18 / COL-8: does a session's own window meet an event window? The event's
+ * span is [starts_at − EVENT_EARLY_BIND_MINUTES, ends_at) (DEC-28 a). With a
+ * known close time this is an overlap test against that span. With none (the
+ * barista never records one) the session must open inside it. Once bound,
+ * the till applies the event from the later of the session's opening and
+ * starts_at − 30 min (src/lib/till-mode.ts eventAppliesAt).
  */
 export function sessionMatchesWindow(s: SessionSlot, w: { startsAt: string; endsAt: string }): boolean {
   const open = sastInstant(s.sessionDate, s.opensAt).getTime();
-  const ws = new Date(w.startsAt).getTime();
+  // The event's span as the till applies it: [starts_at − 30 min, ends_at)
+  // (src/lib/till-mode.ts eventAppliesAt) — the same span binds and rings.
+  const earliest = new Date(w.startsAt).getTime() - EVENT_EARLY_BIND_MINUTES * 60 * 1000;
   const we = new Date(w.endsAt).getTime();
   if (s.closesAt) {
     const close = sastInstant(s.sessionDate, s.closesAt).getTime();
-    if (close > open) return open < we && ws < close;
+    if (close > open) return open < we && earliest < close;
   }
-  return ws - EVENT_EARLY_BIND_MINUTES * 60 * 1000 <= open && open < we;
+  return earliest <= open && open < we;
 }
 
 const BYDAY: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };

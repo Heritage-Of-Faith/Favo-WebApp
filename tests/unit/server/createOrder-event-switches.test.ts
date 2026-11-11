@@ -323,6 +323,25 @@ describe("DEC-28: event attribution, the session's opening, and a paid weekday e
     expect(mockStartTender).not.toHaveBeenCalled();
   });
 
+  // Second review (B2): a session planned 07:00–20:00 and bound to the 18:00
+  // paid event never makes the morning paid — the event applies from 17:30 at
+  // the earliest (EVENT_EARLY_BIND_MINUTES).
+  it("(a, B2) Thursday 07:00 session bound to the 18:00 paid social: 10:00 is weekday free; 17:35 is the event, R20.00", async () => {
+    const early = { ...THU_SOCIAL, sessionOpensAt: "07:00" };
+    vi.setSystemTime(new Date("2026-10-08T10:00:00+02:00"));
+    given({ date: "2026-10-08", sessions: [early] });
+    const morning = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO)] });
+    expect(morning.ok && morning.data.totalZar).toBe(0);
+    expect(orderRow()).toMatchObject({ paymentMode: "free", totalZar: 0, eventWindowId: null });
+
+    inserts.length = 0;
+    vi.setSystemTime(new Date("2026-10-08T17:35:00+02:00"));
+    given({ date: "2026-10-08", sessions: [early] });
+    const evening = await createOrder({ notificationTarget: "none", items: [line(CAPPUCCINO)] });
+    expect(evening.ok && evening.data.totalZar).toBe(2000);
+    expect(orderRow()).toMatchObject({ paymentMode: "yoco", totalZar: 2000, eventWindowId: "evw_thu" });
+  });
+
   it("(b) a paid Thursday event is not weekday-free: R20.00 owed, payment_mode 'yoco', no entitlement row", async () => {
     vi.setSystemTime(new Date("2026-10-08T19:00:00+02:00"));
     given({ date: "2026-10-08", sessions: [THU_SOCIAL], customer: OFFICE });

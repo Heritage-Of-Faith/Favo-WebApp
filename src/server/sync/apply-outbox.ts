@@ -65,18 +65,24 @@ export type ApplyOutboxResult =
 
 // ─── The instant a replay's mode is read at (DEC-28) ─────────────────────────
 
-/** REQ-039: an outbox order older than this at replay is too old to be trusted. */
+/**
+ * REQ-039's 12 hours, used here ONLY as the limit beyond which the client's
+ * clock is not trusted for the mode. REQ-039's rejection of an order older
+ * than 12 hours (REPLAY_TOO_OLD, admin exception list) is NOT built: such an
+ * order is still applied, under the receipt-time mode.
+ */
 export const REPLAY_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 /**
- * DEC-28 (owner, Mia, 11 Nov 2026): an offline order is replayed under the
- * mode in force when it was RUNG — the entry's clientTimestamp — so a free
- * event's order replayed after the window ended stays free, and a paid one
- * stays owed. The server still decides what was in force at that instant from
- * its own sessions and windows; the till's own claim ('free') is never
- * trusted. A client time after the receipt, unreadable, or older than
- * REQ-039's 12 hours is not used: the receipt time is. The revenue day is
- * always the receipt day (REQ-039), whatever this returns.
+ * DEC-28 (owner, Mia, 11 Nov 2026): an offline order is priced under the mode
+ * in force when it was RUNG — the entry's clientTimestamp — so a free event's
+ * order replayed after the window ended stays free, and a paid one stays
+ * owed. The server still decides what was in force at that instant from its
+ * own sessions and windows; the till's own claim ('free') is never trusted. A
+ * client time after the receipt, unreadable, or more than 12 hours old falls
+ * back to the receipt time (a fallback, not REQ-039's rejection). This instant
+ * picks the mode and prices only: placed_at and the revenue day are always
+ * the receipt (REQ-039).
  */
 export function replayModeInstant(clientTimestamp: string | undefined, receivedAt: Date): Date {
   if (!clientTimestamp) return receivedAt;
@@ -246,12 +252,11 @@ export async function applyOutboxItem(item: OutboxItem): Promise<ApplyOutboxResu
     state: "ordered",
     totalZar: orderTotalZar,
     paymentMode,
-    // REQ-039: the server's receipt time decides the revenue day, never the
-    // client's placed_at (T5 step 4).
+    // REQ-039 / T5 step 4: the server's receipt time decides the revenue day
+    // and placed_at, never the client's clock. The client-time instant only
+    // picked the mode and prices, and is recorded in the sync_applied row.
     revenueDay: revenueDay(receivedAt),
-    // DEC-28: placed_at is the instant the order was priced under (modeAt), so
-    // the cup/lid deduction at in_progress reads the same mode (cup-lid.ts).
-    placedAt: modeAt,
+    placedAt: receivedAt,
     // DEC-28 (d): the event the order was rung under, else NULL.
     eventWindowId: till.event?.windowId ?? null,
   });

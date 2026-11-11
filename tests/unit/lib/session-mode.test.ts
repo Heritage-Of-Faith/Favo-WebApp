@@ -167,6 +167,18 @@ describe("resolveSessionMode — §6.6 precedence and L18", () => {
       .toEqual({ kind: "date", mode: "sunday" });
   });
 
+  // Second review (B2): with a close time the binding overlap uses the same
+  // span the till does — [starts_at − 30 min, ends_at).
+  it("B2: a planned session overlaps an event's span [start − 30 min, end): 07:00–17:45 binds an 18:00 event, 07:00–17:29 does not", () => {
+    const w = windowOf(); // 18:00–20:30 SAST
+    expect(resolveSessionMode({ sessionDate: "2026-10-11", opensAt: "07:00", closesAt: "17:45", windows: [w], profiles: [] }))
+      .toMatchObject({ kind: "event", source: "window" });
+    expect(resolveSessionMode({ sessionDate: "2026-10-11", opensAt: "07:00", closesAt: "17:29", windows: [w], profiles: [] }))
+      .toEqual({ kind: "date", mode: "sunday" });
+    expect(resolveSessionMode({ sessionDate: "2026-10-11", opensAt: "07:00", closesAt: "20:00", windows: [w], profiles: [] }))
+      .toMatchObject({ kind: "event", source: "window" });
+  });
+
   it("DEC-28 (a): a 07:30 Sunday opening (no close time) never binds the 18:00 event", () => {
     expect(resolveSessionMode({ sessionDate: "2026-10-11", opensAt: "07:30", closesAt: null, windows: [windowOf()], profiles: [] }))
       .toEqual({ kind: "date", mode: "sunday" });

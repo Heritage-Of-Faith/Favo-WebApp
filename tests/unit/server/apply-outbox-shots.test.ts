@@ -264,7 +264,12 @@ describe("applyOutboxItem — the mode at the client's ring-up time (DEC-28)", (
     }]);
     const res = await applyOutboxItem(at("2026-10-14T23:50:00+02:00"));
     expect(res).toMatchObject({ outcome: "applied", serverTotalZar: 0 });
-    expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "free", eventWindowId: "evw_2026-10-14_free", revenueDay: "2026-10-15" });
+    // REQ-039: placed_at and revenue_day both key on the RECEIPT (00:10, the
+    // 15th); the client's 23:50 only picked the mode and is in the audit row.
+    expect(insertsInto(orders)[0]).toMatchObject({
+      paymentMode: "free", eventWindowId: "evw_2026-10-14_free", revenueDay: "2026-10-15",
+      placedAt: new Date("2026-10-15T00:10:00+02:00"),
+    });
   });
 
   it("a client time AFTER the receipt is not trusted — the receipt time decides", async () => {
@@ -302,7 +307,9 @@ describe("applyOutboxItem — the mode at the client's ring-up time (DEC-28)", (
     expect(insertsInto(orders)[0]).toMatchObject({ paymentMode: "yoco_deferred", totalZar: 2000, eventWindowId: null });
   });
 
-  it("the sync_applied audit row always carries clientTimestamp, modeAt and eventWindowId; placed_at is modeAt", async () => {
+  // CHANGED (second review, B1): placed_at is the receipt time again (REQ-039);
+  // the client-time instant lives only in the audit row.
+  it("the sync_applied audit row always carries clientTimestamp, modeAt and eventWindowId; placed_at is the receipt", async () => {
     vi.setSystemTime(new Date("2026-10-14T12:30:00+02:00"));
     given([eventOn("2026-10-14", "free")]);
     await applyOutboxItem(at("2026-10-14T11:30:00+02:00"));
@@ -312,7 +319,7 @@ describe("applyOutboxItem — the mode at the client's ring-up time (DEC-28)", (
       modeAt: new Date("2026-10-14T11:30:00+02:00").toISOString(),
       eventWindowId: "evw_2026-10-14_free",
     });
-    expect(insertsInto(orders)[0]).toMatchObject({ placedAt: new Date("2026-10-14T11:30:00+02:00"), revenueDay: "2026-10-14" });
+    expect(insertsInto(orders)[0]).toMatchObject({ placedAt: new Date("2026-10-14T12:30:00+02:00"), revenueDay: "2026-10-14" });
   });
 
   it("a client time more than 12 hours old (REQ-039) is not used — the receipt time decides", async () => {

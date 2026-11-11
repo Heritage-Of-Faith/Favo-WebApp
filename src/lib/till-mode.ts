@@ -5,8 +5,8 @@
 //
 // Which mode applies at an instant `at` on a revenue day:
 //  1. An event in force: an opening session stored as mode='event' whose event
-//     applies at `at` — from the earlier of the session's opening and the
-//     window's start, up to ends_at (DEC-28 (a); REQ-042). §6.6 precedence 2 —
+//     applies at `at` — from the session's opening, but at the earliest 30
+//     minutes before the window starts, up to ends_at (DEC-28 (a); REQ-042). §6.6 precedence 2 —
 //     an explicit event beats the date-derived mode, so the result is the
 //     event's own switches, never Weekday's or Sunday's. Two events at once:
 //     the newest window wins (DEC-28 (c)).
@@ -23,7 +23,7 @@
 
 import { isCoffeeCategory } from "@/server/orders/discount";
 import {
-  effectiveSessionMode, isWindowInForce, newestWindowFirst, sastInstant,
+  EVENT_EARLY_BIND_MINUTES, effectiveSessionMode, isWindowInForce, newestWindowFirst, sastInstant,
   type EventSwitches, type MenuScope, type PaymentPosture, type SessionMode,
 } from "@/lib/session-mode";
 
@@ -44,9 +44,12 @@ export type TillSessionRow = {
  * DEC-28 (a) (owner, Mia, 11 Nov 2026) / §4.2 "a session's default is computed
  * against that session's own window … an evening session opened at 17:45 for
  * an 18:00 service still finds it": a session stored as mode='event' and bound
- * to a window behaves as that event from the EARLIER of its own opening and
- * the window's start, up to (not including) ends_at (REQ-042 unchanged). A row
- * with no known opening falls back to the window alone.
+ * to a window behaves as that event from its own opening — but never earlier
+ * than EVENT_EARLY_BIND_MINUTES (30) before the window starts — up to (not
+ * including) ends_at (REQ-042 unchanged). So a 07:00–20:00 Wednesday session
+ * bound to an 18:00 paid event keeps its morning free cups and rings the
+ * event from 17:30 (second review, B2). A row with no known opening falls
+ * back to the window alone.
  */
 export function eventAppliesAt(row: TillSessionRow, at: Date): boolean {
   if (row.mode !== "event" || row.window === null) return false;
@@ -58,8 +61,12 @@ export function eventAppliesAt(row: TillSessionRow, at: Date): boolean {
   } catch {
     return false; // an unreadable opening never widens an event
   }
+  const earliest = Math.max(
+    opened,
+    new Date(row.window.startsAt).getTime() - EVENT_EARLY_BIND_MINUTES * 60 * 1000
+  );
   const t = at.getTime();
-  return opened <= t && t < new Date(row.window.endsAt).getTime();
+  return earliest <= t && t < new Date(row.window.endsAt).getTime();
 }
 
 /** The event in force: its window id, name, span and six switches. */
