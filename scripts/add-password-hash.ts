@@ -3,8 +3,8 @@
 
 import postgres from "postgres";
 
-const url = process.env.DATABASE_URL_SESSION;
-if (!url) throw new Error("DATABASE_URL_SESSION not set");
+const url = process.env.DATABASE_URL;
+if (!url) throw new Error("DATABASE_URL not set");
 
 const sql = postgres(url, { max: 1, ssl: "require" });
 

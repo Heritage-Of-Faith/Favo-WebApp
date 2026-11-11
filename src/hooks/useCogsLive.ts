@@ -4,7 +4,7 @@
 // Keeps today's COGS summary fresh: fetches /api/cogs/live, subscribes to the
 // /api/cogs/stream SSE channel, and refetches within ~1s of any COGS-affecting
 // change (order deduction, expense, recosting). Falls back to periodic polling
-// if SSE is unavailable (no DATABASE_URL_SESSION on the server).
+// if SSE is unavailable (the server's LISTEN connection is down).
 //
 // Acceptance (PRD §09): dashboard reflects a new order within 5s.
 

@@ -4,18 +4,28 @@
 // run by docker-entrypoint.sh before the server starts) and /api/healthz, so the
 // two can never disagree about what a correctly configured instance looks like.
 
-/** Env vars the server cannot run correctly without. */
-export const REQUIRED_DATABASE_ENV = ["DATABASE_URL", "DATABASE_URL_SESSION"] as const;
+/**
+ * Env vars the server cannot run correctly without. AT-168 collapsed the two
+ * database URLs into one direct connection (PRD §9.2): DATABASE_URL now serves
+ * queries, the SSE LISTEN brokers and the migrator alike.
+ */
+export const REQUIRED_DATABASE_ENV = ["DATABASE_URL"] as const;
 
 /**
- * Names of required database env vars that are unset or blank.
- *
- * DATABASE_URL_SESSION is here because without it the SSE brokers
- * (src/server/queue/broker.ts) silently fall back to heartbeats: the POS board
- * goes stale while the container still reports healthy.
+ * Env vars that no longer mean anything. Still being set is a sign of a stale
+ * two-URL (pooler) config, so the release step refuses to start rather than
+ * silently ignore it — see AT-170 / AT-168.
  */
+export const RETIRED_DATABASE_ENV = ["DATABASE_URL_SESSION"] as const;
+
+/** Names of required database env vars that are unset or blank. */
 export function missingDatabaseEnv(env: Record<string, string | undefined>): string[] {
   return REQUIRED_DATABASE_ENV.filter((name) => !env[name]?.trim());
+}
+
+/** Names of retired database env vars that are still set. */
+export function retiredDatabaseEnv(env: Record<string, string | undefined>): string[] {
+  return RETIRED_DATABASE_ENV.filter((name) => env[name]?.trim());
 }
 
 export interface JournalEntry {
