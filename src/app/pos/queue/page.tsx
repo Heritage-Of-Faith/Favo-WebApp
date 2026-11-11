@@ -6,6 +6,7 @@ import POSWorkspace from "@/components/pos/POSWorkspace";
 import OpeningTimePrompt from "@/components/pos/OpeningTimePrompt";
 import { listActiveOrders } from "@/server/actions/orders";
 import { fundOptionsForOrder } from "@/server/actions/funds";
+import { getRecentsGrid } from "@/server/actions/recents";
 import { db } from "@/lib/db";
 import { revenueDay } from "@/lib/format";
 import { readShotPolicy } from "@/server/orders/shot-policy";
@@ -32,7 +33,9 @@ export default async function POSWorkspacePage() {
       <POSWorkspace staffName={session.name} staffId={session.id} role={session.role} initialOrders={ordersRes.data}
         sundayCardOnMachine={sundayCardSalesOnMachine()} shotPolicy={shotPolicy}
         /* AT-203 / §6.10.6: the footer's fund chips read through this staff-authorised action. */
-        fundOptions={fundOptionsForOrder} />
+        fundOptions={fundOptionsForOrder}
+        /* §6.2.1 / REQ-052: the recents grid, read through this staff-authorised action. */
+        recents={getRecentsGrid} />
     </>
   );
 }

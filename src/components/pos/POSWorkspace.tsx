@@ -55,6 +55,8 @@ import ChargeOrderDialog from "@/components/pos/ChargeOrderDialog";
 import TenderPanel from "@/components/pos/TenderPanel";
 import FreeCupRow from "@/components/pos/FreeCupRow";
 import FundChips from "@/components/pos/FundChips";
+import RecentsGrid from "@/components/pos/RecentsGrid";
+import type { RecentsTile } from "@/server/recents/grid";
 import type { FundOptions } from "@/server/funds/funds";
 import { useStockStatus } from "@/hooks/useStockStatus";
 import { useOfflineOutbox } from "@/hooks/useOfflineOutbox";
@@ -126,9 +128,11 @@ type Props = {
   shotPolicy?: ShotPolicy;
   /** AT-203 / §6.10.6: fundOptionsForOrder, passed by the page. Absent = no fund chips. */
   fundOptions?: (input: { customerId: string | null; netZar: number }) => Promise<{ ok: true; data: FundOptions } | { ok: false; code: string; message: string }>;
+  /** §6.2.1 / REQ-052: getRecentsGrid, passed by the page. Absent = no recents grid. */
+  recents?: () => Promise<{ ok: true; data: RecentsTile[] } | { ok: false; code: string; message: string }>;
 };
 
-export default function POSWorkspace({ staffName, staffId, role, initialOrders, sundayCardOnMachine = false, shotPolicy = FAIL_CLOSED_POLICY, fundOptions }: Props) {
+export default function POSWorkspace({ staffName, staffId, role, initialOrders, sundayCardOnMachine = false, shotPolicy = FAIL_CLOSED_POLICY, fundOptions, recents }: Props) {
   const router = useRouter();
 
   // ── Left panel ─────────────────────────────────────────────────────────────
@@ -434,6 +438,19 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
 
+  // §6.2.1 recents grid: re-read whenever the order has no customer (first
+  // render, a detach, or a placed order's reset), so served marks stay current.
+  // REQ-140 / L35: issued in the background; nothing on the ordering path waits on it.
+  const [recentTiles, setRecentTiles] = useState<RecentsTile[]>([]);
+  useEffect(() => {
+    if (!recents || attachedCustomerId) return;
+    let stale = false;
+    recents()
+      .then(r => { if (!stale && r.ok) setRecentTiles(r.data); })
+      .catch(() => { /* the grid stays as it was; search still works */ });
+    return () => { stale = true; };
+  }, [recents, attachedCustomerId]);
+
   function pickCustomer(c: CustomerSearchResult) {
     setCustomer({ id: c.id, name: c.name });
     setQuery("");
@@ -727,6 +744,10 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
       <div className="zone flex flex-col gap-2 p-3 border-b border-cool-steel/20 shrink-0">
         <span className="favo-label text-cool-steel">Customer</span>
         {!customer ? (
+          <>
+          {/* §6.2.1: the recents grid leads, above the search field. Offline the
+              customer read is unavailable (T1 step 2), so the grid is not offered. */}
+          {online && <RecentsGrid tiles={recentTiles} onPick={t => setCustomer({ id: t.id, name: t.name })} />}
           <div className="relative">
             <Search size={13} strokeWidth={2} className="absolute left-2 top-1/2 -translate-y-1/2 text-cool-steel pointer-events-none" />
             <input type="search" inputMode="text" autoComplete="off"
@@ -788,6 +809,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
               </button>
             )}
           </div>
+          </>
         ) : (
           <>
             <p className="favo-small text-coffee-bean font-semibold">{customer.name}</p>
