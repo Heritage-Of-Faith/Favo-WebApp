@@ -14,6 +14,20 @@ vi.mock("@/server/crons/unconfirmed-payments", () => ({
   shouldRunUnconfirmedPayments: vi.fn(async () => true),
   reconcileUnconfirmedPayments: vi.fn(async () => ({ due: 0, lookedUp: 0, alerted: 0 })),
 }));
+// CHANGED (DEC-29): jobs 8–10 mocked like job 4.
+vi.mock("@/server/jobs/deferred-reminder", () => ({
+  shouldRunDeferredReminder: vi.fn(async () => true),
+  runDeferredReminder: vi.fn(async () => ({ reminded: 1 })),
+}));
+vi.mock("@/server/jobs/import-watch", () => ({
+  YOCO_IMPORT_WATCH_JOB: "yocoImportWatch",
+  shouldRunImportWatch: vi.fn(async () => true),
+  checkMissingImports: vi.fn(async () => ({ checked: 1, missing: [] })),
+}));
+vi.mock("@/server/jobs/shift-reminder", () => ({
+  shouldRunShiftReminder: vi.fn(async () => true),
+  runShiftReminders: vi.fn(async () => ({ pushed: [], failed: [] })),
+}));
 vi.mock("@/server/crons/generate-weekly-pnl", async (orig) => ({
   ...(await orig<typeof import("@/server/crons/generate-weekly-pnl")>()),
   // CHANGED (AT-206): the run now goes through runWeeklyPnLJob, which pushes
@@ -29,6 +43,9 @@ import { sweepCollected } from "@/server/crons/collected-sweep";
 import { checkMissingCloses } from "@/server/jobs/close-watch";
 import { reconcileUnconfirmedPayments, shouldRunUnconfirmedPayments } from "@/server/crons/unconfirmed-payments";
 import { generateWeeklyPnL, weekBounds } from "@/server/crons/generate-weekly-pnl";
+import { runDeferredReminder, shouldRunDeferredReminder } from "@/server/jobs/deferred-reminder";
+import { checkMissingImports, shouldRunImportWatch } from "@/server/jobs/import-watch";
+import { runShiftReminders, shouldRunShiftReminder } from "@/server/jobs/shift-reminder";
 
 const byName = (n: string) => {
   const j = JOBS.find((x) => x.name === n);
@@ -40,10 +57,54 @@ beforeEach(() => vi.clearAllMocks());
 
 describe("job register", () => {
   // CHANGED (job 4): unconfirmedPayments added between jobs 3 and 5.
-  it("wires exactly the jobs signed off for AT-169, AT-193, AT-194 and job 4", () => {
+  // CHANGED (DEC-29): jobs 8–10 appended.
+  it("wires exactly the jobs signed off for AT-169, AT-193, AT-194, job 4 and DEC-29's jobs 8–10", () => {
     expect(JOBS.map((j) => j.name)).toEqual([
       "checkLowStock", "closeDaily", "closeDailyWatch", "generateWeeklyPnL", "unconfirmedPayments", "collectedSweep",
+      "deferredModeReminder", "yocoImportWatch", "shiftReminder",
     ]);
+  });
+
+  it("deferredModeReminder (§9.6.2 #8, REQ-005): every minute, skipped when missed, gated", async () => {
+    const j = byName("deferredModeReminder");
+    const m = parseCron(j.cron);
+    expect(j.cron).toBe("* * * * *");
+    expect(m(new Date("2026-11-08T07:31:00Z"))).toBe(true);
+    expect(j.missedRun).toBe("skip");
+    expect(j.isDone).toBeUndefined();
+    const firedAt = new Date("2026-11-08T07:30:00Z"); // Sun 09:30 SAST
+    expect(j.periodFor(firedAt)).toBe("2026-11-08T09:30");
+    expect(await j.runsAt!(firedAt)).toBe(true);
+    expect(shouldRunDeferredReminder).toHaveBeenCalledWith(firedAt);
+    await j.run(firedAt, false);
+    expect(runDeferredReminder).toHaveBeenCalledWith(firedAt);
+  });
+
+  it("yocoImportWatch (§9.6.2 #9, REQ-067): 09:00 SAST daily, skipped when missed, gated, period = the morning", async () => {
+    const j = byName("yocoImportWatch");
+    const m = parseCron(j.cron);
+    const firedAt = new Date("2026-11-10T07:00:00Z"); // Tue 09:00 SAST
+    expect(m(firedAt)).toBe(true);
+    expect(m(new Date("2026-11-10T09:00:00Z"))).toBe(false); // 11:00 SAST
+    expect(m(new Date("2026-11-10T07:01:00Z"))).toBe(false);
+    expect(j.missedRun).toBe("skip");
+    expect(j.periodFor(firedAt)).toBe("2026-11-10");
+    expect(await j.runsAt!(firedAt)).toBe(true);
+    expect(shouldRunImportWatch).toHaveBeenCalledWith(firedAt);
+    await j.run(firedAt, false);
+    expect(checkMissingImports).toHaveBeenCalledWith(firedAt);
+  });
+
+  it("shiftReminder (§9.6.2 #10): every minute, skipped when missed, gated", async () => {
+    const j = byName("shiftReminder");
+    expect(j.cron).toBe("* * * * *");
+    expect(j.missedRun).toBe("skip");
+    const firedAt = new Date("2026-11-08T04:30:00Z"); // Sun 06:30 SAST
+    expect(j.periodFor(firedAt)).toBe("2026-11-08T06:30");
+    expect(await j.runsAt!(firedAt)).toBe(true);
+    expect(shouldRunShiftReminder).toHaveBeenCalledWith(firedAt);
+    await j.run(firedAt, false);
+    expect(runShiftReminders).toHaveBeenCalledWith(firedAt);
   });
 
   it("unconfirmedPayments (§9.6.2 #4): every 15 minutes, skipped when missed, gated by DEC-27", async () => {

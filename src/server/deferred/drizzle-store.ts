@@ -4,9 +4,8 @@
 //   readOpenSessionDeferred      the open session's deferred state (createOrder, the POS banner)
 //   createDeferredAdminNotifier  S2a's immediate push, through alertAdmins
 //   createCardMachineAlertStore  REQ-068's incident record (audit_log) and on-duty baristas
-//   remindDeferredSessions       REQ-005's 30-minute repeat — NOT REGISTERED with
-//                                any scheduler: §9.6.2 lists seven jobs and this
-//                                is not one of them (an owner question).
+//   remindDeferredSessions       REQ-005's 30-minute repeat — §9.6.2 job 8
+//                                (DEC-29), run by src/server/jobs/deferred-reminder.ts
 
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { DB } from "@/lib/db";
@@ -261,26 +260,19 @@ export function createDeferredAdminNotifier(client: DB): (info: DeferredEntryInf
   };
 }
 
+export type DeferredReminderCandidate = { session: SessionDeferredState; lastPushAt: Date };
+
 /**
- * REQ-005's repeat: for every OPEN deferred session whose last push (the entry
- * audit row, or the last repeat's) is 30 minutes old, push again and audit the
- * repeat. Reads sessions and audit rows; writes only audit_log. Never touches
- * orders or payments.
- *
- * NOT REGISTERED: nothing calls this. §9.6.2 says "A job absent from this
- * table does not exist, and adding one means adding a row", and the register
- * has no row for it. Wiring it needs that row (owner decision).
+ * Every OPEN deferred session and when the Admin was last pushed about it
+ * (the entry audit row, or the last repeat's; deferred_since if neither).
+ * SELECT only — the gate of §9.6.2 job 8 reads it before any run.
  */
-export async function remindDeferredSessions(
-  client: DB,
-  now: Date,
-  send: (title: string, body: string, data: Record<string, unknown>) => Promise<void> = alertAdmins
-): Promise<number> {
+export async function readDeferredReminderCandidates(client: Pick<DB, "select">): Promise<DeferredReminderCandidate[]> {
   const sessions = await client
     .select(SESSION_COLUMNS)
     .from(openingSessions)
     .where(and(isNull(openingSessions.closedAt), isNotNull(openingSessions.deferredSince)));
-  let sent = 0;
+  const out: DeferredReminderCandidate[] = [];
   for (const s of sessions as SessionDeferredState[]) {
     const [last] = await client
       .select({ at: auditLog.at })
@@ -292,7 +284,26 @@ export async function remindDeferredSessions(
       ))
       .orderBy(desc(auditLog.at))
       .limit(1);
-    const lastPushAt = last?.at ?? (s.deferredSince as Date);
+    out.push({ session: s, lastPushAt: last?.at ?? (s.deferredSince as Date) });
+  }
+  return out;
+}
+
+/**
+ * REQ-005's repeat: for every OPEN deferred session whose last push (the entry
+ * audit row, or the last repeat's) is 30 minutes old, push again and audit the
+ * repeat. Reads sessions and audit rows; writes only audit_log. Never touches
+ * orders or payments.
+ *
+ * Run by §9.6.2 job 8 (DEC-29), src/server/jobs/deferred-reminder.ts.
+ */
+export async function remindDeferredSessions(
+  client: DB,
+  now: Date,
+  send: (title: string, body: string, data: Record<string, unknown>) => Promise<void> = alertAdmins
+): Promise<number> {
+  let sent = 0;
+  for (const { session: s, lastPushAt } of await readDeferredReminderCandidates(client)) {
     if (!deferredReminderDue(lastPushAt, now)) continue;
     const since = s.deferredSince as Date;
     const minutes = Math.floor((now.getTime() - since.getTime()) / 60_000);

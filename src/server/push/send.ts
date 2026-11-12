@@ -143,6 +143,17 @@ export async function sendShiftStartPush(
 }
 
 /**
+ * Push the timed shift-start reminder (§9.6.2 job 10, DEC-29). The payload is
+ * built by buildShiftReminderPayload. Returns the real outcome.
+ */
+export async function sendShiftReminderPush(
+  subscription: PushSubscriptionShape,
+  payload: string
+): Promise<PushOutcome> {
+  return deliverOutcome(subscription, payload);
+}
+
+/**
  * Push the card-machine alert to an on-duty barista (PRD §9.6.3, REQ-068).
  * The payload is built by src/server/deferred/card-machine-alert.ts.
  * Returns the real outcome; the caller logs a failure, never throws it on.

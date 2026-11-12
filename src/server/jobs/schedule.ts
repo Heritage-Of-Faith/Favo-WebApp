@@ -58,7 +58,7 @@ export function floorToMinute(at: Date): Date {
 // ─── Cron expressions ─────────────────────────────────────────────────────────
 // A deliberately small subset of 5-field cron: `minute hour day-of-month month
 // day-of-week`, each field `*`, `*/n`, `n`, or a comma list of those. Enough for
-// the seven jobs of §9.6.2; anything else is rejected at parse time.
+// every timer in the §9.6.2 register; anything else is rejected at parse time.
 
 type Field = (v: number) => boolean;
 

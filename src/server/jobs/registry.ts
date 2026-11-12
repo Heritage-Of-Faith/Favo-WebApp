@@ -6,8 +6,13 @@
 //                alert) · 3 generateWeeklyPnL · 4 unconfirmed-payment
 //                reconciliation (paid days + carry-over, DEC-27) · 5 the
 //                `collected` sweep
-// Deferred:      6 importYocoTransactions, 7 donor-fund dormancy — Sunday/fund
-//                work, build-plan Day 11.
+//                · 8 deferred-mode reminder (REQ-005) · 9 the 09:00 Yoco
+//                import reminder (REQ-067) · 10 the timed shift-start
+//                reminder (§6.3) — rows 8–10 added by DEC-29 (Mia, 12 Nov
+//                2026). None initiates a payment, a tender or revenue, and
+//                none writes payments: they read, push and audit.
+// Deferred:      6 importYocoTransactions runs on the Admin's upload, not on a
+//                timer; 7 donor-fund dormancy is an Admin banner (DEC-23).
 
 import { checkLowStock } from "@/server/crons/check-low-stock";
 import { closeDaily, closedDays } from "@/server/crons/close-daily";
@@ -16,6 +21,9 @@ import { hasWeeklyReport, weekBounds } from "@/server/crons/generate-weekly-pnl"
 import { runWeeklyPnLJob } from "@/server/crons/weekly-pnl-job";
 import { reconcileUnconfirmedPayments, shouldRunUnconfirmedPayments } from "@/server/crons/unconfirmed-payments";
 import { checkMissingCloses } from "./close-watch";
+import { runDeferredReminder, shouldRunDeferredReminder } from "./deferred-reminder";
+import { YOCO_IMPORT_WATCH_JOB, checkMissingImports, shouldRunImportWatch } from "./import-watch";
+import { runShiftReminders, shouldRunShiftReminder } from "./shift-reminder";
 import { sastDate, sastMiddayDaysBack, sastMinute } from "./schedule";
 import type { JobDefinition } from "./scheduler";
 
@@ -97,5 +105,43 @@ export const JOBS: JobDefinition[] = [
     missedRun: "skip",
     periodFor: sastMinute,
     run: (firedAt) => sweepCollected(firedAt),
+  },
+  {
+    // §9.6.2 #8 (DEC-29) — every minute, REQ-005's "again every 30 minutes the
+    // session stays deferred" (remindDeferredSessions, #327). Gated: a firing
+    // is a run only when an open deferred session is due a repeat; otherwise
+    // nothing is written. Missed run: skip; age is from the last push's audit
+    // row, so a gap delays the repeat and never cancels it.
+    name: "deferredModeReminder",
+    cron: "* * * * *",
+    missedRun: "skip",
+    periodFor: sastMinute,
+    runsAt: (firedAt) => shouldRunDeferredReminder(firedAt),
+    run: (firedAt) => runDeferredReminder(firedAt),
+  },
+  {
+    // §9.6.2 #9 (DEC-29) — 09:00, REQ-067: an Admin push naming every paid day
+    // (last 14 days) with card activity and no Yoco import, repeated each morning until
+    // uploaded. Fetches nothing from Yoco. Gated: once per morning, and only
+    // when a day is missing. Missed run: skip; tomorrow names the same days.
+    name: YOCO_IMPORT_WATCH_JOB,
+    cron: "0 9 * * *",
+    missedRun: "skip",
+    periodFor: sastDate,
+    runsAt: (firedAt) => shouldRunImportWatch(firedAt),
+    run: (firedAt) => checkMissingImports(firedAt),
+  },
+  {
+    // §9.6.2 #10 (DEC-29) — every minute, inside SHIFT_REMINDER_LEAD_MINUTES
+    // before the day's opening time (operating_hours): one push to the slot-1
+    // rostered barista, sharing notified_at with the on-open push. Gated: a
+    // run only when a reminder is owed. Missed run: skip; the on-open push is
+    // the fallback.
+    name: "shiftReminder",
+    cron: "* * * * *",
+    missedRun: "skip",
+    periodFor: sastMinute,
+    runsAt: (firedAt) => shouldRunShiftReminder(firedAt),
+    run: (firedAt) => runShiftReminders(firedAt),
   },
 ];
