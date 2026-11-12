@@ -64,8 +64,8 @@ ARG IMAGE_SHA=""
 ENV IMAGE_SHA=$IMAGE_SHA
 
 # Liveness probe (bun: no curl in the image). /api/healthz returns 503 when
-# Postgres is down, a configured LOKI_URL is unreachable, or DATABASE_URL_SESSION
-# is unset. Yoco is advisory and never fails it. Leave LOKI_URL unset so an
+# Postgres is down, a configured LOKI_URL is unreachable, or DATABASE_URL is
+# unset (DATABASE_URL_SESSION is RETIRED and must be unset). Yoco is advisory and never fails it. Leave LOKI_URL unset so an
 # observability blip cannot mark a working cafe unhealthy.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD bun -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

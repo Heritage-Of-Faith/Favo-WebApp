@@ -5,7 +5,7 @@
 **WI:** `HOFMI-FAVO-P4`
 **Repo:** `github.com/hofmi-ai/favo`
 **Default branch:** `main`
-**Deploy target:** `favo.hofmi.org` (Coolify on `hofmi-eu-open`, Cloudflare in front)
+**Deploy target:** `favo.hofmi.net` (Coolify on `hofmi-eu-open`, Cloudflare in front)
 **Reference docs:** `CLAUDE.md`, `DESIGN.md`, `ARCHITECTURAL.md`, `DATA_MODEL.md`, `API.md`, `BUSINESS_RULES.md`, `PLANNING.md`, `FAVO_PRD_v3.md`
 
 Phases 1–3 have shipped to `main`. Phase 4 is verification, hardening, deploy, and hand-off. **No new feature code** unless something fails pre-flight.
@@ -14,7 +14,7 @@ Phases 1–3 have shipped to `main`. Phase 4 is verification, hardening, deploy,
 
 ## 1. Phase 4 acceptance (from PRD §09)
 
-> Audit coverage query returns 0. All Playwright tests green. Push notification works on a real device from `favo.hofmi.org`. Admin can see live COGS.
+> Audit coverage query returns 0. All Playwright tests green. Push notification works on a real device from `favo.hofmi.net`. Admin can see live COGS.
 
 **Ship gate:** Matt (Owner) + Nkuli (Admin) sign off. Helm WI transitions to `shipped`. Discord ping to `#favo-ops` with deploy SHA and smoke result.
 
@@ -59,7 +59,7 @@ Strict timeline. Each block has an owner who reports green/red to the channel be
 |---|---|---|
 | 06:00–09:00 | Pre-flight: E2E + security + Lighthouse + domain smokes on staging | Gian (coordinates) |
 | 09:00–11:00 | Production environment + deploy | Gian |
-| 11:00–13:00 | Post-deploy smoke on `favo.hofmi.org` (read-only paths only per PRD §11) | All four — each in their domain |
+| 11:00–13:00 | Post-deploy smoke on `favo.hofmi.net` (read-only paths only per PRD §11) | All four — each in their domain |
 | 13:00–15:00 | Hand-off: walk FAVO team through the runbook + training packs | Mia (ops), Mine (POS), Nikao (customer) |
 | 15:00–17:00 | Standby · Owner + Admin sign-off · Discord ship ping | Gian |
 
@@ -148,7 +148,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 - **Claude prompt:**
   > Read `ARCHITECTURAL.md` env section and `FAVO_PRD_v3.md` §05. Verify (and document) that every canonical env name is set in Infisical project `hofmi/favo` for the production environment. Generate Cloudflare Access policies that gate `/admin/*` (admin role, HOFMI SSO required). Customer + POS + landing remain public. Add WAF rate limits: `/api/auth/*` 10 req/min/IP, `/api/payments/yoco/webhook` 60 req/min/IP (Yoco retry budget per R8), POST endpoints overall 100 req/min/IP. Extend `/api/healthz` to perform a real Postgres `SELECT 1`, a Yoco API ping, and a Loki reachability check; cache for 5 s. Build a `docs/production-env-checklist.md` table with every env var, source, owner, rotation cadence — Gian uses this as the deploy go/no-go.
 - **Acceptance criteria:**
-  - `https://favo.hofmi.org/api/healthz` returns 200 with all three sub-checks green
+  - `https://favo.hofmi.net/api/healthz` returns 200 with all three sub-checks green
   - Anonymous request to `/admin` returns Cloudflare Access challenge (302 to SSO)
   - WAF rate limits enforce against a manual `ab`/`curl` storm
 - **Dependency:** None (can prep day before)
@@ -189,7 +189,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 - **Claude prompt:**
   > Read `FAVO_PRD_v3.md` §09 §11, `ARCHITECTURAL.md` deploy pipeline. Write `deploy-runbook.md` covering: (1) verify pre-flight green (G23 + G24 outputs); (2) verify production env checklist (G25); (3) tag the release commit `v1.0.0`; (4) trigger Coolify webhook; (5) watch logs in real time via Loki; (6) post-deploy smoke (this spec); (7) ship ping; (8) standby for 60 min on the channel. Write `backup-restore.md` documenting Warden R2 nightly snapshot location, point-in-time recovery procedure (worst-case 24h granularity per PRD §10), and a quarterly DR drill template. Build `prod-smoke.spec.ts` running read-only paths only (PRD §11 forbids mutations on prod). Write `scripts/ship-ping.ts` posting a structured Discord embed (title, deploy SHA short, smoke result, audit coverage = 0, link to dashboards).
 - **Acceptance criteria:**
-  - Coolify deploy succeeds; `favo.hofmi.org` returns 200 within 2 min
+  - Coolify deploy succeeds; `favo.hofmi.net` returns 200 within 2 min
   - `prod-smoke.spec.ts` passes against prod
   - Audit coverage query returns 0 immediately after deploy
   - Discord ship ping arrives in `#favo-ops` with all four expected fields
@@ -223,7 +223,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 
 - **Owner:** Mine
 - **Branch:** `chore/m-m21-pos-prod-smoke`
-- **PRD sections:** §09 P4 acceptance (push from real device on `favo.hofmi.org`)
+- **PRD sections:** §09 P4 acceptance (push from real device on `favo.hofmi.net`)
 - **Files to create:**
   - `docs/pos-prod-smoke.md` — short walkthrough Mine executes between 11:00 and 13:00 SAST
 - **Claude prompt:**
@@ -244,7 +244,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 - **Files to create:**
   - `docs/training/barista-quickstart.md` — first-time walkthrough (PIN, taking an order, marking ready, staff discount, waste, redeem loyalty)
   - `docs/training/barista-troubleshooting.md` — Yoco failure, push not arriving, offline mode, lockout
-  - `docs/signage/counter-loyalty.md` — copy + layout for a printed counter sign: "Register for loyalty in 30 seconds — favo.hofmi.org"
+  - `docs/signage/counter-loyalty.md` — copy + layout for a printed counter sign: "Register for loyalty in 30 seconds — favo.hofmi.net"
   - `docs/signage/counter-push.md` — "Allow notifications and we'll ping you when your order is ready"
 - **Claude prompt:**
   > Read `FAVO_PRD_v3.md` §09 P4, `DESIGN.md`. Write a barista quick-start as a one-page walkthrough using screenshots from M21. Cover: PIN login, customer lookup ("type Lou, tap Louis"), order build, staff discount weekday/cappuccino-only rule (L03/L14 in plain language), Yoco swipe, Done button, waste logging, loyalty redeem. Troubleshooting page covers the five most likely issues with one-sentence remedies and a "call Gian" escalation line. Signage copy: A6-sized printed cards, brand-consistent with N1 tokens, two designs — loyalty registration and push opt-in. Plain text in `.md` (Nikao can lay out for print if needed).
@@ -269,7 +269,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
   - `tests/e2e/admin-flow.spec.ts` — pre-flight against staging: login, dashboard load, inventory view, stock take walkthrough, expense log, monthly P&L draft + admin sign-off
   - `docs/admin-prod-smoke.md` — Mia's launch-day walkthrough: log in via PIN on prod, confirm dashboard renders live numbers, confirm one CSV export downloads, confirm one PDF export renders
 - **Claude prompt:**
-  > Read `FAVO_PRD_v3.md` §09 P4. Build `admin-flow.spec.ts` as a Playwright spec covering the Phase 2 admin acceptance plus the Phase 3 admin extensions (hours editor, exports). Run as part of pre-flight (G23). On launch day after G27 completes, perform the read-only prod smoke: log into `favo.hofmi.org/admin` via PIN, confirm the COGS dashboard renders (numbers will be zero or near-zero on a fresh prod DB — that's fine, the assertion is that it renders without error), download one CSV and one PDF export. Document inline in `docs/admin-prod-smoke.md`.
+  > Read `FAVO_PRD_v3.md` §09 P4. Build `admin-flow.spec.ts` as a Playwright spec covering the Phase 2 admin acceptance plus the Phase 3 admin extensions (hours editor, exports). Run as part of pre-flight (G23). On launch day after G27 completes, perform the read-only prod smoke: log into `favo.hofmi.net/admin` via PIN, confirm the COGS dashboard renders (numbers will be zero or near-zero on a fresh prod DB — that's fine, the assertion is that it renders without error), download one CSV and one PDF export. Document inline in `docs/admin-prod-smoke.md`.
 - **Acceptance criteria:**
   - Pre-flight spec passes on staging
   - Admin prod smoke runs cleanly within 5 min of deploy
@@ -303,7 +303,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 - **Files to create:**
   - `docs/incident-playbook.md`
 - **Claude prompt:**
-  > Read `FAVO_PRD_v3.md` §10. Build an incident playbook covering each of R1–R10. Per risk: (1) symptoms ("how would I notice this?"); (2) immediate response ("first 5 minutes"); (3) escalation ("when to call Gian"); (4) restoration ("how do we recover?"); (5) post-mortem trigger ("what gets logged where?"). Front the doc with a single "OH NO" decision tree: app down → check `favo.hofmi.org/api/healthz`; payment broken → check Yoco status + Loki for webhook errors; push not arriving → check VAPID config + customer subscription state; queue stuck → check SSE connection in browser dev tools; offline orders not syncing → open `/admin/sync-conflicts`. Each branch ends at either a self-serve fix or a "page Gian" instruction with the on-call rotation link.
+  > Read `FAVO_PRD_v3.md` §10. Build an incident playbook covering each of R1–R10. Per risk: (1) symptoms ("how would I notice this?"); (2) immediate response ("first 5 minutes"); (3) escalation ("when to call Gian"); (4) restoration ("how do we recover?"); (5) post-mortem trigger ("what gets logged where?"). Front the doc with a single "OH NO" decision tree: app down → check `favo.hofmi.net/api/healthz`; payment broken → check Yoco status + Loki for webhook errors; push not arriving → check VAPID config + customer subscription state; queue stuck → check SSE connection in browser dev tools; offline orders not syncing → open `/admin/sync-conflicts`. Each branch ends at either a self-serve fix or a "page Gian" instruction with the on-call rotation link.
 - **Acceptance criteria:**
   - Every PRD R-risk has a playbook entry
   - Decision tree covers the top 5 ways things go wrong from the admin's view
@@ -342,7 +342,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 - **Files to create:**
   - `docs/customer-prod-smoke.md`
 - **Claude prompt:**
-  > Read `FAVO_PRD_v3.md` §09 §04. On launch day post-deploy: from a real Android Chrome device, navigate to `favo.hofmi.org`, request a magic link to a test email, complete setup, grant push permission. Subscribe Mine to push events for Mine's M21 test order. Confirm push arrives within 10 s when M21 runs Done. Take screenshots of each step. Document inline in `docs/customer-prod-smoke.md`.
+  > Read `FAVO_PRD_v3.md` §09 §04. On launch day post-deploy: from a real Android Chrome device, navigate to `favo.hofmi.net`, request a magic link to a test email, complete setup, grant push permission. Subscribe Mine to push events for Mine's M21 test order. Confirm push arrives within 10 s when M21 runs Done. Take screenshots of each step. Document inline in `docs/customer-prod-smoke.md`.
 - **Acceptance criteria:**
   - End-to-end customer flow works on a real device against prod
   - Push received in < 10 s
@@ -365,7 +365,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 - **Claude prompt:**
   > Read `FAVO_PRD_v3.md` Appendix A (POPIA), `DATA_MODEL.md` (RLS, customers table, audit_log invariant). Draft a POPIA-compliant privacy policy in plain English: who FAVO is, what data we collect (email, name, phone, push subscription, purchase history, loyalty + wallet + pack data), why we collect it (loyalty service + push notifications + financial records), retention (orders + audit indefinitely for tax/audit, customer can request anonymisation otherwise), who can access (RBAC table from RLS summary), data subject rights (access, correction, deletion, complaint), contact (`privacy@hofmi.org`). The data inventory is internal and maps each field to its table + retention rationale. Subject-rights procedure documents how an admin handles a request — including how an audit-row PII anonymisation works (insert a follow-up audit row redacting PII; original row is preserved per L12 but PII can be replaced with `[REDACTED:popia-request-{id}]`). Render the policy at `/privacy` and link from landing + customer footers.
 - **Acceptance criteria:**
-  - Privacy policy live at `favo.hofmi.org/privacy` post-deploy
+  - Privacy policy live at `favo.hofmi.net/privacy` post-deploy
   - Data inventory covers every PII field
   - Subject-rights procedure compatible with L12 (audit append-only)
   - Reviewed for POPIA compliance by Nkuli before sign-off
@@ -388,7 +388,7 @@ Handoff docs (M22, A21, A22, N20, N21) — parallel to prod smoke; due by 13:00
 | 08:30 | Pre-flight summary posted to `#favo-ops` | Gian | green-light go/no-go |
 | 09:00 | Re-tag as `v1.0.0`; production env checklist confirmed | Gian | checklist signed |
 | 09:30 | Coolify webhook triggered | Gian | build succeeds in < 5 min |
-| 10:00 | `favo.hofmi.org` responds 200 · healthz green | Gian | all three sub-checks green |
+| 10:00 | `favo.hofmi.net` responds 200 · healthz green | Gian | all three sub-checks green |
 | 10:15 | Cloudflare Access policies verified · WAF rules active | Gian | curl probes confirm |
 | 11:00 | POS prod smoke: PIN login + test order + push | Mine | screenshots saved |
 | 11:30 | Admin prod smoke: PIN login + COGS dashboard + 1 CSV + 1 PDF | Mia | export files saved |
@@ -450,7 +450,7 @@ Posted by `scripts/ship-ping.ts` (G27) to Discord `#favo-ops`:
 
 > **FAVO Café v1.0.0 — SHIPPED**
 > Deploy SHA: `<short-sha>`
-> URL: https://favo.hofmi.org
+> URL: https://favo.hofmi.net
 > Pre-flight: ✅ (link to preflight.json)
 > Prod smoke: ✅ (POS, admin, customer)
 > Audit coverage: 0
