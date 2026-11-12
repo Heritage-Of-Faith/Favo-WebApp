@@ -9,8 +9,7 @@
 // mismatch blocks only the daily_closes record. Idempotent per revenue day
 // (AT-193, PRD §9.6.2 job 2): a second close of a closed day writes nothing.
 // Pushes an alert to admin staff devices on T01 variance band
-// breach (L09) — this used to page Discord; deletion pass replaced it with
-// Web Push (see docs on the deletion PR) so the alert doesn't vanish.
+// breach (L09) — delivered as Web Push so the alert reaches staff devices.
 // Docs: API.md · BUSINESS_RULES.md L09 T01
 
 import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";

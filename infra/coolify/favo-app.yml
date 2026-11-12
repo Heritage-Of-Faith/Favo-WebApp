@@ -32,7 +32,7 @@ services:
     environment:
       # Database
       - DATABASE_URL            # Supabase Transaction pooler (port 6543, PgBouncer)
-      - DATABASE_URL_SESSION    # Supabase Session pooler (port 5432, for SSE/LISTEN)
+      # DATABASE_URL_SESSION: retired by AT-168
       # Auth
       - AUTH_SECRET             # Auth.js signing secret (≥ 32 random bytes)
       - AUTH_URL                # https://favo.hofmi.net

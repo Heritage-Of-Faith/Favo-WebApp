@@ -118,7 +118,7 @@ export function endOfDaySast(dateStr: string): Date {
 /**
  * Formats integer ZAR cents as a plain "R 1 234,56" string — used by
  * notification/report bodies that don't want the Intl.NumberFormat currency
- * glyph placement formatZar() produces. Rehomed from the former Discord
+ * glyph placement formatZar() produces. Rehomed here from a removed
  * webhook helper (task G14) — still used by the daily-close and weekly-P&L
  * crons for their alert/report bodies.
  * @example formatZarField(100000) → "R 1 000,00"
@@ -129,8 +129,8 @@ export function formatZarField(cents: number): string {
 }
 
 /**
- * Returns a semantic colour int for a net P&L figure. Rehomed from the former
- * Discord webhook helper (task G14) — kept for reuse by report/dashboard
+ * Returns a semantic colour int for a net P&L figure. Rehomed here from a removed
+ * webhook helper (task G14) — kept for reuse by report/dashboard
  * surfaces that colour-code net P&L.
  *
  * AT-191/AT-192 (PRD §7.0.1b, REQ-110, REQ-129): the colour follows the cost
