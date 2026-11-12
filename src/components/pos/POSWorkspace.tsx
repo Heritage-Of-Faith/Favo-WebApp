@@ -17,7 +17,7 @@ import type { CreateOrderTender } from "@/server/actions/orders";
 import { getFavo } from "@/server/actions/favo";
 import { getVoucherContext } from "@/server/actions/vouchers";
 import {
-  NO_VOUCHERS, SESSION_CHANGED_EVENT, draftLineGrossZar, draftLineNetZar, draftLineTakesVoucher, draftNetZar, nextVoucherCount,
+  NO_VOUCHERS, SESSION_CHANGED_EVENT, draftLineGrossZar, draftLineNetZar, draftNetZar, nextVoucherCount,
   type VoucherContext,
 } from "@/lib/pos-vouchers";
 import type { FavoView } from "@/server/favo/schema";
@@ -231,8 +231,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
   }, []);
   const vouchersLive = voucherCtx.available && voucherCtx.kind !== null;
   // The draft's net after vouchers (display only — createOrder prices the order).
-  // AT-202 interim: a line with an extra-shot surcharge never carries a voucher.
-  const voucherCountOf = (i: (typeof items)[number]) => (draftLineTakesVoucher(i) ? i.voucherCount ?? 0 : 0);
+  const voucherCountOf = (i: (typeof items)[number]) => i.voucherCount ?? 0;
   const vouchersOnDraft = vouchersLive && items.some(i => voucherCountOf(i) > 0);
   const draftDueZar = vouchersOnDraft ? draftNetZar(items) : totalZar;
 
@@ -991,8 +990,7 @@ export default function POSWorkspace({ staffName, staffId, role, initialOrders, 
                 </div>
                 {/* §6.9.3 voucher chip — rendered only while a kind is live (L48 / REQ-146).
                     One tap, no confirm: the struck-through line is the confirmation. */}
-                {/* AT-202 interim: no chip on a line with an extra-shot surcharge (VOUCHER_NOT_ON_EXTRA_SHOTS). */}
-                {vouchersLive && grossZar > 0 && draftLineTakesVoucher(item) && (
+                {vouchersLive && grossZar > 0 && (
                   <button type="button" aria-pressed={m > 0}
                     onClick={() => setVoucherCount(lineKey(item), nextVoucherCount({ quantity: item.quantity, voucherCount: m }))}
                     className={["flex h-11 min-w-11 items-center justify-center rounded-[999px] border px-3 favo-caption transition-colors",

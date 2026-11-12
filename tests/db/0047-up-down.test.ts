@@ -19,7 +19,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connect, hasRealDb, migrationSql } from "./helpers";
+import { connect, hasRealDb, migrationSql, stepDown0057 } from "./helpers";
 
 const maybe = hasRealDb() ? describe : describe.skip;
 
@@ -86,6 +86,9 @@ maybe("0047 order_items.surcharge_zar: up → down → up, and the refusals (AT-
       const ledgerBefore = await ledgerHas0047(tx);
       if (ledgerBefore !== null) expect(ledgerBefore).toBe(true);
 
+      // CHANGED (AT-202 part 2): 0057's CHECK reads surcharge_zar, so it steps
+      // down first (newest first) — 0047 down's DROP COLUMN would take it silently.
+      await stepDown0057(tx);
       await tx.unsafe(migrationSql(DOWN));
       expect(await dbColumns(tx)).toEqual(snapshotColumns("0046_snapshot.json"));
       expect(await shotSettings(tx)).toEqual({});
@@ -143,6 +146,7 @@ maybe("0047 order_items.surcharge_zar: up → down → up, and the refusals (AT-
       await tx`
         INSERT INTO order_items (order_id, menu_item_id, unit_price_zar, shots, surcharge_zar)
         VALUES (${orderId}, ${menuId}, 2000, 3, 1000)`;
+      await stepDown0057(tx); // CHANGED (AT-202 part 2): newest first; the line carries no discount, so it steps down
       await expect(tx.savepoint((sp) => sp.unsafe(migrationSql(DOWN)))).rejects.toThrow(/AT-202\/0047 down/);
       expect(await dbColumns(tx)).toEqual(snapshotColumns("0047_snapshot.json"));
       expect(await shotSettings(tx)).toEqual(DEFAULTS);

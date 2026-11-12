@@ -351,3 +351,92 @@ describe("DEC-28: event attribution, the session's opening, and a paid weekday e
     expect(insertsInto(staffEntitlementLog)).toEqual([]);
   });
 });
+
+// AT-202 part 2 — vouchers on lines carrying 3 or 4 shots. §6.9.2a (owner,
+// 14 Sep 2026): "A voucher zeroes one whole unit — its listed price, its
+// modifications and its extra shots. line_discount = line_unit_price."
+// §6.2.3: a Cappuccino is R20 single, R20 double, R30 triple, R40 with four.
+// §6.9.1b T9 (one order, several vouchers, nets R0, never reaches the
+// machine) and T10 / REQ-150 (a vouchered line beside a paid line: the amount
+// sent to the machine is the paid line alone).
+describe("AT-202 part 2: a voucher zeroes a 3- or 4-shot unit whole (§6.9.2a, T9, T10, REQ-150)", () => {
+  const KIND = "untracked_hot_drink";
+  const SUN_EVENING = new Date("2026-10-11T18:30:00+02:00");
+  // An Untracked Church-shaped evening: a paid event with the surcharge on and the voucher kind live.
+  const UNTRACKED = {
+    id: "evw_untracked", name: "Untracked Church",
+    startsAt: new Date("2026-10-11T18:00:00+02:00"), endsAt: new Date("2026-10-11T20:30:00+02:00"),
+    menuScope: "full", paymentPosture: "standard", consumesCupLid: true, audience: "both",
+    extraShotSurcharge: true, voucherKinds: [KIND],
+  };
+  function givenUntracked() {
+    vi.setSystemTime(SUN_EVENING);
+    given({ date: "2026-10-11", sessions: [UNTRACKED] });
+    rows.set(openingSessions, [{
+      id: "os_evening", sessionDate: "2026-10-11", opensAt: "17:45", mode: "event", eventWindowId: UNTRACKED.id,
+      voucherKindsActive: [KIND], closedAt: null, voucherRedemptionsRecorded: 0,
+    }]);
+  }
+  const redemptions = () => (insertsInto(voucherRedemptions)[0] ?? []) as Row[];
+
+  it("T9-shaped: 2 × Americano + 3 × triple Cappuccino, every drink vouchered → R0, 'free', 5 redemptions, nothing sent", async () => {
+    givenUntracked();
+    const res = await createOrder({
+      notificationTarget: "none", voucherKind: KIND,
+      items: [{ ...line(AMERICANO, 2, 1), voucherCount: 2 }, { ...line(CAPPUCCINO, 3, 3), voucherCount: 3 }],
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.totalZar).toBe(0);
+    expect(orderRow()).toMatchObject({ totalZar: 0, paymentMode: "free" });
+    expect(itemRows().map((r) => ({ surchargeZar: r.surchargeZar, discountZar: r.discountZar }))).toEqual([
+      { surchargeZar: 0, discountZar: 4000 },
+      { surchargeZar: 1000, discountZar: 9000 },
+    ]);
+    expect(redemptions().map((r) => r.discountZar)).toEqual([2000, 2000, 3000, 3000, 3000]);
+    expect(mockStartTender).not.toHaveBeenCalled();
+    expect(insertsInto(payments)).toEqual([]);
+  });
+
+  it("T10 / REQ-150: a vouchered triple (R30) beside a paid four-shot Cappuccino (R40) → the machine is handed R40.00 alone", async () => {
+    givenUntracked();
+    const res = await createOrder({
+      notificationTarget: "none", voucherKind: KIND,
+      items: [{ ...line(CAPPUCCINO, 1, 3), voucherCount: 1 }, line(CAPPUCCINO, 1, 4)],
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.totalZar).toBe(4000);
+    expect(orderRow()).toMatchObject({ totalZar: 4000, paymentMode: "yoco" });
+    expect(itemRows().map((r) => ({ shots: r.shots, surchargeZar: r.surchargeZar, discountZar: r.discountZar }))).toEqual([
+      { shots: 3, surchargeZar: 1000, discountZar: 3000 },
+      { shots: 4, surchargeZar: 2000, discountZar: 0 },
+    ]);
+    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 4000 });
+  });
+
+  it("boundary: 3 × four-shot Cappuccino (R40 each) with 2 vouchers → R40.00 owed; one unit stays whole", async () => {
+    givenUntracked();
+    const res = await createOrder({
+      notificationTarget: "none", voucherKind: KIND,
+      items: [{ ...line(CAPPUCCINO, 3, 4), voucherCount: 2 }],
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.totalZar).toBe(4000);
+    expect(itemRows()[0]).toMatchObject({ quantity: 3, shots: 4, surchargeZar: 2000, discountZar: 8000 });
+    expect(redemptions().map((r) => r.discountZar)).toEqual([4000, 4000]);
+    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 4000 });
+  });
+
+  it("boundary: 4 vouchers on 3 × triple → refused (REQ-151), nothing written", async () => {
+    givenUntracked();
+    const res = await createOrder({
+      notificationTarget: "none", voucherKind: KIND,
+      items: [{ ...line(CAPPUCCINO, 3, 3), voucherCount: 4 }],
+    });
+    expect(res.ok).toBe(false);
+    expect(insertsInto(orders)).toEqual([]);
+    expect(insertsInto(voucherRedemptions)).toEqual([]);
+  });
+});

@@ -61,7 +61,7 @@ const idSchema = z.string().trim().min(1);
 type LockedLine = {
   line: {
     id: string; orderId: string; quantity: number; unitPriceZar: number; modsZar: number;
-    /** AT-202: per-unit extra-shot surcharge (0047). > 0 → decideRedeem refuses. */
+    /** AT-202: per-unit extra-shot surcharge (0047); a voucher zeroes it with the unit (§6.9.2a). */
     surchargeZar: number;
     discountZar: number; compReason: string | null;
   };
@@ -175,8 +175,8 @@ export async function redeemVoucher(
     const decision = decideRedeem({
       session: session ? { mode: session.mode, voucherKindsActive: session.voucherKindsActive } : null,
       kind: k.data,
-      // AT-202: the line's own surcharge; a surcharge line is refused
-      // (VOUCHER_NOT_ON_EXTRA_SHOTS) and the refusal audited below.
+      // AT-202: the line carries its own surcharge, so one voucher is one
+      // whole unit — listed price, modifications and surcharge (§6.9.2a).
       line,
       live: { count: live.length, discountZar: live.reduce((sum, r) => sum + r.discountZar, 0) },
     });

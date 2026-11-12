@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { useDraftOrder, lineKey } from "@/store/draftOrder";
 import {
   draftLineNetZar, draftNetZar, nextVoucherCount, voucherContextFor, NO_VOUCHERS,
-  draftLineGrossZar, draftLineTakesVoucher, draftUnitZar,
+  draftLineGrossZar, draftUnitZar,
 } from "@/lib/pos-vouchers";
 
 // §6.9.2a's own example prices: a R20 cappuccino, a R20 hot chocolate.
@@ -91,27 +91,31 @@ describe("draft display arithmetic (§6.9.2a: one voucher = one whole unit)", ()
   });
 });
 
-describe("AT-202 interim: a surcharge line takes no voucher; its surcharge stays owed", () => {
-  // A R20 cappuccino at 3 shots on a Sunday: R10 surcharge per unit → R30.00.
+// CHANGED (AT-202 part 2): this block asserted the interim rule — a surcharge
+// line takes no voucher and its surcharge stays owed (draftLineTakesVoucher,
+// now removed). §6.9.2a: "A voucher zeroes one whole unit — its listed price,
+// its modifications and its extra shots." §6.2.3: a Cappuccino is R20 single,
+// R20 double, R30 triple, R40 with four.
+describe("AT-202 part 2: a voucher zeroes a 3- or 4-shot unit whole, surcharge included", () => {
   const triple = { ...capp, shots: 3, surchargeZar: 1000 };
-
-  it("draftLineTakesVoucher: no on a surcharge line, yes on a 1- or 2-shot line", () => {
-    expect(draftLineTakesVoucher(triple)).toBe(false);
-    expect(draftLineTakesVoucher({ surchargeZar: 0 })).toBe(true); // 1 or 2 shots
-    expect(draftLineTakesVoucher({ surchargeZar: undefined })).toBe(true); // no picker (absent = 0)
-  });
+  const quad = { ...capp, shots: 4, surchargeZar: 2000 };
 
   it("gross includes the surcharge per unit: a quantity-2 triple is R60.00", () => {
     expect(draftLineGrossZar({ ...triple, quantity: 2 })).toBe(6000);
   });
 
-  it("a stray voucherCount on a surcharge line is never counted: the net stays R30.00", () => {
-    expect(draftLineNetZar({ ...triple, quantity: 1, voucherCount: 1 })).toBe(3000);
-    expect(draftNetZar([{ ...triple, quantity: 1, voucherCount: 1 }])).toBe(3000);
+  it("draftUnitZar is one whole unit: a triple R30.00, a four-shot R40.00", () => {
+    expect(draftUnitZar({ ...triple, quantity: 1 })).toBe(3000);
+    expect(draftUnitZar({ ...quad, quantity: 1 })).toBe(4000);
   });
 
-  it("draftUnitZar is listed price + modifications only (a voucher never zeroes a surcharge)", () => {
-    expect(draftUnitZar({ ...triple, quantity: 1 })).toBe(2000);
+  it("1 of 1 vouchered triple is R0.00; 1 of 2 leaves R30.00", () => {
+    expect(draftLineNetZar({ ...triple, quantity: 1, voucherCount: 1 })).toBe(0);
+    expect(draftLineNetZar({ ...triple, quantity: 2, voucherCount: 1 })).toBe(3000);
+  });
+
+  it("T10: a vouchered triple beside a paid four-shot owes R40.00", () => {
+    expect(draftNetZar([{ ...triple, quantity: 1, voucherCount: 1 }, { ...quad, quantity: 1 }])).toBe(4000);
   });
 });
 

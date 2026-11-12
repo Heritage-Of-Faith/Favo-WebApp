@@ -40,9 +40,10 @@ export const FREE_CUP_COPY = {
  * AT-212 / DEC-18 / L19: on a weekday nobody pays. "Every free weekday order
  * keeps the menu price on each line, and `discount_zar` zeroes each line, so
  * `orders.total_zar` is R0." The line's discount is its whole priced value —
- * quantity × (unit_price_zar + mods_zar) — the most the DB CHECK
- * order_items_discount_within_line allows. The weekday surcharge is always 0
- * (T09, T15), so this zeroes the line.
+ * quantity × (unit_price_zar + mods_zar). The DB CHECK
+ * order_items_discount_within_line allows up to quantity × (unit_price_zar +
+ * mods_zar + surcharge_zar) since 0057; the weekday surcharge is always 0
+ * (T09, T15), and a free-posture event writes it as 0, so this zeroes the line.
  */
 export function weekdayLineDiscountZar(line: { quantity: number; unitPriceZar: number; modsZar?: number }): number {
   return line.quantity * (line.unitPriceZar + (line.modsZar ?? 0));
@@ -165,8 +166,9 @@ export function decideFreeCup(input: FreeCupInput): FreeCupDecision {
   }
   // One unit of one line: that line's snapshotted unit_price_zar + mods_zar,
   // never more. Nikao's ruling on PR #257 (B1, option A, 19 Oct 2026): the
-  // free cup covers priced mods (oat/almond +R8), and the DB CHECK is
-  // discount_zar <= quantity * (unit_price_zar + mods_zar).
+  // free cup covers priced mods (oat/almond +R8). The DB CHECK is
+  // discount_zar <= quantity * (unit_price_zar + mods_zar + surcharge_zar)
+  // since 0057; the free cup is weekday-only, where surcharge_zar is 0.
   const line = input.lines[lineIndex];
   return { status: "apply", lineIndex, discountZar: line.unitPriceZar + (line.modsZar ?? 0) };
 }

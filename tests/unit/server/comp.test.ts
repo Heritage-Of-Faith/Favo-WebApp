@@ -16,8 +16,10 @@ import {
 } from "@/server/orders/comp";
 
 const MENU = { highestLivePriceZar: 2500, maxShotsPerLine: 4, extraShotZar: 1000 };
-const line = (o: Partial<{ quantity: number; unitPriceZar: number; modsZar: number; discountZar: number; compReason: string | null }> = {}) => ({
-  quantity: 1, unitPriceZar: 2000, modsZar: 0, discountZar: 0, compReason: null, ...o,
+// CHANGED (AT-202 part 2): the helper now carries surcharge_zar (default 0),
+// because §7.0.2 line_unit_price includes it and the comp reads line_gross.
+const line = (o: Partial<{ quantity: number; unitPriceZar: number; modsZar: number; surchargeZar: number; discountZar: number; compReason: string | null }> = {}) => ({
+  quantity: 1, unitPriceZar: 2000, modsZar: 0, surchargeZar: 0, discountZar: 0, compReason: null, ...o,
 });
 
 describe("L33 constants", () => {
@@ -42,8 +44,12 @@ describe("compCeilingZar", () => {
     // quantity 2 × R20 = R40 gross, one free cup (R20) already on the line.
     expect(compCeilingZar({ line: line({ quantity: 2, discountZar: 2000 }), ...MENU })).toBe(2000);
   });
-  it("line_gross is quantity × (listed price + priced modifications)", () => {
-    expect(lineGrossZar({ quantity: 2, unitPriceZar: 2000, modsZar: 500 })).toBe(5000);
+  // CHANGED (AT-202 part 2): §7.0.2 line_gross = quantity × line_unit_price,
+  // and line_unit_price = unit_price_zar + line_mods_zar + surcharge_zar.
+  it("line_gross is quantity × (listed price + priced modifications + extra-shot surcharge)", () => {
+    expect(lineGrossZar({ quantity: 2, unitPriceZar: 2000, modsZar: 500, surchargeZar: 0 })).toBe(5000);
+    // §6.2.3: a Cappuccino is R30 triple, so two triples are R60.
+    expect(lineGrossZar({ quantity: 2, unitPriceZar: 2000, modsZar: 0, surchargeZar: 1000 })).toBe(6000);
   });
 });
 
@@ -74,5 +80,37 @@ describe("decideComp", () => {
   it("a line with no value is refused", () => {
     expect(decideComp({ line: line({ unitPriceZar: 0 }), orderHasComp: false, ...MENU }))
       .toMatchObject({ status: "refused", code: "VALIDATION", reason: "nothing_to_comp" });
+  });
+});
+
+describe("AT-202 part 2 — a comp covers the extra-shot surcharge (L33 'comps one order line to R0', §7.0.2)", () => {
+  // §6.2.3: a Cappuccino is R20 single, R20 double, R30 triple, R40 with four.
+  it("a triple Cappuccino (R30) is comped to R0: value R30, nothing left owed", () => {
+    expect(decideComp({ line: line({ surchargeZar: 1000 }), orderHasComp: false, ...MENU }))
+      .toEqual({ status: "apply", valueZar: 3000, ceilingZar: 3000 });
+  });
+  it("a four-shot Cappuccino (R40) is comped to R0: value R40", () => {
+    expect(decideComp({ line: line({ surchargeZar: 2000 }), orderHasComp: false, ...MENU }))
+      .toMatchObject({ status: "apply", valueZar: 4000 });
+  });
+  it("L33: a four-shot Mocha (R25 + R20 = R45) is exactly the per-unit cap and is comped", () => {
+    expect(decideComp({ line: line({ unitPriceZar: 2500, surchargeZar: 2000 }), orderHasComp: false, ...MENU }))
+      .toEqual({ status: "apply", valueZar: 4500, ceilingZar: 4500 });
+  });
+  it("a quantity-2 four-shot Mocha line (R90) comps both cups; the cap scales to R90", () => {
+    expect(decideComp({ line: line({ quantity: 2, unitPriceZar: 2500, surchargeZar: 2000 }), orderHasComp: false, ...MENU }))
+      .toEqual({ status: "apply", valueZar: 9000, ceilingZar: 9000 });
+  });
+  it("a four-shot Mocha with a priced modification is over R45 a unit and is refused (L33's second term)", () => {
+    expect(decideComp({ line: line({ unitPriceZar: 2500, modsZar: 100, surchargeZar: 2000 }), orderHasComp: false, ...MENU }))
+      .toMatchObject({ status: "refused", code: "VALIDATION", reason: "over_ceiling" });
+  });
+  it("REQ-152: the ceiling's first term reads line_gross − discount_zar with the surcharge in line_gross", () => {
+    // 2 × triple Cappuccino = R60 gross; R30 already off → R30 remaining.
+    expect(compCeilingZar({ line: line({ quantity: 2, surchargeZar: 1000, discountZar: 3000 }), ...MENU })).toBe(3000);
+  });
+  it("L41: a triple carrying a voucher is still refused", () => {
+    expect(decideComp({ line: line({ surchargeZar: 1000, discountZar: 3000 }), orderHasComp: false, ...MENU }))
+      .toMatchObject({ status: "refused", code: "VALIDATION", reason: "line_already_discounted" });
   });
 });

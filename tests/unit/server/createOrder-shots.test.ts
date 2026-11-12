@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   orders, orderItems, menuItems, menuCustomisations, customers, payments,
-  staffEntitlementLog, openingSessions, appConfig, recipeIngredients,
+  staffEntitlementLog, openingSessions, appConfig, recipeIngredients, voucherRedemptions,
 } from "@db/schema";
 
 vi.mock("@/server/auth/guard", () => ({
@@ -295,27 +295,40 @@ describe("input validation", () => {
   });
 });
 
-describe("AT-202 interim: no voucher on a line carrying an extra-shot surcharge", () => {
-  it("Sunday 3-shot line + a voucher → VOUCHER_NOT_ON_EXTRA_SHOTS, refused before anything is written, audited", async () => {
+// CHANGED (AT-202 part 2): the interim refusal VOUCHER_NOT_ON_EXTRA_SHOTS is
+// gone — §6.9.2a: "A voucher zeroes one whole unit — its listed price, its
+// modifications and its extra shots." The voucher-on-surcharge cases now live
+// in createOrder-event-switches.test.ts (a session carrying a voucher kind).
+// AT-202 part 2: a Sunday-mode session carrying a voucher kind. §6.9.2a: one
+// voucher zeroes one whole unit, surcharge included; §6.2.3: R30 triple.
+// REQ-150: the amount sent to the machine is the paid line alone.
+describe("AT-202 part 2: a Sunday voucher on a 3-shot line zeroes the whole R30.00 unit", () => {
+  it("R30.00 triple vouchered beside a paid R20.00 single → total R20.00, R20.00 sent, discount_zar 3000, one R30 redemption", async () => {
     given({ modes: ["sunday"] });
+    rows.set(openingSessions, [{
+      id: "os_sunday", sessionDate: "2026-10-11", opensAt: "08:00", mode: "sunday", eventWindowId: null,
+      voucherKindsActive: ["untracked_hot_drink"], closedAt: null, voucherRedemptionsRecorded: 0,
+    }]);
     const res = await createOrder({
       notificationTarget: "none",
-      items: [{ ...capp(1) }, { ...capp(3), voucherCount: 1 }],
+      items: [{ ...capp(3), voucherCount: 1 }, capp(1)],
       voucherKind: "untracked_hot_drink",
     });
-    expect(res).toEqual({
-      ok: false, code: "VOUCHER_NOT_ON_EXTRA_SHOTS",
-      message: "Vouchers cover up to two shots; take the extra shots off or pay for this drink.",
-    });
-    expectNothingWritten();
-    expect(vi.mocked(writeAudit)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(writeAudit).mock.calls[0][0]).toMatchObject({
-      entityKind: "order", action: "reject", reason: "VOUCHER_NOT_ON_EXTRA_SHOTS",
-      after: { attempted: "create_with_vouchers", code: "VOUCHER_NOT_ON_EXTRA_SHOTS", voucherCounts: [0, 1] },
-    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.totalZar).toBe(2000);
+    expect(insertsInto(orders)[0]).toMatchObject({ totalZar: 2000, paymentMode: "yoco" });
+    expect(itemRows().map((r) => ({ shots: r.shots, surchargeZar: r.surchargeZar, discountZar: r.discountZar }))).toEqual([
+      { shots: 3, surchargeZar: 1000, discountZar: 3000 },
+      { shots: 1, surchargeZar: 0, discountZar: 0 },
+    ]);
+    expect((insertsInto(voucherRedemptions)[0] as Row[]).map((r) => r.discountZar)).toEqual([3000]);
+    expect(res.data.tender).toEqual({ ok: true, attempt: 1, amountZar: 2000 });
   });
+});
 
-  it("the same 3-shot line with no voucher is charged its surcharge as usual (R30.00)", async () => {
+describe("AT-202: a 3-shot line with no voucher", () => {
+  it("is charged its surcharge as usual (R30.00)", async () => {
     given({ modes: ["sunday"] });
     const res = await walkIn([capp(3)]);
     expect(res.ok && res.data.totalZar).toBe(3000);

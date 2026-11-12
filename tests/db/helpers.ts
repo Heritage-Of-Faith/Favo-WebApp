@@ -59,6 +59,18 @@ export function migrationSql(file: string): string {
 }
 
 /**
+ * Step 0057 (AT-202 part 2: order_items_discount_within_line widened to
+ * include surcharge_zar) down inside the caller's always-rolled-back
+ * transaction. Its CHECK reads order_items.surcharge_zar, which 0047 down
+ * drops — and DROP COLUMN would silently take the CHECK with it, leaving
+ * 0033's suite without the constraint it tests. It is the newest migration,
+ * so it steps down first, before 0056.
+ */
+export async function stepDown0057(tx: { unsafe: (q: string) => PromiseLike<unknown> }): Promise<void> {
+  await tx.unsafe(migrationSql("down/0057_at202_discount_covers_surcharge.down.sql"));
+}
+
+/**
  * Step 0056 (the barista rota: barista_shifts, FKs → staff and
  * opening_sessions) down inside the caller's always-rolled-back transaction.
  * Its FK hangs on opening_sessions and staff, which older downs alter or drop.
