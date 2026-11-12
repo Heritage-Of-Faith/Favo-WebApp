@@ -1,11 +1,16 @@
 // T10 reads. SELECT only.
 
+// The app_config key of the configured card machine (§10.4). Same string as
+// WEBPOS_DEVICE_KEY in src/server/tender/runtime.ts (a test pins them together);
+// it is repeated here, not imported, because job 9 (import-watch) reaches this
+// file and no scheduled job may import the tender chain (REQ-066, DEC-29).
+const WEBPOS_DEVICE_KEY = "webpos_device_id";
+
 import { and, desc, eq, inArray, isNotNull, like, sql } from "drizzle-orm";
 import type { DB } from "@/lib/db";
 import { appConfig, auditLog, payments } from "@db/schema";
 import { WRITE_OFF_ACTION, WRITE_OFF_REASONS } from "@/server/close/write-offs";
-import { WEBPOS_DEVICE_KEY } from "@/server/tender/runtime";
-import { latestImports, settledCardPaymentsOfDay } from "./drizzle-store";
+import { latestImports, settledCardPaymentsOfDay } from "./read-store";
 import {
   YOCO_PAYOUT_ACTION,
   YOCO_PAYOUT_ENTITY,

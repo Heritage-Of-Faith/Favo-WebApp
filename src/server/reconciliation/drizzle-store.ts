@@ -4,14 +4,13 @@
 // by both, and it sets fee_zar / receipt_no where they are NULL — never
 // payments.status (§9.6.2 job 6, §10.2.1).
 
-import { and, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { DB } from "@/lib/db";
 import { writeAudit } from "@/server/audit";
 import { auditLog, menuItems, orders, payments } from "@db/schema";
-import { YOCO_IMPORT_ACTION, YOCO_IMPORT_ENTITY, type ImportStore, type ImportSummary, type ImportTx } from "./import";
-import { readImportSummary } from "./t10-view";
+import type { ImportStore, ImportTx } from "./import";
+import { latestImports } from "./read-store";
 import type { FavoPayment } from "./t10";
-import type { SettledCardPayment } from "./payout";
 import { T10_TIP_CLEARED_ACTION, type TipClearStore } from "./tip-clear";
 
 const PAYMENT_COLUMNS = {
@@ -109,23 +108,6 @@ export function createDrizzleImportStore(db: DB): ImportStore {
   };
 }
 
-/** The newest import summary per revenue day, for the given days. SELECT only. */
-export async function latestImports(client: DB, days: string[]): Promise<Map<string, ImportSummary>> {
-  const out = new Map<string, ImportSummary>();
-  if (days.length === 0) return out;
-  const rows = await client
-    .select({ day: auditLog.entityId, after: auditLog.after })
-    .from(auditLog)
-    .where(and(eq(auditLog.entityKind, YOCO_IMPORT_ENTITY), eq(auditLog.action, YOCO_IMPORT_ACTION), inArray(auditLog.entityId, days)))
-    .orderBy(desc(auditLog.at));
-  for (const r of rows) {
-    if (out.has(r.day)) continue;
-    const s = readImportSummary(r.after);
-    if (s) out.set(r.day, s);
-  }
-  return out;
-}
-
 /** clearTipVariance's store: the import's own annotatePayment and audit, a row lock, and SELECTs. */
 export function createDrizzleTipClearStore(db: DB): TipClearStore {
   return {
@@ -157,28 +139,5 @@ export function createDrizzleTipClearStore(db: DB): TipClearStore {
   };
 }
 
-/**
- * REQ-120 / §7.0.4: the revenue day's successful card payments, every device.
- * SELECT only. Same day rule as successfulPaymentsOfDay: an order's payment
- * belongs to the order's revenue day; a fund top-up to the SAST day it was taken.
- */
-export async function settledCardPaymentsOfDay(client: DB, revenueDay: string): Promise<SettledCardPayment[]> {
-  return client
-    .select({
-      paymentId: payments.id,
-      deviceId: payments.webposDeviceId,
-      chargedAmountZar: payments.chargedAmountZar,
-      feeZar: payments.feeZar,
-    })
-    .from(payments)
-    .leftJoin(orders, eq(orders.id, payments.orderId))
-    .where(
-      and(
-        eq(payments.status, "successful"),
-        or(
-          eq(orders.revenueDay, revenueDay),
-          and(isNotNull(payments.fundTopupId), sql`(${payments.at} AT TIME ZONE 'Africa/Johannesburg')::date = ${revenueDay}::date`)
-        )
-      )
-    );
-}
+// The SELECT-only reads live in read-store.ts (no payments writer in their import graph); re-exported for existing callers.
+export { latestImports, settledCardPaymentsOfDay } from "./read-store";
