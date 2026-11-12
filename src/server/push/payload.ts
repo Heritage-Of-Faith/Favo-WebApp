@@ -36,6 +36,20 @@ export function buildShiftStartPayload(opensAt: string): string {
   });
 }
 
+/**
+ * The timed shift-start reminder (§9.6.2 job 10, DEC-29), sent before the
+ * session opens. Author wording — the PRD gives no copy. Same tag as the
+ * on-open push, so a device reached by both shows one notification.
+ */
+export function buildShiftReminderPayload(openTime: string): string {
+  return JSON.stringify({
+    title: "You're on duty",
+    body: `You are on duty today at ${openTime}.`,
+    data: { url: "/pos" },
+    tag: "favo-shift-start",
+  });
+}
+
 /** The "your order is ready" notification content. */
 export function buildOrderReadyPayload(
   orderId: string,

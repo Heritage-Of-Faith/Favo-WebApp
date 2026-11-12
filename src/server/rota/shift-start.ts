@@ -2,8 +2,9 @@
 // §6.11.1 COL-23 "§6.3's shift-start push fires per session", §10.3
 // barista_shifts `session_id, or shift_date + slot`).
 //
-// Called once, by the opening action, when a NEW session row is created — not
-// by a scheduled job (§9.6.2 lists none for this). It:
+// Called once, by the opening action, when a NEW session row is created. It is
+// the fallback for §9.6.2 job 10's timed reminder (src/server/jobs/shift-
+// reminder.ts, DEC-29): both claim notified_at, so a barista is pushed once. It:
 //   1. reads the session's slot from the day's audited session creates
 //      (./slot.ts), so a deleted morning session never lowers the evening's slot;
 //   2. attaches the rota rows planned for (date, slot) to the session;
