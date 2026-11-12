@@ -96,32 +96,9 @@ bun install
 
 This installs everything the project needs — Next.js, React, Drizzle, Auth.js, Tailwind, Vitest, Playwright, and all other packages. It takes a few seconds.
 
-### Step 6 — Set the developer's vertical in their shell profile
+### Step 6 — (retired)
 
-Based on the developer's answer to your first question, set their `FAVO_VERTICAL` environment variable. This tells the project's safety hooks which files belong to them.
-
-First, find out which shell they use:
-```bash
-echo $SHELL
-```
-
-- If the output contains `zsh` use `~/.zshrc`
-- If the output contains `bash` use `~/.bash_profile`
-
-Add the correct line based on their vertical:
-- Gian (Backend) → `export FAVO_VERTICAL=backend`
-- Mine (POS) → `export FAVO_VERTICAL=pos`
-- Mia (Admin) → `export FAVO_VERTICAL=admin`
-- Nikao (Design) → `export FAVO_VERTICAL=design`
-
-Run these commands, replacing the values for their vertical and shell profile:
-```bash
-echo 'export FAVO_VERTICAL=<their-vertical>' >> ~/.zshrc
-source ~/.zshrc
-echo "FAVO_VERTICAL is now set to: $FAVO_VERTICAL"
-```
-
-Explain to the developer: "I have set your vertical to [vertical name]. This activates a safety check that runs automatically every time I edit a file. If I ever accidentally try to touch a file that belongs to another developer's area, Claude Code will block me and warn you before anything is changed."
+The vertical boundary hook was removed on 12 Nov 2026; there is no `FAVO_VERTICAL` to set. Anyone may work across areas; review catches mistakes.
 
 ### Step 7 — Start the local database with Docker
 
