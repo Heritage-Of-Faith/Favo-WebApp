@@ -158,6 +158,26 @@ describe("variances", () => {
     const plan = run({ rows: [row({ yocoPaymentId: "yp_1", tipZar: 500, receiptNo: "2636" })], candidates: [p], dayPayments: [p] });
     expect(plan.exceptions).toEqual([expect.objectContaining({ kind: "tip", paymentId: "a" })]);
     expect(plan.annotations).toEqual([]);
+    // The withheld figures ride on the exception for clearTipVariance.
+    // CHANGED (review, DEC-17 strictly): the tip amount is stored NOWHERE — not
+    // as a field, and not in the detail text that lands on the audit summary.
+    expect(plan.exceptions[0].withheld).toEqual({ feeZar: 53, receiptNo: "2636" });
+    expect(Object.keys(plan.exceptions[0])).not.toContain("tipZar");
+    expect(JSON.stringify(plan.exceptions[0])).not.toContain("500");
+  });
+
+  it("a tip row still lists a fee or receipt that disagrees with one FAVO already holds", () => {
+    const p = pay({ id: "a", yocoPaymentId: "yp_1", feeZar: 70, receiptNo: "9999" });
+    const plan = run({ rows: [row({ yocoPaymentId: "yp_1", tipZar: 500, feeZar: 53, receiptNo: "2636" })], candidates: [p], dayPayments: [p] });
+    expect(plan.exceptions.map((e) => e.kind)).toEqual(["tip", "fee_conflict", "receipt_conflict"]);
+    expect(plan.annotations).toEqual([]);
+  });
+
+  it("a tip row agreeing with what FAVO holds lists only the tip", () => {
+    const p = pay({ id: "a", yocoPaymentId: "yp_1", feeZar: 53, receiptNo: "2636" });
+    const plan = run({ rows: [row({ yocoPaymentId: "yp_1", tipZar: 500, feeZar: 53, receiptNo: "2636" })], candidates: [p], dayPayments: [p] });
+    expect(plan.exceptions.map((e) => e.kind)).toEqual(["tip"]);
+    expect(plan.annotations).toEqual([]);
     expect(plan.matchedRows).toBe(1);
     expect(plan.missingFromYoco).toEqual([]);
   });

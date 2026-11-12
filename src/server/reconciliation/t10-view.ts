@@ -20,6 +20,8 @@
 // (audit action t10_confirmed_no_payment, with a reason).
 
 import type { ImportSummary } from "./import";
+import type { PayoutLine } from "./payout";
+import type { FeeRateCheck } from "./fee-anomaly";
 
 /** audit_log action (entity_kind 'order') of an Admin confirming Yoco holds no payment. */
 export const T10_CONFIRMED_NO_PAYMENT_ACTION = "t10_confirmed_no_payment";
@@ -89,4 +91,12 @@ export type T10View = {
   /** The latest import for the day, or null when no export was uploaded. */
   latestImport: ImportSummary | null;
   writeOffs: WriteOffT10Item[];
+  /** Payments whose tip variance an Admin has cleared (t10_tip_cleared). */
+  clearedTipPaymentIds: string[];
+  /** REQ-120: each device's latest entered payout for the day, re-checked now. */
+  payouts: PayoutLine[];
+  /** app_config.webpos_device_id — the payout form's default device. */
+  defaultDeviceId: string | null;
+  /** §7.0.4: the day's realised fee rate against expected_fee_rate_bp (flag only). */
+  feeRate: FeeRateCheck;
 };

@@ -54,6 +54,11 @@ export type T10Exception = {
   /** Integer cents: what Yoco's row says, where it says one. */
   amountZar: number | null;
   detail: string;
+  /**
+   * `tip` only: the fee and receipt Yoco's row carries, withheld from the
+   * payment until an Admin clears the tip (./tip-clear.ts). The tip is not kept.
+   */
+  withheld?: { feeZar: number; receiptNo: string | null };
 };
 
 export type T10Info = {
@@ -241,11 +246,15 @@ export function reconcile(input: ReconcileInput): T10Plan {
     if (r.amountZar !== favoAmount) {
       ex("amount_variance", r, `Yoco charged ${r.amountZar} cents; FAVO holds ${favoAmount} cents.`, p);
     }
-    if (r.tipZar !== 0) {
-      // DEC-17: FAVO stores no tip. The row is listed and its fee and receipt
-      // are WITHHELD until an Admin clears the tip (no clearing flow is built).
-      ex("tip", r, `A tip of ${r.tipZar} cents came through the machine. FAVO takes no tips and stores none; this payment's fee is not written until an Admin clears it.`, p);
-      continue;
+    const tip = r.tipZar !== 0;
+    if (tip) {
+      // DEC-17: "a tip the machine lets through is not stored" — not on the
+      // payment and not here: the amount stays out of the exception, its detail
+      // text and so the import's audit summary. The row is listed and its fee
+      // and receipt are WITHHELD until an Admin clears the tip (clearTipVariance,
+      // ./tip-clear.ts). The conflict checks below still run; nothing is annotated.
+      ex("tip", r, "A tip came through the machine. FAVO takes no tips and stores none; this payment's fee is not written until an Admin clears it.", p);
+      exceptions[exceptions.length - 1].withheld = { feeZar: r.feeZar, receiptNo: r.receiptNo };
     }
     const patch: Annotation["patch"] = {};
     if (p.feeZar === null) patch.feeZar = r.feeZar;
@@ -254,7 +263,7 @@ export function reconcile(input: ReconcileInput): T10Plan {
       if (p.receiptNo === null) patch.receiptNo = r.receiptNo;
       else if (p.receiptNo !== r.receiptNo) ex("receipt_conflict", r, `FAVO already holds receipt ${p.receiptNo}; this file says ${r.receiptNo}. Not overwritten.`, p);
     }
-    if (patch.feeZar !== undefined || patch.receiptNo !== undefined) {
+    if (!tip && (patch.feeZar !== undefined || patch.receiptNo !== undefined)) {
       annotations.push({ paymentId: p.id, yocoPaymentId: r.yocoPaymentId, line: r.line, patch, before: { feeZar: p.feeZar, receiptNo: p.receiptNo } });
     }
   }
