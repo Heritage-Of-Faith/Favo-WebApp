@@ -57,7 +57,7 @@ import {
   ORDER_MOVED_ON, CHECKOUT_EXISTS, lockPaymentForTotalChange,
 } from "@/server/orders/payment-lock";
 import {
-  OTHER_DISCOUNT, TOO_MANY_VOUCHERS, VOUCHER_NOT_ON_EXTRA_SHOTS, planLineVouchers,
+  OTHER_DISCOUNT, TOO_MANY_VOUCHERS, planLineVouchers,
 } from "@/server/orders/voucher";
 import { lockOpenSession } from "@/server/orders/voucher-session";
 import { readOpenSessionDeferred } from "@/server/deferred/drizzle-store";
@@ -284,16 +284,6 @@ export async function createOrder(
       surchargeZar: surchargeFor(item.shots),
     });
   }
-  // AT-202 part 1, interim: never a voucher on a line carrying an extra-shot
-  // surcharge (decideRedeem's VOUCHER_NOT_ON_EXTRA_SHOTS). Refused and audited
-  // before anything is written. The free cup is weekday-only, where the
-  // surcharge is never in force, so it is unaffected.
-  if (data.items.some((_, i) => voucherCounts[i] > 0 && (lines[i].surchargeZar ?? 0) > 0)) {
-    return rejectVoucherOrder(
-      orderId, session, { code: "VOUCHER_NOT_ON_EXTRA_SHOTS", message: VOUCHER_NOT_ON_EXTRA_SHOTS }, voucherCounts
-    );
-  }
-
   // §7.0.2 order_gross: quantity × (unit + mods + surcharge), summed.
   const grossZar = computeOrderTotalZar(lines);
   // AT-181 B1: per-unit priced mods, from the same deltas that priced the line.

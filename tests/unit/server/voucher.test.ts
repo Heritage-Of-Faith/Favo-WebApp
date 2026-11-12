@@ -73,21 +73,60 @@ describe("decideRedeem", () => {
     expect(other).toMatchObject({ status: "refused", code: "VOUCHER_NOT_IN_MODE" });
   });
 
-  it("AT-202 interim: a line carrying an extra-shot surcharge → VOUCHER_NOT_ON_EXTRA_SHOTS", () => {
-    const d = decideRedeem({
-      session: UNTRACKED, kind: KIND,
-      line: { ...cappuccinoX2, surchargeZar: 1000 }, live: { count: 0, discountZar: 0 },
-    });
-    expect(d).toEqual({
-      status: "refused", code: "VOUCHER_NOT_ON_EXTRA_SHOTS",
-      message: "Vouchers cover up to two shots; take the extra shots off or pay for this drink.",
-    });
+  // CHANGED (AT-202 part 2): this case asserted the interim refusal
+  // VOUCHER_NOT_ON_EXTRA_SHOTS. §6.9.2a (owner, 14 Sep 2026): "A voucher
+  // zeroes one whole unit — its listed price, its modifications and its extra
+  // shots"; §11 redeemVoucher: "listed price, modifications and extra-shot
+  // surcharge together". §6.2.3: a Cappuccino is R20 single, R20 double, R30
+  // triple, R40 with four.
+  it("AT-202 part 2: a voucher on a triple Cappuccino (R30) zeroes the whole unit, surcharge included", () => {
+    const triple = { quantity: 1, unitPriceZar: 2000, modsZar: 0, surchargeZar: 1000, discountZar: 0, compReason: null };
+    expect(decideRedeem({ session: UNTRACKED, kind: KIND, line: triple, live: { count: 0, discountZar: 0 } }))
+      .toEqual({ status: "apply", discountZar: 3000, lineDiscountZar: 3000 });
     // planLineVouchers (createOrder) shares the rule.
-    expect(planLineVouchers({ session: UNTRACKED, kind: KIND, line: { ...cappuccinoX2, surchargeZar: 1000 }, count: 1 }))
-      .toMatchObject({ status: "refused", code: "VOUCHER_NOT_ON_EXTRA_SHOTS" });
-    // surcharge 0 (one or two shots) is unaffected.
-    expect(decideRedeem({ session: UNTRACKED, kind: KIND, line: { ...cappuccinoX2, surchargeZar: 0 }, live: { count: 0, discountZar: 0 } }))
-      .toEqual({ status: "apply", discountZar: 3800, lineDiscountZar: 3800 });
+    expect(planLineVouchers({ session: UNTRACKED, kind: KIND, line: triple, count: 1 }))
+      .toEqual({ status: "apply", perVoucherZar: [3000], lineDiscountZar: 3000 });
+  });
+
+  it("AT-202 part 2: a voucher on a four-shot Cappuccino (R40) takes R40 off — nothing of the surcharge stays owed", () => {
+    const quad = { quantity: 1, unitPriceZar: 2000, modsZar: 0, surchargeZar: 2000, discountZar: 0, compReason: null };
+    const d = decideRedeem({ session: UNTRACKED, kind: KIND, line: quad, live: { count: 0, discountZar: 0 } });
+    expect(d).toEqual({ status: "apply", discountZar: 4000, lineDiscountZar: 4000 });
+    if (d.status === "apply") expect(1 * 4000 - d.lineDiscountZar).toBe(0);
+  });
+
+  it("§6.9.2a: the most a slip can be worth — a R25 Mocha with four shots — is R45", () => {
+    const mocha = { quantity: 1, unitPriceZar: 2500, modsZar: 0, surchargeZar: 2000, discountZar: 0, compReason: null };
+    expect(decideRedeem({ session: UNTRACKED, kind: KIND, line: mocha, live: { count: 0, discountZar: 0 } }))
+      .toEqual({ status: "apply", discountZar: 4500, lineDiscountZar: 4500 });
+  });
+
+  it("boundary: 3 × triple Cappuccino (R30 each), m = 0…3 vouchers → net R90, R60, R30, R0; a 4th is refused", () => {
+    const line3 = { quantity: 3, unitPriceZar: 2000, modsZar: 0, surchargeZar: 1000, discountZar: 0, compReason: null };
+    const nets = [0, 1, 2, 3].map((m) => {
+      const p = planLineVouchers({ session: UNTRACKED, kind: KIND, line: line3, count: m });
+      if (p.status !== "apply") throw new Error("refused");
+      expect(p.perVoucherZar).toEqual(Array(m).fill(3000));
+      return 3 * 3000 - p.lineDiscountZar;
+    });
+    expect(nets).toEqual([9000, 6000, 3000, 0]);
+    expect(planLineVouchers({ session: UNTRACKED, kind: KIND, line: line3, count: 4 }))
+      .toMatchObject({ status: "refused", code: "VALIDATION" });
+    expect(decideRedeem({
+      session: UNTRACKED, kind: KIND,
+      line: { ...line3, discountZar: 9000 }, live: { count: 3, discountZar: 9000 },
+    })).toMatchObject({ status: "refused", code: "VALIDATION" });
+  });
+
+  it("removing one voucher from a vouchered triple restores the whole unit, surcharge included (R30)", () => {
+    const r = decideRemove({
+      line: { discountZar: 6000 },
+      live: [
+        { id: "vr_1", discountZar: 3000, at: "2026-11-15T18:00:00Z" },
+        { id: "vr_2", discountZar: 3000, at: "2026-11-15T18:01:00Z" },
+      ],
+    });
+    expect(r).toEqual({ status: "apply", redemptionId: "vr_2", lineDiscountZar: 3000, restoredZar: 3000 });
   });
 
   it("no open session → NO_SESSION", () => {

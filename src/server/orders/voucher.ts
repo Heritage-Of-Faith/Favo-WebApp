@@ -10,7 +10,7 @@
 // not in the session's voucher_kinds_active; a line with no net charge.
 // REQ-155: weekday mode → VOUCHER_NOT_IN_MODE.
 
-export type VoucherRefusalCode = "VOUCHER_NOT_IN_MODE" | "VALIDATION" | "NO_SESSION" | "VOUCHER_NOT_ON_EXTRA_SHOTS";
+export type VoucherRefusalCode = "VOUCHER_NOT_IN_MODE" | "VALIDATION" | "NO_SESSION";
 
 /**
  * §7.0.2 line_unit_price = unit_price_zar + line_mods_zar + surcharge_zar,
@@ -41,13 +41,6 @@ export type RedeemDecision =
 export const OTHER_DISCOUNT = "This drink already has a different discount.";
 /** decideRedeem's own copy for a line whose every unit already carries a voucher. */
 export const TOO_MANY_VOUCHERS = "Every drink on this line already has a voucher.";
-/**
- * decideRedeem's own copy for a line that carries an extra-shot surcharge
- * (VOUCHER_NOT_ON_EXTRA_SHOTS). Not PRD copy: the refusal is an interim rule
- * until AT-202 part 2 (see the note above LineVoucherPlan).
- */
-export const VOUCHER_NOT_ON_EXTRA_SHOTS =
-  "Vouchers cover up to two shots; take the extra shots off or pay for this drink.";
 
 const refuse = (code: VoucherRefusalCode, message: string) => ({ status: "refused" as const, code, message });
 
@@ -62,11 +55,6 @@ export function decideRedeem(input: {
   if (!session) return refuse("NO_SESSION", "Open the session first.");
   if (session.mode === "weekday" || !session.voucherKindsActive.includes(kind)) {
     return refuse("VOUCHER_NOT_IN_MODE", "Vouchers aren't on in this session.");
-  }
-  // Interim (AT-202 part 1): never a voucher on a line carrying an extra-shot
-  // surcharge — fail closed until part 2 widens order_items_discount_within_line.
-  if ((line.surchargeZar ?? 0) > 0) {
-    return refuse("VOUCHER_NOT_ON_EXTRA_SHOTS", VOUCHER_NOT_ON_EXTRA_SHOTS);
   }
   // L41: at most one discount mechanism per line. Any discount not made of
   // this line's live vouchers belongs to the free cup or a comp.
@@ -86,12 +74,10 @@ export function decideRedeem(input: {
   return { status: "apply", discountZar: unit, lineDiscountZar };
 }
 
-// The extra-shot surcharge lives on order_items.surcharge_zar since 0047
-// (AT-202 part 1), and callers pass the line's own value. Until AT-202 part 2
-// widens order_items_discount_within_line (today unit_price_zar + mods_zar
-// only) a voucher is refused on any line whose surcharge_zar > 0
-// (VOUCHER_NOT_ON_EXTRA_SHOTS above), so a voucher never takes off more than
-// unit_price_zar + mods_zar and never touches a surcharge.
+// AT-202 part 2: the extra-shot surcharge lives on order_items.surcharge_zar
+// (0047) and callers pass the line's own value, so one voucher takes off one
+// whole unit — listed price, modifications and surcharge (§6.9.2a). The DB
+// CHECK order_items_discount_within_line reads the same per-unit sum (0057).
 
 export type LineVoucherPlan =
   | { status: "apply"; perVoucherZar: number[]; lineDiscountZar: number }

@@ -10,14 +10,10 @@
 //
 // The comp takes the line to R0, so its value is the line's REMAINING value,
 // line_gross − discount_zar (DEF-B), and the second term is the cap that value
-// may not exceed. line_gross = quantity × line_unit_price, where the line unit
-// price is the listed price plus the priced modifications (order_items
-// unit_price_zar + mods_zar — the same sum the DB CHECK
-// order_items_discount_within_line reads). The extra-shot surcharge exists on
-// order_items.surcharge_zar since 0047 (AT-202 part 1) but is NOT part of the
-// comp: a comp leaves the surcharge owed until AT-202 part 2 widens
-// order_items_discount_within_line. (Vouchers are refused outright on a
-// surcharge line until then — voucher.ts, VOUCHER_NOT_ON_EXTRA_SHOTS.)
+// may not exceed. line_gross = quantity × line_unit_price, where §7.0.2's
+// line_unit_price = unit_price_zar + line_mods_zar + surcharge_zar, per unit —
+// the same sum the DB CHECK order_items_discount_within_line reads since 0057
+// (AT-202 part 2). So a comp takes a 3- or 4-shot line to R0, surcharge and all.
 
 /** L33's closed list — the comp_reason enum, "the definition of record". */
 export const COMP_REASONS = [
@@ -41,6 +37,8 @@ export type CompLine = {
   quantity: number;
   unitPriceZar: number;
   modsZar: number;
+  /** AT-202: per-unit extra-shot surcharge (order_items.surcharge_zar); absent = 0. */
+  surchargeZar?: number;
   discountZar: number;
   compReason: string | null;
 };
@@ -59,9 +57,9 @@ export const COMP_COPY = {
   over_ceiling: "This line is worth more than a comp can cover.",
 } as const;
 
-/** line_gross = quantity × (listed price + priced modifications), integer cents. */
-export function lineGrossZar(line: Pick<CompLine, "quantity" | "unitPriceZar" | "modsZar">): number {
-  return line.quantity * (line.unitPriceZar + line.modsZar);
+/** §7.0.2 line_gross = quantity × (listed price + priced modifications + extra-shot surcharge), integer cents. */
+export function lineGrossZar(line: Pick<CompLine, "quantity" | "unitPriceZar" | "modsZar" | "surchargeZar">): number {
+  return line.quantity * (line.unitPriceZar + line.modsZar + (line.surchargeZar ?? 0));
 }
 
 /**
@@ -69,7 +67,7 @@ export function lineGrossZar(line: Pick<CompLine, "quantity" | "unitPriceZar" | 
  *   (highest live menu price + (T15 − 2) × extra_shot_zar) × quantity).
  */
 export function compCeilingZar(input: {
-  line: Pick<CompLine, "quantity" | "unitPriceZar" | "modsZar" | "discountZar">;
+  line: Pick<CompLine, "quantity" | "unitPriceZar" | "modsZar" | "surchargeZar" | "discountZar">;
   highestLivePriceZar: number;
   maxShotsPerLine: number;
   extraShotZar: number;

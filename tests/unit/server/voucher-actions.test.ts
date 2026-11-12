@@ -165,21 +165,34 @@ describe("redeemVoucher (REQ-154, REQ-151, L41)", () => {
     expect(audits().map((a) => a.action)).toEqual(["reject"]);
   });
 
-  it("AT-202 interim: a line carrying an extra-shot surcharge is refused (VOUCHER_NOT_ON_EXTRA_SHOTS), audited, nothing written", async () => {
-    // 2 × Cappuccino R38 at 3 shots: R10 surcharge per unit (order total 2 × R48).
+  // CHANGED (AT-202 part 2): this case asserted the interim refusal
+  // VOUCHER_NOT_ON_EXTRA_SHOTS. §6.9.2a / §11 redeemVoucher: one voucher
+  // zeroes one whole unit — "listed price, modifications and extra-shot
+  // surcharge together". §6.2.3: a Cappuccino is R20 single, R30 triple.
+  it("AT-202 part 2: 2 × triple Cappuccino (R30 each) + one voucher → R30 off, the R30 remainder is what stays owed (REQ-150)", async () => {
     given({
-      order: { ...DEFERRED_ORDER, totalZar: 9600 },
-      line: { ...CAPPUCCINO_X2, shots: 3, surchargeZar: 1000 },
+      order: { ...DEFERRED_ORDER, totalZar: 6000 },
+      line: { ...CAPPUCCINO_X2, unitPriceZar: 2000, shots: 3, surchargeZar: 1000 },
     });
     const res = await redeemVoucher("oi_1", KIND);
-    expect(res).toEqual({
-      ok: false, code: "VOUCHER_NOT_ON_EXTRA_SHOTS",
-      message: "Vouchers cover up to two shots; take the extra shots off or pay for this drink.",
+    expect(res).toEqual({ ok: true, data: { totalZar: 3000, lineDiscountZar: 3000 } });
+    expect(insertsInto(voucherRedemptions)).toEqual([
+      expect.objectContaining({ orderItemId: "oi_1", voucherKind: KIND, discountZar: 3000 }),
+    ]);
+    expect(updatesOf(orderItems)).toEqual([{ discountZar: 3000 }]);
+    expect(updatesOf(orders)).toEqual([{ totalZar: 3000, paymentMode: "yoco_deferred" }]);
+    expect(audits().map((a) => a.action)).toEqual(["redeem_voucher"]);
+  });
+
+  it("AT-202 part 2: a single four-shot Cappuccino (R40) + one voucher → R0, payment_mode='free', no payments row (L42)", async () => {
+    given({
+      order: { ...DEFERRED_ORDER, totalZar: 4000 },
+      line: { ...CAPPUCCINO_X2, quantity: 1, unitPriceZar: 2000, shots: 4, surchargeZar: 2000 },
     });
-    expect(insertsInto(voucherRedemptions)).toEqual([]);
-    expect(updates).toEqual([]);
-    expect(audits().map((a) => a.action)).toEqual(["reject"]);
-    expect(audits()[0].after).toMatchObject({ attempted: "redeem_voucher", orderItemId: "oi_1", code: "VOUCHER_NOT_ON_EXTRA_SHOTS" });
+    const res = await redeemVoucher("oi_1", KIND);
+    expect(res).toEqual({ ok: true, data: { totalZar: 0, lineDiscountZar: 4000 } });
+    expect(updatesOf(orders)).toEqual([{ totalZar: 0, paymentMode: "free" }]);
+    expect(insertsInto(payments)).toEqual([]);
   });
 
   it("REQ-155: a weekday session → VOUCHER_NOT_IN_MODE", async () => {
@@ -423,6 +436,18 @@ describe("removeVoucher (COL-29: a reversal, never a delete)", () => {
     expect(await removeVoucher("oi_1")).toEqual({ ok: false, code: "STALE_STATE", message: "That session is closed." });
     expect(updates).toEqual([]);
     expect(audits().map((a) => a.action)).toEqual(["reject"]);
+  });
+
+  it("AT-202 part 2: removing the voucher from a triple restores the whole R30 unit, surcharge included", async () => {
+    given({
+      order: { ...DEFERRED_ORDER, totalZar: 0, paymentMode: "free" },
+      line: { ...CAPPUCCINO_X2, quantity: 1, unitPriceZar: 2000, shots: 3, surchargeZar: 1000, discountZar: 3000 },
+      live: [{ id: "vr_1", discountZar: 3000, at: at1, sessionId: "os_evening" }],
+    });
+    const res = await removeVoucher("oi_1");
+    expect(res).toEqual({ ok: true, data: { totalZar: 3000, lineDiscountZar: 0 } });
+    expect(updatesOf(orderItems)).toEqual([{ discountZar: 0 }]);
+    expect(updatesOf(orders)).toEqual([{ totalZar: 3000, paymentMode: "yoco" }]);
   });
 });
 

@@ -113,6 +113,38 @@ describe("compOrderLine (L33, REQ-059)", () => {
     expect(inserts).toEqual([]);
   });
 
+  // AT-202 part 2: L33 "comps one order line to R0"; §7.0.2 line_gross =
+  // quantity × (unit_price_zar + line_mods_zar + surcharge_zar). §6.2.3: a
+  // Cappuccino is R30 triple, R40 with four.
+  it("AT-202 part 2: a triple Cappuccino (R30) is comped whole, surcharge included — total R0", async () => {
+    givenComp({
+      lines: [{ id: "line-1", orderId: "ord-1", quantity: 1, unitPriceZar: 2000, modsZar: 0, surchargeZar: 1000, discountZar: 0, compReason: null }],
+      totalZar: 3000,
+    });
+    const r = await compOrderLine("line-1", "wrong_drink");
+    expect(r).toMatchObject({ ok: true, data: { valueZar: 3000, totalZar: 0 } });
+    expect(updates).toEqual([
+      { table: orderItems, set: { discountZar: 3000, compReason: "wrong_drink" } },
+      { table: orders, set: { totalZar: 0, paymentMode: "free" } },
+    ]);
+  });
+
+  it("AT-202 part 2: a comped four-shot (R40) beside a paid R20 line leaves R20.00 owed (the remainder)", async () => {
+    givenComp({
+      lines: [
+        { id: "line-1", orderId: "ord-1", quantity: 1, unitPriceZar: 2000, modsZar: 0, surchargeZar: 2000, discountZar: 0, compReason: null },
+        { id: "line-2", orderId: "ord-1", quantity: 1, unitPriceZar: 2000, modsZar: 0, surchargeZar: 0, discountZar: 0, compReason: null },
+      ],
+      totalZar: 6000,
+    });
+    const r = await compOrderLine("line-1", "spillage");
+    expect(r).toMatchObject({ ok: true, data: { valueZar: 4000, totalZar: 2000 } });
+    expect(updates).toEqual([
+      { table: orderItems, set: { discountZar: 4000, compReason: "spillage" } },
+      { table: orders, set: { totalZar: 2000, paymentMode: "yoco" } },
+    ]);
+  });
+
   it("a reason outside the closed list is refused, and the refusal is audited", async () => {
     givenComp();
     const r = await compOrderLine("line-1", "friend_of_mine");

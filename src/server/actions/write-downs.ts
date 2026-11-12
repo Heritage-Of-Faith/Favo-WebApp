@@ -259,6 +259,8 @@ export async function compOrderLine(
         quantity: orderItems.quantity,
         unitPriceZar: orderItems.unitPriceZar,
         modsZar: orderItems.modsZar,
+        // AT-202 part 2: §7.0.2 line_gross includes the per-unit surcharge.
+        surchargeZar: orderItems.surchargeZar,
         discountZar: orderItems.discountZar,
         compReason: orderItems.compReason,
       })

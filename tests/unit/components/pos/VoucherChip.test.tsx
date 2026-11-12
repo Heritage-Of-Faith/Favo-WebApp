@@ -97,17 +97,24 @@ describe("L48 / REQ-146 — the chip is absent when vouchers cannot apply", () =
     expect(screen.queryByRole("button", { name: /voucher/i })).toBeNull();
   });
 
-  it("AT-202 interim: no chip on a 3-shot line (surcharge > 0); its R30.00 stays the amount charged", async () => {
+  // CHANGED (AT-202 part 2): this case asserted the interim rule — no chip on
+  // a 3-shot line, its R30.00 always charged. §6.9.2a: "A voucher zeroes one
+  // whole unit — its listed price, its modifications and its extra shots."
+  it("AT-202 part 2: a 3-shot line carries the chip; one tap strikes its R30.00 to R0 and the charge is the R20.00 beside it", async () => {
     mockVoucherCtx.mockResolvedValue(LIVE);
     seed([{ ...CAPP, quantity: 1, shots: 3, surchargeZar: 1000 }, { ...HOT, quantity: 1 }]);
     await mount();
-    // Only the hot chocolate line carries a chip.
-    expect(await screen.findAllByRole("button", { name: /voucher/i })).toHaveLength(1);
+    expect(await screen.findAllByRole("button", { name: /voucher/i })).toHaveLength(2);
     const triple = screen.getByText("Cappuccino").closest("[data-line]") as HTMLElement;
-    expect(within(triple).queryByRole("button", { name: /voucher/i })).toBeNull();
     expect(within(triple).getByText(/R\s?30[.,]00/)).toBeDefined();
-    // R30.00 + R20.00, nothing vouchered.
+    // R30.00 + R20.00, nothing vouchered yet.
     expect(screen.getByRole("button", { name: /^charge r/i }).textContent).toMatch(/R\s?50[.,]00/);
+    await act(async () => { fireEvent.click(within(triple).getByRole("button", { name: /voucher/i })); });
+    expect(within(triple).getByText("1 of 1")).toBeDefined();
+    expect(within(triple).getByText(/R\s?30[.,]00/).tagName).toBe("S");
+    expect(within(triple).getByText(/R\s?0[.,]00/)).toBeDefined();
+    // T10 / REQ-150: the machine is handed the paid line alone.
+    expect(screen.getByRole("button", { name: /^charge r/i }).textContent).toMatch(/R\s?20[.,]00/);
   });
 
   it("a voucher kind in force: the chip renders on every line", async () => {

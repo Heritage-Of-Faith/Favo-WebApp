@@ -344,8 +344,9 @@ export const orderItems = pgTable("order_items", {
 }, () => [
   check("order_items_shots_range", sql`shots BETWEEN 1 AND 4`),
   check("order_items_surcharge_nonnegative", sql`surcharge_zar >= 0`),
-  // DEF-A's floor: a line can never be discounted past its own value.
-  check("order_items_discount_within_line", sql`discount_zar <= quantity * (unit_price_zar + mods_zar)`),
+  // DEF-A's floor: a line can never be discounted past its own value —
+  // §7.0.2 line_unit_price, so the surcharge counts (AT-202 part 2, 0057).
+  check("order_items_discount_within_line", sql`discount_zar <= quantity * (unit_price_zar + mods_zar + surcharge_zar)`),
   check("order_items_quantity_positive", sql`quantity >= 1`),
 ]);
 
