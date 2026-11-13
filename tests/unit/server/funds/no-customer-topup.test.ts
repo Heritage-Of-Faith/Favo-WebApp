@@ -70,6 +70,7 @@ const ALLOWED = new Set([
   // (REQ-032). Read only; reached through the admin-only actions/reconciliation.ts.
   "src/server/reconciliation/t10.ts", // pure: carries fundTopupId on a payment
   "src/server/reconciliation/drizzle-store.ts", // SELECTs payments.fund_topup_id; never touches a fund table
+  "src/server/reconciliation/read-store.ts", // CHANGED: the SELECT-only reads moved here from drizzle-store.ts
   "src/components/admin/T10Panel.tsx", // /admin/reports (admin-gated): names a top-up line
   // CHANGED (DEC-29, §9.6.2 job 9): a server-side timer, no route. SELECTs
   // payments.fund_topup_id so a day with a card top-up counts as card activity
